@@ -48,7 +48,7 @@ The YAML doesn't change: `switches:` keys stay `pump`, `cycle_from:` names a fea
 - `_build` gives each feature's `build()` a `Device` in that feature's namespace (`dataclasses.replace(device, namespace=feature.namespace)`).
 - A `<capability>_from` is resolved with the providing feature's `Device`, so its current entity ID is the provider's.
 - `_build` returns, with each entity, the unique IDs it follows, qualified by the right feature (its own `sources`, the providers of its capabilities). `_creatable` compares those directly and knows nothing about namespaces.
-- `_entity_keys` yields qualified keys, and `_entity_ids_distinct` keeps checking IDs between devices with them (`pool` + `pump_heater` and `pool_pump` + `heater`).
+- `_entity_keys` yields qualified keys, and `_entity_ids_distinct` keeps checking IDs between devices with them. Its current example no longer collides (`pool` + switch `pump_heater` is `pururu_pool_switch_pump_heater`, `pool_pump` + switch `heater` is `pururu_pool_pump_switch_heater`); a collision now needs a device key ending in a namespace, as `pool` + switch `switch_pump` and `pool_switch` + switch `pump`, both `pururu_pool_switch_switch_pump`. The docstring, the tests and the docs take that example.
 - `_device` loses its check of an entity key used twice in one device: it can't happen any more.
 
 ## Entities (`entity.py`)
@@ -71,11 +71,27 @@ The YAML doesn't change: `switches:` keys stay `pump`, `cycle_from:` names a fea
 
 ## Docs
 
-- Every page that shows an ID gets the new format: `index`, `getting-started/first-device`, `concepts/devices-and-features`, `features/appliance`, `features/switches`, `reference/configuration`, `reference/troubleshooting`, `develop/architecture`, `develop/testing`, and the README.
-- `concepts/entity-ids`: the pattern gains the namespace, with each feature's namespace and the rule that an entity key equal to its namespace is written once.
-- `features/switches`: the paragraph forbidding a switch key that is another feature's entity key is removed.
-- `develop/writing-a-feature`: `namespace` joins the contract; the rules that an entity key must be unique across features, and that the device schema refuses a configured key used by another feature, are removed; the contract test table is updated.
-- `CLAUDE.md`: the entity ID format, and the line on `_device` refusing alike entity keys.
+In the docs, "entity key" stays the key a feature's page lists (`running`); the end of the ID is `<namespace>_<entity key>`. The dashboard shows floors, areas and devices from the registries and is not affected.
+
+**Guide**
+
+- `index`: the table of the washer's entities.
+- `getting-started/first-device`: the entity tables (steps 1 and 2), the pattern line, `phase`, and the "laundry is done" automation (`last_cycle_end`, `last_cycle_duration`, `last_cycle_energy`).
+- `concepts/entity-ids`: the pattern becomes `<platform>.pururu_<device key>_<namespace>_<entity key>`, with a table of each feature's namespace and the rule that an entity key equal to its namespace is written once; the `running` and unique ID examples; the taken-ID log line. Names are unchanged (`Máquina de lavar Running`).
+- `concepts/devices-and-features`: the capability table (`binary_sensor.pururu_<key>_appliance_running`).
+- `features/appliance`: the entity table.
+- `features/phases`: unchanged (`sensor.pururu_<key>_phase`).
+- `features/switches`: the created IDs (`switch.pururu_pool_switch_pump`, `…_switch_heater`), "`pump` → `switch.pururu_pool_switch_pump`", the entity table header; the paragraph forbidding a switch key that is another feature's entity key is removed.
+- `reference/configuration`: the rule "every entity key is different in a device" is removed; the rule on two devices takes the new example, and its `pool_energy` + `total` example (no longer a collision) is replaced.
+- `reference/troubleshooting`: the error `switches: power is already an entity key of appliance` is removed; the two-devices error takes the new example; the log lines of a taken ID, of a follower not created (`…_phase follows binary_sensor.pururu_laundry_washer_appliance_running…`) and of a pururu switch (`…not creating switch.pururu_pool_switch_pump`) get the new IDs.
+- `README.md`: `binary_sensor.pururu_dishwasher_appliance_running`.
+
+**Develop**
+
+- `develop/architecture`: the `Feature` table gains `namespace`; the paragraph on `_device` checking every entity key of a device is replaced by one on namespaces; the ID pattern and `Device.object_id`; `_identify`'s translation key is the qualified key (`entity.<platform>.<namespace>_<entity key>.name`).
+- `develop/writing-a-feature`: the `OPENINGS` example gains `namespace="openings"` and its entity key becomes `total`, so its entity stays `sensor.pururu_<key>_openings_total`; `namespace` is described among the pieces; "An entity key must not be used by any other feature" is removed; the translation and icon examples use the qualified key; the configured-feature list loses "The device schema refuses a key that is an entity key of another feature"; the contract test table replaces `test_no_entity_key_in_two_features`.
+- `develop/testing`: the example test's `binary_sensor.pururu_laundry_washer_appliance_running`.
+- `CLAUDE.md`: the entity ID format; the `configured` line loses "`_device` refuses two alike entity keys in one device", and the `Feature` line gains `namespace`.
 
 ## Release
 
