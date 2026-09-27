@@ -51,6 +51,20 @@
           "idle": "Idle", "washing": "Washing", "heating": "Heating", "spinning": "Spinning",
           "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling"
         }
+      },
+      "mode_current": {
+        "name": "Mode",
+        "state": {
+          "idle": "Idle", "dispensing": "Dispensing", "washing": "Washing", "heating": "Heating",
+          "spinning": "Spinning", "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling"
+        }
+      },
+      "mode_last": {
+        "name": "Last mode",
+        "state": {
+          "dispensing": "Dispensing", "washing": "Washing", "heating": "Heating",
+          "spinning": "Spinning", "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling"
+        }
       }
     }
   }

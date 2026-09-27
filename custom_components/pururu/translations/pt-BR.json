@@ -52,6 +52,20 @@
           "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando",
           "cooling": "Esfriando"
         }
+      },
+      "mode_current": {
+        "name": "Modo",
+        "state": {
+          "idle": "Parado", "dispensing": "Dispensando", "washing": "Lavando", "heating": "Aquecendo",
+          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando", "cooling": "Esfriando"
+        }
+      },
+      "mode_last": {
+        "name": "Último modo",
+        "state": {
+          "dispensing": "Dispensando", "washing": "Lavando", "heating": "Aquecendo",
+          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando", "cooling": "Esfriando"
+        }
       }
     }
   }

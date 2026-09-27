@@ -37,6 +37,19 @@ def state_text(value: Any) -> str:
     return str(TEXT(value))
 
 
+def bounded(what: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """A band of a sensor's value (`what`: band, mode): above, below or both, above lower."""
+
+    def validate(band: dict[str, Any]) -> dict[str, Any]:
+        if "above" not in band and "below" not in band:
+            raise vol.Invalid(f"a {what} needs above, below or both")
+        if "above" in band and "below" in band and band["above"] >= band["below"]:
+            raise vol.Invalid(f"a {what}'s above must be lower than its below")
+        return band
+
+    return validate
+
+
 def qualified(namespace: str, entity_key: str) -> str:
     """`entity_key` in `namespace`: the end of its entity ID, and its translation key.
 
