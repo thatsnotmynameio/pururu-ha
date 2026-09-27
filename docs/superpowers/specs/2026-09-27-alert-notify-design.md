@@ -1,6 +1,6 @@
 # Alert notify — design
 
-Version: pururu 0.1.8. Branch: `feat/alert-notify`. Builds on alerts (0.1.6, #14): the second step, delivery.
+Version: pururu 0.1.9 (0.1.8 went to programs, #16). Branch: `feat/alert-notify`. Builds on alerts (0.1.6, #14): the second step, delivery.
 
 ## Goal
 
@@ -103,4 +103,4 @@ After the release, the user's `packages/alertmanager/alerts.yaml` (ha-config) ga
 
 ## Release
 
-`manifest.json` goes to `0.1.8`.
+`manifest.json` goes to `0.1.9`.

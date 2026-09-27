@@ -101,3 +101,9 @@ class Feature:
     # (appliance_running), that its validated block names: validated against the
     # device, and build() gets their current entity IDs in `inputs`, by that key
     refers: Callable[[Any], Iterable[str]] | None = None
+    # Services its entities take, on their own platform (turn_on → switch.turn_on
+    # for a switch): a program can call them
+    actions: tuple[str, ...] = ()
+    # (action, entity key in its namespace) of every entity its validated block
+    # acts on: each entity key is in refers too, and its feature must take the action
+    acts: Callable[[Any], Iterable[tuple[str, str]]] | None = None

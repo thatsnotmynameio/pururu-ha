@@ -21,6 +21,9 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - An alert whose `when` isn't an entity of another feature of the device: `alerts: appliance_nothing is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key, with its namespace (`appliance_power`, not `power`).
 - An alert with both `is` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
 - An alert's `notify` without `message` or `done_message`, with an empty one, or with another key.
+- A program step naming something that isn't an entity of another feature of the device: `programs: switch_pool_pump is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_pump`), not as an entity ID.
+- A program step whose entity doesn't take the action: `programs: appliance_power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
+- A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`.
 - Two devices that would give an entity the same ID: `device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`. Rename a device key or a switch key.
 
 **Developer tools → YAML → Check configuration** shows the same error before you reload.
@@ -47,7 +50,7 @@ Another integration's entity, or an entity without a unique ID, already has that
 sensor.pururu_laundry_washer_phase_current follows binary_sensor.pururu_laundry_washer_appliance_running, which is not created; not creating it
 ```
 
-This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back.
+This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. A [program](/features/programs) acting on a switch that isn't created isn't created either.
 
 ### `… watches …, which this device's settings don't create …`
 
@@ -90,6 +93,14 @@ light.sala_luminaria is this light itself: name the real one
 You renamed a pururu switch or light in the UI to the entity its own `entity:` names, so it stands for itself. It's kept, with your rename, but it's `unavailable`: there's nothing real to follow.
 
 **Fix:** point `entity:` at the real switch or light, or rename the pururu one back, then reload pururu.
+
+### `…: Already running`
+
+```
+Piscina Limpar: Already running
+```
+
+A [program](/features/programs) was pressed while it was still running, for example during its `delay`. The press is ignored; the running program goes on.
 
 ### An entity stays `unknown`
 

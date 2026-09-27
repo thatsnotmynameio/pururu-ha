@@ -164,6 +164,8 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 **On one entity of another feature, named in the configuration:** set `refers` to a function that returns, from the validated block, the entity keys it names, in their namespace (`appliance_power`). The device schema checks each is another feature's entity key, and `build()` receives its current ID in `inputs[<key>]`. Set `follows` on each entity to the keys it reads. [`alerts`](/features/alerts) (`features/alerts.py`) is the example.
 
+**Acting on another feature's entities:** set `acts` to return, from the validated block, (action, entity key) pairs, each key also in `refers`. The device schema checks the owning feature has the action in its `actions`. A feature whose entities can be acted on declares `actions`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `("turn_on", "turn_off", "toggle")`. [`programs`](/features/programs) (`features/programs.py`) is the example.
+
 ## 5. Entity keys from the configuration
 
 Some features create one entity per key the user writes, such as [`switches`](/features/switches). Their entity keys aren't known in the code, so they aren't in `entity_keys`, and they have no translation:
@@ -190,6 +192,8 @@ For a feature that stands for real entities of one domain, build each entity on 
 | `test_every_platform_is_set_up` | Every entity key's platform, and a configured feature's platform, is in `PLATFORMS` |
 | `test_capabilities_line_up` | `provides` points to real entity keys and a configured feature provides nothing, every `requires` is provided by some feature, and the example has `<capability>_from` |
 | `test_refers_names_entity_keys_as_in_an_entity_id` | What `refers` returns for the example is a slug, as an entity key in its namespace |
+| `test_every_action_is_a_service_of_its_platform` | A feature with `actions` is configured, and its platform has a service for each action |
+| `test_what_a_feature_acts_on_it_refers_to` | Every key `acts` returns for the example is in what `refers` returns |
 
 The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_phases.py` do.
 

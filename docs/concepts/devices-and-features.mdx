@@ -33,7 +33,7 @@ pururu:
 
 ## A feature
 
-A feature is a ready-made piece of behaviour. It reads real entities, such as a plug's power sensor, and applies a few settings, such as a threshold, or, for [`switches`](/features/switches) and [`lights`](/features/lights), passes commands on to them. From those it creates the device's entities, and pururu keeps them up to date.
+A feature is a ready-made piece of behaviour. It reads real entities, such as a plug's power sensor, and applies a few settings, such as a threshold, or, for [`switches`](/features/switches) and [`lights`](/features/lights), passes commands on to them, or, for [`programs`](/features/programs), runs steps on the device's own entities. From those it creates the device's entities, and pururu keeps them up to date.
 
 | Feature | What it does |
 |---|---|
@@ -41,6 +41,8 @@ A feature is a ready-made piece of behaviour. It reads real entities, such as a 
 | [`lights`](/features/lights) | Real lights, or relays that drive a lamp, inside the device, each named in the YAML, that show their light's state, offer what it offers and pass commands on |
 | [`phases`](/features/phases) | The phase of a cycle (heating, spinning…), from bands of a sensor's value |
 | [`switches`](/features/switches) | Real switches inside the device, each named in the YAML, that show their switch's state and turn it on and off |
+| [`alerts`](/features/alerts) | Problems on the device's own entities, each a binary sensor that is on while the problem lasts |
+| [`programs`](/features/programs) | Sequences of actions on the device's own entities, each run by a button |
 
 Each feature appears at most once per device, and everything under its key is that feature's configuration. An unknown key inside a feature, such as a typo, is a configuration error, so a mistake never passes silently.
 
@@ -74,6 +76,7 @@ The same pattern will hold for every future feature: `<what it needs>_from: <fea
 | `phases` | nothing | `cycle`, through `cycle_from` |
 | `switches` | nothing | nothing |
 | `alerts` | nothing | entities of other features of the device, through each alert's `when` |
+| `programs` | nothing | entities of other features of the device that take its actions, through each step |
 
 ## Two devices, one plug?
 
