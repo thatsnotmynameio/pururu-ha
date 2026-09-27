@@ -4,7 +4,14 @@ A Home Assistant integration that creates devices, and their entities, from real
 
 ## Install
 
-Copy `custom_components/pururu/` into your configuration's `custom_components/`, add a `pururu:` block to `configuration.yaml`, then restart. **Developer tools → YAML → Pururu** reloads the block afterwards.
+With [HACS](https://hacs.xyz):
+
+1. HACS → ⋮ → **Custom repositories**: add `https://github.com/thatsnotmynameio/pururu-ha` with type **Integration**.
+2. Find **Pururu** in HACS, **Download** it (pick a release), and restart Home Assistant.
+
+Or by hand: copy `custom_components/pururu/` into your configuration's `custom_components/` and restart.
+
+Then add a `pururu:` block to `configuration.yaml` (below) and restart. **Developer tools → YAML → Pururu** reloads the block afterwards.
 
 ## Configure
 
@@ -93,3 +100,7 @@ uv run mypy custom_components/pururu
 ```
 
 `ruff.toml` and `mypy.ini` hold core's settings at the pinned Home Assistant. hassfest comes from that release's source, downloaded once into `.hassfest/` (`uv run fetch_hassfest.py` does it by hand).
+
+## Releases
+
+Versions are semantic (`MAJOR.MINOR.PATCH`) and come from `version` in `custom_components/pururu/manifest.json`. A pull request that changes it is a release: once it is merged and the checks pass on `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release, which HACS offers. A version that already has its tag is not published again, and a version below the latest release fails the checks (`python3 release.py check`).
