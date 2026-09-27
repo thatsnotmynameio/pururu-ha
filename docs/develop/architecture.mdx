@@ -17,7 +17,7 @@ flowchart TD
     RS["pururu.reload<br/>re-reads YAML"] --> S
     E["async_setup_entry"] --> P1["1. places.async_sync<br/>floors and areas"]
     P1 --> P2["2. build every device's entities<br/>(features)"]
-    P2 --> P3["3. entry.runtime_data → platforms<br/>sensor.py, binary_sensor.py,<br/>switch.py, light.py"]
+    P2 --> P3["3. entry.runtime_data → platforms<br/>sensor.py, binary_sensor.py,<br/>switch.py, light.py, button.py"]
     P3 --> P4["4. put each device in its area"]
     P4 --> P5["5. remove stale entities and devices"]
     P5 --> P6["6. dashboard.async_setup"]
@@ -35,7 +35,7 @@ It does all the work, in this order:
 
 1. **Floors and areas** (`places.async_sync`). They come first because devices are placed in them. The IDs it now manages are saved in `entry.data`, as `{"floors": [...], "areas": [...]}`.
 2. **Build every device's entities.** For each device, each feature's `build()` returns entities. `_creatable` drops the ones whose ID is taken, and then everything that follows them (see [Entity IDs are the identity](#entity-ids-are-the-identity)).
-3. **Hand them to the platforms.** The entities go in `entry.runtime_data` (`dict[Platform, list[Entity]]`), and `sensor.py`, `binary_sensor.py`, `switch.py` and `light.py` only call `async_add_entities` with their list.
+3. **Hand them to the platforms.** The entities go in `entry.runtime_data` (`dict[Platform, list[Entity]]`), and `sensor.py`, `binary_sensor.py`, `switch.py`, `light.py` and `button.py` only call `async_add_entities` with their list.
 4. **Place each device** in its configured `area`, if that area exists.
 5. **Remove what's stale**: every entity and device of the entry that this configuration didn't build.
 6. **Show the dashboard.** It comes last because it lists everything above.
@@ -57,6 +57,8 @@ A device is a name plus one or more **features**. `FEATURES` in `features/__init
 | `requires` | capabilities it takes through `<capability>_from` |
 | `configured` | A platform, when its entity keys are the keys of its block, named by the block's `name`; `None` otherwise |
 | `refers` | Given its block, the entity keys of other features of the device it names, in their namespace (`appliance_running`); `None` otherwise |
+| `actions` | Services its entities take on their platform (`turn_on`, `turn_off`, `toggle` for `switches`), which a program can call |
+| `acts` | Given its block, (action, entity key) of every entity it acts on; each key is in `refers` too; `None` otherwise |
 
 The device schema (`_device` in `__init__.py`) is built from `FEATURES`. It requires at least one feature, it checks that every `<capability>_from` names a feature of the same device that provides that capability, and it refuses a real entity in two configured features of the device (a relay is its switch or its light, not both).
 
@@ -65,6 +67,8 @@ It doesn't compare entity keys between features. Each feature has its own `names
 When a feature requires a capability, `_build` looks up the providing entity key's **current** entity ID with a `Device` in the providing feature's namespace (`Device.current_entity_id`, which follows renames), and passes it to `build()` in `inputs`. The provider's unique ID is also added to the entity's sources, so if the provider isn't created, neither is this entity.
 
 A feature can also watch one particular entity of another feature, named in its block, as an alert's `when: appliance_power`. `refers` returns those keys. `_device` checks that each is an entity key another feature of the device can create, whatever its settings. `_build` passes each one's current entity ID in `inputs`, under that key. An entity lists what it watches in `follows`, so it isn't created when that entity isn't, including when the settings never build it (`_creatable`).
+
+A feature can also act on those entities, as a program's `turn_on: switch_pump`. `acts` returns (action, key) pairs, and `_device` checks that the feature owning each key has the action in its `actions`: `programs: appliance_power does not take turn_on` otherwise. `programs` translates its steps to Home Assistant's script syntax on the keys' current entity IDs and runs them with HA's `Script` helper.
 
 [Writing a feature](/develop/writing-a-feature) walks through adding one.
 
