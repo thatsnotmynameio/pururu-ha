@@ -1,6 +1,6 @@
 # Lights — design
 
-Version: pururu 0.1.6. Branch: `worktree-feat+lights`. Follows #13, which put every feature's entity keys in a namespace. The switches spec (0.1.4) named `lights:` as the next feature.
+Version: pururu 0.1.6. Branch: `feat/lights`. Follows #13, which put every feature's entity keys in a namespace. The switches spec (0.1.4) named `lights:` as the next feature.
 
 ## Goal
 
