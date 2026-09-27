@@ -144,7 +144,24 @@ pururu:
       name: Máquina de lavar
       area: lavanderia
       appliance:
-        # … as before
+        power: sensor.washer_plug_power
+        energy: sensor.washer_plug_energy
+        running:
+          threshold: 4
+          on_delay: {minutes: 1}
+          off_delay: {minutes: 2}
+        statistics:
+          runtime: [week, month]
+          cycles: [month, year]
+      phases:
+        cycle_from: appliance
+        sensor: sensor.washer_plug_power
+        defaults:
+          stopped: idle
+          running: washing
+        bands:
+          heating: {above: 1000}
+          spinning: {above: 50, below: 1000, for: {minutes: 3}}
 ```
 
 After a reload, Home Assistant has a floor **Térreo** with the ID `terreo`, and an area **Lavanderia** with the ID `lavanderia` on it. The washer is in that area.

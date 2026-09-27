@@ -9,12 +9,21 @@ Every entry under `devices:` is one device in Home Assistant:
 
 ```yaml
 pururu:
+  areas:
+    lavanderia: {name: Lavanderia}
   devices:
     laundry_washer:          # the key
       name: Máquina de lavar # required
-      area: lavanderia       # optional
-      appliance: {…}         # one or more features
-      phases: {…}
+      area: lavanderia       # optional: a key of areas:
+      appliance:             # one or more features
+        power: sensor.washer_plug_power
+        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+      phases:
+        cycle_from: appliance
+        sensor: sensor.washer_plug_power
+        defaults: {stopped: idle, running: washing}
+        bands:
+          heating: {above: 1000}
 ```
 
 - **The key** (`laundry_washer`) identifies the device. It must be a slug: lowercase letters, digits and `_`. It becomes part of every entity ID, `sensor.pururu_laundry_washer_…`, and it's how pururu recognises the device across reloads. If you rename the key, pururu treats it as a new device: the old one and its entities are deleted, and the new one starts with empty history and counters.
