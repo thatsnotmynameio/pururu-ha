@@ -143,4 +143,5 @@ LIGHTS = Feature(
     example={"ceiling": {"entity": "light.demo_ceiling", "name": "Ceiling"}},
     namespace="light",
     configured=Platform.LIGHT,
+    actions=("turn_on", "turn_off", "toggle"),
 )

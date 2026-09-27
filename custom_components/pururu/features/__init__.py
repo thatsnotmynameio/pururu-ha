@@ -5,6 +5,7 @@ from .alerts import ALERTS
 from .appliance import APPLIANCE
 from .lights import LIGHTS
 from .phases import PHASES
+from .programs import PROGRAMS
 from .switches import SWITCHES
 
 FEATURES: dict[str, Feature] = {
@@ -13,4 +14,5 @@ FEATURES: dict[str, Feature] = {
     "phases": PHASES,
     "switches": SWITCHES,
     "alerts": ALERTS,
+    "programs": PROGRAMS,
 }

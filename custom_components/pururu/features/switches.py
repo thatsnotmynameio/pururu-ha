@@ -70,4 +70,5 @@ SWITCHES = Feature(
     example={"pump": {"entity": "switch.demo_pump", "name": "Pump"}},
     namespace="switch",
     configured=Platform.SWITCH,
+    actions=("turn_on", "turn_off", "toggle"),
 )

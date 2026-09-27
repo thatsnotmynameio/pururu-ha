@@ -55,8 +55,9 @@ def _device(value: Any) -> dict[str, Any]:
     """A device: a name, maybe an area, at least one feature, every reference resolved.
 
     Every <capability>_from names a feature of this device that provides it,
-    every entity key a feature refers to is another feature's, and a real
-    entity is in one configured feature of the device at most.
+    every entity key a feature refers to is another feature's, that feature
+    takes every action done to it, and a real entity is in one configured
+    feature of the device at most.
     """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
@@ -102,21 +103,29 @@ def _real_entities_distinct(device: dict[str, Any], names: list[str]) -> None:
 
 
 def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
-    """Refuse an entity key a feature refers to that isn't another feature's."""
+    """Refuse a reference that isn't another feature's entity key.
+
+    Refuse too an action done to one that its feature doesn't take.
+    """
     # Every entity key the device can create, in its namespace -> its feature
     owners = {
         qualified(FEATURES[name].namespace, entity_key): name
         for name, entity_key, _ in _entity_keys(device)
     }
     for name in names:
-        if (refers := FEATURES[name].refers) is None:
+        feature = FEATURES[name]
+        if feature.refers is None:
             continue
-        for key in refers(device[name]):
+        for key in feature.refers(device[name]):
             if owners.get(key, name) == name:
                 raise vol.Invalid(
                     f"{name}: {key} is not an entity key of another feature "
                     "of this device"
                 )
+        # Every key it acts on is one it refers to: its owner is known
+        for action, key in feature.acts(device[name]) if feature.acts else ():
+            if action not in FEATURES[owners[key]].actions:
+                raise vol.Invalid(f"{name}: {key} does not take {action}")
 
 
 def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
