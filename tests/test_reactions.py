@@ -446,3 +446,29 @@ async def test_removing_the_entry_leaves_an_empty_file(ha: HomeAssistant,
     assert er.async_get(ha).async_get(automation("door")) is None
     assert ha.states.get(automation("door")) is None
     assert issue(ha) is None
+
+
+# --- controller rulings: a failed write drops nothing, before-start is tested ------------
+
+
+async def test_a_failed_write_drops_nothing_stale(
+        ha: HomeAssistant, automations: None) -> None:
+    """A dropped reaction whose write failed keeps its registry entry and its entry data."""
+    assert await setup(ha, devices(door=DOOR_OPENS, night={"name": "Noite", "at": "22:00"}))
+    reactions = module("reactions")
+    with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
+        await reload(ha, devices(night={"name": "Noite", "at": "22:00"}))
+    assert er.async_get(ha).async_get(automation("door")) is not None
+    entry = ha.config_entries.async_entries("pururu")[0]
+    assert "pururu_lights_reaction_door" in entry.data["automations"]
+
+
+async def test_the_include_is_checked_before_ha_has_started(ha: HomeAssistant) -> None:
+    """The include check on a fresh file also runs on the very first start."""
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {}):
+        assert await async_setup_component(ha, "automation", {})
+        reloaded = capture(ha, "automation_reloaded")
+        await restart(ha, devices(door=DOOR_OPENS))
+    assert ha.states.get(automation("door")) is not None
+    assert len(reloaded) == 1

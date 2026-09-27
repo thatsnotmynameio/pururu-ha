@@ -209,15 +209,21 @@ def _remove(registry: er.EntityRegistry, unique_ids: Iterable[str]) -> None:
             registry.async_remove(entity_id)
 
 
-async def _async_write(hass: HomeAssistant, automations: list[dict[str, Any]]) -> bool:
-    """Write the file if it changed; whether it did. A failure is logged, never raised."""
+async def _async_write(
+    hass: HomeAssistant, automations: list[dict[str, Any]]
+) -> bool | None:
+    """Write the file if it changed; whether it did, or None on failure.
+
+    A failure is logged, never raised: the caller must tell "unchanged" (False)
+    from "failed" (None), since a failed write must drop nothing stale.
+    """
     try:
         return await hass.async_add_executor_job(
             _write, Path(hass.config.path(FILE)), HEADER + dump(automations)
         )
     except (OSError, HomeAssistantError) as err:
         _LOGGER.error("The automations are not written to %s: %s", FILE, err)
-        return False
+        return None
 
 
 async def _async_reload(hass: HomeAssistant) -> None:
@@ -289,7 +295,10 @@ async def async_sync(
 
     Each entity ID is registered first, so HA gives the automation the pururu
     one rather than one from its alias. At start, HA has already loaded the
-    file; it is reloaded only when it changed, once HA has started.
+    file; it is reloaded only when it changed, once HA has started. A failed
+    write drops nothing stale: the returned IDs then also cover the previous
+    ones, so a later, successful write can still clean up their registry
+    entries; the include check always runs on this configuration's own IDs.
     """
     registry = er.async_get(hass)
     kept = [each for each in automations if _free(hass, registry, each["id"])]
@@ -298,8 +307,15 @@ async def async_sync(
             AUTOMATION, AUTOMATION, each["id"], suggested_object_id=each["id"]
         )
     ids = [each["id"] for each in kept]
-    changed = await _async_write(hass, kept)
-    stale = set(entry.data.get(CONF_AUTOMATIONS, [])) - set(ids)
+    written = await _async_write(hass, kept)
+    previous = entry.data.get(CONF_AUTOMATIONS, [])
+    if written is None:
+        stale: set[str] = set()
+        tracked = sorted(set(previous) | set(ids))
+    else:
+        stale = set(previous) - set(ids)
+        tracked = ids
+    changed = bool(written)
 
     async def finish(_hass: HomeAssistant) -> None:
         await _finish(hass, registry, changed, stale, ids)
@@ -311,7 +327,7 @@ async def async_sync(
         _check_included(hass, registry, ids)
 
     entry.async_on_unload(hass.bus.async_listen(EVENT_AUTOMATION_RELOADED, reloaded))
-    return ids
+    return tracked
 
 
 async def async_remove(hass: HomeAssistant, entry: ConfigEntry) -> None:
