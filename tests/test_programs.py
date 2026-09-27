@@ -7,6 +7,7 @@ from unittest.mock import patch
 from homeassistant.core import Context, Event, HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.script import DATA_SCRIPTS
 import pytest
 
 from helpers import capture, fake, held, reload, restart, settle, setup, tick
@@ -25,6 +26,12 @@ APPLIANCE = {"power": "sensor.pool_pump_power",
 
 def devices(**programs: Any) -> dict[str, Any]:
     return {KEY: {"name": "Piscina", "switches": SWITCHES, "programs": programs or {"clean": CLEANING}}}
+
+
+def scripts(hass: HomeAssistant, name: str = "Piscina Limpar") -> list[Any]:
+    """HA's scripts named `name`: HA keeps each one until it is unloaded."""
+    return [data["instance"] for data in hass.data.get(DATA_SCRIPTS, {}).values()
+            if data["instance"].name == name]
 
 
 def reached(calls: list[Event], entity_id: str = REAL_PUMP) -> list[str]:
@@ -220,6 +227,13 @@ async def test_a_reload_that_drops_it_removes_it(pool: HomeAssistant) -> None:
     await reload(pool, {KEY: {"name": "Piscina", "switches": SWITCHES}})
     assert er.async_get(pool).async_get(CLEAN) is None
     assert held(pool, KEY) == {PUMP}
+    assert scripts(pool) == []
+
+
+async def test_a_reload_leaves_one_script_per_program(pool: HomeAssistant) -> None:
+    await reload(pool, devices())
+    await reload(pool, devices())
+    assert len(scripts(pool)) == 1
 
 
 async def test_it_follows_its_target_renamed(pool: HomeAssistant) -> None:
@@ -256,6 +270,7 @@ async def test_a_program_whose_target_is_not_created_is_not_created(
     assert await setup(ha, devices())
     assert ha.states.get(CLEAN) is None
     assert f"{CLEAN} follows {PUMP}, which is not created; not creating it" in caplog.text
+    assert scripts(ha) == []
 
 
 async def test_after_a_restart_it_shows_its_last_press(ha: HomeAssistant) -> None:
