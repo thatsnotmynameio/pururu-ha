@@ -40,7 +40,13 @@ pururu:
           heating: {above: 1000}
           spinning: {above: 50, below: 1000, for: {minutes: 3}}
       alerts:
-        long_cycle: {name: Ciclo longo, when: appliance_running, is: "on", for: {hours: 3}, priority: medium}
+        long_cycle:
+          name: Ciclo longo
+          when: appliance_running
+          is: "on"
+          for: {hours: 3}
+          priority: medium
+          notify: {message: A máquina está rodando há mais de 3h!, done_message: A máquina terminou.}
     pool:
       name: Piscina
       switches:
