@@ -119,6 +119,17 @@ Entities: `sensor.pururu_<key>_power` and `_energy_total` (the plug's readings),
 
 Entity: `sensor.pururu_<key>_phase`, with the attribute `seen` (the bands of the current or last cycle). Its states are the names in the configuration; the translations name `idle`, `washing`, `heating`, `spinning`, `rinsing`, `drying` and `cooling`, and any other name is shown as written.
 
+## Dashboard
+
+pururu adds **Pururu** to the sidebar (`/pururu`, administrators only): a read-only dashboard of what it manages.
+
+- A total of dashboards (this one), floors, areas and devices.
+- A table of each of them: ID, name and type. A floor's or an area's ID is its key; a device's is its key under `devices:`.
+
+Only what pururu manages is shown; a floor, area or device made in the UI or by another integration is not. The dashboard is built each time it is opened and follows every start, reload and rename; the UI offers no editing. Its labels are in HA's language (English and Portuguese).
+
+When `/pururu` is already taken, by another panel or a dashboard, the log says so and pururu adds no dashboard; everything else is still created.
+
 ## Entity IDs
 
 Every entity ID is `<platform>.pururu_<key>_<metric>[_<period>]`. You may rename one in HA's UI: it stays in its device, and whatever follows it (the phase follows `running`, a meter its total) follows the new ID. An ID already taken by another integration is an error in the log: that entity is not created, nor anything that follows it.

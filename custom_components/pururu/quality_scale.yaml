@@ -20,7 +20,7 @@ rules:
     comment: The import flow creates the entry on the first device (at start-up or on reload), none without devices, and a second import aborts (single_config_entry); tests/test_init.py.
   dependency-transparency:
     status: exempt
-    comment: No requirements; it uses core's group and utility_meter.
+    comment: No requirements; it uses core's group, utility_meter and lovelace.
   docs-actions:
     status: exempt
     comment: Not in HA's docs; the README documents the reload action.

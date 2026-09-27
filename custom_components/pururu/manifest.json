@@ -1,12 +1,13 @@
 {
   "domain": "pururu",
   "name": "Pururu",
+  "after_dependencies": ["frontend"],
   "codeowners": [],
   "config_flow": true,
-  "dependencies": ["group", "utility_meter"],
+  "dependencies": ["group", "lovelace", "utility_meter"],
   "documentation": "https://github.com/thatsnotmynameio/pururu-ha",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/thatsnotmynameio/pururu-ha/issues",
   "single_config_entry": true,
-  "version": "0.1.2"
+  "version": "0.1.3"
 }

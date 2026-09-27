@@ -34,6 +34,7 @@ python3 release.py check                        # the manifest version must be s
     3. Hand them to the platforms through `entry.runtime_data`. `sensor.py` and `binary_sensor.py` only call `async_add_entities`.
     4. Put each device in its `area:` (a key of `areas:`).
     5. Remove stale entities and devices.
+    6. Show the dashboard (`dashboard.py`).
 - **Features** (`feature.py`, `features/`):
   - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, the `metrics` it can create (metric → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
   - A feature consumes another feature's capability through `<capability>_from: <feature>`. `_build` passes it the current entity ID of the providing metric.
@@ -47,6 +48,10 @@ python3 release.py check                        # the manifest version must be s
   - Anything with a configured ID is adopted and synced.
   - The IDs the entry manages live in `entry.data` (`{"floors": [...], "areas": [...]}`). What the YAML drops is deleted, and `async_remove_entry` deletes everything the entry manages.
   - Names HA refuses are logged errors and never fail the setup.
+- **Dashboard** (`dashboard.py`):
+  - HA has no public API for an integration's dashboard. A `LovelaceConfig` subclass goes in `hass.data[LOVELACE_DATA].dashboards["pururu"]`, and a `lovelace` panel in `yaml` mode (read-only in the UI) shows it. This is private lovelace API: keep every use of it in this module.
+  - The config is built at every fetch from `entry.data` and the registries. A registry change fires `lovelace_updated` twice, because the frontend ignores the first one after a yaml fetch.
+  - Anything that prevents it (`/pururu` taken, lovelace changed) is a logged error, never a failed setup.
 - **Voluptuous gotcha:** `CONFIG_SCHEMA` uses `extra=vol.ALLOW_EXTRA` at the top level. It propagates into plain nested dicts, so a nested mapping that must refuse unknown or non-slug keys needs its own `vol.Schema(...)`.
 
 ## Tests

@@ -31,7 +31,7 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import places
+from . import dashboard, places
 from .const import (
     CONF_AREA,
     CONF_AREAS,
@@ -156,7 +156,8 @@ async def _async_apply(
 async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bool:
     """Make floors and areas follow the configuration, then build every device.
 
-    Floors and areas come first: devices will be placed in them.
+    Floors and areas come first: devices will be placed in them. The dashboard
+    comes last: it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -177,6 +178,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
+    dashboard.async_setup(hass, entry)
 
     @callback
     def renamed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
