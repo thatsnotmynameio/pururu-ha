@@ -63,6 +63,9 @@ def test_every_platform_is_set_up(features: dict[str, Any]) -> None:
     for name, feature in features.items():
         for entity_key, platform in feature.entity_keys.items():
             assert platform in platforms, f"{name}'s {entity_key} is on {platform}, not in PLATFORMS"
+        if feature.configured is not None:
+            assert feature.configured in platforms, (
+                f"{name}'s configured entities are on {feature.configured}, not in PLATFORMS")
 
 
 def test_capabilities_line_up(features: dict[str, Any]) -> None:
@@ -70,6 +73,8 @@ def test_capabilities_line_up(features: dict[str, Any]) -> None:
     for name, feature in features.items():
         for capability, entity_key in feature.provides.items():
             assert entity_key in feature.entity_keys, f"{name} provides {capability} by unknown {entity_key}"
+        if feature.configured is not None:
+            assert not feature.provides, f"{name} is configured: its entity keys can't carry a capability"
         for capability in feature.requires:
             assert capability in provided, f"{name} requires {capability}, nobody provides it"
             assert f"{capability}_from" in feature.example, f"{name}'s example lacks {capability}_from"

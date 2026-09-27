@@ -77,3 +77,6 @@ class Feature:
     # capabilities it takes through <capability>_from: build() gets their current
     # entity IDs, and its entities aren't created when those entities aren't
     requires: tuple[str, ...] = ()
+    # Its entity keys are the keys of its block, all on this platform, named by
+    # their block's `name`; None: they are entity_keys, named by the translations
+    configured: Platform | None = None

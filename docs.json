@@ -34,7 +34,8 @@
       "tab": "guide",
       "pages": [
         { "title": "appliance", "href": "/features/appliance" },
-        { "title": "phases", "href": "/features/phases" }
+        { "title": "phases", "href": "/features/phases" },
+        { "title": "switches", "href": "/features/switches" }
       ]
     },
     {
