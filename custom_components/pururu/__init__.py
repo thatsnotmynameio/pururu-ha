@@ -52,7 +52,7 @@ type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
 
 
 def _device(value: Any) -> dict[str, Any]:
-    """A device: a name, maybe an area, at least one feature, every <capability>_from resolved, no entity key twice."""
+    """A device: a name, maybe an area, at least one feature, every <capability>_from resolved."""
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
@@ -72,14 +72,6 @@ def _device(value: Any) -> dict[str, Any]:
                     f"{name}: {capability}_from must name a feature of this device "
                     f"that provides {capability}"
                 )
-    # Unique IDs leave the platform out: two alike entity keys would share one
-    owners: dict[str, str] = {}  # entity key -> the feature of this device that has it
-    for name, entity_key in _entity_keys(device):
-        if entity_key in owners:
-            raise vol.Invalid(
-                f"{name}: {entity_key} is already an entity key of {owners[entity_key]}"
-            )
-        owners[entity_key] = name
     return device
 
 
@@ -105,13 +97,15 @@ def _areas_exist(config: dict[str, Any]) -> dict[str, Any]:
 def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     """Refuse two devices whose entities would share an ID.
 
-    Device `pool` with the entity key `pump_heater` and device `pool_pump`
-    with `heater` would both have pururu_pool_pump_heater.
+    Device `pool` with the switch `switch_pump` and device `pool_switch` with
+    the switch `pump` would both have pururu_pool_switch_switch_pump.
     """
     owners: dict[str, str] = {}  # object ID -> the device that has it
     for key, device in config[CONF_DEVICES].items():
-        identity = Device(key=key, name=device[CONF_NAME])
-        for _, entity_key in _entity_keys(device):
+        for name, entity_key in _entity_keys(device):
+            identity = Device(
+                key=key, name=device[CONF_NAME], namespace=FEATURES[name].namespace
+            )
             object_id = identity.object_id(entity_key)
             if object_id in owners:
                 raise vol.Invalid(
@@ -211,8 +205,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
     for key, config in devices.items():
-        device = Device(key=key, name=config[CONF_NAME])
-        for entity in _creatable(hass, registry, device, _build(hass, device, config)):
+        for entity in _creatable(hass, registry, _build(hass, key, config)):
             built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
     entry.runtime_data = built
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -247,24 +240,32 @@ async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> N
 
 
 def _build(
-    hass: HomeAssistant, device: Device, config: dict[str, Any]
+    hass: HomeAssistant, key: str, config: dict[str, Any]
 ) -> list[tuple[PururuEntity, set[str]]]:
-    """Every entity of the device's features, with the entity keys of the device it follows."""
+    """Every entity of the device's features, with the unique IDs of the device's entities it follows.
+
+    Each feature sees the device in its own namespace; what it takes through
+    <capability>_from is in the providing feature's.
+    """
     built: list[tuple[PururuEntity, set[str]]] = []
     for name, feature in FEATURES.items():
         if name not in config:
             continue
+        device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
         inputs: dict[str, str] = {}
         required: set[str] = set()
         for capability in feature.requires:
             source = FEATURES[config[name][f"{capability}_from"]]
+            provider = Device(
+                key=key, name=config[CONF_NAME], namespace=source.namespace
+            )
             entity_key = source.provides[capability]
-            inputs[capability] = device.current_entity_id(
+            inputs[capability] = provider.current_entity_id(
                 hass, source.entity_keys[entity_key], entity_key
             )
-            required.add(entity_key)
+            required.add(provider.object_id(entity_key))
         built.extend(
-            (entity, {*entity.sources, *required})
+            (entity, {*map(device.object_id, entity.sources), *required})
             for entity in feature.build(hass, device, config[name], inputs)
         )
     return built
@@ -273,7 +274,6 @@ def _build(
 def _creatable(
     hass: HomeAssistant,
     registry: er.EntityRegistry,
-    device: Device,
     built: list[tuple[PururuEntity, set[str]]],
 ) -> list[PururuEntity]:
     """The entities whose ID is free and whose sources are created too; the rest logged."""
@@ -281,9 +281,7 @@ def _creatable(
     kept: list[tuple[PururuEntity, set[str]]] = []
     for entity, sources in built:
         if (holder := _holder(hass, registry, entity)) is None:
-            kept.append(
-                (entity, {device.object_id(entity_key) for entity_key in sources})
-            )
+            kept.append((entity, sources))
             continue
         _LOGGER.error(
             "%s is already taken by %s; not creating it", entity.entity_id, holder

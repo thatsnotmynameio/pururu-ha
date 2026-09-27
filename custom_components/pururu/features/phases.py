@@ -267,5 +267,6 @@ PHASES = Feature(
         "defaults": {"stopped": "idle", "running": "washing"},
         "bands": {"heating": {"above": 1000}},
     },
+    namespace="phase",
     requires=("cycle",),
 )

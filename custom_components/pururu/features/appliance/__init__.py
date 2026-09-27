@@ -117,5 +117,6 @@ APPLIANCE = Feature(
             "off_delay": {"minutes": 2},
         },
     },
+    namespace="appliance",
     provides={"cycle": "running"},
 )

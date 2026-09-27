@@ -13,7 +13,7 @@ from helpers import capture, fake, held, reload, restart, setup, tick
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
 ENERGY = "sensor.demo_plug_energy"
-RUNNING = "binary_sensor.pururu_demo_washer_running"
+RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
 IDLE_W = 1.4
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
@@ -24,7 +24,7 @@ DEVICES = {KEY: {"name": "Demo washer", "appliance": APPLIANCE}}
 
 
 def sensor(entity_key: str) -> str:
-    return f"sensor.pururu_{KEY}_{entity_key}"
+    return f"sensor.pururu_{KEY}_appliance_{entity_key}"
 
 
 def running(hass: HomeAssistant) -> str:
@@ -343,8 +343,8 @@ async def test_devices_do_not_cross(ha: HomeAssistant, freezer: Any) -> None:
     await start_cycle(ha, freezer)
     await end_cycle(ha, freezer)
     assert value(ha, "cycles_total") == "1"
-    assert ha.states.get("sensor.pururu_demo_other_cycles_total").state == "0"
-    assert ha.states.get("sensor.pururu_demo_other_last_cycle_end").state == "unknown"
+    assert ha.states.get("sensor.pururu_demo_other_appliance_cycles_total").state == "0"
+    assert ha.states.get("sensor.pururu_demo_other_appliance_last_cycle_end").state == "unknown"
 
 
 # --- runtime and statistics --------------------------------------------------------
@@ -485,4 +485,4 @@ async def test_two_devices_have_their_own_meters(ha: HomeAssistant, freezer: Any
     await wash(ha, freezer, 5)
     await tick(ha, freezer, 60)
     assert float(value(ha, "cycles_today")) == 1
-    assert float(ha.states.get("sensor.pururu_demo_other_cycles_today").state) == 0
+    assert float(ha.states.get("sensor.pururu_demo_other_appliance_cycles_today").state) == 0

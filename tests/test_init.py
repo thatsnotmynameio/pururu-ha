@@ -28,14 +28,14 @@ import voluptuous as vol
 
 from helpers import DOMAIN, device_of, held, module, reload, setup
 
-LEVEL = "sensor.pururu_demo_widget_level"
-ACTIVE = "binary_sensor.pururu_demo_widget_active"
+LEVEL = "sensor.pururu_demo_widget_gauge_level"
+ACTIVE = "binary_sensor.pururu_demo_widget_gauge_active"
 ECHO = "sensor.pururu_demo_widget_echo"
 GAUGE = {"source": "sensor.demo_source"}
 WIDGET = {"name": "Widget", "gauge": GAUGE}
 PANEL = {"name": "Panel", "gauge": GAUGE}
-FIRST = "sensor.pururu_demo_widget_first"
-SECOND = "sensor.pururu_demo_widget_second"
+FIRST = "sensor.pururu_demo_widget_tags_first"
+SECOND = "sensor.pururu_demo_widget_tags_second"
 TAGS = {"first": {"name": "First"}, "second": {"name": "Second"}}
 
 
@@ -70,6 +70,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
     added = {
         "gauge": feature.Feature(
             schema=vol.Schema({vol.Required("source"): cv.entity_id}),
+            namespace="gauge",
             entity_keys={"level": Platform.SENSOR, "active": Platform.BINARY_SENSOR},
             build=lambda hass, device, config, inputs: [Level(device, config["source"]),
                                                         Active(device)],
@@ -78,6 +79,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
         ),
         "echo": feature.Feature(
             schema=vol.Schema({vol.Required("activity_from"): cv.slug}),
+            namespace="echo",
             entity_keys={"echo": Platform.SENSOR},
             build=lambda hass, device, config, inputs: [Echo(device, inputs["activity"])],
             example={"activity_from": "gauge"},
@@ -86,6 +88,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
         "tags": feature.Feature(
             schema=vol.All(vol.Schema({cv.slug: vol.Schema({vol.Required("name"): cv.string})}),
                            vol.Length(min=1)),
+            namespace="tags",
             entity_keys={},
             build=lambda hass, device, config, inputs: [Tag(device, key, tag["name"])
                                                         for key, tag in config.items()],
@@ -117,7 +120,8 @@ async def test_device_holds_what_its_features_create(ha: HomeAssistant) -> None:
     entry = er.async_get(ha).async_get(LEVEL)
     assert entry is not None
     assert entry.platform == DOMAIN
-    assert entry.unique_id == "pururu_demo_widget_level"
+    assert entry.unique_id == "pururu_demo_widget_gauge_level"
+    assert entry.translation_key == "gauge_level"
     assert ha.states.get(LEVEL).attributes["source"] == "sensor.demo_source"
 
 
@@ -137,9 +141,6 @@ async def test_a_capability_reaches_the_feature_that_requires_it(ha: HomeAssista
     pytest.param({"name": "Widget", "gauge": {"source": "not an entity"}}, id="bad feature block"),
     pytest.param({"name": "Widget", "echo": {"activity_from": "gauge"}}, id="from a missing feature"),
     pytest.param({**WIDGET, "echo": {"activity_from": "echo"}}, id="from one that doesn't provide it"),
-    pytest.param({**WIDGET, "tags": {"level": {"name": "Level"}}}, id="configured key of another feature"),
-    pytest.param({**WIDGET, "tags": {"active": {"name": "Active"}}},
-                 id="configured key of another feature on another platform"),
 ])
 async def test_invalid_device_is_refused(ha: HomeAssistant, device: dict[str, Any]) -> None:
     assert not await setup(ha, {"demo_widget": device})
@@ -152,7 +153,7 @@ async def test_a_configured_feature_creates_an_entity_per_key(ha: HomeAssistant)
     assert ha.states.get(FIRST).attributes["friendly_name"] == "Widget First"
     entry = er.async_get(ha).async_get(FIRST)
     assert entry is not None
-    assert entry.unique_id == "pururu_demo_widget_first"
+    assert entry.unique_id == "pururu_demo_widget_tags_first"
     assert entry.translation_key is None
 
 
@@ -162,10 +163,12 @@ async def test_a_configured_name_is_the_same_in_portuguese(ha: HomeAssistant) ->
     assert ha.states.get(SECOND).attributes["friendly_name"] == "Widget Second"
 
 
-async def test_an_entity_key_used_twice_names_both_features(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    assert not await setup(ha, {"demo_widget": {**WIDGET, "tags": {"level": {"name": "Level"}}}})
-    assert "tags: level is already an entity key of gauge" in caplog.text
+async def test_a_configured_key_may_be_another_features_entity_key(ha: HomeAssistant) -> None:
+    """Each feature has its own namespace: tags' level is not gauge's."""
+    assert await setup(ha, {"demo_widget": {**WIDGET, "tags": {"level": {"name": "Level"},
+                                                               "active": {"name": "Active"}}}})
+    assert held(ha, "demo_widget") == {LEVEL, ACTIVE, "sensor.pururu_demo_widget_tags_level",
+                                       "sensor.pururu_demo_widget_tags_active"}
 
 
 async def test_no_devices_creates_no_entry(ha: HomeAssistant) -> None:
@@ -224,9 +227,9 @@ async def test_without_an_area_the_device_keeps_the_one_it_has(ha: HomeAssistant
 async def test_a_device_with_nothing_created_has_no_area_to_go_to(ha: HomeAssistant) -> None:
     registry = er.async_get(ha)
     registry.async_get_or_create(
-        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_level")
+        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_gauge_level")
     registry.async_get_or_create(
-        "binary_sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_active")
+        "binary_sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_gauge_active")
     assert await setup(ha, {"demo_widget": {**WIDGET, "area": "lavanderia"}}, areas=LAVANDERIA)
     assert device_of(ha, "demo_widget") is None
 
@@ -244,7 +247,7 @@ async def test_an_area_not_in_areas_is_refused(ha: HomeAssistant) -> None:
 async def test_id_of_another_integration_is_an_error_not_a_suffix(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     other = er.async_get(ha).async_get_or_create(
-        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_level")
+        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_gauge_level")
     assert other.entity_id == LEVEL
     assert await setup(ha, {"demo_widget": WIDGET})
     assert ha.states.get(f"{LEVEL}_2") is None
@@ -260,7 +263,7 @@ async def test_a_renamed_entity_is_still_ours(
     registry = er.async_get(ha)
     renamed = registry.async_update_entity(LEVEL, new_entity_id="sensor.kitchen_level")
     other = registry.async_get_or_create(
-        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_level")
+        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_gauge_level")
     assert other.entity_id == LEVEL
 
     caplog.clear()
@@ -276,7 +279,7 @@ async def test_what_follows_an_entity_not_created_is_not_created_either(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """Echo would follow the other integration's entity: it isn't created, and the log says why."""
     other = er.async_get(ha).async_get_or_create(
-        "binary_sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_active")
+        "binary_sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_gauge_active")
     assert other.entity_id == ACTIVE
     assert await setup(ha, {"demo_widget": {**WIDGET, "echo": {"activity_from": "gauge"}}})
     assert ha.states.get(ECHO) is None
@@ -340,7 +343,7 @@ async def test_reload_that_drops_a_device_removes_it(ha: HomeAssistant) -> None:
     assert await setup(ha, {"demo_widget": WIDGET, "demo_panel": PANEL})
     await reload(ha, {"demo_widget": WIDGET})
     assert device_of(ha, "demo_panel") is None
-    assert er.async_get(ha).async_get("sensor.pururu_demo_panel_level") is None
+    assert er.async_get(ha).async_get("sensor.pururu_demo_panel_gauge_level") is None
     assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
 
 
@@ -387,8 +390,8 @@ async def test_reload_sets_up_a_failed_entry_again(ha: HomeAssistant) -> None:
         return original.build(hass, device, config, inputs)
 
     features["gauge"] = feature.Feature(
-        schema=original.schema, entity_keys=original.entity_keys, build=flaky_build,
-        example=original.example, provides=original.provides,
+        schema=original.schema, namespace=original.namespace, entity_keys=original.entity_keys,
+        build=flaky_build, example=original.example, provides=original.provides,
     )
     assert await setup(ha, {"demo_widget": WIDGET})
     [entry] = ha.config_entries.async_entries(DOMAIN)
@@ -417,3 +420,17 @@ async def test_a_device_no_longer_configured_goes_at_set_up(ha: HomeAssistant) -
     assert await setup(ha, {"demo_widget": WIDGET})
     assert device_of(ha, "demo_gone") is None
     assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
+
+
+async def test_entities_from_before_namespaces_go_at_set_up(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """0.1.4's IDs had no namespace: those entities are stale, and the namespaced ones replace them."""
+    entry = MockConfigEntry(domain=DOMAIN, title="Pururu")
+    entry.add_to_hass(ha)
+    old = er.async_get(ha).async_get_or_create(
+        "sensor", DOMAIN, "pururu_demo_widget_level", config_entry=entry,
+        suggested_object_id="pururu_demo_widget_level")
+    assert await setup(ha, {"demo_widget": WIDGET})
+    assert er.async_get(ha).async_get(old.entity_id) is None
+    assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
+    assert not [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
