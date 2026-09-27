@@ -48,6 +48,8 @@ async def forwarded(hass: HomeAssistant, service: str, context: Context) -> list
 @pytest.mark.parametrize("block", [
     pytest.param({"pump": {"entity": "light.pool_light", "name": "Bomba"}}, id="another domain"),
     pytest.param({"pump": {"entity": REAL_PUMP}}, id="no name"),
+    pytest.param({"pump": {"entity": REAL_PUMP, "name": ""}}, id="empty name"),
+    pytest.param({"pump": {"entity": REAL_PUMP, "name": "  "}}, id="blank name"),
     pytest.param({"pump": REAL_PUMP}, id="just the entity"),
     pytest.param({"pump": {"entity": REAL_PUMP, "name": "Bomba", "icon": "mdi:pump"}}, id="unknown key"),
     pytest.param({}, id="no switch"),

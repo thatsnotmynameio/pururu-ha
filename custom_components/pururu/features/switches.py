@@ -30,7 +30,8 @@ def _not_pururu(entity_id: str) -> str:
 SWITCH = vol.Schema(
     {
         vol.Required("entity"): vol.All(cv.entity_domain(Platform.SWITCH), _not_pururu),
-        vol.Required("name"): cv.string,
+        # A blank name would show the switch as its device's name alone
+        vol.Required("name"): vol.All(cv.string, vol.Strip, vol.Length(min=1)),
     }
 )
 # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through

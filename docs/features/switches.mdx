@@ -29,7 +29,7 @@ This creates `switch.pururu_pool_pump`, shown as **Piscina Bomba**, and `switch.
 ---
 
 <Property name="name" type="string" required>
-  The name shown after the device's name. It's the same in every language: unlike other features' entities, a switch's name isn't translated.
+  The name shown after the device's name. It can't be empty. It's the same in every language: unlike other features' entities, a switch's name isn't translated.
 </Property>
 
 A switch's key can't be an entity key of another feature of the same device. With `appliance`, `power` or `running` is a configuration error, and so is `runtime_month` even when you don't count runtime per month, so turning a statistic on later never breaks a switch.
