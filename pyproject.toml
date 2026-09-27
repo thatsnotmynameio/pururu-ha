@@ -12,6 +12,8 @@ dependencies = [
     # hassfest's device_classes.py imports every core platform unconditionally, including
     # homeassistant.components.infrared, whose manifest requires this at that pinned tag
     "infrared-protocols==9.0.0",
+    # Coverage for SonarQube Cloud (already a dependency of the HA test plugin)
+    "pytest-cov",
 ]
 
 [tool.uv]
@@ -22,3 +24,8 @@ testpaths = ["tests"]
 pythonpath = [".", "tests"]
 asyncio_mode = "auto"
 addopts = "-n 4 --dist loadfile --import-mode=importlib"
+
+[tool.coverage.run]
+# The integration only; relative paths, as SonarQube Cloud reads them
+source = ["custom_components/pururu"]
+relative_files = true

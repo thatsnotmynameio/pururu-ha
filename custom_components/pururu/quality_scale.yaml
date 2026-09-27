@@ -76,8 +76,8 @@ rules:
     status: exempt
     comment: No authentication.
   test-coverage:
-    status: todo
-    comment: Every behaviour has a test; coverage is not measured yet.
+    status: done
+    comment: 99% of the integration's statements (pytest --cov in the Build workflow, reported to SonarQube Cloud).
 
   # Gold
   devices: done

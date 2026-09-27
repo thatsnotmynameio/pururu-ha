@@ -1,3 +1,6 @@
+# The integration's tests and core's checks (ruff, format, mypy, hassfest,
+# quality scale) at the Home Assistant version pyproject.toml pins, then
+# SonarQube Cloud's analysis with the tests' coverage report.
 name: Build
 on:
   push:
@@ -5,15 +8,38 @@ on:
       - main
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  sonarqube:
-    name: SonarQube
+  build:
+    name: Tests and SonarQube
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-python: true
+      # hassfest from HA's source archive (~29 MB), keyed on the pinned version and sha256
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .hassfest
+          key: hassfest-${{ hashFiles('fetch_hassfest.py') }}
+      # --locked: fail if uv.lock is out of date (every package pinned by hash). Not
+      # --no-build: mock-open, a dependency of the HA test plugin, ships only as sdist.
+      - run: uv run --locked pytest --cov --cov-report=xml
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

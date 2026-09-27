@@ -1,3 +1,5 @@
 .venv/
 .hassfest/
 __pycache__/
+.coverage
+coverage.xml

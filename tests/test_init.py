@@ -88,10 +88,12 @@ def entry_entities(hass: HomeAssistant) -> set[str]:
 async def test_device_holds_what_its_features_create(ha: HomeAssistant) -> None:
     assert await setup(ha, {"demo_widget": WIDGET})
     device = device_of(ha, "demo_widget")
-    assert device is not None and device.name == "Widget"
+    assert device is not None
+    assert device.name == "Widget"
     assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
     entry = er.async_get(ha).async_get(LEVEL)
-    assert entry is not None and entry.platform == DOMAIN
+    assert entry is not None
+    assert entry.platform == DOMAIN
     assert entry.unique_id == "pururu_demo_widget_level"
     assert ha.states.get(LEVEL).attributes["source"] == "sensor.demo_source"
 

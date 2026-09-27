@@ -162,8 +162,10 @@ async def test_mirrors_follow_the_plug(washer: HomeAssistant) -> None:
                                          "state_class": "total_increasing"})
     power = washer.states.get(sensor("power"))
     energy = washer.states.get(sensor("energy_total"))
-    assert float(power.state) == 120 and power.attributes["unit_of_measurement"] == "W"
-    assert float(energy.state) == 100.5 and energy.attributes["state_class"] == "total_increasing"
+    assert float(power.state) == 120
+    assert power.attributes["unit_of_measurement"] == "W"
+    assert float(energy.state) == 100.5
+    assert energy.attributes["state_class"] == "total_increasing"
 
 
 async def test_device_holds_the_appliance(washer: HomeAssistant) -> None:
