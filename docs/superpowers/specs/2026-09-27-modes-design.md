@@ -1,6 +1,6 @@
 # Modes — design
 
-Version: 0.1.10. Branch: `worktree-feat+appliance-modes`, from `main`.
+Version: 0.1.11 (reactions took 0.1.10). Branch: `worktree-feat+appliance-modes`, from `main`.
 
 ## Goal
 
@@ -14,15 +14,15 @@ pururu:
       appliance:
         power: sensor.filter_plug_power
         energy: sensor.filter_plug_energy
-        running: {threshold: 4, on_delay: {seconds: 3}, off_delay: {minutes: 1}}
+        running: {threshold: 2.9, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
       modes:
         cycle_from: appliance
         sensor: sensor.filter_plug_power
         energy: sensor.filter_plug_energy
         modes:
-          bebendo: {name: Bebendo, above: 4, below: 40, on_delay: {seconds: 3}, off_delay: {seconds: 5}}
-          gelar: {name: Gelar, above: 40, below: 300, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
-          quente: {name: Água quente, above: 300, on_delay: {seconds: 10}, off_delay: {seconds: 30}}
+          bebendo: {name: Bebendo, above: 2.9, below: 4, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
+          gelar: {name: Gelar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
+          quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
         statistics:
           runtime: [today, month]
           cycles: [today, month]
@@ -41,7 +41,7 @@ pururu:
 | What the appliance's cycle does | It is the **gate**: a mode cycle exists only while the appliance's `running` is on, and ends when it turns off. An appliance cycle can hold several mode cycles (heating, then cooling, the power never dropping). |
 | Cycles of any mode | The appliance's `cycles_total`. `modes` adds no sum of its modes: a second total, different from the appliance's whenever the mode changes without the power dropping, would confuse. |
 | How a mode is detected | Its own band (`above`, `below`) and delays (`on_delay`, `off_delay`), as `running`'s threshold and delays: the user declares them. |
-| A mode starting while another is in its `off_delay` | The new one ends the previous one at that instant (its end is now). Always one mode at a time; the rejected alternatives were waiting for the previous one's `off_delay` (delays the start) and overlapping. |
+| A mode armed while another runs | It **waits**: it starts when the running one ends (its `off_delay`, or the gate closing), at that instant, if still armed. Always one mode at a time. Chosen after replaying 10 days of the real purifier's power: a chilling cycle's tail dips to ~3 W, a sip's band, for a few seconds; ending the running mode when another is armed split ~20 chills a day and invented ~7 sips a day. Rejected: the new one ending the previous one at once (the first choice, before the data); overlapping. |
 | Overlapping bands | Refused by the schema: one mode at a time, so a reading is never in two bands. Rejected: first listed wins, as `phases`. |
 | `on_delay` before the appliance runs | It counts: a mode whose band held for its `on_delay` before `running` turned on starts when `running` turns on. Rejected: counting only once `running` is on (the mode would start late in its own cycle). |
 | Mode names | Open: any slug, distinct, not `idle` (the state with no mode). Each mode has a required, untranslated `name`, as `switches`, `lights` and `alerts`. |
@@ -75,12 +75,12 @@ The detector is the `current` sensor, in the role `Running` has in the appliance
 
 - **Pending start.** When `inside` is a mode `B` other than `A`, `B`'s `on_delay` is scheduled (if it isn't already); any other pending start is cancelled. When `inside` is `A` or none, the pending start is cancelled.
 - **Armed.** When `B`'s `on_delay` passes, `B` is armed. It stays armed until a reading outside its band.
-- **Start.** An armed mode starts when the appliance's cycle entity is `on`: at once if it already is, else when it turns on. If `A` is running, `A` ends at that instant first.
+- **Start.** An armed mode starts when the appliance's cycle entity is `on` and no mode runs: at once if so, else when the cycle turns on, or when `A` ends (at that instant), whichever comes last.
 - **Pending end.** A reading outside `A`'s band schedules `A`'s `off_delay` (if not already); a reading back inside cancels it. When it passes, `A` ends.
 - **The gate closes.** The cycle entity turning `off` ends `A` at once and cancels its pending end. Armed modes stay armed.
-- **The cycle entity `unknown` or `unavailable`**, or not there yet: nothing starts or ends until it is `on` or `off`, as `phases` holds.
+- **The cycle entity `unknown` or `unavailable`**, or not there yet: it isn't `on`, so no mode starts (an armed one waits), and it isn't a turn `off`, so the running mode isn't ended by it; its own `off_delay` still ends it.
 - **A reading without a value** (`unknown`, `unavailable`, not a number): every pending start and end is cancelled; the running mode and armed modes stay. The next reading starts counting again, as `running` and `phases`.
-- **Restart or reload.** `current` restores its state and, as `ExtraStoredData`, the running mode's start and energy at start. The cycle keeps its start and is counted once when it ends. Nothing is armed after a restore until a reading.
+- **Restart or reload.** `current` restores its state and, as `ExtraStoredData`, the running mode's start and energy at start. The cycle keeps its start and is counted once when it ends. Nothing is armed after a restore until a reading. Nothing ends when `current` is added, even with the cycle entity already `off`: the other entities of `modes` may not listen yet. The first reading out of the band ends the restored mode after its `off_delay`, or the cycle entity's next turn `off` does.
 - **A cycle ends**: `Cycle(start, end=now, energy_kwh)`, energy computed as `appliance`'s (counter at end minus at start, kWh, never negative, `None` without a reading or an energy unit at either end). It is sent on the mode's cycle signal, then on its end signal.
 
 `current` is the running mode, or `idle`.
@@ -118,13 +118,14 @@ Two new fields in `Feature`:
 ```python
 # Entity keys repeated for every item of its block: suffix -> platform. The
 # entity key is <item>_<suffix>, its translation key <namespace>_<suffix>, with
-# the item's name as the placeholder
+# the item's name as the placeholder named after the namespace ({mode})
 per_item: Mapping[str, Platform] = field(default_factory=dict)
-# The items of its validated block: (slug, name)
-items: Callable[[Any], Iterable[tuple[str, str]]] | None = None
+# The items of its validated block
+items: Callable[[Any], Iterable[Item]] | None = None
 ```
 
-- `_entity_keys` (`__init__.py`) yields `<item>_<suffix>` for every item and suffix, so `refers`, `_entity_ids_distinct`, `_referable` and stale removal see them with no other change.
+- `Item` (`feature.py`): a frozen dataclass `slug`, `name`, with `key(suffix)` → `<slug>_<suffix>`.
+- `_entity_keys` (`__init__.py`) yields `<item>_<suffix>` for every item and suffix, so `refers`, reactions' `when`, `_entity_ids_distinct`, `_referable` and stale removal see them with no other change.
 - `PururuEntity._identify` takes an optional translation key and placeholders, for the per-mode entities.
 - `tests/test_features.py` checks translations and icons of every suffix in `per_item`, that `items` is set exactly when `per_item` is, and that no suffix repeats the namespace.
 
@@ -146,14 +147,14 @@ What `appliance` has about cycles moves to `features/cycle/`, used by both featu
 
 ## Translations and icons
 
-`en.json` and `pt-BR.json`: `mode_current` ("Mode" / "Modo") and `mode_last` ("Last mode" / "Último modo"), with the state names `phase_current` has plus `idle`; one entry per suffix with `{mode}` ("Cycles of `{mode}`" / "Ciclos de `{mode}`", "`{mode}` energy this month" / "Energia de `{mode}` este mês"...). An icon per fixed key and per suffix.
+`en.json` and `pt-BR.json`: `mode_current` ("Mode" / "Modo") and `mode_last` ("Last mode" / "Último modo"), with the state names `phase_current` has plus `dispensing`; one entry per suffix with `{mode}` ("Cycles of `{mode}`" / "Ciclos de `{mode}`", "`{mode}` energy this month" / "Energia de `{mode}` este mês"...). An icon per fixed key and per suffix.
 
 ## Tests
 
 `tests/test_modes.py`, in the style of `test_phases.py` and `test_appliance.py`:
 
 - A mode cycle starts after `on_delay` with the gate open and ends after `off_delay`; `current`, `last`, the `last_cycle_*` and totals follow.
-- A mode starting ends the previous one at that instant.
+- A mode armed while another runs waits, and starts at the instant the other ends; a dip into another band shorter than the running mode's `off_delay` doesn't split its cycle.
 - A reading back in the band during `off_delay` cancels the end.
 - `on_delay` passed before the gate opens: the mode starts when it opens. The gate closing ends the mode at once.
 - The cycle entity `unknown`: nothing starts or ends.
@@ -175,4 +176,4 @@ The contract test covers `MODES` with no change beyond the new fields.
 
 ## Release
 
-`manifest.json` `0.1.10`. No new platform: no Sonar suppression.
+`manifest.json` `0.1.11`. No new platform: no Sonar suppression.
