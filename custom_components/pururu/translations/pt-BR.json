@@ -1,0 +1,39 @@
+{
+  "services": {
+    "reload": {
+      "name": "Recarregar",
+      "description": "Recarrega os dispositivos da configuração YAML."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "running": {"name": "Em funcionamento"}
+    },
+    "sensor": {
+      "power": {"name": "Potência"},
+      "energy_total": {"name": "Energia"},
+      "last_cycle_start": {"name": "Início do último ciclo"},
+      "last_cycle_end": {"name": "Fim do último ciclo"},
+      "last_cycle_duration": {"name": "Duração do último ciclo"},
+      "last_cycle_energy": {"name": "Energia do último ciclo"},
+      "cycles_total": {"name": "Ciclos", "unit_of_measurement": "ciclos"},
+      "runtime_total": {"name": "Tempo ligado"},
+      "runtime_today": {"name": "Tempo ligado hoje"},
+      "runtime_week": {"name": "Tempo ligado na semana"},
+      "runtime_month": {"name": "Tempo ligado no mês"},
+      "runtime_year": {"name": "Tempo ligado no ano"},
+      "cycles_today": {"name": "Ciclos hoje"},
+      "cycles_week": {"name": "Ciclos na semana"},
+      "cycles_month": {"name": "Ciclos no mês"},
+      "cycles_year": {"name": "Ciclos no ano"},
+      "phase": {
+        "name": "Fase",
+        "state": {
+          "idle": "Parada", "washing": "Lavando", "heating": "Aquecendo",
+          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando",
+          "cooling": "Esfriando"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "services": {
+    "reload": {"service": "mdi:reload"}
+  },
+  "entity": {
+    "binary_sensor": {
+      "running": {"default": "mdi:stop-circle-outline", "state": {"on": "mdi:play-circle-outline"}}
+    },
+    "sensor": {
+      "power": {"default": "mdi:flash"},
+      "energy_total": {"default": "mdi:lightning-bolt"},
+      "last_cycle_start": {"default": "mdi:clock-start"},
+      "last_cycle_end": {"default": "mdi:clock-end"},
+      "last_cycle_duration": {"default": "mdi:timer-outline"},
+      "last_cycle_energy": {"default": "mdi:lightning-bolt-outline"},
+      "cycles_total": {"default": "mdi:counter"},
+      "runtime_total": {"default": "mdi:timer-sand"},
+      "runtime_today": {"default": "mdi:timer-sand"},
+      "runtime_week": {"default": "mdi:timer-sand"},
+      "runtime_month": {"default": "mdi:timer-sand"},
+      "runtime_year": {"default": "mdi:timer-sand"},
+      "cycles_today": {"default": "mdi:counter"},
+      "cycles_week": {"default": "mdi:counter"},
+      "cycles_month": {"default": "mdi:counter"},
+      "cycles_year": {"default": "mdi:counter"},
+      "phase": {"default": "mdi:progress-clock"}
+    }
+  }
+}

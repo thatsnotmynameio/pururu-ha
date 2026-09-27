@@ -1,0 +1,35 @@
+# The integration's tests and core's checks (ruff, format, mypy, hassfest,
+# quality scale) at the Home Assistant version pyproject.toml pins.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # setup-uv publishes no floating major tag, so pin the full version
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-python: true
+      # hassfest from HA's source archive (~29 MB), keyed on the pinned version and sha256
+      - uses: actions/cache@v6
+        with:
+          path: .hassfest
+          key: hassfest-${{ hashFiles('fetch_hassfest.py') }}
+      - run: uv run pytest

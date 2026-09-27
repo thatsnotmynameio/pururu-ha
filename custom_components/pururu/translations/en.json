@@ -1,0 +1,38 @@
+{
+  "services": {
+    "reload": {
+      "name": "Reload",
+      "description": "Reloads the devices from the YAML configuration."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "running": {"name": "Running"}
+    },
+    "sensor": {
+      "power": {"name": "Power"},
+      "energy_total": {"name": "Energy"},
+      "last_cycle_start": {"name": "Last cycle start"},
+      "last_cycle_end": {"name": "Last cycle end"},
+      "last_cycle_duration": {"name": "Last cycle duration"},
+      "last_cycle_energy": {"name": "Last cycle energy"},
+      "cycles_total": {"name": "Cycles", "unit_of_measurement": "cycles"},
+      "runtime_total": {"name": "Runtime"},
+      "runtime_today": {"name": "Runtime today"},
+      "runtime_week": {"name": "Runtime this week"},
+      "runtime_month": {"name": "Runtime this month"},
+      "runtime_year": {"name": "Runtime this year"},
+      "cycles_today": {"name": "Cycles today"},
+      "cycles_week": {"name": "Cycles this week"},
+      "cycles_month": {"name": "Cycles this month"},
+      "cycles_year": {"name": "Cycles this year"},
+      "phase": {
+        "name": "Phase",
+        "state": {
+          "idle": "Idle", "washing": "Washing", "heating": "Heating", "spinning": "Spinning",
+          "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling"
+        }
+      }
+    }
+  }
+}
