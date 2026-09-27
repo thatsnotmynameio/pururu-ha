@@ -70,6 +70,8 @@ async def end_cycle(hass: HomeAssistant, freezer: Any) -> None:
     pytest.param({**PHASES, "bands": {"spinning": {"above": 50, "below": 50}}}, id="above equals below"),
     pytest.param({**PHASES, "bands": {"spinning": {"for": {"minutes": 3}}}}, id="no bound"),
     pytest.param({**PHASES, "bands": {}}, id="no band"),
+    pytest.param({**PHASES, "bands": {"heating": {"above": "nan"}}}, id="bound not a number"),
+    pytest.param({**PHASES, "bands": {"heating": {"below": "inf"}}}, id="bound infinite"),
     pytest.param({**PHASES, "bands": {"idle": {"above": 1000}}}, id="band named like a default"),
     pytest.param({**PHASES, "defaults": {"stopped": "idle", "running": "idle"}}, id="defaults alike"),
     pytest.param({key: value for key, value in PHASES.items() if key != "cycle_from"}, id="no cycle_from"),
@@ -184,6 +186,22 @@ async def test_holds_while_the_sensor_has_no_value(washer: HomeAssistant, freeze
     assert phase(washer) == ("heating", ["heating"])
     await watts(washer, 121)
     assert phase(washer) == ("washing", ["heating"])
+
+
+async def test_a_band_pending_its_for_starts_over_after_no_value(washer: HomeAssistant,
+                                                                   freezer: Any) -> None:
+    """A reading without a value stops a band's `for`: it counts again from the next reading in it."""
+    await start_cycle(washer, freezer)
+    await watts(washer, 150)
+    await tick(washer, freezer, 100)
+    await watts(washer, "unavailable")
+    await tick(washer, freezer, 120)
+    assert phase(washer) == ("washing", [])
+    await watts(washer, 150)
+    await tick(washer, freezer, 170)
+    assert phase(washer) == ("washing", [])
+    await tick(washer, freezer, 15)
+    assert phase(washer) == ("spinning", ["spinning"])
 
 
 async def test_restart_holds_the_phase_until_the_first_reading(ha: HomeAssistant,

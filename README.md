@@ -73,7 +73,7 @@ Entities: `sensor.pururu_<key>_power` and `_energy_total` (the plug's readings),
 | `cycle_from` | required | The feature of this device whose cycle it follows (`appliance`). |
 | `sensor` | required | The sensor whose value picks the phase. |
 | `defaults.stopped` / `defaults.running` | required | The phase outside a cycle / in a cycle when no band holds. |
-| `bands` | required | Ordered `name: {above, below, for}`; at least one bound; `above` < `below`, both strict. A band holds once the value stays in it for `for`; the first one listed that holds wins. |
+| `bands` | required | Ordered `name: {above, below, for}`; at least one bound; `above` < `below`, both strict. A band holds once the value stays in it for `for` (a reading without a value restarts that count); the first one listed that holds wins. |
 
 Entity: `sensor.pururu_<key>_phase`, with the attribute `seen` (the bands of the current or last cycle). Its states are the names in the configuration; the translations name `idle`, `washing`, `heating`, `spinning`, `rinsing`, `drying` and `cooling`, and any other name is shown as written.
 

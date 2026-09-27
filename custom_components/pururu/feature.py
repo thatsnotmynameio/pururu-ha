@@ -2,7 +2,10 @@
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+import math
 from typing import TYPE_CHECKING, Any
+
+import voluptuous as vol
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -13,6 +16,14 @@ from .const import DOMAIN, ENTITY_PREFIX
 
 if TYPE_CHECKING:  # entity.py imports Device from here
     from .entity import PururuEntity
+
+
+def finite_float(value: Any) -> float:
+    """A number for a feature's configuration: `nan` and infinities are refused."""
+    number = float(vol.Coerce(float)(value))
+    if not math.isfinite(number):
+        raise vol.Invalid(f"expected a finite number, got {value!r}")
+    return number
 
 
 @dataclass(frozen=True, kw_only=True)

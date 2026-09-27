@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from ...entity import PururuEntity
-from ...feature import Device, Feature
+from ...feature import Device, Feature, finite_float
 from .cycle import LAST_CYCLE, CyclesTotal, LastCycleValue
 from .mirrors import Mirror
 from .running import Running
@@ -35,7 +35,7 @@ SCHEMA = vol.Schema(
         vol.Required("power"): cv.entity_id,
         vol.Optional("energy"): cv.entity_id,
         vol.Required("running"): {
-            vol.Required("threshold"): vol.Coerce(float),
+            vol.Required("threshold"): finite_float,
             vol.Required("on_delay"): cv.positive_time_period,
             vol.Required("off_delay"): cv.positive_time_period,
         },

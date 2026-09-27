@@ -73,6 +73,10 @@ async def end_cycle(hass: HomeAssistant, freezer: Any) -> None:
                  id="no off_delay"),
     pytest.param({"running": APPLIANCE["running"]}, id="no power"),
     pytest.param({**APPLIANCE, "watts": POWER}, id="unknown key"),
+    pytest.param({**APPLIANCE, "running": {**APPLIANCE["running"], "threshold": "nan"}},
+                 id="threshold not a number"),
+    pytest.param({**APPLIANCE, "running": {**APPLIANCE["running"], "threshold": "inf"}},
+                 id="threshold infinite"),
 ])
 async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]) -> None:
     assert not await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})

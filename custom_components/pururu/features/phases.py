@@ -23,7 +23,7 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from ..entity import PururuEntity, reading
-from ..feature import Device, Feature
+from ..feature import Device, Feature, finite_float
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -63,8 +63,8 @@ def _distinct(config: dict[str, Any]) -> dict[str, Any]:
 
 BAND = vol.All(
     {
-        vol.Optional("above"): vol.Coerce(float),
-        vol.Optional("below"): vol.Coerce(float),
+        vol.Optional("above"): finite_float,
+        vol.Optional("below"): finite_float,
         vol.Optional("for", default=timedelta(0)): cv.positive_time_period,
     },
     _bounded,
@@ -152,8 +152,16 @@ class Phase(PururuEntity, SensorEntity, RestoreEntity):
 
     @callback
     def _take(self, state: State | None) -> bool:
-        """Note which bands a reading is in; False for a reading without a value."""
+        """Note which bands a reading is in; False for a reading without a value.
+
+        A reading without a value stops every band still counting its `for`, as
+        HA's numeric_state does: it counts again from the next reading inside
+        it. Bands that already hold, and the phase, stay.
+        """
         if (value := reading(state)) is None:
+            for name in self._timers:
+                self._inside.discard(name)
+            self._cancel_timers()
             return False
         for band in self._bands:
             if not band.contains(value):
