@@ -37,24 +37,48 @@ def state(hass: HomeAssistant, entity_id: str) -> str:
 # --- configuration ----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("block", [
-    pytest.param({"when": "appliance_power", "above": 1}, id="no name"),
-    pytest.param({**OVERLOAD, "name": " "}, id="empty name"),
-    pytest.param({"name": "X", "above": 1}, id="no when"),
-    pytest.param({"name": "X", "when": "appliance_power"}, id="no condition"),
-    pytest.param({**OVERLOAD, "is": "on"}, id="is and above"),
-    pytest.param({**OVERLOAD, "below": 2500}, id="above not lower than below"),
-    pytest.param({**OVERLOAD, "above": "nan"}, id="above not finite"),
-    pytest.param({**OVERLOAD, "priority": "urgent"}, id="unknown priority"),
-    pytest.param({**OVERLOAD, "for": "soon"}, id="for not a period"),
-    pytest.param({**OVERLOAD, "colour": "red"}, id="unknown key"),
-    pytest.param({**OVERLOAD, "when": "appliance_nothing"}, id="when an unknown entity key"),
-    pytest.param({**OVERLOAD, "when": "switch_heater"}, id="when a switch the device lacks"),
-    pytest.param({**OVERLOAD, "when": "alert_other"}, id="when an alert"),
-    pytest.param({**OVERLOAD, "when": "power"}, id="when without its namespace"),
+NOT_AN_ENTITY_KEY = "is not an entity key of another feature of this device"
+
+
+@pytest.mark.parametrize(("block", "reason"), [
+    pytest.param({"when": "appliance_power", "above": 1},
+                 "required key 'name' not provided", id="no name"),
+    pytest.param({**OVERLOAD, "name": " "},
+                 "length of value must be at least 1 for dictionary value "
+                 "'pururu->devices->demo_washer->alerts->overload->name'", id="empty name"),
+    pytest.param({"name": "X", "above": 1}, "required key 'when' not provided", id="no when"),
+    pytest.param({"name": "X", "when": "appliance_power"},
+                 "an alert needs is, or above and/or below, not both", id="no condition"),
+    pytest.param({**OVERLOAD, "is": "on"},
+                 "an alert needs is, or above and/or below, not both", id="is and above"),
+    pytest.param({**OVERLOAD, "below": 2500},
+                 "an alert's above must be lower than its below", id="above not lower than below"),
+    pytest.param({**OVERLOAD, "above": "nan"},
+                 "expected a finite number, got 'nan'", id="above not finite"),
+    pytest.param({**OVERLOAD, "priority": "urgent"},
+                 "value must be one of ['high', 'low', 'medium'] for dictionary value "
+                 "'pururu->devices->demo_washer->alerts->overload->priority'", id="unknown priority"),
+    pytest.param({**OVERLOAD, "for": "soon"},
+                 "'pururu->devices->demo_washer->alerts->overload->for', got 'soon'",
+                 id="for not a period"),
+    pytest.param({**OVERLOAD, "colour": "red"},
+                 "'colour' is an invalid option for 'pururu', check: "
+                 "pururu->devices->demo_washer->alerts->overload->colour", id="unknown key"),
+    pytest.param({**OVERLOAD, "when": "appliance_nothing"},
+                 f"alerts: appliance_nothing {NOT_AN_ENTITY_KEY}", id="when an unknown entity key"),
+    pytest.param({**OVERLOAD, "when": "switch_heater"},
+                 f"alerts: switch_heater {NOT_AN_ENTITY_KEY}", id="when a switch the device lacks"),
+    pytest.param({**OVERLOAD, "when": "alert_other"},
+                 f"alerts: alert_other {NOT_AN_ENTITY_KEY}", id="when an alert"),
+    pytest.param({**OVERLOAD, "when": "power"},
+                 f"alerts: power {NOT_AN_ENTITY_KEY}", id="when without its namespace"),
 ])
-async def test_invalid_alert_is_refused(ha: HomeAssistant, block: dict[str, Any]) -> None:
+async def test_invalid_alert_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                        block: dict[str, Any], reason: str) -> None:
+    """Refused, and for its own reason: a typo in the test would be refused for another one."""
     assert not await setup(ha, devices(overload=block, other=OVERLOAD))
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any(reason in message for message in errors), errors
 
 
 async def test_an_empty_block_is_refused(ha: HomeAssistant) -> None:
