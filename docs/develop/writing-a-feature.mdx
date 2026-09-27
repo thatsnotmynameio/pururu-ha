@@ -162,6 +162,8 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 `phases.py` is the example to copy.
 
+**On one entity of another feature, named in the configuration:** set `refers` to a function that returns, from the validated block, the entity keys it names, in their namespace (`appliance_power`). The device schema checks each is another feature's entity key, and `build()` receives its current ID in `inputs[<key>]`. Set `follows` on each entity to the keys it reads. [`alerts`](/features/alerts) (`features/alerts.py`) is the example.
+
 ## 5. Entity keys from the configuration
 
 Some features create one entity per key the user writes, such as [`switches`](/features/switches). Their entity keys aren't known in the code, so they aren't in `entity_keys`, and they have no translation:
@@ -187,6 +189,7 @@ For a feature that stands for real entities of one domain, build each entity on 
 | `test_example_is_valid_and_unknown_keys_are_refused` | `example` passes `schema`, and `example` plus an unknown key fails |
 | `test_every_platform_is_set_up` | Every entity key's platform, and a configured feature's platform, is in `PLATFORMS` |
 | `test_capabilities_line_up` | `provides` points to real entity keys and a configured feature provides nothing, every `requires` is provided by some feature, and the example has `<capability>_from` |
+| `test_refers_names_entity_keys_as_in_an_entity_id` | What `refers` returns for the example is a slug, as an entity key in its namespace |
 
 The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_phases.py` do.
 

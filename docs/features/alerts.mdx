@@ -1,0 +1,117 @@
+---
+title: alerts
+description: Problems on a device's own entities, each a binary sensor that is on while the problem lasts.
+---
+
+`alerts` says when something is wrong with a device, such as a washer running for too long or a plug gone offline. Each alert watches **one** entity of the same device and becomes a binary sensor: **Problem** while its condition holds, **OK** otherwise.
+
+pururu only **detects** the problem. Telling someone (a phone notification, a reminder, a light) is up to what reads the alert: see [Getting notified](#getting-notified).
+
+```yaml
+pururu:
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      appliance:
+        power: sensor.washer_plug_power
+        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+      alerts:
+        long_cycle: {name: Ciclo longo, when: appliance_running, is: "on", for: {hours: 3}, priority: medium}
+        overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
+        plug_offline: {name: Tomada offline, when: appliance_power, is: unavailable, for: {minutes: 10}}
+```
+
+This creates `binary_sensor.pururu_laundry_washer_alert_long_cycle`, shown as **Máquina de lavar Ciclo longo**, and one alert for each other key.
+
+## Settings
+
+`alerts` is a map of **alert key → alert**, with at least one alert. The key is a slug, and it ends the entity ID after the namespace `alert`: `long_cycle` → `binary_sensor.pururu_laundry_washer_alert_long_cycle`.
+
+<Property name="name" type="string" required>
+  The name shown after the device's name. It can't be empty, and it's the same in every language.
+</Property>
+
+---
+
+<Property name="when" type="entity key" required>
+  The entity of **this device** the alert watches, written as its entity ID ends after the device key: `appliance_running`, `appliance_power`, `phase_current`, `switch_pump`. It must be an entity of another feature of the device, not an alert. See [Entity IDs](/concepts/entity-ids#the-pattern).
+</Property>
+
+---
+
+<Property name="is" type="state" optional>
+  The state that is a problem: `"on"`, `"off"`, a phase such as `spinning`, or `unavailable`. `on` and `off` work with or without quotes.
+</Property>
+
+---
+
+<Property name="above, below" type="number" optional>
+  A number is a problem when it's strictly above `above` and strictly below `below`. Give one or both; `above` must be lower than `below`.
+</Property>
+
+---
+
+<Property name="for" type="time period" optional>
+  How long the condition must hold before the alert turns on, such as `{minutes: 10}`. Without it, the alert turns on at once. A [time period](/features/appliance#settings).
+</Property>
+
+---
+
+<Property name="priority" type="low | medium | high" optional>
+  How serious the problem is, for whatever delivers the alert. Defaults to `low`.
+</Property>
+
+An alert needs **either** `is` **or** `above`/`below`, not both.
+
+## When an alert is on
+
+- **The condition holds**, for `is` when the watched state equals it, for `above`/`below` when the watched state is a number in the range. The alert turns on after `for`.
+- **The condition stops holding:** the alert turns off at once. If it stops before `for` passes, the count starts over the next time it holds.
+- **The watched entity has no reading** (`unknown`, `unavailable`, or not a number for `above`/`below`): the alert **keeps its state**, and a count in progress starts over when readings return. A washer's alert doesn't clear because its plug dropped off Wi-Fi for a minute.
+- **An alert about the reading itself**, `is: unavailable`, compares that state like any other, so it turns on for a plug gone offline. An entity that disappears counts as `unavailable`.
+- **After a restart or reload,** the alert comes back as it was. A condition that holds starts its `for` over.
+
+## Entity
+
+| Entity | What it is |
+|---|---|
+| `binary_sensor.pururu_<key>_alert_<alert key>` | On while the problem lasts. Device class `problem`. |
+
+Its attributes are **`priority`** and **`entity_id`**, the entity it watches. It's in the device, so it's in the device's area.
+
+## Needs
+
+An alert needs the entity it watches. If that entity isn't created (its ID is already taken, or the device's settings don't create it, as `appliance_runtime_month` without `statistics`), the alert isn't created either, and the log says why. If you rename the watched entity in the UI, the alert follows it.
+
+## Getting notified
+
+pururu doesn't send notifications yet. Anything that reads a binary sensor can:
+
+**An automation**, triggered by the alert turning on.
+
+**Home Assistant's [`alert`](https://www.home-assistant.io/integrations/alert/)**, pointed at one alert:
+
+```yaml
+alert:
+  washer_long_cycle:
+    name: Máquina de lavar Ciclo longo
+    entity_id: binary_sensor.pururu_laundry_washer_alert_long_cycle
+    repeat: 30
+    notifiers: [mobile_app_phone]
+```
+
+**[Alert2](https://github.com/redstone99/hass-alert2)**, with one `generator` that turns every pururu alert into an Alert2 alert, including the ones you add later:
+
+```yaml
+alert2:
+  alerts:
+    - generator_name: pururu
+      generator: "{{ states.binary_sensor | entity_regex('binary_sensor.pururu_(.*)_alert_(.*)$') | list }}"
+      domain: "{{ genGroups[0] }}"
+      name: "{{ genGroups[1] }}"
+      condition: "{{ is_state(genEntityId, 'on') }}"
+      friendly_name: "{{ state_attr(genEntityId, 'friendly_name') }}"
+      priority: "{{ state_attr(genEntityId, 'priority') }}"
+```
+
+The regular expression splits the ID at the last `_alert_`, so an alert key containing `_alert_` (such as `high_alert_level`) would split in the wrong place. See Alert2's documentation for its notifier, reminder and acknowledgement settings.

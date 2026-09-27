@@ -16,6 +16,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - `cycle_from` naming a feature that isn't on the same device.
 - A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
+- An alert whose `when` isn't an entity of another feature of the device: `alerts: appliance_nothing is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key, with its namespace (`appliance_power`, not `power`).
+- An alert with both `is` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
 - Two devices that would give an entity the same ID: `device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`. Rename a device key or a switch key.
 
 **Developer tools → YAML → Check configuration** shows the same error before you reload.
@@ -42,7 +44,7 @@ Another integration's entity, or an entity without a unique ID, already has that
 sensor.pururu_laundry_washer_phase_current follows binary_sensor.pururu_laundry_washer_appliance_running, which is not created; not creating it
 ```
 
-This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back.
+This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. An [alert](/features/alerts) on an entity the device's settings don't create names its unique ID instead, as `pururu_laundry_washer_appliance_runtime_month`: turn that setting on, or point the alert at another entity.
 
 ### `… is a pururu switch: name the real one; not creating …`
 
