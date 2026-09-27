@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from homeassistant.components import frontend
 from homeassistant.components.lovelace.const import LOVELACE_DATA
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
     area_registry as ar,
@@ -232,3 +233,35 @@ async def test_a_changed_lovelace_api_is_an_error_and_no_dashboard(
     assert "unexpected keyword argument" in errors(caplog)
     assert URL not in ha.data[LOVELACE_DATA].dashboards
     assert device_of(ha, "washer") is not None
+
+
+async def test_a_dashboard_that_cannot_be_built_is_an_error_and_leaves_no_panel(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, appliance: dict[str, Any]) -> None:
+    """A LovelaceConfig that changed (e.g. a new abstract method): the devices are still created."""
+    dashboard = module("dashboard")
+    with patch.object(dashboard.PururuDashboard, "__init__",
+                      side_effect=TypeError("abstract method async_new")):
+        assert await setup(ha, devices(appliance, washer="Washer"))
+    assert "abstract method async_new" in errors(caplog)
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    assert entry.state is ConfigEntryState.LOADED
+    assert URL not in ha.data.get(frontend.DATA_PANELS, {})
+    assert device_of(ha, "washer") is not None
+
+
+async def test_changes_to_what_pururu_does_not_manage_refresh_nothing(
+        ha: HomeAssistant, appliance: dict[str, Any]) -> None:
+    assert await setup(ha, devices(appliance, washer="Washer"),
+                       floors={"terreo": FLOORS["terreo"]}, areas={"quintal": AREAS["quintal"]})
+    updated = capture(ha, "lovelace_updated")
+    fr.async_get(ha).async_create("Sótão")
+    ar.async_get(ha).async_create("Garagem")
+    other = MockConfigEntry(domain="other")
+    other.add_to_hass(ha)
+    devices_registry = dr.async_get(ha)
+    tv = devices_registry.async_get_or_create(
+        config_entry_id=other.entry_id, identifiers={("other", "tv")}, name="TV")
+    devices_registry.async_update_device(tv.id, name_by_user="Living room TV")
+    devices_registry.async_remove_device(tv.id)
+    await ha.async_block_till_done()
+    assert updated == []

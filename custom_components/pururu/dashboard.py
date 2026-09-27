@@ -193,6 +193,8 @@ def async_setup(hass: HomeAssistant, entry: ConfigEntry[Any]) -> None:
                 "The dashboard is not created: /%s is already taken", URL_PATH
             )
             return
+        # Built first: a LovelaceConfig that changed fails here, before any panel
+        created = PururuDashboard(hass, entry)
         frontend.async_register_built_in_panel(
             hass,
             "lovelace",
@@ -205,7 +207,8 @@ def async_setup(hass: HomeAssistant, entry: ConfigEntry[Any]) -> None:
     except (AttributeError, TypeError) as err:
         _LOGGER.error("The dashboard is not created: %s", err)
         return
-    dashboards[URL_PATH] = PururuDashboard(hass, entry)
+    dashboards[URL_PATH] = created
+    devices = dr.async_get(hass)
 
     @callback
     def remove() -> None:
@@ -215,18 +218,44 @@ def async_setup(hass: HomeAssistant, entry: ConfigEntry[Any]) -> None:
 
     @callback
     def changed(event: Event[Any]) -> None:
-        """A floor, an area or a device changed: an open page fetches again."""
+        """A floor, an area or a device it shows changed: an open page fetches again."""
         _async_refresh(hass)
+
+    @callback
+    def floor_shown(data: fr.EventFloorRegistryUpdatedData) -> bool:
+        """Whether the floor that changed is the entry's."""
+        return data["action"] != "reorder" and data["floor_id"] in entry.data.get(
+            CONF_FLOORS, []
+        )
+
+    @callback
+    def area_shown(data: ar.EventAreaRegistryUpdatedData) -> bool:
+        """Whether the area that changed is the entry's."""
+        return data["area_id"] in entry.data.get(CONF_AREAS, [])
+
+    @callback
+    def device_shown(data: dr.EventDeviceRegistryUpdatedData) -> bool:
+        """Whether the device that changed is (or was) the entry's."""
+        if data["action"] == "remove":
+            return entry.entry_id in data["device"]["config_entries"]
+        device = devices.async_get(data["device_id"])
+        return device is not None and entry.entry_id in device.config_entries
 
     entry.async_on_unload(remove)
     entry.async_on_unload(
-        hass.bus.async_listen(fr.EVENT_FLOOR_REGISTRY_UPDATED, changed)
+        hass.bus.async_listen(
+            fr.EVENT_FLOOR_REGISTRY_UPDATED, changed, event_filter=floor_shown
+        )
     )
     entry.async_on_unload(
-        hass.bus.async_listen(ar.EVENT_AREA_REGISTRY_UPDATED, changed)
+        hass.bus.async_listen(
+            ar.EVENT_AREA_REGISTRY_UPDATED, changed, event_filter=area_shown
+        )
     )
     entry.async_on_unload(
-        hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, changed)
+        hass.bus.async_listen(
+            dr.EVENT_DEVICE_REGISTRY_UPDATED, changed, event_filter=device_shown
+        )
     )
     _async_refresh(hass)
 
