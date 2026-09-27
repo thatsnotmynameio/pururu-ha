@@ -31,19 +31,19 @@ class Meter(PururuEntity, UtilityMeterSensor):
     """How much a total grew in the current period; utility_meter resets it."""
 
     def __init__(
-        self, device: Device, metric: str, total: str, source: str, period: str
+        self, device: Device, entity_key: str, total: str, source: str, period: str
     ) -> None:
-        """Meter `source`, the entity of `total`, over `period` as `metric` of `device`."""
+        """Meter `source`, the entity of `total`, over `period` as `entity_key` of `device`."""
         self.sources = (total,)
         # Where utility_meter looks itself up; ':' keeps it apart from YAML meter names
-        self._meter = f"{DOMAIN}:{device.object_id(metric)}"
+        self._meter = f"{DOMAIN}:{device.object_id(entity_key)}"
         UtilityMeterSensor.__init__(  # type: ignore[no-untyped-call]  # core leaves it unannotated
             self,
             cron_pattern=None,
             delta_values=False,
             meter_offset=timedelta(0),
             meter_type=PERIODS[period],
-            name=metric,
+            name=entity_key,
             net_consumption=False,
             parent_meter=self._meter,
             periodically_resetting=False,
@@ -53,8 +53,8 @@ class Meter(PururuEntity, UtilityMeterSensor):
             unique_id=None,
             sensor_always_available=False,
         )
-        del self._attr_name  # the name comes from the metric's translation
-        self._identify(device, Platform.SENSOR, metric)
+        del self._attr_name  # the name comes from the entity key's translation
+        self._identify(device, Platform.SENSOR, entity_key)
 
     @override
     async def async_added_to_hass(self) -> None:

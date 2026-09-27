@@ -209,7 +209,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> N
 def _build(
     hass: HomeAssistant, device: Device, config: dict[str, Any]
 ) -> list[tuple[PururuEntity, set[str]]]:
-    """Every entity of the device's features, with the metrics of the device it follows."""
+    """Every entity of the device's features, with the entity keys of the device it follows."""
     built: list[tuple[PururuEntity, set[str]]] = []
     for name, feature in FEATURES.items():
         if name not in config:
@@ -218,11 +218,11 @@ def _build(
         required: set[str] = set()
         for capability in feature.requires:
             source = FEATURES[config[name][f"{capability}_from"]]
-            metric = source.provides[capability]
+            entity_key = source.provides[capability]
             inputs[capability] = device.current_entity_id(
-                hass, source.metrics[metric], metric
+                hass, source.entity_keys[entity_key], entity_key
             )
-            required.add(metric)
+            required.add(entity_key)
         built.extend(
             (entity, {*entity.sources, *required})
             for entity in feature.build(hass, device, config[name], inputs)
@@ -241,7 +241,9 @@ def _creatable(
     kept: list[tuple[PururuEntity, set[str]]] = []
     for entity, sources in built:
         if (holder := _holder(hass, registry, entity)) is None:
-            kept.append((entity, {device.object_id(metric) for metric in sources}))
+            kept.append(
+                (entity, {device.object_id(entity_key) for entity_key in sources})
+            )
             continue
         _LOGGER.error(
             "%s is already taken by %s; not creating it", entity.entity_id, holder

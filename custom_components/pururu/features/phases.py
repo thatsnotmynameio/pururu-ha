@@ -259,7 +259,7 @@ def build(
 
 PHASES = Feature(
     schema=SCHEMA,
-    metrics={"phase": Platform.SENSOR},
+    entity_keys={"phase": Platform.SENSOR},
     build=build,
     example={
         "cycle_from": "appliance",

@@ -46,7 +46,7 @@ SCHEMA = vol.Schema(
     }
 )
 
-METRICS: dict[str, Platform] = {
+ENTITY_KEYS: dict[str, Platform] = {
     "power": Platform.SENSOR,
     "energy_total": Platform.SENSOR,
     "running": Platform.BINARY_SENSOR,
@@ -57,8 +57,8 @@ METRICS: dict[str, Platform] = {
     "cycles_total": Platform.SENSOR,
     "runtime_total": Platform.SENSOR,
     **{
-        f"{metric}_{period}": Platform.SENSOR
-        for metric in ("runtime", "cycles")
+        f"{counter}_{period}": Platform.SENSOR
+        for counter in ("runtime", "cycles")
         for period in PERIODS
     },
 }
@@ -95,19 +95,19 @@ def build(
     ]
     if energy is not None:
         entities.append(Mirror(hass, device, "energy_total", energy))
-    for metric in ("runtime", "cycles"):
-        total = f"{metric}_total"
+    for counter in ("runtime", "cycles"):
+        total = f"{counter}_total"
         source = device.current_entity_id(hass, Platform.SENSOR, total)
         entities.extend(
-            Meter(device, f"{metric}_{period}", total, source, period)
-            for period in config["statistics"][metric]
+            Meter(device, f"{counter}_{period}", total, source, period)
+            for period in config["statistics"][counter]
         )
     return entities
 
 
 APPLIANCE = Feature(
     schema=SCHEMA,
-    metrics=METRICS,
+    entity_keys=ENTITY_KEYS,
     build=build,
     example={
         "power": "sensor.demo_plug_power",

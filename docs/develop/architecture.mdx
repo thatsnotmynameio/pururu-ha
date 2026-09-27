@@ -49,23 +49,23 @@ A device is a name plus one or more **features**. `FEATURES` in `features/__init
 | Field | What it is |
 |---|---|
 | `schema` | Validates the feature's block, and refuses unknown keys |
-| `metrics` | Everything it can create: metric → platform |
+| `entity_keys` | Everything it can create: entity key → platform |
 | `build` | `(hass, device, config, inputs) → list[PururuEntity]` |
 | `example` | A minimal valid block, for the contract test |
-| `provides` | capability → the metric whose entity carries it |
+| `provides` | capability → the entity key whose entity carries it |
 | `requires` | capabilities it takes through `<capability>_from` |
 
 The device schema (`_device` in `__init__.py`) is built from `FEATURES`. It requires at least one feature, and it checks that every `<capability>_from` names a feature of the same device that provides that capability.
 
-When a feature requires a capability, `_build` looks up the providing metric's **current** entity ID (`Device.current_entity_id`, which follows renames) and passes it to `build()` in `inputs`. The providing metric is also added to the entity's sources, so if the provider isn't created, neither is this entity.
+When a feature requires a capability, `_build` looks up the providing entity key's **current** entity ID (`Device.current_entity_id`, which follows renames) and passes it to `build()` in `inputs`. The providing entity key is also added to the entity's sources, so if the provider isn't created, neither is this entity.
 
 [Writing a feature](/develop/writing-a-feature) walks through adding one.
 
 ## Entity IDs are the identity
 
-- Every entity is `<platform>.pururu_<device key>_<metric>`. Its unique ID is the part after the platform: `Device.object_id(metric)`, which is `pururu_<key>_<metric>`.
+- Every entity is `<platform>.pururu_<device key>_<entity key>`. Its unique ID is the part after the platform: `Device.object_id(entity_key)`, which is `pururu_<key>_<entity key>`.
 - A device's identifier is `(pururu, <device key>)`.
-- `PururuEntity._identify()` sets the entity ID, unique ID, device info and translation key from the device and the metric. The entity's name comes from `translations/*.json` → `entity.<platform>.<metric>.name`.
+- `PururuEntity._identify()` sets the entity ID, unique ID, device info and translation key from the device and the entity key. The entity's name comes from `translations/*.json` → `entity.<platform>.<entity key>.name`.
 
 ### Taken IDs
 
