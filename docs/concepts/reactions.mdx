@@ -41,7 +41,7 @@ pururu writes the automations to `pururu/automations/reactions.yaml`, in a `puru
 automation pururu: !include_dir_merge_list pururu/automations
 ```
 
-It includes the folder, not the file, so Home Assistant still starts when the folder isn't there yet (before pururu first runs): a missing folder is no automations. It lives next to your own `automation: !include automations.yaml`, which it doesn't touch. After adding it, restart Home Assistant, or reload automations in **Developer tools → YAML → Automations**.
+The line goes in `configuration.yaml` itself, not in a package: an include's path is relative to the file that contains it. It includes the folder, not the file, so Home Assistant still starts when the folder isn't there yet (before pururu first runs): a missing folder is no automations. pururu always writes the file, even without reactions: then it's an empty list. It lives next to your own `automation: !include automations.yaml`, which it doesn't touch. After adding it, restart Home Assistant, or reload automations in **Developer tools → YAML → Automations**.
 
 Until the line is there, the automations exist only in the file. **Settings → Repairs** shows **The reactions' automations aren't loaded**, with the line to add, and the log says the same. The repair goes away once the automations load.
 
@@ -128,7 +128,7 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 - **`to` without `from`** doesn't fire when the entity comes back from `unavailable` or `unknown`. A plug reconnecting (`unavailable → off`) is no "turned off". pururu adds `not_from: [unavailable, unknown]` for you.
 - **A change passing through `unavailable`** (`on → unavailable → off`) isn't seen as `on → off`. That's Home Assistant's rule for `from`.
 - **`above`/`below`** fires when the number crosses into the range, not while it stays there.
-- **A pending `for`** starts over after a restart.
+- **A pending `for`** is lost on a restart.
 
 ## The automation
 

@@ -38,7 +38,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 
 from ..entity import PururuEntity, reading
-from ..feature import Device, Feature, finite_float, state_text
+from ..feature import TEXT, Device, Feature, finite_float, state_text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,8 +67,6 @@ def _one_condition(alert: dict[str, Any]) -> dict[str, Any]:
     return alert
 
 
-# Text a person reads: a blank one would say nothing
-TEXT = vol.All(cv.string, vol.Strip, vol.Length(min=1))
 # What to tell, for Alert2 to deliver; a schema of its own, so unknown keys are refused
 NOTIFY = vol.Schema({vol.Required("message"): TEXT, vol.Required("done_message"): TEXT})
 

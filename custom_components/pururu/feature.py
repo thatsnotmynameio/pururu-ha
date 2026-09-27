@@ -26,11 +26,15 @@ def finite_float(value: Any) -> float:
     return number
 
 
+# Text a person reads, or a state: a blank one would say nothing
+TEXT = vol.All(cv.string, vol.Strip, vol.Length(min=1))
+
+
 def state_text(value: Any) -> str:
     """A state as text: YAML reads an unquoted on/yes/true (off/no/false) as a boolean."""
     if isinstance(value, bool):
         return STATE_ON if value else STATE_OFF
-    return str(vol.All(cv.string, vol.Strip, vol.Length(min=1))(value))
+    return str(TEXT(value))
 
 
 def qualified(namespace: str, entity_key: str) -> str:

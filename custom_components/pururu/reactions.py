@@ -35,7 +35,7 @@ from homeassistant.util.file import write_utf8_file_atomic
 from homeassistant.util.yaml import dump
 
 from .const import CONF_AUTOMATIONS, DOMAIN, ENTITY_PREFIX
-from .feature import finite_float, qualified, state_text
+from .feature import TEXT, finite_float, qualified, state_text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ REACTION = vol.All(
     vol.Schema(
         {
             # A blank name would show the automation as its device's name alone
-            vol.Required(CONF_NAME): vol.All(cv.string, vol.Strip, vol.Length(min=1)),
+            vol.Required(CONF_NAME): TEXT,
             vol.Optional("when"): cv.slug,
             vol.Optional("device"): cv.slug,
             vol.Optional("entity"): cv.entity_id,

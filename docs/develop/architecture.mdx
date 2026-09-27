@@ -34,7 +34,7 @@ flowchart TD
 
 It does all the work, in this order:
 
-1. **Floors and areas** (`places.async_sync`). They come first because devices are placed in them. The IDs it now manages are saved in `entry.data`, as `{"floors": [...], "areas": [...]}`.
+1. **Floors and areas** (`places.async_sync`). They come first because devices are placed in them. The IDs it now manages are saved in `entry.data`, as `{"floors": [...], "areas": [...], "automations": [...]}`, where `automations` holds the IDs of the reactions' automations (step 6).
 2. **Build every device's entities.** For each device, each feature's `build()` returns entities. `_creatable` drops the ones whose ID is taken, and then everything that follows them (see [Entity IDs are the identity](#entity-ids-are-the-identity)).
 3. **Hand them to the platforms.** The entities go in `entry.runtime_data` (`dict[Platform, list[Entity]]`), and `sensor.py`, `binary_sensor.py`, `switch.py`, `light.py` and `button.py` only call `async_add_entities` with their list.
 4. **Place each device** in its configured `area`, if that area exists.
