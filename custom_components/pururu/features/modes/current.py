@@ -127,9 +127,15 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         if (new := event.data["new_state"]) is None:
             return
         if new.state == STATE_ON and self._running is None:
-            self._start_armed(dt_util.utcnow())
-        elif new.state == STATE_OFF and self._running is not None:
-            self._end(self._running, dt_util.utcnow())
+            if self._start_armed(dt_util.utcnow()):
+                self.async_write_ha_state()
+        elif new.state == STATE_OFF and (running := self._running) is not None:
+            self._end(running, dt_util.utcnow())
+            # Its band may hold still (a sensor other than the gate's plug): no
+            # new reading will arm it again, so it's armed for the next cycle
+            value = reading(self.hass.states.get(self._sensor))
+            if value is not None and self._modes[running].contains(value):
+                self._armed = running
 
     @callback
     def _take(self, state: State | None) -> None:
@@ -189,35 +195,41 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
             return
         self._armed = self._starting[0]
         self._starting = None
-        if self._running is None:
-            self._start_armed(dt_util.utcnow())
+        if self._running is None and self._start_armed(dt_util.utcnow()):
+            self.async_write_ha_state()
 
     @callback
     def _off_delay_passed(self, _now: datetime) -> None:
         if self._ending is None or self._running is None:
             return
         self._ending = None
-        now = dt_util.utcnow()
-        self._end(self._running, now)
-        self._start_armed(now)
+        self._end(self._running, dt_util.utcnow())
 
     @callback
-    def _start_armed(self, now: datetime) -> None:
-        """The armed mode starts at `now`, if there is one and the cycle is on; no mode runs."""
+    def _start_armed(self, now: datetime) -> bool:
+        """The armed mode starts at `now` if there is one and the cycle is on; whether it did.
+
+        No mode runs; the caller writes the state.
+        """
         if (armed := self._armed) is None or not self.hass.states.is_state(
             self._cycle, STATE_ON
         ):
-            return
+            return False
         self._armed = None
         self._running = armed
         self._start = CycleStart(
             since=now, since_energy=kwh_now(self.hass, self._energy)
         )
-        self.async_write_ha_state()
+        return True
 
     @callback
     def _end(self, running: str, now: datetime) -> None:
-        """`running`'s cycle ends at `now`: idle is written, then the cycle sent (its end's signal last)."""
+        """`running`'s cycle ends at `now`, and the armed mode starts then if it can.
+
+        The state is written once, the next mode or idle, never idle in between
+        (an automation on idle would fire at every handover); then the cycle is
+        sent, its end's signal last.
+        """
         self._cancel_ending()
         cycle = Cycle(
             start=self._start.since,
@@ -228,6 +240,7 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         )
         self._running = None
         self._start = CycleStart()
+        self._start_armed(now)
         self.async_write_ha_state()
         item = self._modes[running].item
         for signal in (

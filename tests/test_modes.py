@@ -515,3 +515,39 @@ async def test_an_alert_can_watch_a_mode_entity(ha: HomeAssistant) -> None:
 async def test_an_alert_on_a_mode_that_does_not_exist_is_refused(ha: HomeAssistant) -> None:
     assert not await setup(ha, {KEY: {**DEVICES[KEY], "alerts": {
         "hot": {"name": "Morno", "when": "mode_morno_cycles_total", "above": 10}}}})
+
+
+# --- final review ----------------------------------------------------------------
+
+
+async def test_a_mode_ended_by_the_cycle_starts_again_when_it_reopens(ha: HomeAssistant,
+                                                                      freezer: Any) -> None:
+    """A sensor other than the gate's plug stays in gelar's band: the next cycle is gelar at once."""
+    selector = "sensor.demo_selector"
+    assert await setup(ha, with_modes(sensor=selector))
+    await fake(ha, selector, "120")
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    await watts(ha, 120)
+    await tick(ha, freezer, 35)
+    assert mode(ha) == "gelar"
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    assert running(ha) == "off"
+    assert mode(ha) == "idle"
+    await watts(ha, 120)
+    await tick(ha, freezer, 25)
+    assert running(ha) == "on"
+    assert mode(ha) == "gelar"
+
+
+async def test_a_handover_never_shows_idle(purifier: HomeAssistant, freezer: Any) -> None:
+    """gelar → quente at one instant: an automation on `idle` must not fire in between."""
+    await cool(purifier, freezer)
+    changes = capture(purifier, "state_changed")
+    await watts(purifier, 1000)
+    await tick(purifier, freezer, 30)
+    states = [event.data["new_state"].state for event in changes
+              if event.data["entity_id"] == CURRENT]
+    assert states == ["quente"], states
+    assert last(purifier) == "gelar"

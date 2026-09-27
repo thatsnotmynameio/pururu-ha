@@ -77,13 +77,13 @@ The detector is the `current` sensor, in the role `Running` has in the appliance
 - **Armed.** When `B`'s `on_delay` passes, `B` is armed. It stays armed until a reading outside its band.
 - **Start.** An armed mode starts when the appliance's cycle entity is `on` and no mode runs: at once if so, else when the cycle turns on, or when `A` ends (at that instant), whichever comes last.
 - **Pending end.** A reading outside `A`'s band schedules `A`'s `off_delay` (if not already); a reading back inside cancels it. When it passes, `A` ends.
-- **The gate closes.** The cycle entity turning `off` ends `A` at once and cancels its pending end. Armed modes stay armed.
+- **The gate closes.** The cycle entity turning `off` ends `A` at once and cancels its pending end. Armed modes stay armed, and `A` is armed again when the sensor's value is still in its band (a sensor other than the gate's plug): no new reading would arm it.
 - **The cycle entity `unknown` or `unavailable`**, or not there yet: it isn't `on`, so no mode starts (an armed one waits), and it isn't a turn `off`, so the running mode isn't ended by it; its own `off_delay` still ends it.
 - **A reading without a value** (`unknown`, `unavailable`, not a number): every pending start and end is cancelled; the running mode and armed modes stay. The next reading starts counting again, as `running` and `phases`.
 - **Restart or reload.** `current` restores its state and, as `ExtraStoredData`, the running mode's start and energy at start. The cycle keeps its start and is counted once when it ends. Nothing is armed after a restore until a reading. Nothing ends when `current` is added, even with the cycle entity already `off`: the other entities of `modes` may not listen yet. The first reading out of the band ends the restored mode after its `off_delay`, or the cycle entity's next turn `off` does.
 - **A cycle ends**: `Cycle(start, end=now, energy_kwh)`, energy computed as `appliance`'s (counter at end minus at start, kWh, never negative, `None` without a reading or an energy unit at either end). It is sent on the mode's cycle signal, then on its end signal.
 
-`current` is the running mode, or `idle`.
+`current` is the running mode, or `idle`. At a handover it goes from one mode straight to the next, written once: never `idle` in between, which an automation on `idle` would take for an end.
 
 ## Entities
 
