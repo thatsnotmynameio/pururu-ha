@@ -195,6 +195,23 @@ async def test_follows_its_own_rename(pool: HomeAssistant) -> None:
     assert held(pool, KEY) == {"switch.piscina_bomba", HEATER}
 
 
+async def test_a_renamed_pururu_switch_is_not_a_real_one(
+        pool: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Renamed in the UI, it no longer starts with switch.pururu_: the registry still knows it."""
+    er.async_get(pool).async_update_entity(HEATER, new_entity_id="switch.aquecedor")
+    await pool.async_block_till_done()
+    caplog.clear()
+    await reload(pool, {KEY: {"name": "Piscina", "switches": {
+        "pump": {"entity": "switch.aquecedor", "name": "Bomba"},
+        "heater": SWITCHES["heater"],
+    }}})
+    assert pool.states.get(PUMP) is None
+    assert held(pool, KEY) == {"switch.aquecedor"}
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any("switch.aquecedor is a pururu switch" in message and PUMP in message
+               for message in errors), errors
+
+
 async def test_reload_that_drops_a_switch_removes_it(pool: HomeAssistant) -> None:
     await reload(pool, {KEY: {"name": "Piscina", "switches": {"pump": SWITCHES["pump"]}}})
     assert er.async_get(pool).async_get(HEATER) is None

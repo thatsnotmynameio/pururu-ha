@@ -6,6 +6,7 @@ gets a feature of its own, on its own group, so it keeps what its domain offers.
 """
 
 from collections.abc import Mapping
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -13,11 +14,13 @@ import voluptuous as vol
 from homeassistant.components.group.switch import SwitchGroup
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 
-from ..const import ENTITY_PREFIX
+from ..const import DOMAIN, ENTITY_PREFIX
 from ..entity import PururuEntity
 from ..feature import Device, Feature
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _not_pururu(entity_id: str) -> str:
@@ -53,11 +56,25 @@ def build(
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """A switch per key of the block."""
-    return [
-        Switch(device, entity_key, switch["entity"], switch["name"])
-        for entity_key, switch in config.items()
-    ]
+    """A switch per key of the block; none standing for a pururu switch.
+
+    The configuration refuses switch.pururu_…; a pururu switch renamed in the
+    UI gets past that, and only the registry still knows it is ours.
+    """
+    registry = er.async_get(hass)
+    switches: list[PururuEntity] = []
+    for entity_key, switch in config.items():
+        entity = switch["entity"]
+        registered = registry.async_get(entity)
+        if registered is not None and registered.platform == DOMAIN:
+            _LOGGER.error(
+                "%s is a pururu switch: name the real one; not creating %s",
+                entity,
+                device.current_entity_id(hass, Platform.SWITCH, entity_key),
+            )
+            continue
+        switches.append(Switch(device, entity_key, entity, switch["name"]))
+    return switches
 
 
 SWITCHES = Feature(

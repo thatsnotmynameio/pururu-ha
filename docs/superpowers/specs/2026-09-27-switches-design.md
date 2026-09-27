@@ -49,7 +49,7 @@ SCHEMA = vol.All(vol.Schema({cv.slug: SWITCH}), vol.Length(min=1))
 ```
 
 - A key is a slug and becomes the entity key: `pump` → `switch.pururu_pool_pump`.
-- `entity` must be of the `switch` domain; `light.pool_light` is refused. It must not be a pururu switch (`switch.pururu_…`): a switch standing for itself would call itself forever, and one standing for another pururu switch is pointless.
+- `entity` must be of the `switch` domain; `light.pool_light` is refused. It must not be a pururu switch (`switch.pururu_…`): a switch standing for itself would call itself forever, and one standing for another pururu switch is pointless. A pururu switch renamed in the UI gets past that prefix: `build()` checks the entity registry (`platform == pururu`), logs `<entity> is a pururu switch: name the real one; not creating <switch>` and skips that switch (added after the PR review).
 - `name` is required. It is shown after the device's name, in every language.
 - Unknown keys inside a switch are refused, and so is an empty `switches: {}`.
 

@@ -45,6 +45,16 @@ sensor.pururu_laundry_washer_phase follows binary_sensor.pururu_laundry_washer_r
 
 This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back.
 
+### `… is a pururu switch: name the real one; not creating …`
+
+```
+switch.aquecedor is a pururu switch: name the real one; not creating switch.pururu_pool_pump
+```
+
+A switch's `entity:` names one of pururu's own switches that you renamed in the UI, so it no longer starts with `switch.pururu_`. A [switch](/features/switches) stands for a real one.
+
+**Fix:** point `entity:` at the real switch, then reload pururu.
+
 ### An entity stays `unknown`
 
 - The `last_cycle_*` sensors are `unknown` until the first cycle **ends**.

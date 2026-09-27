@@ -23,7 +23,7 @@ This creates `switch.pururu_pool_pump`, shown as **Piscina Bomba**, and `switch.
 `switches` is a map of **entity key → switch**, with at least one switch. The key is a slug, and it becomes the end of the entity ID: `pump` → `switch.pururu_pool_pump`.
 
 <Property name="entity" type="entity ID" required>
-  The real switch. It must be a `switch.*` entity, and not one of pururu's own switches.
+  The real switch. It must be a `switch.*` entity, and not one of pururu's own switches, even one you renamed in the UI. A renamed one is caught when pururu builds the device: that switch isn't created, and the log says so.
 </Property>
 
 ---
