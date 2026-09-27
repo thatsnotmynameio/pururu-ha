@@ -29,9 +29,9 @@ def finite_float(value: Any) -> float:
 def qualified(namespace: str, entity_key: str) -> str:
     """`entity_key` in `namespace`: the end of its entity ID, and its translation key.
 
-    An entity key that is its namespace isn't repeated: phases' `phase`.
+    No exception, even for an entity key alike its namespace: phases' `phase_phase`.
     """
-    return namespace if entity_key == namespace else f"{namespace}_{entity_key}"
+    return f"{namespace}_{entity_key}"
 
 
 @dataclass(frozen=True, kw_only=True)

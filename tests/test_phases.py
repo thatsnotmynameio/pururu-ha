@@ -13,7 +13,7 @@ from helpers import fake, reload, restart, setup, tick
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
 RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
-PHASE = "sensor.pururu_demo_washer_phase"
+PHASE = "sensor.pururu_demo_washer_phase_phase"
 IDLE_W = 1.4
 APPLIANCE = {"power": POWER,
              "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}

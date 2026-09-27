@@ -67,7 +67,7 @@ When a feature requires a capability, `_build` looks up the providing entity key
 
 ## Entity IDs are the identity
 
-- Every entity is `<platform>.pururu_<device key>_<namespace>_<entity key>`, and an entity key equal to its namespace is written once (`phase`). Its unique ID is the part after the platform: `Device.object_id(entity_key)`. `_build` gives each feature's `build()` a `Device` in that feature's namespace, so a feature only writes its own entity keys (`"running"`).
+- Every entity is `<platform>.pururu_<device key>_<namespace>_<entity key>`, with no exception (`phases`' `phase` is `…_phase_phase`). Its unique ID is the part after the platform: `Device.object_id(entity_key)`. `_build` gives each feature's `build()` a `Device` in that feature's namespace, so a feature only writes its own entity keys (`"running"`).
 - A device's identifier is `(pururu, <device key>)`.
 - `PururuEntity._identify()` sets the entity ID, unique ID and device info from the device and the entity key, and its name. Without a `name`, the translation key is the entity key in its namespace (`Device.qualified`, as `appliance_running`) and the name comes from `translations/*.json` → `entity.<platform>.<namespace>_<entity key>.name`. With one, as for a configured feature, the entity has that name and no translation key.
 

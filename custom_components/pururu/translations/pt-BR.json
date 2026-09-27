@@ -39,7 +39,7 @@
       "appliance_cycles_week": {"name": "Ciclos na semana"},
       "appliance_cycles_month": {"name": "Ciclos no mês"},
       "appliance_cycles_year": {"name": "Ciclos no ano"},
-      "phase": {
+      "phase_phase": {
         "name": "Fase",
         "state": {
           "idle": "Parada", "washing": "Lavando", "heating": "Aquecendo",

@@ -10,13 +10,13 @@ Every feature puts its entity keys in a namespace of its own, so an entity ID te
 <platform>.pururu_<device key>_<namespace>_<entity key>
 ```
 
-When an entity key is its feature's namespace, it isn't repeated: `phases` has the namespace `phase` and one entity key, `phase`, so its entity is `sensor.pururu_washer_phase`.
+There's no exception, even when an entity key is the same word as its namespace: `phases` has the namespace `phase` and one entity key, `phase`, so its entity is `sensor.pururu_washer_phase_phase`, and a switch keyed `switch` is `switch.pururu_pool_switch_switch`.
 
 | Feature | Namespace | Before | After |
 |---|---|---|---|
 | appliance | `appliance` | `binary_sensor.pururu_washer_running` | `binary_sensor.pururu_washer_appliance_running` |
 | | | `sensor.pururu_washer_runtime_month` | `sensor.pururu_washer_appliance_runtime_month` |
-| phases | `phase` | `sensor.pururu_washer_phase` | unchanged |
+| phases | `phase` | `sensor.pururu_washer_phase` | `sensor.pururu_washer_phase_phase` |
 | switches | `switch` | `switch.pururu_pool_pump` | `switch.pururu_pool_switch_pump` |
 
 The YAML doesn't change: `switches:` keys stay `pump`, `cycle_from:` names a feature, and real entity IDs aren't pururu's. Every configuration valid today stays valid. The one difference is a relaxation: a switch may now be called `power` or `running` in a device with `appliance`.
@@ -31,10 +31,10 @@ The YAML doesn't change: `switches:` keys stay `pump`, `cycle_from:` names a fea
 | Question | Decision |
 |---|---|
 | Which features get a namespace | All of them. Rejected: none for features standing for a domain (`switches`, later `lights`), whose platform already says what they are. One rule everywhere keeps the code and the docs simpler, and it makes `switch_pump` and `light_pump` distinct keys of one device. |
-| An entity key equal to its namespace | Written once: `phase`, not `phase_phase`. |
+| An entity key equal to its namespace | Written twice, like any other: `phase_phase`, `switch_switch`. Rejected (decided after the first implementation): writing it once, an exception that a switch keyed `switch` would hit unexpectedly; and renaming phases' entity key (`phase_current`). |
 | Translation and icon keys | The qualified key (`appliance_running`). Translations are per platform and shared by the whole integration, so two features' `power` would otherwise share one name. |
 | Migrating existing entities | None. Their unique IDs change: stale removal deletes the old entities and the new ones are created. Their history, and any rename made in the UI, is lost. Only the author uses pururu today, and that is accepted. |
-| Version | 0.1.5, not 0.2.0 (only the author uses pururu today). The PR's title and description and the docs say that the IDs of `appliance` and `switches` change. |
+| Version | 0.1.5, not 0.2.0 (only the author uses pururu today). The PR's title and description and the docs say that the IDs of `appliance`, `phases` and `switches` change. |
 
 ## Contract
 
@@ -57,7 +57,7 @@ The YAML doesn't change: `switches:` keys stay `pump`, `cycle_from:` names a fea
 
 ## Translations and icons
 
-`translations/en.json`, `translations/pt-BR.json` and `icons.json` rename their entity keys to the qualified ones (`running` → `appliance_running`, `runtime_month` → `appliance_runtime_month`, …). `phase` stays.
+`translations/en.json`, `translations/pt-BR.json` and `icons.json` rename their entity keys to the qualified ones (`running` → `appliance_running`, `runtime_month` → `appliance_runtime_month`, …). `phase` becomes `phase_phase`.
 
 ## Tests
 
@@ -77,13 +77,13 @@ In the docs, "entity key" stays the key a feature's page lists (`running`); the 
 
 - `index`: the table of the washer's entities.
 - `getting-started/first-device`: the entity tables (steps 1 and 2), the pattern line, `phase`, and the "laundry is done" automation (`last_cycle_end`, `last_cycle_duration`, `last_cycle_energy`).
-- `concepts/entity-ids`: the pattern becomes `<platform>.pururu_<device key>_<namespace>_<entity key>`, with a table of each feature's namespace and the rule that an entity key equal to its namespace is written once; the `running` and unique ID examples; the taken-ID log line. Names are unchanged (`Máquina de lavar Running`).
+- `concepts/entity-ids`: the pattern becomes `<platform>.pururu_<device key>_<namespace>_<entity key>`, with a table of each feature's namespace and the rule that it has no exception (`phase_phase`, `switch_switch`); the `running` and unique ID examples; the taken-ID log line. Names are unchanged (`Máquina de lavar Running`).
 - `concepts/devices-and-features`: the capability table (`binary_sensor.pururu_<key>_appliance_running`).
 - `features/appliance`: the entity table.
-- `features/phases`: unchanged (`sensor.pururu_<key>_phase`).
+- `features/phases`: `sensor.pururu_<key>_phase_phase`.
 - `features/switches`: the created IDs (`switch.pururu_pool_switch_pump`, `…_switch_heater`), "`pump` → `switch.pururu_pool_switch_pump`", the entity table header; the paragraph forbidding a switch key that is another feature's entity key is removed.
 - `reference/configuration`: the rule "every entity key is different in a device" is removed; the rule on two devices takes the new example, and its `pool_energy` + `total` example (no longer a collision) is replaced.
-- `reference/troubleshooting`: the error `switches: power is already an entity key of appliance` is removed; the two-devices error takes the new example; the log lines of a taken ID, of a follower not created (`…_phase follows binary_sensor.pururu_laundry_washer_appliance_running…`) and of a pururu switch (`…not creating switch.pururu_pool_switch_pump`) get the new IDs.
+- `reference/troubleshooting`: the error `switches: power is already an entity key of appliance` is removed; the two-devices error takes the new example; the log lines of a taken ID, of a follower not created (`…_phase_phase follows binary_sensor.pururu_laundry_washer_appliance_running…`) and of a pururu switch (`…not creating switch.pururu_pool_switch_pump`) get the new IDs.
 - `README.md`: `binary_sensor.pururu_dishwasher_appliance_running`.
 
 **Develop**
@@ -95,4 +95,4 @@ In the docs, "entity key" stays the key a feature's page lists (`running`); the 
 
 ## Release
 
-`manifest.json` goes to `0.1.5`. The release notes are generated from the PR (`--generate-notes`), so the PR's title names the change of IDs, and its description says that the old entities of `appliance` and `switches` are removed along with their history.
+`manifest.json` goes to `0.1.5`. The release notes are generated from the PR (`--generate-notes`), so the PR's title names the change of IDs, and its description says that the old entities of `appliance`, `phases` and `switches` are removed along with their history.

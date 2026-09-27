@@ -73,6 +73,13 @@ async def test_a_key_of_another_feature_is_accepted(ha: HomeAssistant, entity_ke
     assert "binary_sensor.pururu_pool_appliance_running" in held(ha, KEY)
 
 
+async def test_a_switch_keyed_switch_repeats_it(ha: HomeAssistant) -> None:
+    """No exception to the pattern: the namespace, then the key, even when they are alike."""
+    await fake(ha, REAL_PUMP, "on")
+    assert await setup(ha, {KEY: {"name": "Piscina", "switches": {"switch": SWITCHES["pump"]}}})
+    assert held(ha, KEY) == {"switch.pururu_pool_switch_switch"}
+
+
 @pytest.mark.parametrize(("entity_key", "other"), [
     pytest.param("switch_pump", {"switches": {"pump": SWITCHES["pump"]}}, id="the same platform"),
     pytest.param("appliance_power", {"appliance": APPLIANCE}, id="another platform"),

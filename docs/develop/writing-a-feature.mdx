@@ -106,7 +106,7 @@ The pieces:
 - **`entity_keys`** lists **every** entity key the feature can create, even those that only exist with some settings, mapped to its platform.
 - **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, entity_key)`, which gives it its entity ID, unique ID, device and translated name.
 - **`example`** is a minimal valid block. The contract test validates it.
-- **`namespace`** is where the feature's entity keys live in an entity ID: `total` becomes `sensor.pururu_front_door_openings_total`. It's a slug no other feature uses, and not another feature's namespace followed by `_`. An entity key equal to the namespace is written once, as `phases`' `phase`. `build()` gets a `device` already in this namespace, so the feature only ever writes its own entity keys.
+- **`namespace`** is where the feature's entity keys live in an entity ID: `total` becomes `sensor.pururu_front_door_openings_total`. It's a slug no other feature uses, and not another feature's namespace followed by `_`. There's no exception for an entity key that is the same word: `phases`' `phase` is `sensor.pururu_<key>_phase_phase`. `build()` gets a `device` already in this namespace, so the feature only ever writes its own entity keys.
 
 ## 2. Register it
 

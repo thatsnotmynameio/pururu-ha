@@ -30,7 +30,7 @@ from helpers import DOMAIN, device_of, held, module, reload, setup
 
 LEVEL = "sensor.pururu_demo_widget_gauge_level"
 ACTIVE = "binary_sensor.pururu_demo_widget_gauge_active"
-ECHO = "sensor.pururu_demo_widget_echo"
+ECHO = "sensor.pururu_demo_widget_echo_echo"
 GAUGE = {"source": "sensor.demo_source"}
 WIDGET = {"name": "Widget", "gauge": GAUGE}
 PANEL = {"name": "Panel", "gauge": GAUGE}

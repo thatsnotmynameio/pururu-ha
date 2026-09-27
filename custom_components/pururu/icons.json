@@ -23,7 +23,7 @@
       "appliance_cycles_week": {"default": "mdi:counter"},
       "appliance_cycles_month": {"default": "mdi:counter"},
       "appliance_cycles_year": {"default": "mdi:counter"},
-      "phase": {"default": "mdi:progress-clock"}
+      "phase_phase": {"default": "mdi:progress-clock"}
     }
   }
 }
