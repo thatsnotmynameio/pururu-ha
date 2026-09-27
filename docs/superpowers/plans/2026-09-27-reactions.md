@@ -616,7 +616,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `const.CONF_AUTOMATIONS: Final = "automations"`: the key of `entry.data` holding the generated IDs.
   - `reactions.FILE = "pururu/automations.yaml"`, `reactions.AUTOMATION = "automation"`.
   - `async reactions.async_sync(hass: HomeAssistant, entry: ConfigEntry, automations: list[dict[str, Any]]) -> list[str]`: the IDs generated.
-  - `reactions._finish(hass, registry, changed: bool, stale: set[str], ids: list[str])`: the part run once HA has started (Task 4 adds the include check to it).
+  - `reactions._finish(hass, registry, changed: bool, stale: set[str])`: the part run once HA has started (Task 4 adds `ids` and the include check to it).
   - tests: `helpers.AUTOMATIONS`, `helpers.generated(hass) -> list[dict[str, Any]]`.
 
 - [ ] **Step 1: The test configuration folder**
@@ -925,11 +925,11 @@ def _write(path: Path, content: str) -> bool:
     return True
 
 
-def _free(hass: HomeAssistant, registry: er.EntityRegistry, automation: str) -> bool:
+def _free(hass: HomeAssistant, registry: er.EntityRegistry, unique_id: str) -> bool:
     """Whether automation.<ID> is free, or already this automation's; the holder logged."""
-    if registry.async_get_entity_id(AUTOMATION, AUTOMATION, automation) is not None:
+    if registry.async_get_entity_id(AUTOMATION, AUTOMATION, unique_id) is not None:
         return True
-    entity_id = f"{AUTOMATION}.{automation}"
+    entity_id = f"{AUTOMATION}.{unique_id}"
     if (registered := registry.async_get(entity_id)) is not None:
         holder = f"the {registered.platform} integration"
     elif (state := hass.states.get(entity_id)) is not None and not state.attributes.get(
@@ -942,10 +942,10 @@ def _free(hass: HomeAssistant, registry: er.EntityRegistry, automation: str) -> 
     return False
 
 
-def _remove(registry: er.EntityRegistry, automations: Iterable[str]) -> None:
-    """Remove the entity registry entries of these automations."""
-    for automation in automations:
-        entity_id = registry.async_get_entity_id(AUTOMATION, AUTOMATION, automation)
+def _remove(registry: er.EntityRegistry, unique_ids: Iterable[str]) -> None:
+    """Remove the entity registry entries of these automations, by their IDs."""
+    for unique_id in unique_ids:
+        entity_id = registry.async_get_entity_id(AUTOMATION, AUTOMATION, unique_id)
         if entity_id is not None:
             registry.async_remove(entity_id)
 
@@ -972,11 +972,7 @@ async def _async_reload(hass: HomeAssistant) -> None:
 
 
 async def _finish(
-    hass: HomeAssistant,
-    registry: er.EntityRegistry,
-    changed: bool,
-    stale: set[str],
-    ids: list[str],
+    hass: HomeAssistant, registry: er.EntityRegistry, changed: bool, stale: set[str]
 ) -> None:
     """Once HA has started: reload what changed, then drop what isn't generated any more."""
     if changed:
@@ -1004,7 +1000,7 @@ async def async_sync(
     stale = set(entry.data.get(CONF_AUTOMATIONS, [])) - set(ids)
 
     async def finish(_hass: HomeAssistant) -> None:
-        await _finish(hass, registry, changed, stale, ids)
+        await _finish(hass, registry, changed, stale)
 
     entry.async_on_unload(async_at_started(hass, finish))
     return ids
@@ -1275,11 +1271,13 @@ def _check_included(
     """
     loaded = {state.attributes.get(ATTR_ID) for state in hass.states.async_all(AUTOMATION)}
     missing = []
-    for automation in ids:
-        entity_id = registry.async_get_entity_id(AUTOMATION, AUTOMATION, automation)
-        entry = registry.async_get(entity_id) if entity_id is not None else None
-        if automation not in loaded and (entry is None or entry.disabled_by is None):
-            missing.append(automation)
+    for unique_id in ids:
+        entity_id = registry.async_get_entity_id(AUTOMATION, AUTOMATION, unique_id)
+        registered = registry.async_get(entity_id) if entity_id is not None else None
+        if unique_id not in loaded and (
+            registered is None or registered.disabled_by is None
+        ):
+            missing.append(unique_id)
     if not missing:
         ir.async_delete_issue(hass, DOMAIN, ISSUE)
         return
@@ -1299,15 +1297,24 @@ def _check_included(
     )
 ```
 
-`_finish` ends with the check:
+`_finish` takes the generated IDs and ends with the check:
 
 ```python
+async def _finish(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    changed: bool,
+    stale: set[str],
+    ids: list[str],
+) -> None:
     """Once HA has started: reload what changed, drop what isn't generated any more, check the include."""
     if changed:
         await _async_reload(hass)
     _remove(registry, stale)
     _check_included(hass, registry, ids)
 ```
+
+and `async_sync`'s `finish` passes them: `await _finish(hass, registry, changed, stale, ids)`.
 
 In `async_sync`, before `return ids`, check again whenever automations reload (the user adding the include):
 
@@ -1594,7 +1601,15 @@ In `docs/reference/configuration.mdx`, in the example at the top, add a `reactio
 automation pururu: !include pururu/automations.yaml
 ```
 
-In the `## devices` section, add a row or paragraph describing `reactions` in the same form as the section uses for `area`. Its text: "`reactions`: optional. A map of reaction key → reaction, each one an automation. Not a feature. See [Reactions](/concepts/reactions)."
+In the `## devices` section, after the `area` property and its `---`, add:
+
+```mdx
+<Property name="reactions" type="map" optional>
+  A map of **reaction key → reaction**, each one a Home Assistant automation. It isn't a feature. See [Reactions](/concepts/reactions#settings).
+</Property>
+
+---
+```
 
 - [ ] **Step 5: Troubleshooting**
 
