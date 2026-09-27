@@ -65,5 +65,5 @@ Two devices can each use it their own way: a light in `sala` and a switch in `va
 - **Replacing the bulb or the relay.** Point `entity:` at the new one and reload. `light.pururu_sala_light_teto` keeps its ID, name and area, so automations and dashboards keep working.
 - **Two entities for one light.** The real light stays in its own device. If that device is in the same area, the area shows the light twice, and "turn off the lights in Sala" reaches both. Turning both off is harmless, but a count of lights that are on counts two.
 - **Renaming the real entity.** Update `entity:` in the YAML and reload. Until then, the pururu light is `unavailable`.
-- **Renaming the pururu light** in the UI works as for any entity. See [Renaming an entity ID](/concepts/entity-ids#renaming-an-entity-id).
+- **Renaming the pururu light** in the UI works as for any entity. See [Renaming an entity ID](/concepts/entity-ids#renaming-an-entity-id). Renamed to the entity its own `entity:` names, it stands for itself: it's kept, `unavailable`, and the log says so.
 - **The same real light twice**, in one device or two, is fine: each pururu light follows it.

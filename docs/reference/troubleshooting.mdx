@@ -57,6 +57,17 @@ A switch's or a light's `entity:` names one of pururu's own entities that you re
 
 **Fix:** point `entity:` at the real switch or light, then reload pururu.
 
+### `… is this switch itself: name the real one` (or light)
+
+```
+switch.aquecedor is this switch itself: name the real one
+light.sala_luminaria is this light itself: name the real one
+```
+
+You renamed a pururu switch or light in the UI to the entity its own `entity:` names, so it stands for itself. It's kept, with your rename, but it's `unavailable`: there's nothing real to follow.
+
+**Fix:** point `entity:` at the real switch or light, or rename the pururu one back, then reload pururu.
+
 ### An entity stays `unknown`
 
 - The `last_cycle_*` sensors are `unknown` until the first cycle **ends**.

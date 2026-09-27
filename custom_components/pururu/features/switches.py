@@ -38,16 +38,21 @@ def build(
     """A switch per key of the block; none standing for a pururu switch.
 
     The configuration refuses switch.pururu_…; a pururu switch renamed in the
-    UI gets past that, and only the registry still knows it is ours.
+    UI gets past that, and only the registry still knows it is ours. A switch
+    renamed to its own entity is kept, unavailable, so that its rename stays
+    and every reload gives the same.
     """
     switches: list[PururuEntity] = []
     for entity_key, switch in config.items():
         entity = switch["entity"]
-        if standing.is_pururu(hass, entity):
+        current = device.current_entity_id(hass, Platform.SWITCH, entity_key)
+        if entity == current:
+            _LOGGER.error("%s is this switch itself: name the real one", entity)
+        elif standing.is_pururu(hass, entity):
             _LOGGER.error(
                 "%s is a pururu switch: name the real one; not creating %s",
                 entity,
-                device.current_entity_id(hass, Platform.SWITCH, entity_key),
+                current,
             )
             continue
         switches.append(Switch(device, entity_key, entity, switch["name"]))

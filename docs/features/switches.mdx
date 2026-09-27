@@ -55,5 +55,5 @@ A light, a fan or a cover exposed as a switch would only turn on and off: no bri
 
 - **Two entities for one switch.** The real switch stays in its own device. If that device is in the same area, the area shows the switch twice, and an action on the whole area reaches both. Switching both is harmless, but a count of switches that are on counts two. `appliance`'s `power` already works this way.
 - **Renaming the real switch.** Update `entity:` in the YAML and reload. Until then, the pururu switch is `unavailable`.
-- **Renaming the pururu switch** in the UI works as for any entity. See [Renaming an entity ID](/concepts/entity-ids#renaming-an-entity-id).
+- **Renaming the pururu switch** in the UI works as for any entity. See [Renaming an entity ID](/concepts/entity-ids#renaming-an-entity-id). Renamed to the entity its own `entity:` names, it stands for itself: it's kept, `unavailable`, and the log says so.
 - **The same real switch in two devices** is fine: both follow it.

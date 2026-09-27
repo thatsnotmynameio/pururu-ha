@@ -208,6 +208,29 @@ async def test_what_it_offers_follows_the_real_light(sala: HomeAssistant) -> Non
     assert attributes(sala, ABAJUR)["brightness"] == 128
 
 
+async def test_losing_colour_is_followed(sala: HomeAssistant) -> None:
+    """The real light now reports on and off only (its integration, or a simpler lamp)."""
+    assert attributes(sala, TETO)["supported_color_modes"] == ["hs"]
+    await fake(sala, REAL_TETO, "on", ONOFF)
+    teto = attributes(sala, TETO)
+    assert teto["supported_color_modes"] == ["onoff"]
+    assert teto["color_mode"] == "onoff"
+    assert teto.get("brightness") is None
+    assert teto.get("hs_color") is None
+    assert teto.get("effect_list") is None
+    assert teto["supported_features"] == 0
+
+
+async def test_after_losing_colour_it_takes_no_colour(sala: HomeAssistant) -> None:
+    """HA drops what the light no longer offers: the real one is only turned on."""
+    await fake(sala, REAL_TETO, "on", ONOFF)
+    context = Context()
+    calls = await forwarded(sala, TETO, "turn_on",
+                            {"brightness": 100, "hs_color": [200, 70], "transition": 2},
+                            context, REAL_TETO)
+    assert calls == [("light", "turn_on", {}, context.id)]
+
+
 # --- commands ------------------------------------------------------------------------
 
 
@@ -410,6 +433,26 @@ async def test_a_renamed_pururu_entity_is_not_a_real_one(
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(f"{new_id} is a pururu {domain}: name the real one; not creating {ABAJUR}"
                in message for message in errors), errors
+
+
+async def test_a_light_renamed_to_what_it_stands_for_stays_as_it_is(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Renamed in the UI to its own entity: kept with its rename, unavailable, at every reload."""
+    await fake(ha, REAL_TETO, "on", BULB)
+    devices = {KEY: {"name": "Sala", "lights": {
+        "teto": LIGHTS["teto"], "abajur": {"entity": "light.sala_luminaria", "name": "Abajur"}}}}
+    assert await setup(ha, devices)
+    er.async_get(ha).async_update_entity(ABAJUR, new_entity_id="light.sala_luminaria")
+    await ha.async_block_till_done()
+    for _ in range(3):
+        entry = er.async_get(ha).async_get("light.sala_luminaria")
+        assert entry is not None
+        assert entry.unique_id == "pururu_sala_light_abajur"
+        assert state(ha, "light.sala_luminaria") == "unavailable"
+        assert held(ha, KEY) == {TETO, "light.sala_luminaria"}
+        assert "light.sala_luminaria is this light itself: name the real one" in caplog.text
+        caplog.clear()
+        await reload(ha, devices)
 
 
 async def test_reload_that_drops_a_light_removes_it(sala: HomeAssistant) -> None:

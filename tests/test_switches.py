@@ -232,6 +232,26 @@ async def test_a_renamed_pururu_switch_is_not_a_real_one(
                for message in errors), errors
 
 
+async def test_a_switch_renamed_to_what_it_stands_for_stays_as_it_is(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Renamed in the UI to its own entity: kept with its rename, unavailable, at every reload."""
+    await fake(ha, REAL_PUMP, "on")
+    devices = {KEY: {"name": "Piscina", "switches": {
+        "pump": SWITCHES["pump"], "heater": {"entity": "switch.aquecedor", "name": "Aquecedor"}}}}
+    assert await setup(ha, devices)
+    er.async_get(ha).async_update_entity(HEATER, new_entity_id="switch.aquecedor")
+    await ha.async_block_till_done()
+    for _ in range(3):
+        entry = er.async_get(ha).async_get("switch.aquecedor")
+        assert entry is not None
+        assert entry.unique_id == "pururu_pool_switch_heater"
+        assert state(ha, "switch.aquecedor") == "unavailable"
+        assert held(ha, KEY) == {PUMP, "switch.aquecedor"}
+        assert "switch.aquecedor is this switch itself: name the real one" in caplog.text
+        caplog.clear()
+        await reload(ha, devices)
+
+
 async def test_reload_that_drops_a_switch_removes_it(pool: HomeAssistant) -> None:
     await reload(pool, {KEY: {"name": "Piscina", "switches": {"pump": SWITCHES["pump"]}}})
     assert er.async_get(pool).async_get(HEATER) is None

@@ -106,18 +106,23 @@ def build(
     """A light per key of the block, of the kind its real entity's domain gives.
 
     The configuration refuses <domain>.pururu_…; a pururu entity renamed in the
-    UI gets past that, and only the registry still knows it is ours.
+    UI gets past that, and only the registry still knows it is ours. A light
+    renamed to its own entity is kept, unavailable, so that its rename stays
+    and every reload gives the same.
     """
     lights: list[PururuEntity] = []
     for entity_key, light in config.items():
         entity = light["entity"]
         domain = split_entity_id(entity)[0]
-        if standing.is_pururu(hass, entity):
+        current = device.current_entity_id(hass, Platform.LIGHT, entity_key)
+        if entity == current:
+            _LOGGER.error("%s is this light itself: name the real one", entity)
+        elif standing.is_pururu(hass, entity):
             _LOGGER.error(
                 "%s is a pururu %s: name the real one; not creating %s",
                 entity,
                 domain,
-                device.current_entity_id(hass, Platform.LIGHT, entity_key),
+                current,
             )
             continue
         kind = KINDS[Platform(domain)]
