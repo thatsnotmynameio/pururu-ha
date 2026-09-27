@@ -71,10 +71,10 @@ python3 release.py check                        # the manifest version must be s
 - **Two tabs:** `Guide` (`/`) for users (getting started, concepts, one page per feature in `FEATURES`, configuration reference, troubleshooting) and `Develop` (`/develop`) for contributors.
 - **Keep it true:** a change in behaviour, configuration, entities or log messages updates the matching pages in the same PR. A new feature gets `docs/features/<feature>.mdx` and a sidebar entry.
 - **MDX:** `{` and `<` outside code are JSX, so keep them in backticks or code blocks.
-- **Check:** `npm ci` once, then `npm run docs:check` (broken links; the Docs workflow runs it on every PR) and `npm run docs:preview` (live preview). `package.json` pins the docs.page CLI, and `package-lock.json` pins it by hash.
+- **Check:** `pnpm install` once, then `pnpm docs:check` (broken links; the Docs workflow runs it on every PR) and `pnpm docs:preview` (live preview). Use pnpm, never npm: `package.json` pins the docs.page CLI and pnpm itself (`packageManager`), and `pnpm-lock.yaml` pins them by hash.
 
 ## Releases and CI
 
 - **Releases:** the version is `version` in `custom_components/pururu/manifest.json`. A PR that changes it is a release. After it merges to `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release, which HACS offers.
-- **CI:** GitHub Actions are pinned by SHA, Python packages by hash (`uv.lock`), npm packages by hash (`package-lock.json`). SonarQube Cloud and the docs.page check run on PRs.
+- **CI:** GitHub Actions are pinned by SHA, Python packages by hash (`uv.lock`), pnpm packages by hash (`pnpm-lock.yaml`). SonarQube Cloud and the docs.page check run on PRs.
 - **Sonar suppressions:** a Sonar finding that conflicts with HA's required signatures or conventions is suppressed in `sonar-project.properties` (`sonar.issue.ignore.multicriteria`), with a comment giving the reason, not in code.

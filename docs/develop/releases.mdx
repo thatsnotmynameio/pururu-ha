@@ -34,10 +34,10 @@ All in `.github/workflows/`:
 |---|---|---|
 | `build.yml` (**Build**) | Pull requests, and called by Release | `release.py check`, `uv run --locked pytest --cov` (tests and core's checks), then the SonarQube Cloud scan with the coverage report |
 | `validate.yml` (**Validate**) | Pull requests, weekly, and called by Release | HACS's own validation of the repository (`hacs/action`) |
-| `docs.yml` (**Docs**) | Pull requests | `npm ci`, then `npm run docs:check`: docs.page's check of this site |
+| `docs.yml` (**Docs**) | Pull requests | `pnpm install --frozen-lockfile`, then `pnpm docs:check`: docs.page's check of this site |
 | `release.yml` (**Release**) | Every push to `main` | Build and Validate, then the tag and GitHub release |
 
-`uv run --locked` fails when `uv.lock` is out of date, so every package is pinned by hash. The same goes for `npm ci` and `package-lock.json`, which pins the docs.page CLI and everything under it.
+`uv run --locked` fails when `uv.lock` is out of date, so every package is pinned by hash. The same goes for `pnpm install --frozen-lockfile` and `pnpm-lock.yaml`, which pins the docs.page CLI and everything under it. pnpm's own version is `packageManager` in `package.json`.
 
 ### Actions are pinned by SHA
 
@@ -61,7 +61,7 @@ The repository is public, so GitHub's security features cost nothing. These are 
 
 - **Secret scanning** with **push protection**: a push that contains a known kind of token is refused.
 - **CodeQL** (default setup) on `actions` and `python`, for every pull request, every push to `main` and weekly.
-- **Dependabot alerts** and **security updates**. Version updates cover GitHub Actions and the docs.page CLI (npm), not Python, because the Home Assistant pin (`pytest-homeassistant-custom-component`), ruff, mypy and `fetch_hassfest.py` move together by hand.
+- **Dependabot alerts** and **security updates**. Version updates cover GitHub Actions and the docs.page CLI (pnpm), not Python, because the Home Assistant pin (`pytest-homeassistant-custom-component`), ruff, mypy and `fetch_hassfest.py` move together by hand.
 - **Private vulnerability reporting**, described in `SECURITY.md`.
 
 A security update fails when the fix needs a version Home Assistant doesn't allow yet. Home Assistant pins its libraries exactly (`cryptography==48.0.1`, for example), and pururu's tests use the versions of the release they're pinned to, so `uv` can't satisfy both. Such an alert closes when the Home Assistant pin is bumped to a release that ships the fixed version.
@@ -73,9 +73,9 @@ GitHub Code Quality is off: its AI features are billed even on public repositori
 This site is served by [docs.page](https://docs.page) from `docs/` and `docs.json` on `main`: `https://docs.page/thatsnotmynameio/pururu-ha`. Preview it locally with the docs.page CLI that `package.json` pins:
 
 ```sh
-npm ci                  # once, and after package-lock.json changes
-npm run docs:preview    # live preview in the browser
-npm run docs:check      # broken links and missing assets; the Docs workflow runs it on every pull request
+pnpm install         # once, and after pnpm-lock.yaml changes
+pnpm docs:preview    # live preview in the browser
+pnpm docs:check      # broken links and missing assets; the Docs workflow runs it on every pull request
 ```
 
 A change to pururu's behaviour updates these pages in the same pull request.

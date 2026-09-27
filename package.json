@@ -2,6 +2,7 @@
   "name": "pururu-ha-docs",
   "private": true,
   "description": "The docs.page CLI, pinned for the docs check (CI) and preview",
+  "packageManager": "pnpm@12.6.0",
   "scripts": {
     "docs:check": "docs.page check",
     "docs:preview": "docs.page preview"
