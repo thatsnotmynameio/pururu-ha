@@ -5,6 +5,19 @@
       "description": "Reloads the floors, areas and devices from the YAML configuration."
     }
   },
+  "common": {
+    "dashboards": "Dashboards",
+    "floors": "Floors",
+    "areas": "Areas",
+    "devices": "Devices",
+    "dashboard": "Dashboard",
+    "floor": "Floor",
+    "area": "Area",
+    "device": "Device",
+    "id": "ID",
+    "name": "Name",
+    "type": "Type"
+  },
   "entity": {
     "binary_sensor": {
       "running": {"name": "Running"}

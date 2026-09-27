@@ -5,6 +5,19 @@
       "description": "Recarrega os andares, as áreas e os dispositivos da configuração YAML."
     }
   },
+  "common": {
+    "dashboards": "Dashboards",
+    "floors": "Andares",
+    "areas": "Áreas",
+    "devices": "Dispositivos",
+    "dashboard": "Dashboard",
+    "floor": "Andar",
+    "area": "Área",
+    "device": "Dispositivo",
+    "id": "ID",
+    "name": "Nome",
+    "type": "Tipo"
+  },
   "entity": {
     "binary_sensor": {
       "running": {"name": "Em funcionamento"}
