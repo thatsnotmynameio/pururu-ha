@@ -26,16 +26,26 @@ def module(name: str) -> ModuleType:
     return importlib.import_module(f"custom_components.pururu.{name}")
 
 
-async def setup(hass: HomeAssistant, devices: dict[str, Any]) -> bool:
-    """Set pururu up from `pururu: devices:`; False when HA refuses the configuration."""
-    ok = await async_setup_component(hass, DOMAIN, {DOMAIN: {"devices": devices}})
+def _config(devices: dict[str, Any], floors: dict[str, Any] | None,
+            areas: dict[str, Any] | None) -> dict[str, Any]:
+    """A configuration.yaml with this `pururu:` block."""
+    return {DOMAIN: {"devices": devices, "floors": floors or {}, "areas": areas or {}}}
+
+
+async def setup(hass: HomeAssistant, devices: dict[str, Any], *,
+                floors: dict[str, Any] | None = None,
+                areas: dict[str, Any] | None = None) -> bool:
+    """Set pururu up from `pururu:`; False when HA refuses the configuration."""
+    ok = await async_setup_component(hass, DOMAIN, _config(devices, floors, areas))
     await hass.async_block_till_done()
     return ok
 
 
-async def reload(hass: HomeAssistant, devices: dict[str, Any]) -> None:
-    """pururu.reload, with a configuration.yaml holding these devices."""
-    config = {DOMAIN: {"devices": devices}}
+async def reload(hass: HomeAssistant, devices: dict[str, Any], *,
+                 floors: dict[str, Any] | None = None,
+                 areas: dict[str, Any] | None = None) -> None:
+    """pururu.reload, with a configuration.yaml holding this `pururu:` block."""
+    config = _config(devices, floors, areas)
     with patch("homeassistant.config.load_yaml_config_file", return_value=config):
         await hass.services.async_call(DOMAIN, "reload", blocking=True)
         await hass.async_block_till_done()

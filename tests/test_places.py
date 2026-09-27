@@ -2,11 +2,12 @@
 
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, floor_registry as fr
 import pytest
 
-from helpers import module
+from helpers import DOMAIN, device_of, module, reload, setup
 
 TERREO = {"name": "Térreo", "level": 0, "icon": "mdi:home-floor-0", "aliases": ["embaixo"]}
 COZINHA = {"name": "Cozinha", "floor": "terreo", "icon": "mdi:stove", "aliases": ["copa"]}
@@ -195,6 +196,83 @@ async def test_remove_deletes_only_what_is_managed(ha: HomeAssistant) -> None:
 
     module("places").async_remove(ha, managed)
 
+    assert floor(ha, "terreo") is None
+    assert area(ha, "cozinha") is None
+    assert floor(ha, theirs.floor_id) == theirs
+    assert area(ha, their_area.id) == their_area
+
+
+# --- the configuration and the entry ----------------------------------------------
+
+
+async def test_floors_and_areas_alone_create_the_entry(ha: HomeAssistant) -> None:
+    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.data == {"floors": ["terreo"], "areas": ["cozinha"]}
+    kitchen = area(ha, "cozinha")
+    assert kitchen is not None
+    assert kitchen.floor_id == "terreo"
+
+
+async def test_floors_and_areas_next_to_devices(ha: HomeAssistant) -> None:
+    appliance = module("features").FEATURES["appliance"].example
+    assert await setup(ha, {"demo_washer": {"name": "Washer", "appliance": appliance}},
+                       floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    assert len(ha.config_entries.async_entries(DOMAIN)) == 1
+    assert device_of(ha, "demo_washer") is not None
+    assert floor(ha, "terreo") is not None
+
+
+async def test_a_reload_that_drops_a_floor_deletes_it(ha: HomeAssistant) -> None:
+    assert await setup(ha, {}, floors={"terreo": TERREO, "primeiro": {"name": "Primeiro"}},
+                       areas={"cozinha": COZINHA})
+    await reload(ha, {}, floors={"terreo": TERREO})
+    assert floor(ha, "primeiro") is None
+    assert area(ha, "cozinha") is None
+    assert floor(ha, "terreo") is not None
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    assert entry.data == {"floors": ["terreo"], "areas": []}
+
+
+async def test_a_reload_without_anything_deletes_them_all(ha: HomeAssistant) -> None:
+    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    await reload(ha, {})
+    assert floor(ha, "terreo") is None
+    assert area(ha, "cozinha") is None
+
+
+@pytest.mark.parametrize(("floors", "areas"), [
+    pytest.param({}, {"cozinha": COZINHA}, id="area on a floor not in floors"),
+    pytest.param({"terreo": {"level": 0}}, {}, id="floor without a name"),
+    pytest.param({"terreo": {**TERREO, "level": "ground"}}, {}, id="level not an integer"),
+    pytest.param({"terreo": {**TERREO, "colour": "red"}}, {}, id="unknown floor key"),
+    pytest.param({}, {"quintal": {"name": "Quintal", "picture": "x"}}, id="unknown area key"),
+    pytest.param({"Térreo": TERREO}, {}, id="key not a slug"),
+])
+async def test_invalid_floors_and_areas_are_refused(
+        ha: HomeAssistant, floors: dict[str, Any], areas: dict[str, Any]) -> None:
+    assert not await setup(ha, {}, floors=floors, areas=areas)
+    assert not ha.config_entries.async_entries(DOMAIN)
+    assert not list(fr.async_get(ha).async_list_floors())
+
+
+async def test_invalid_reload_keeps_floors_and_areas(ha: HomeAssistant) -> None:
+    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    await reload(ha, {}, areas={"cozinha": COZINHA})  # its floor is no longer declared
+    assert floor(ha, "terreo") is not None
+    kitchen = area(ha, "cozinha")
+    assert kitchen is not None
+    assert kitchen.floor_id == "terreo"
+
+
+async def test_deleting_the_entry_deletes_only_its_floors_and_areas(ha: HomeAssistant) -> None:
+    theirs = fr.async_get(ha).async_create("Sótão")
+    their_area = ar.async_get(ha).async_create("Garagem")
+    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    await ha.config_entries.async_remove(entry.entry_id)
+    await ha.async_block_till_done()
     assert floor(ha, "terreo") is None
     assert area(ha, "cozinha") is None
     assert floor(ha, theirs.floor_id) == theirs

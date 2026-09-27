@@ -2,7 +2,7 @@
   "services": {
     "reload": {
       "name": "Reload",
-      "description": "Reloads the devices from the YAML configuration."
+      "description": "Reloads the floors, areas and devices from the YAML configuration."
     }
   },
   "entity": {
