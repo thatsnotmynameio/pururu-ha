@@ -96,11 +96,12 @@ At the end of `async_setup_entry`, after `_place` and `_remove_stale`, `dashboar
 
 ### Unload
 
-`dashboard.async_unload(hass)` runs from `async_unload_entry`:
+Only a dashboard that `async_setup` created is removed. It registers the removal with `entry.async_on_unload`, which runs when the entry unloads:
 
-- It pops `dashboards["pururu"]` only when the entry there is a `PururuDashboard`.
+- It pops `dashboards["pururu"]`.
 - It then calls `frontend.async_remove_panel(hass, "pururu", warn_if_unknown=False)`.
-- The registry listeners go through `entry.async_on_unload`.
+- The registry listeners go through `entry.async_on_unload` too.
+- When `/pururu` was taken, nothing is registered, so the other panel is never touched.
 - A reload removes the dashboard and registers it again.
 
 ### Manifest
