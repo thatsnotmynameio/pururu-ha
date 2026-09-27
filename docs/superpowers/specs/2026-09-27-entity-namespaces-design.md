@@ -39,7 +39,7 @@ The YAML doesn't change: `switches:` keys stay `pump`, `cycle_from:` names a fea
 ## Contract
 
 - `Feature.namespace: str`, required. The contract test checks that every namespace is a slug, that no two are equal, and that none is another's prefix followed by `_` (`switch` and `switch_x`).
-- `Device.namespace: str`, required, so that no ID is built without a namespace by mistake. `Device.qualified(entity_key)` is `namespace` when the key equals it, else `<namespace>_<entity_key>`. `object_id`, `entity_id` and `current_entity_id` qualify the key they are given.
+- `Device.namespace: str`, required, so that no ID is built without a namespace by mistake. `Device.qualified(entity_key)` is always `<namespace>_<entity_key>`, even when the key equals the namespace. `object_id`, `entity_id` and `current_entity_id` qualify the key they are given.
 - `Device.info` stays keyed by the device key alone: every feature's entities stay in one Home Assistant device.
 - A feature keeps writing local entity keys (`"running"`, `sources = ("running",)`, `provides={"cycle": "running"}`, `entity_keys`). The only change to `appliance`, `phases` and `switches` is `namespace=` in their `Feature`.
 
@@ -61,7 +61,7 @@ The YAML doesn't change: `switches:` keys stay `pump`, `cycle_from:` names a fea
 
 ## Tests
 
-- **Contract (`tests/test_features.py`):** `test_no_entity_key_in_two_features` is replaced by the namespace checks. Translations and icons are looked up by qualified key.
+- **Contract (`tests/test_features.py`):** `test_no_entity_key_in_two_features` is replaced by the namespace checks, plus `test_no_entity_key_repeats_its_namespace` (a fixed entity key is never its feature's namespace). Translations and icons are looked up by qualified key.
 - **Every test that names an ID** is updated to the new format.
 - **New tests:**
   - A switch keyed `power` or `running` in a device with `appliance` is accepted, and both entities are created.
