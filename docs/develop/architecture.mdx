@@ -52,23 +52,24 @@ A device is a name plus one or more **features**. `FEATURES` in `features/__init
 | `entity_keys` | Everything it can create: entity key → platform |
 | `build` | `(hass, device, config, inputs) → list[PururuEntity]` |
 | `example` | A minimal valid block, for the contract test |
+| `namespace` | Where its entity keys live in an entity ID: `appliance`, `phase`, `switch` |
 | `provides` | capability → the entity key whose entity carries it |
 | `requires` | capabilities it takes through `<capability>_from` |
 | `configured` | A platform, when its entity keys are the keys of its block, named by the block's `name`; `None` otherwise |
 
 The device schema (`_device` in `__init__.py`) is built from `FEATURES`. It requires at least one feature, and it checks that every `<capability>_from` names a feature of the same device that provides that capability.
 
-It also checks that every entity key of the device is different: the fixed `entity_keys` of its features, all of them, and the keys of a `configured` feature's block. A unique ID leaves the platform out, so `switch.pururu_pool_power` and `sensor.pururu_pool_power` would share one.
+It doesn't compare entity keys between features. Each feature has its own `namespace`, and the entity keys it creates are in it (`appliance_power`, `switch_power`), so they can't meet. The contract test checks that namespaces are distinct slugs and that none is another's followed by `_`. Between devices, `_entity_ids_distinct` still refuses two that would give an entity one ID: `pool` with the switch `switch_pump` and `pool_switch` with the switch `pump`.
 
-When a feature requires a capability, `_build` looks up the providing entity key's **current** entity ID (`Device.current_entity_id`, which follows renames) and passes it to `build()` in `inputs`. The providing entity key is also added to the entity's sources, so if the provider isn't created, neither is this entity.
+When a feature requires a capability, `_build` looks up the providing entity key's **current** entity ID with a `Device` in the providing feature's namespace (`Device.current_entity_id`, which follows renames), and passes it to `build()` in `inputs`. The provider's unique ID is also added to the entity's sources, so if the provider isn't created, neither is this entity.
 
 [Writing a feature](/develop/writing-a-feature) walks through adding one.
 
 ## Entity IDs are the identity
 
-- Every entity is `<platform>.pururu_<device key>_<entity key>`. Its unique ID is the part after the platform: `Device.object_id(entity_key)`, which is `pururu_<key>_<entity key>`.
+- Every entity is `<platform>.pururu_<device key>_<namespace>_<entity key>`, and an entity key equal to its namespace is written once (`phase`). Its unique ID is the part after the platform: `Device.object_id(entity_key)`. `_build` gives each feature's `build()` a `Device` in that feature's namespace, so a feature only writes its own entity keys (`"running"`).
 - A device's identifier is `(pururu, <device key>)`.
-- `PururuEntity._identify()` sets the entity ID, unique ID and device info from the device and the entity key, and its name. Without a `name`, the translation key is the entity key and the name comes from `translations/*.json` → `entity.<platform>.<entity key>.name`. With one, as for a configured feature, the entity has that name and no translation key.
+- `PururuEntity._identify()` sets the entity ID, unique ID and device info from the device and the entity key, and its name. Without a `name`, the translation key is the entity key in its namespace (`Device.qualified`, as `appliance_running`) and the name comes from `translations/*.json` → `entity.<platform>.<namespace>_<entity key>.name`. With one, as for a configured feature, the entity has that name and no translation key.
 
 ### Taken IDs
 
