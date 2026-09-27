@@ -36,7 +36,8 @@
         { "title": "appliance", "href": "/features/appliance" },
         { "title": "lights", "href": "/features/lights" },
         { "title": "phases", "href": "/features/phases" },
-        { "title": "switches", "href": "/features/switches" }
+        { "title": "switches", "href": "/features/switches" },
+        { "title": "alerts", "href": "/features/alerts" }
       ]
     },
     {

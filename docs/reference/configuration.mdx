@@ -39,6 +39,8 @@ pururu:
         bands:
           heating: {above: 1000}
           spinning: {above: 50, below: 1000, for: {minutes: 3}}
+      alerts:
+        long_cycle: {name: Ciclo longo, when: appliance_running, is: "on", for: {hours: 3}, priority: medium}
     pool:
       name: Piscina
       switches:
@@ -53,7 +55,8 @@ pururu:
 ## General rules
 
 - `pururu:` has three optional keys: `floors`, `areas` and `devices`. Any other key is an error.
-- Every **key** you choose, whether of a floor, an area, a device, a phase, a switch or a light, is a **slug**: lowercase letters, digits and `_`.
+- Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light or an alert, is a **slug**: lowercase letters, digits and `_`.
+- An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_pump`). See [alerts](/features/alerts#settings).
 - No two devices give an entity the same ID. Device `pool` with the switch `switch_pump` and device `pool_switch` with the switch `pump` would both have `switch.pururu_pool_switch_switch_pump`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `pool` with the switch `appliance_energy_total` is refused next to a device `pool_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
 - In one device, a real entity is in one of `switches` and `lights` at most: `switches: switch.sonoff_abajur is already in lights`. Two devices can each use it their own way.
 - An unknown key anywhere is a configuration error. When the configuration is invalid, Home Assistant logs why, and a reload **changes nothing**.
