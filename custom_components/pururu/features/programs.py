@@ -123,6 +123,14 @@ class Program(PururuEntity, ButtonEntity):
         )
 
     @override
+    async def async_will_remove_from_hass(self) -> None:
+        """Stop a running program: a reload builds it again, idle."""
+        if self._script is not None:
+            await self._script.async_unload()
+            self._script = None
+        await super().async_will_remove_from_hass()
+
+    @override
     async def async_press(self) -> None:
         """Start the sequence without waiting for it, as script.turn_on."""
         if self._script is None:

@@ -4,12 +4,12 @@ import asyncio
 from typing import Any
 from unittest.mock import patch
 
-from homeassistant.core import Context, Event, HomeAssistant
+from homeassistant.core import Context, Event, HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 import pytest
 
-from helpers import capture, fake, held, settle, setup, tick
+from helpers import capture, fake, held, reload, restart, settle, setup, tick
 
 KEY = "pool"
 REAL_PUMP = "switch.pool_pump"
@@ -175,3 +175,73 @@ async def test_a_failing_step_stops_it_and_is_logged(
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any("Piscina Limpar" in message and "the relay is stuck" in message
                for message in errors), errors
+
+
+# --- reloads, renames, taken IDs and restarts --------------------------------------------
+
+
+async def test_a_reload_stops_a_running_program(pool: HomeAssistant, freezer: Any) -> None:
+    """What it did stays: the pump stays on."""
+    calls = capture(pool, "call_service")
+    await press(pool)
+    await reload(pool, devices())
+    await tick(pool, freezer, TWO_HOURS)
+    assert reached(calls) == ["turn_on"]
+
+
+async def test_after_a_reload_it_runs_again(pool: HomeAssistant, freezer: Any) -> None:
+    await reload(pool, devices())
+    calls = capture(pool, "call_service")
+    await press(pool)
+    await tick(pool, freezer, TWO_HOURS)
+    assert reached(calls) == ["turn_on", "turn_off"]
+
+
+async def test_a_reload_that_drops_it_removes_it(pool: HomeAssistant) -> None:
+    await reload(pool, {KEY: {"name": "Piscina", "switches": SWITCHES}})
+    assert er.async_get(pool).async_get(CLEAN) is None
+    assert held(pool, KEY) == {PUMP}
+
+
+async def test_it_follows_its_target_renamed(pool: HomeAssistant) -> None:
+    er.async_get(pool).async_update_entity(PUMP, new_entity_id="switch.piscina_bomba")
+    await pool.async_block_till_done()
+    calls = capture(pool, "call_service")
+    await press(pool)
+    assert reached(calls, "switch.piscina_bomba") == ["turn_on"]
+    assert reached(calls) == ["turn_on"]
+
+
+async def test_renamed_it_still_runs(pool: HomeAssistant) -> None:
+    er.async_get(pool).async_update_entity(CLEAN, new_entity_id="button.limpar_piscina")
+    await pool.async_block_till_done()
+    calls = capture(pool, "call_service")
+    await press(pool, "button.limpar_piscina")
+    assert reached(calls) == ["turn_on"]
+
+
+async def test_an_id_already_taken_is_an_error(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    er.async_get(ha).async_get_or_create(
+        "button", "template", "someone_else", suggested_object_id="pururu_pool_program_clean")
+    assert await setup(ha, devices())
+    assert held(ha, KEY) == {PUMP}
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any(CLEAN in message and "template" in message for message in errors), errors
+
+
+async def test_a_program_whose_target_is_not_created_is_not_created(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    er.async_get(ha).async_get_or_create(
+        "switch", "template", "someone_else", suggested_object_id="pururu_pool_switch_pump")
+    assert await setup(ha, devices())
+    assert ha.states.get(CLEAN) is None
+    assert f"{CLEAN} follows {PUMP}, which is not created; not creating it" in caplog.text
+
+
+async def test_after_a_restart_it_shows_its_last_press(ha: HomeAssistant) -> None:
+    """A running program is lost, as HA's scripts; the time of the last press stays."""
+    pressed = "2026-09-16T09:00:00+00:00"
+    await fake(ha, REAL_PUMP, "off")
+    await restart(ha, devices(), (State(CLEAN, pressed), {}))
+    assert ha.states.get(CLEAN).state == pressed
