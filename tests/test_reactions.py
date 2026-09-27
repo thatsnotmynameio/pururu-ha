@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.sun import get_astral_event_next
@@ -463,12 +464,18 @@ async def test_a_failed_write_drops_nothing_stale(
     assert "pururu_lights_reaction_door" in entry.data["automations"]
 
 
-async def test_the_include_is_checked_before_ha_has_started(ha: HomeAssistant) -> None:
-    """The include check on a fresh file also runs on the very first start."""
+async def test_at_first_start_the_new_file_is_reloaded_once_and_included(
+        ha: HomeAssistant) -> None:
+    """A file new at start-up is reloaded exactly once, once HA has started, and included."""
     with patch("homeassistant.config.load_yaml_config_file",
-               side_effect=lambda *_args, **_kwargs: {}):
-        assert await async_setup_component(ha, "automation", {})
+               side_effect=lambda *_args, **_kwargs: {"automation pururu": generated(ha)}):
+        assert await async_setup_component(ha, "automation",
+                                           {"automation pururu": generated(ha)})
         reloaded = capture(ha, "automation_reloaded")
         await restart(ha, devices(door=DOOR_OPENS))
-    assert ha.states.get(automation("door")) is not None
+    state = ha.states.get(automation("door"))
+    assert state is not None
+    assert state.state != STATE_UNAVAILABLE
+    assert state.attributes.get("id") == "pururu_lights_reaction_door"
     assert len(reloaded) == 1
+    assert issue(ha) is None
