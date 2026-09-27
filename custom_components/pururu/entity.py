@@ -41,7 +41,8 @@ class PururuEntity(Entity):
         """Take `device`'s entity ID, unique ID and device for `entity_key`, and a name.
 
         The name is `name` when given (an entity key from the configuration has
-        no translation), else the translation of the key in its namespace.
+        no translation, even when the base class brings one, as LightGroup's
+        "light"), else the translation of the key in its namespace.
         """
         self.entity_id = device.entity_id(platform, entity_key)
         self._attr_unique_id = device.object_id(entity_key)
@@ -50,3 +51,4 @@ class PururuEntity(Entity):
             self._attr_translation_key = device.qualified(entity_key)
         else:
             self._attr_name = name
+            self._attr_translation_key = None

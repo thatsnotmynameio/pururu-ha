@@ -54,8 +54,9 @@ type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
 def _device(value: Any) -> dict[str, Any]:
     """A device: a name, maybe an area, at least one feature, every reference resolved.
 
-    Every <capability>_from names a feature of this device that provides it, and
-    every entity key a feature refers to is another feature's.
+    Every <capability>_from names a feature of this device that provides it,
+    every entity key a feature refers to is another feature's, and a real
+    entity is in one configured feature of the device at most.
     """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
@@ -70,6 +71,7 @@ def _device(value: Any) -> dict[str, Any]:
         )
     _capabilities_provided(device, names)
     _references_resolved(device, names)
+    _real_entities_distinct(device, names)
     return device
 
 
@@ -83,6 +85,20 @@ def _capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
                     f"{name}: {capability}_from must name a feature of this device "
                     f"that provides {capability}"
                 )
+
+
+def _real_entities_distinct(device: dict[str, Any], names: list[str]) -> None:
+    """Refuse a real entity in two configured features: a relay is a switch or a light."""
+    owners: dict[str, str] = {}  # real entity -> the configured feature that has it
+    for name in names:
+        if FEATURES[name].configured is None:
+            continue
+        for item in device[name].values():
+            # A configured key need not stand for a real entity (an alert)
+            if (entity := item.get("entity")) is None:
+                continue
+            if owners.setdefault(entity, name) != name:
+                raise vol.Invalid(f"{name}: {entity} is already in {owners[entity]}")
 
 
 def _references_resolved(device: dict[str, Any], names: list[str]) -> None:

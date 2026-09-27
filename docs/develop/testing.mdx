@@ -67,6 +67,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_appliance.py` | `running`, cycles, energy, runtime, meters, restores |
 | `test_phases.py` | Bands, `for`, `seen`, restores, translations |
 | `test_switches.py` | Following the real switch, passing commands on, refused blocks, taken IDs, renames, reloads |
+| `test_lights.py` | Following the real light or switch, what it offers, passing commands on, refused blocks, one feature per real entity, taken IDs, renames, reloads |
 | `test_places.py` | Floors and areas: creation, adoption, deletion, refused names |
 | `test_dashboard.py` | The dashboard's content, refreshes, and what keeps it from being created |
 | `test_entity.py` | `reading()` |

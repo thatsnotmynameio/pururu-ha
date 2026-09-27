@@ -62,6 +62,18 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
     assert not await setup(ha, {KEY: {"name": "Piscina", "switches": block}})
 
 
+@pytest.mark.parametrize(("entity", "message"), [
+    pytest.param("light.pool_light", "light.pool_light is not a switch", id="another domain"),
+    pytest.param(PUMP, f"{PUMP} is a pururu switch: name the real one", id="a pururu switch"),
+])
+async def test_the_error_names_what_is_wrong(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, entity: str, message: str) -> None:
+    """The messages the docs quote (troubleshooting)."""
+    assert not await setup(ha, {KEY: {"name": "Piscina", "switches": {
+        "pump": {"entity": entity, "name": "Bomba"}}}})
+    assert message in caplog.text
+
+
 @pytest.mark.parametrize("entity_key", ["power", "running", "runtime_month"])
 async def test_a_key_of_another_feature_is_accepted(ha: HomeAssistant, entity_key: str) -> None:
     """The switch is in the switch namespace, the appliance's entities in theirs."""
@@ -218,6 +230,42 @@ async def test_a_renamed_pururu_switch_is_not_a_real_one(
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any("switch.aquecedor is a pururu switch" in message and PUMP in message
                for message in errors), errors
+
+
+async def test_a_switch_renamed_to_what_it_stands_for_stays_as_it_is(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Renamed in the UI to its own entity: kept with its rename, unavailable, at every reload."""
+    await fake(ha, REAL_PUMP, "on")
+    devices = {KEY: {"name": "Piscina", "switches": {
+        "pump": SWITCHES["pump"], "heater": {"entity": "switch.aquecedor", "name": "Aquecedor"}}}}
+    assert await setup(ha, devices)
+    er.async_get(ha).async_update_entity(HEATER, new_entity_id="switch.aquecedor")
+    await ha.async_block_till_done()
+    for _ in range(3):
+        entry = er.async_get(ha).async_get("switch.aquecedor")
+        assert entry is not None
+        assert entry.unique_id == "pururu_pool_switch_heater"
+        assert state(ha, "switch.aquecedor") == "unavailable"
+        assert held(ha, KEY) == {PUMP, "switch.aquecedor"}
+        assert "switch.aquecedor is this switch itself: name the real one" in caplog.text
+        caplog.clear()
+        await reload(ha, devices)
+
+
+async def test_a_switch_standing_for_itself_passes_nothing_on(ha: HomeAssistant) -> None:
+    """Its state set by hand (developer tools) makes it neither available nor calling itself."""
+    devices = {KEY: {"name": "Piscina", "switches": {
+        "heater": {"entity": "switch.aquecedor", "name": "Aquecedor"}}}}
+    assert await setup(ha, devices)
+    er.async_get(ha).async_update_entity(HEATER, new_entity_id="switch.aquecedor")
+    await ha.async_block_till_done()
+    await fake(ha, "switch.aquecedor", "on")
+    calls = capture(ha, "call_service")
+    await ha.services.async_call("switch", "turn_on", {"entity_id": "switch.aquecedor"},
+                                 blocking=True)
+    await settle()
+    assert [event.data["service_data"] for event in calls] == [
+        {"entity_id": "switch.aquecedor"}]
 
 
 async def test_reload_that_drops_a_switch_removes_it(pool: HomeAssistant) -> None:

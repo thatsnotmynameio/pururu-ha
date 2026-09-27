@@ -16,6 +16,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - `cycle_from` naming a feature that isn't on the same device.
 - A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
+- A light whose `entity` isn't a `light.*` or `switch.*` entity (`sensor.x is not a light or switch`), is a pururu light or switch, or has no `name` or an empty one.
+- A real entity in both `switches` and `lights` of one device: `switches: switch.sonoff_abajur is already in lights`. Keep it in one of them.
 - An alert whose `when` isn't an entity of another feature of the device: `alerts: appliance_nothing is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key, with its namespace (`appliance_power`, not `power`).
 - An alert with both `is` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
 - Two devices that would give an entity the same ID: `device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`. Rename a device key or a switch key.
@@ -56,15 +58,27 @@ An [alert](/features/alerts)'s `when` names an entity its feature can create, bu
 
 **Fix:** turn on the setting that creates the entity, or point `when` at another entity, then reload pururu.
 
-### `… is a pururu switch: name the real one; not creating …`
+### `… is a pururu switch (or light): name the real one; not creating …`
 
 ```
 switch.aquecedor is a pururu switch: name the real one; not creating switch.pururu_pool_switch_pump
+light.teto is a pururu light: name the real one; not creating light.pururu_sala_light_abajur
 ```
 
-A switch's `entity:` names one of pururu's own switches that you renamed in the UI, so it no longer starts with `switch.pururu_`. A [switch](/features/switches) stands for a real one.
+A switch's or a light's `entity:` names one of pururu's own entities that you renamed in the UI, so it no longer starts with `switch.pururu_` or `light.pururu_`. A [switch](/features/switches) or a [light](/features/lights) stands for a real one.
 
-**Fix:** point `entity:` at the real switch, then reload pururu.
+**Fix:** point `entity:` at the real switch or light, then reload pururu.
+
+### `… is this switch itself: name the real one` (or light)
+
+```
+switch.aquecedor is this switch itself: name the real one
+light.sala_luminaria is this light itself: name the real one
+```
+
+You renamed a pururu switch or light in the UI to the entity its own `entity:` names, so it stands for itself. It's kept, with your rename, but it's `unavailable`: there's nothing real to follow.
+
+**Fix:** point `entity:` at the real switch or light, or rename the pururu one back, then reload pururu.
 
 ### An entity stays `unknown`
 
@@ -75,6 +89,10 @@ A switch's `entity:` names one of pururu's own switches that you renamed in the 
 ### A switch is `unavailable`
 
 A [switch](/features/switches) shows its real switch. It's `unavailable` when the real one is, or when it doesn't exist: check that `entity:` still names it, for example after renaming the real switch, and reload pururu.
+
+### A light is `unavailable`
+
+A [light](/features/lights) shows its real light or switch. It's `unavailable` when the real one is, or when it doesn't exist: check that `entity:` still names it, for example after renaming the real entity, and reload pururu.
 
 ### The cycle ends too early, or never starts
 

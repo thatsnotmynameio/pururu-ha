@@ -11,7 +11,7 @@ Every entity pururu creates has the ID
 <platform>.pururu_<device key>_<namespace>_<entity key>
 ```
 
-- **platform**: `sensor`, `binary_sensor` or `switch`.
+- **platform**: `sensor`, `binary_sensor`, `switch` or `light`.
 - **device key**: the device's key under `devices:`.
 - **namespace**: the feature that creates the entity. Each feature has its own, so two features never give two entities one ID.
 - **entity key**: which of the feature's entities it is. Each feature's page lists its entity keys. An entity key counted per period ends with that period, as in `runtime_month`.
@@ -20,6 +20,7 @@ Every entity pururu creates has the ID
 |---|---|---|
 | [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_laundry_washer_appliance_running` |
 | [`phases`](/features/phases) | `phase` | `sensor.pururu_laundry_washer_phase_current` |
+| [`lights`](/features/lights) | `light` | `light.pururu_sala_light_teto` |
 | [`switches`](/features/switches) | `switch` | `switch.pururu_pool_switch_pump` |
 | [`alerts`](/features/alerts) | `alert` | `binary_sensor.pururu_laundry_washer_alert_long_cycle` |
 
@@ -37,7 +38,7 @@ The entity's **unique ID** is the same text without the platform: `pururu_laundr
 
 An entity's name comes from its entity key, in Home Assistant's language: English and Portuguese are translated. It's shown after the device's name, so `running` on **Máquina de lavar** is **Máquina de lavar Running**, or **Máquina de lavar Em funcionamento** in Portuguese. You can rename any entity in the UI as usual.
 
-A [switch](/features/switches)'s entity key is the key you gave it, so its name is the `name:` you wrote, the same in every language.
+A [switch](/features/switches)'s or a [light](/features/lights)'s entity key is the key you gave it, so its name is the `name:` you wrote, the same in every language.
 
 ## Renaming an entity ID
 
