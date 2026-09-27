@@ -12,8 +12,8 @@ from helpers import fake, reload, restart, setup, tick
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
-RUNNING = "binary_sensor.pururu_demo_washer_running"
-PHASE = "sensor.pururu_demo_washer_phase"
+RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
+PHASE = "sensor.pururu_demo_washer_phase_current"
 IDLE_W = 1.4
 APPLIANCE = {"power": POWER,
              "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
@@ -251,11 +251,11 @@ async def test_no_phase_when_its_cycle_is_not_created(ha: HomeAssistant,
                                                       caplog: pytest.LogCaptureFixture) -> None:
     """Running's ID belongs to another integration: nothing that follows running is created."""
     er.async_get(ha).async_get_or_create(
-        "binary_sensor", "template", "someone_else", suggested_object_id="pururu_demo_washer_running")
+        "binary_sensor", "template", "someone_else", suggested_object_id="pururu_demo_washer_appliance_running")
     assert await setup(ha, DEVICES)
     assert ha.states.get(PHASE) is None
-    assert ha.states.get("sensor.pururu_demo_washer_runtime_total") is None
-    assert ha.states.get("sensor.pururu_demo_washer_power") is not None
+    assert ha.states.get("sensor.pururu_demo_washer_appliance_runtime_total") is None
+    assert ha.states.get("sensor.pururu_demo_washer_appliance_power") is not None
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(PHASE in message and RUNNING in message for message in errors), errors
     assert any("runtime_total" in message and RUNNING in message for message in errors), errors

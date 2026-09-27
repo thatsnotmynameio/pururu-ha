@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 import pytest
 import voluptuous as vol
 
@@ -34,21 +35,42 @@ def test_translation_files_match() -> None:
     assert paths(load("translations/pt-BR.json")) == paths(load("translations/en.json"))
 
 
-def test_no_entity_key_in_two_features(features: dict[str, Any]) -> None:
-    seen: dict[str, str] = {}
+def test_namespaces_are_distinct_slugs(features: dict[str, Any]) -> None:
+    """Every feature's entity keys are in its own namespace: no two features' entity IDs meet."""
     for name, feature in features.items():
-        for entity_key in feature.entity_keys:
-            assert entity_key not in seen, f"{entity_key} in {seen.get(entity_key)} and {name}"
-            seen[entity_key] = name
+        assert cv.slug(feature.namespace) == feature.namespace, name
+        for other, theirs in features.items():
+            if other != name:
+                assert feature.namespace != theirs.namespace, f"{name} and {other}"
+                assert not theirs.namespace.startswith(f"{feature.namespace}_"), f"{name} and {other}"
+
+
+def test_no_entity_key_repeats_its_namespace(features: dict[str, Any]) -> None:
+    """phases' `phase` would be sensor.pururu_<key>_phase_phase: its key is `current`."""
+    for name, feature in features.items():
+        assert feature.namespace not in feature.entity_keys, name
 
 
 def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> None:
+    qualified = module("feature").qualified
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
     for feature in features.values():
         for entity_key, platform in feature.entity_keys.items():
+            key = qualified(feature.namespace, entity_key)
             for translations in (en, pt):
-                assert translations["entity"][platform][entity_key]["name"], entity_key
-            assert icons["entity"][platform][entity_key]["default"].startswith("mdi:"), entity_key
+                assert translations["entity"][platform][key]["name"], key
+            assert icons["entity"][platform][key]["default"].startswith("mdi:"), key
+
+
+def test_every_translated_entity_key_is_created(features: dict[str, Any]) -> None:
+    """A name or an icon under a key no feature creates is left over, as from before namespaces."""
+    qualified = module("feature").qualified
+    created = {(str(platform), qualified(feature.namespace, entity_key))
+               for feature in features.values()
+               for entity_key, platform in feature.entity_keys.items()}
+    for name in ("translations/en.json", "icons.json"):
+        listed = {(platform, key) for platform, keys in load(name)["entity"].items() for key in keys}
+        assert listed <= created, f"{name}: {sorted(listed - created)}"
 
 
 def test_example_is_valid_and_unknown_keys_are_refused(features: dict[str, Any]) -> None:

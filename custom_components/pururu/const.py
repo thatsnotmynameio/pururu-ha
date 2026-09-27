@@ -15,7 +15,7 @@ CONF_LEVEL: Final = "level"
 CONF_ALIASES: Final = "aliases"
 # A device's area: a key of areas
 CONF_AREA: Final = "area"
-# Every entity ID is <platform>.pururu_<device key>_<entity key>
+# Every entity ID is <platform>.pururu_<device key>_<namespace>_<entity key>
 ENTITY_PREFIX: Final = "pururu"
 PLATFORMS: Final = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.SWITCH]
 # The validated `pururu:` block, from async_setup (and each reload) to the entry

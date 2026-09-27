@@ -78,7 +78,7 @@ The comparisons are strict. With `heating: {above: 1000}` and `spinning: {above:
 
 | Entity | What it is |
 |---|---|
-| `sensor.pururu_<key>_phase` | The current phase: one of your names. Device class `enum`, so its possible states are known to Home Assistant. |
+| `sensor.pururu_<key>_phase_current` | The current phase: one of your names. Device class `enum`, so its possible states are known to Home Assistant. |
 
 Its attribute **`seen`** lists the bands that held during the current cycle, in the order you listed them. When the cycle ends, `seen` keeps the last cycle's bands until the next cycle starts. Use it to check afterwards whether a wash went through `spinning`.
 

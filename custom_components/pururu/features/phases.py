@@ -101,7 +101,7 @@ class Phase(PururuEntity, SensorEntity, RestoreEntity):
         bands: tuple[Band, ...],
     ) -> None:
         """Follow `sensor` through `bands` while `cycle` is on."""
-        self._identify(device, Platform.SENSOR, "phase")
+        self._identify(device, Platform.SENSOR, "current")
         self._cycle = cycle
         self._sensor = sensor
         self._stopped = stopped
@@ -259,7 +259,7 @@ def build(
 
 PHASES = Feature(
     schema=SCHEMA,
-    entity_keys={"phase": Platform.SENSOR},
+    entity_keys={"current": Platform.SENSOR},
     build=build,
     example={
         "cycle_from": "appliance",
@@ -267,5 +267,6 @@ PHASES = Feature(
         "defaults": {"stopped": "idle", "running": "washing"},
         "bands": {"heating": {"above": 1000}},
     },
+    namespace="phase",
     requires=("cycle",),
 )

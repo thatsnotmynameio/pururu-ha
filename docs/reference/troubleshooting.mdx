@@ -16,8 +16,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - `cycle_from` naming a feature that isn't on the same device.
 - A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
-- A switch whose key is already an entity key of another feature of the device: `switches: power is already an entity key of appliance`.
-- Two devices that would give an entity the same ID: `device pool_pump: pururu_pool_pump_heater is already an entity of device pool`. Rename a device key or a switch key.
+- Two devices that would give an entity the same ID: `device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`. Rename a device key or a switch key.
 
 **Developer tools → YAML → Check configuration** shows the same error before you reload.
 
@@ -30,7 +29,7 @@ That's expected for what the YAML describes. Floors, areas and a device's `area`
 ### `… is already taken by …; not creating it`
 
 ```
-sensor.pururu_laundry_washer_power is already taken by the template integration; not creating it
+sensor.pururu_laundry_washer_appliance_power is already taken by the template integration; not creating it
 ```
 
 Another integration's entity, or an entity without a unique ID, already has that ID. pururu [never takes an ID](/concepts/entity-ids#an-id-already-taken) that belongs to someone else, and it never suffixes one with `_2`.
@@ -40,7 +39,7 @@ Another integration's entity, or an entity without a unique ID, already has that
 ### `… follows …, which is not created; not creating it`
 
 ```
-sensor.pururu_laundry_washer_phase follows binary_sensor.pururu_laundry_washer_running, which is not created; not creating it
+sensor.pururu_laundry_washer_phase_current follows binary_sensor.pururu_laundry_washer_appliance_running, which is not created; not creating it
 ```
 
 This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back.
@@ -48,7 +47,7 @@ This entity depends on one that couldn't be created, usually because of the erro
 ### `… is a pururu switch: name the real one; not creating …`
 
 ```
-switch.aquecedor is a pururu switch: name the real one; not creating switch.pururu_pool_pump
+switch.aquecedor is a pururu switch: name the real one; not creating switch.pururu_pool_switch_pump
 ```
 
 A switch's `entity:` names one of pururu's own switches that you renamed in the UI, so it no longer starts with `switch.pururu_`. A [switch](/features/switches) stands for a real one.

@@ -11,8 +11,8 @@ from helpers import capture, fake, held, reload, restart, settle, setup
 KEY = "pool"
 REAL_PUMP = "switch.pool_pump"
 REAL_HEATER = "switch.pool_heater"
-PUMP = "switch.pururu_pool_pump"
-HEATER = "switch.pururu_pool_heater"
+PUMP = "switch.pururu_pool_switch_pump"
+HEATER = "switch.pururu_pool_switch_heater"
 SWITCHES: dict[str, Any] = {"pump": {"entity": REAL_PUMP, "name": "Bomba"},
                             "heater": {"entity": REAL_HEATER, "name": "Aquecedor"}}
 DEVICES = {KEY: {"name": "Piscina", "switches": SWITCHES}}
@@ -63,29 +63,37 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
 
 
 @pytest.mark.parametrize("entity_key", ["power", "running", "runtime_month"])
-async def test_a_key_of_another_feature_is_refused(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, entity_key: str) -> None:
-    """Even `runtime_month`, which these settings don't create: turning it on can't break a switch."""
+async def test_a_key_of_another_feature_is_accepted(ha: HomeAssistant, entity_key: str) -> None:
+    """The switch is in the switch namespace, the appliance's entities in theirs."""
+    await fake(ha, REAL_PUMP, "on")
     switches = {entity_key: {"entity": REAL_PUMP, "name": "Bomba"}}
-    assert not await setup(ha, {KEY: {"name": "Piscina", "appliance": APPLIANCE,
-                                      "switches": switches}})
-    assert f"switches: {entity_key} is already an entity key of appliance" in caplog.text
+    assert await setup(ha, {KEY: {"name": "Piscina", "appliance": APPLIANCE,
+                                  "switches": switches}})
+    assert state(ha, f"switch.pururu_pool_switch_{entity_key}") == "on"
+    assert "binary_sensor.pururu_pool_appliance_running" in held(ha, KEY)
 
 
-@pytest.mark.parametrize("other", [
-    pytest.param({"switches": {"heater": SWITCHES["heater"]}}, id="the same platform"),
-    pytest.param({"appliance": {**APPLIANCE, "power": "sensor.pool_heater_power"}},
-                 id="another platform"),
+async def test_a_switch_keyed_switch_repeats_it(ha: HomeAssistant) -> None:
+    """No exception to the pattern: the namespace, then the key, even when they are alike."""
+    await fake(ha, REAL_PUMP, "on")
+    assert await setup(ha, {KEY: {"name": "Piscina", "switches": {"switch": SWITCHES["pump"]}}})
+    assert held(ha, KEY) == {"switch.pururu_pool_switch_switch"}
+
+
+@pytest.mark.parametrize(("entity_key", "other"), [
+    pytest.param("switch_pump", {"switches": {"pump": SWITCHES["pump"]}}, id="the same platform"),
+    pytest.param("appliance_power", {"appliance": APPLIANCE}, id="another platform"),
 ])
 async def test_two_devices_giving_one_entity_id_are_refused(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, other: dict[str, Any]) -> None:
-    """pool + pump_heater and pool_pump + heater are both pururu_pool_pump_heater."""
-    entity_key = "pump_heater" if "switches" in other else "pump_power"
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, entity_key: str,
+        other: dict[str, Any]) -> None:
+    """pool + switch_pump and pool_switch + pump are both pururu_pool_switch_switch_pump."""
     assert not await setup(ha, {
         KEY: {"name": "Piscina", "switches": {entity_key: SWITCHES["pump"]}},
-        "pool_pump": {"name": "Bomba", **other},
+        "pool_switch": {"name": "Bomba", **other},
     })
-    assert f"device pool_pump: pururu_pool_{entity_key} is already an entity of device pool" in caplog.text
+    assert (f"device pool_switch: pururu_pool_switch_{entity_key} is already an entity of device pool"
+            in caplog.text)
 
 
 # --- the device ----------------------------------------------------------------
@@ -98,7 +106,7 @@ async def test_a_device_with_only_switches(pool: HomeAssistant) -> None:
 async def test_switches_next_to_another_feature(ha: HomeAssistant) -> None:
     assert await setup(ha, {KEY: {"name": "Piscina", "appliance": APPLIANCE,
                                   "switches": {"pump": SWITCHES["pump"]}}})
-    assert {PUMP, "binary_sensor.pururu_pool_running"} <= held(ha, KEY)
+    assert {PUMP, "binary_sensor.pururu_pool_appliance_running"} <= held(ha, KEY)
 
 
 async def test_two_devices_can_stand_for_one_real_switch(ha: HomeAssistant) -> None:
@@ -106,14 +114,14 @@ async def test_two_devices_can_stand_for_one_real_switch(ha: HomeAssistant) -> N
     assert await setup(ha, {KEY: {"name": "Piscina", "switches": {"pump": SWITCHES["pump"]}},
                             "garden": {"name": "Jardim", "switches": {"pump": SWITCHES["pump"]}}})
     assert state(ha, PUMP) == "on"
-    assert state(ha, "switch.pururu_garden_pump") == "on"
+    assert state(ha, "switch.pururu_garden_switch_pump") == "on"
 
 
 async def test_names_come_from_the_configuration(pool: HomeAssistant) -> None:
     assert pool.states.get(PUMP).attributes["friendly_name"] == "Piscina Bomba"
     entry = er.async_get(pool).async_get(PUMP)
     assert entry is not None
-    assert entry.unique_id == "pururu_pool_pump"
+    assert entry.unique_id == "pururu_pool_switch_pump"
     assert entry.translation_key is None
 
 
@@ -179,7 +187,7 @@ async def test_turning_on_without_the_real_switch_does_nothing(ha: HomeAssistant
 async def test_an_id_already_taken_is_an_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     other = er.async_get(ha).async_get_or_create(
-        "switch", "template", "someone_else", suggested_object_id="pururu_pool_pump")
+        "switch", "template", "someone_else", suggested_object_id="pururu_pool_switch_pump")
     assert other.entity_id == PUMP
     assert await setup(ha, DEVICES)
     assert held(ha, KEY) == {HEATER}
@@ -219,14 +227,14 @@ async def test_reload_that_drops_a_switch_removes_it(pool: HomeAssistant) -> Non
     assert held(pool, KEY) == {PUMP}
 
 
-async def test_reload_that_moves_an_entity_key_to_a_switch_removes_the_old_entity(
+async def test_reload_that_swaps_the_appliance_for_a_switch_removes_its_entities(
         ha: HomeAssistant) -> None:
-    """sensor.pururu_pool_power and switch.pururu_pool_power share a unique ID, not a platform."""
+    """A switch keyed like one of the appliance's entities is a new entity; the appliance's go."""
     assert await setup(ha, {KEY: {"name": "Piscina", "appliance": APPLIANCE}})
-    assert er.async_get(ha).async_get("sensor.pururu_pool_power") is not None
+    assert er.async_get(ha).async_get("sensor.pururu_pool_appliance_power") is not None
     await reload(ha, {KEY: {"name": "Piscina", "switches": {"power": SWITCHES["pump"]}}})
-    assert er.async_get(ha).async_get("sensor.pururu_pool_power") is None
-    assert held(ha, KEY) == {"switch.pururu_pool_power"}
+    assert er.async_get(ha).async_get("sensor.pururu_pool_appliance_power") is None
+    assert held(ha, KEY) == {"switch.pururu_pool_switch_power"}
 
 
 async def test_after_a_restart_it_shows_the_real_switch(ha: HomeAssistant) -> None:

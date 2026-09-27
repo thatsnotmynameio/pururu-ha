@@ -93,17 +93,17 @@ stateDiagram-v2
 
 | Entity | Unit | What it is |
 |---|---|---|
-| `sensor.pururu_<key>_power` | the plug's | The plug's power, with its unit and classes, inside this device |
-| `sensor.pururu_<key>_energy_total` | the plug's | The plug's energy counter, inside this device. *With `energy`.* |
-| `binary_sensor.pururu_<key>_running` | | On while a cycle runs. Device class `running`. |
-| `sensor.pururu_<key>_last_cycle_start` | timestamp | When the last cycle started |
-| `sensor.pururu_<key>_last_cycle_end` | timestamp | When the last cycle ended. **Written last**: trigger on it. |
-| `sensor.pururu_<key>_last_cycle_duration` | min | How long the last cycle took |
-| `sensor.pururu_<key>_last_cycle_energy` | kWh | Energy the last cycle used. *With `energy`.* |
-| `sensor.pururu_<key>_cycles_total` | cycles | Cycles finished, all time |
-| `sensor.pururu_<key>_runtime_total` | h | Hours run, all time |
-| `sensor.pururu_<key>_runtime_<period>` | h | Hours run this period, one per `statistics.runtime` entry |
-| `sensor.pururu_<key>_cycles_<period>` | cycles | Cycles finished this period, one per `statistics.cycles` entry |
+| `sensor.pururu_<key>_appliance_power` | the plug's | The plug's power, with its unit and classes, inside this device |
+| `sensor.pururu_<key>_appliance_energy_total` | the plug's | The plug's energy counter, inside this device. *With `energy`.* |
+| `binary_sensor.pururu_<key>_appliance_running` | | On while a cycle runs. Device class `running`. |
+| `sensor.pururu_<key>_appliance_last_cycle_start` | timestamp | When the last cycle started |
+| `sensor.pururu_<key>_appliance_last_cycle_end` | timestamp | When the last cycle ended. **Written last**: trigger on it. |
+| `sensor.pururu_<key>_appliance_last_cycle_duration` | min | How long the last cycle took |
+| `sensor.pururu_<key>_appliance_last_cycle_energy` | kWh | Energy the last cycle used. *With `energy`.* |
+| `sensor.pururu_<key>_appliance_cycles_total` | cycles | Cycles finished, all time |
+| `sensor.pururu_<key>_appliance_runtime_total` | h | Hours run, all time |
+| `sensor.pururu_<key>_appliance_runtime_<period>` | h | Hours run this period, one per `statistics.runtime` entry |
+| `sensor.pururu_<key>_appliance_cycles_<period>` | cycles | Cycles finished this period, one per `statistics.cycles` entry |
 
 ### Last cycle
 

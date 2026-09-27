@@ -53,9 +53,9 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
     assert await setup(ha, WASHER)
     await fake(ha, "sensor.plug_power", "500")
     await tick(ha, freezer, 59)
-    assert ha.states.get("binary_sensor.pururu_laundry_washer_running").state == "off"
+    assert ha.states.get("binary_sensor.pururu_laundry_washer_appliance_running").state == "off"
     await tick(ha, freezer, 1)
-    assert ha.states.get("binary_sensor.pururu_laundry_washer_running").state == "on"
+    assert ha.states.get("binary_sensor.pururu_laundry_washer_appliance_running").state == "on"
 ```
 
 ## Test files
