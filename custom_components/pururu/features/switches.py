@@ -9,36 +9,15 @@ from collections.abc import Mapping
 import logging
 from typing import Any
 
-import voluptuous as vol
-
 from homeassistant.components.group.switch import SwitchGroup
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv, entity_registry as er
 
-from ..const import DOMAIN, ENTITY_PREFIX
 from ..entity import PururuEntity
 from ..feature import Device, Feature
+from . import standing
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _not_pururu(entity_id: str) -> str:
-    """A pururu switch standing for itself would call itself forever."""
-    if entity_id.startswith(f"{Platform.SWITCH}.{ENTITY_PREFIX}_"):
-        raise vol.Invalid(f"{entity_id} is a pururu switch: name the real one")
-    return entity_id
-
-
-SWITCH = vol.Schema(
-    {
-        vol.Required("entity"): vol.All(cv.entity_domain(Platform.SWITCH), _not_pururu),
-        # A blank name would show the switch as its device's name alone
-        vol.Required("name"): vol.All(cv.string, vol.Strip, vol.Length(min=1)),
-    }
-)
-# A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
-SCHEMA = vol.All(vol.Schema({cv.slug: SWITCH}), vol.Length(min=1))
 
 
 class Switch(PururuEntity, SwitchGroup):
@@ -61,12 +40,10 @@ def build(
     The configuration refuses switch.pururu_…; a pururu switch renamed in the
     UI gets past that, and only the registry still knows it is ours.
     """
-    registry = er.async_get(hass)
     switches: list[PururuEntity] = []
     for entity_key, switch in config.items():
         entity = switch["entity"]
-        registered = registry.async_get(entity)
-        if registered is not None and registered.platform == DOMAIN:
+        if standing.is_pururu(hass, entity):
             _LOGGER.error(
                 "%s is a pururu switch: name the real one; not creating %s",
                 entity,
@@ -78,7 +55,7 @@ def build(
 
 
 SWITCHES = Feature(
-    schema=SCHEMA,
+    schema=standing.schema(Platform.SWITCH),
     entity_keys={},
     build=build,
     example={"pump": {"entity": "switch.demo_pump", "name": "Pump"}},
