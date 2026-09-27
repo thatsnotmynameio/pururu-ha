@@ -20,26 +20,26 @@
   },
   "entity": {
     "binary_sensor": {
-      "running": {"name": "Em funcionamento"}
+      "appliance_running": {"name": "Em funcionamento"}
     },
     "sensor": {
-      "power": {"name": "Potência"},
-      "energy_total": {"name": "Energia"},
-      "last_cycle_start": {"name": "Início do último ciclo"},
-      "last_cycle_end": {"name": "Fim do último ciclo"},
-      "last_cycle_duration": {"name": "Duração do último ciclo"},
-      "last_cycle_energy": {"name": "Energia do último ciclo"},
-      "cycles_total": {"name": "Ciclos", "unit_of_measurement": "ciclos"},
-      "runtime_total": {"name": "Tempo ligado"},
-      "runtime_today": {"name": "Tempo ligado hoje"},
-      "runtime_week": {"name": "Tempo ligado na semana"},
-      "runtime_month": {"name": "Tempo ligado no mês"},
-      "runtime_year": {"name": "Tempo ligado no ano"},
-      "cycles_today": {"name": "Ciclos hoje"},
-      "cycles_week": {"name": "Ciclos na semana"},
-      "cycles_month": {"name": "Ciclos no mês"},
-      "cycles_year": {"name": "Ciclos no ano"},
-      "phase": {
+      "appliance_power": {"name": "Potência"},
+      "appliance_energy_total": {"name": "Energia"},
+      "appliance_last_cycle_start": {"name": "Início do último ciclo"},
+      "appliance_last_cycle_end": {"name": "Fim do último ciclo"},
+      "appliance_last_cycle_duration": {"name": "Duração do último ciclo"},
+      "appliance_last_cycle_energy": {"name": "Energia do último ciclo"},
+      "appliance_cycles_total": {"name": "Ciclos", "unit_of_measurement": "ciclos"},
+      "appliance_runtime_total": {"name": "Tempo ligado"},
+      "appliance_runtime_today": {"name": "Tempo ligado hoje"},
+      "appliance_runtime_week": {"name": "Tempo ligado na semana"},
+      "appliance_runtime_month": {"name": "Tempo ligado no mês"},
+      "appliance_runtime_year": {"name": "Tempo ligado no ano"},
+      "appliance_cycles_today": {"name": "Ciclos hoje"},
+      "appliance_cycles_week": {"name": "Ciclos na semana"},
+      "appliance_cycles_month": {"name": "Ciclos no mês"},
+      "appliance_cycles_year": {"name": "Ciclos no ano"},
+      "phase_current": {
         "name": "Fase",
         "state": {
           "idle": "Parada", "washing": "Lavando", "heating": "Aquecendo",

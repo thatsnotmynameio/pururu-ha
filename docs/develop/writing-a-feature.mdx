@@ -46,8 +46,8 @@ class Openings(PururuEntity, RestoreSensor):
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
     def __init__(self, device: Device, sensor: str) -> None:
-        """Count `sensor`'s openings as `device`'s openings_total."""
-        self._identify(device, Platform.SENSOR, "openings_total")
+        """Count `sensor`'s openings as the device's total."""
+        self._identify(device, Platform.SENSOR, "total")
         self._sensor = sensor
         self._count = 0
 
@@ -93,18 +93,20 @@ def build(
 
 OPENINGS = Feature(
     schema=SCHEMA,
-    entity_keys={"openings_total": Platform.SENSOR},
+    entity_keys={"total": Platform.SENSOR},
     build=build,
     example={"sensor": "binary_sensor.demo_contact"},
+    namespace="openings",
 )
 ```
 
 The pieces:
 
 - **`schema`** validates the block. Use `vol.Schema(...)` for every nested mapping that must refuse unknown keys (see [`ALLOW_EXTRA` leaks](/develop/architecture#voluptuous-allowextra-leaks)). For numbers, use `finite_float` from `feature.py`, which refuses `nan` and infinities.
-- **`entity_keys`** lists **every** entity key the feature can create, even those that only exist with some settings, mapped to its platform. An entity key must not be used by any other feature.
+- **`entity_keys`** lists **every** entity key the feature can create, even those that only exist with some settings, mapped to its platform.
 - **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, entity_key)`, which gives it its entity ID, unique ID, device and translated name.
 - **`example`** is a minimal valid block. The contract test validates it.
+- **`namespace`** is where the feature's entity keys live in an entity ID: `total` becomes `sensor.pururu_front_door_openings_total`. It's a slug no other feature uses, and not another feature's namespace followed by `_`. There's no exception for an entity key that is the same word as the namespace, so don't name one that way: `phases`' only entity key is `current` (`sensor.pururu_<key>_phase_current`), not `phase`. `build()` gets a `device` already in this namespace, so the feature only ever writes its own entity keys.
 
 ## 2. Register it
 
@@ -127,7 +129,7 @@ The key is the configuration key under a device. The device schema picks it up f
 
 ## 3. Names and icons
 
-For every entity key, add a name to **both** `translations/en.json` and `translations/pt-BR.json`, and an icon to `icons.json`:
+For every entity key, add a name to **both** `translations/en.json` and `translations/pt-BR.json`, and an icon to `icons.json`, under the key in its namespace, `<namespace>_<entity key>`:
 
 ```json title="translations/en.json"
 "entity": {
@@ -149,7 +151,7 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 ## 4. Depending on another entity
 
-**On an entity of the same device:** set `sources` on the entity to the entity keys it reads. If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another entity key's entity, use `device.current_entity_id(hass, platform, entity_key)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `appliance/runtime.py` is an example.
+**On an entity of the same device:** set `sources` on the entity to the entity keys of its own feature it reads. If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another entity key's entity, use `device.current_entity_id(hass, platform, entity_key)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `appliance/runtime.py` is an example.
 
 **On another feature:** declare it as a capability instead of hard-coding the other feature's name:
 
@@ -168,7 +170,6 @@ Some features create one entity per key the user writes, such as [`switches`](/f
 - The schema is a `vol.Schema({cv.slug: ...})` of its own, with a required `name`.
 - Each entity calls `self._identify(device, platform, entity_key, name)`: it's named by `name`, with no translation key.
 - It can't `provide` a capability: a capability points to a fixed entity key.
-- The device schema refuses a key that is an entity key of another feature of the device.
 
 For a feature that stands for real entities of one domain, build each entity on Home Assistant's group entity of that domain, with the real entity as its only member: `Switch` in `features/switches.py` is a `SwitchGroup` of one, as `Mirror` is a `SensorGroup` of one. The group already follows the real entity's state and passes every command on, with everything its domain offers. One feature per domain: a light gets `lights`, on a `LightGroup`, not a place in `switches`.
 
@@ -179,8 +180,10 @@ For a feature that stands for real entities of one domain, build each entity on 
 | Test | Checks |
 |---|---|
 | `test_translation_files_match` | `pt-BR.json` has exactly `en.json`'s keys |
-| `test_no_entity_key_in_two_features` | No entity key is shared |
-| `test_every_entity_key_is_named_and_has_an_icon` | A name in both languages and an `mdi:` icon for every entity key |
+| `test_namespaces_are_distinct_slugs` | Every namespace is a slug, no two are equal, and none is another's followed by `_` |
+| `test_no_entity_key_repeats_its_namespace` | No fixed entity key is its feature's namespace, which would read `…_phase_phase` |
+| `test_every_entity_key_is_named_and_has_an_icon` | A name in both languages and an `mdi:` icon for every entity key, under its key in its namespace |
+| `test_every_translated_entity_key_is_created` | Every name and icon is under a key some feature creates |
 | `test_example_is_valid_and_unknown_keys_are_refused` | `example` passes `schema`, and `example` plus an unknown key fails |
 | `test_every_platform_is_set_up` | Every entity key's platform, and a configured feature's platform, is in `PLATFORMS` |
 | `test_capabilities_line_up` | `provides` points to real entity keys and a configured feature provides nothing, every `requires` is provided by some feature, and the example has `<capability>_from` |

@@ -82,5 +82,6 @@ SWITCHES = Feature(
     entity_keys={},
     build=build,
     example={"pump": {"entity": "switch.demo_pump", "name": "Pump"}},
+    namespace="switch",
     configured=Platform.SWITCH,
 )

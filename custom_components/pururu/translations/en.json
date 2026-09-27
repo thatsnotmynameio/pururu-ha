@@ -20,26 +20,26 @@
   },
   "entity": {
     "binary_sensor": {
-      "running": {"name": "Running"}
+      "appliance_running": {"name": "Running"}
     },
     "sensor": {
-      "power": {"name": "Power"},
-      "energy_total": {"name": "Energy"},
-      "last_cycle_start": {"name": "Last cycle start"},
-      "last_cycle_end": {"name": "Last cycle end"},
-      "last_cycle_duration": {"name": "Last cycle duration"},
-      "last_cycle_energy": {"name": "Last cycle energy"},
-      "cycles_total": {"name": "Cycles", "unit_of_measurement": "cycles"},
-      "runtime_total": {"name": "Runtime"},
-      "runtime_today": {"name": "Runtime today"},
-      "runtime_week": {"name": "Runtime this week"},
-      "runtime_month": {"name": "Runtime this month"},
-      "runtime_year": {"name": "Runtime this year"},
-      "cycles_today": {"name": "Cycles today"},
-      "cycles_week": {"name": "Cycles this week"},
-      "cycles_month": {"name": "Cycles this month"},
-      "cycles_year": {"name": "Cycles this year"},
-      "phase": {
+      "appliance_power": {"name": "Power"},
+      "appliance_energy_total": {"name": "Energy"},
+      "appliance_last_cycle_start": {"name": "Last cycle start"},
+      "appliance_last_cycle_end": {"name": "Last cycle end"},
+      "appliance_last_cycle_duration": {"name": "Last cycle duration"},
+      "appliance_last_cycle_energy": {"name": "Last cycle energy"},
+      "appliance_cycles_total": {"name": "Cycles", "unit_of_measurement": "cycles"},
+      "appliance_runtime_total": {"name": "Runtime"},
+      "appliance_runtime_today": {"name": "Runtime today"},
+      "appliance_runtime_week": {"name": "Runtime this week"},
+      "appliance_runtime_month": {"name": "Runtime this month"},
+      "appliance_runtime_year": {"name": "Runtime this year"},
+      "appliance_cycles_today": {"name": "Cycles today"},
+      "appliance_cycles_week": {"name": "Cycles this week"},
+      "appliance_cycles_month": {"name": "Cycles this month"},
+      "appliance_cycles_year": {"name": "Cycles this year"},
+      "phase_current": {
         "name": "Phase",
         "state": {
           "idle": "Idle", "washing": "Washing", "heating": "Heating", "spinning": "Spinning",

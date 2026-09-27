@@ -36,12 +36,12 @@ python3 release.py check                        # the manifest version must be s
     5. Remove stale entities and devices.
     6. Show the dashboard (`dashboard.py`).
 - **Features** (`feature.py`, `features/`):
-  - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, the `entity_keys` it can create (entity key → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
+  - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, a `namespace`, the `entity_keys` it can create (entity key → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
   - A feature consumes another feature's capability through `<capability>_from: <feature>`. `_build` passes it the current entity ID of the providing entity key.
-  - A `configured` feature (`switches`) takes its entity keys from its block's keys, named by the block's `name` (no translation). `_device` refuses two alike entity keys in one device: unique IDs leave the platform out. A feature standing for real entities of one domain is that domain's HA group entity with one member (`SwitchGroup`, as `Mirror` is a `SensorGroup`), one feature per domain.
+  - A `configured` feature (`switches`) takes its entity keys from its block's keys, named by the block's `name` (no translation). A feature standing for real entities of one domain is that domain's HA group entity with one member (`SwitchGroup`, as `Mirror` is a `SensorGroup`), one feature per domain.
   - `tests/test_features.py` is a contract test over every entry in `FEATURES`. It checks translations and icons for each entity key, that the example is valid, and more. A new feature gets checked there without changes to the test.
 - **Entity IDs are the identity:**
-  - Every entity is `<platform>.pururu_<device key>_<entity key>`, and its unique ID is the part after the platform (`Device.object_id`).
+  - Every entity is `<platform>.pururu_<device key>_<namespace>_<entity key>` (no exception, even for a key alike its namespace: a switch keyed `switch` is `switch.pururu_pool_switch_switch`; so a feature's fixed entity keys never repeat its namespace, as phases' `current`), and its unique ID is the part after the platform (`Device.object_id`). `_build` hands each feature a `Device` in its namespace, so features write local entity keys; the translation key is the key in its namespace (`appliance_running`).
   - An ID already held by another integration is logged as an error and not created. Anything that follows it (`sources`) is dropped too (`_creatable`); IDs are never suffixed with `_2`.
   - A user rename in the UI is followed: `current_entity_id`, plus a registry listener that reloads the entry.
 - **Floors and areas** (`places.py`):
@@ -71,10 +71,10 @@ python3 release.py check                        # the manifest version must be s
 - **Two tabs:** `Guide` (`/`) for users (getting started, concepts, one page per feature in `FEATURES`, configuration reference, troubleshooting) and `Develop` (`/develop`) for contributors.
 - **Keep it true:** a change in behaviour, configuration, entities or log messages updates the matching pages in the same PR. A new feature gets `docs/features/<feature>.mdx` and a sidebar entry.
 - **MDX:** `{` and `<` outside code are JSX, so keep them in backticks or code blocks.
-- **Check:** `npx @docs.page/cli check` (broken links) and `npx @docs.page/cli preview` (live preview).
+- **Check:** `pnpm install` once, then `pnpm docs:check` (broken links; the Docs workflow runs it on every PR) and `pnpm docs:preview` (live preview). Use pnpm, never npm: `package.json` pins the docs.page CLI and pnpm itself (`packageManager`), and `pnpm-lock.yaml` pins them by hash.
 
 ## Releases and CI
 
 - **Releases:** the version is `version` in `custom_components/pururu/manifest.json`. A PR that changes it is a release. After it merges to `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release, which HACS offers.
-- **CI:** GitHub Actions are pinned by SHA. SonarQube Cloud runs on PRs.
+- **CI:** GitHub Actions are pinned by SHA, Python packages by hash (`uv.lock`), pnpm packages by hash (`pnpm-lock.yaml`). SonarQube Cloud and the docs.page check run on PRs.
 - **Sonar suppressions:** a Sonar finding that conflicts with HA's required signatures or conventions is suppressed in `sonar-project.properties` (`sonar.issue.ignore.multicriteria`), with a comment giving the reason, not in code.

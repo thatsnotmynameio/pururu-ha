@@ -26,21 +26,36 @@ def finite_float(value: Any) -> float:
     return number
 
 
+def qualified(namespace: str, entity_key: str) -> str:
+    """`entity_key` in `namespace`: the end of its entity ID, and its translation key.
+
+    No exception, even for an entity key alike its namespace: a switch keyed
+    `switch` is `switch_switch`.
+    """
+    return f"{namespace}_{entity_key}"
+
+
 @dataclass(frozen=True, kw_only=True)
 class Device:
-    """A configured device: its key and display name."""
+    """A configured device as one of its features sees it: key, display name, that feature's namespace."""
 
     key: str
     name: str
+    # The feature's namespace: every entity key it names is in it
+    namespace: str
 
     @property
     def info(self) -> DeviceInfo:
-        """The device every entity of this device belongs to."""
+        """The device every entity of this device belongs to, whatever its feature."""
         return DeviceInfo(identifiers={(DOMAIN, self.key)}, name=self.name)
+
+    def qualified(self, entity_key: str) -> str:
+        """`entity_key` in this feature's namespace."""
+        return qualified(self.namespace, entity_key)
 
     def object_id(self, entity_key: str) -> str:
         """The entity ID of `entity_key` without its platform, which is also its unique ID."""
-        return f"{ENTITY_PREFIX}_{self.key}_{entity_key}"
+        return f"{ENTITY_PREFIX}_{self.key}_{self.qualified(entity_key)}"
 
     def entity_id(self, platform: Platform, entity_key: str) -> str:
         """The entity ID `entity_key` is created with."""
@@ -72,6 +87,8 @@ class Feature:
     build: Build
     # A minimal valid block, for the contract test
     example: Mapping[str, Any]
+    # Every entity key it creates is in it, so no two features' entity IDs meet
+    namespace: str
     # capability -> the entity key whose entity carries it; others take it with <capability>_from
     provides: Mapping[str, str] = field(default_factory=dict)
     # capabilities it takes through <capability>_from: build() gets their current
