@@ -6,3 +6,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  # The docs.page CLI of the Docs workflow (package.json, package-lock.json)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
