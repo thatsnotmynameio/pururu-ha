@@ -3,6 +3,7 @@
 import asyncio
 from datetime import timedelta
 import importlib
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 from unittest.mock import patch
@@ -15,8 +16,11 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
     mock_restore_cache_with_extra_data,
 )
+import yaml
 
 DOMAIN = "pururu"
+# The automations pururu generates, relative to the configuration folder
+AUTOMATIONS = "pururu/automations.yaml"
 # Loop turns settle() gives: far more than any chain of our callbacks needs
 SETTLE_TURNS = 100
 
@@ -30,6 +34,14 @@ def _config(devices: dict[str, Any], floors: dict[str, Any] | None,
             areas: dict[str, Any] | None) -> dict[str, Any]:
     """A configuration.yaml with this `pururu:` block."""
     return {DOMAIN: {"devices": devices, "floors": floors or {}, "areas": areas or {}}}
+
+
+def generated(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """The automations pururu wrote, as configuration.yaml's include reads them."""
+    path = Path(hass.config.path(AUTOMATIONS))
+    if not path.is_file():
+        return []
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or []
 
 
 async def setup(hass: HomeAssistant, devices: dict[str, Any], *,
@@ -46,7 +58,10 @@ async def reload(hass: HomeAssistant, devices: dict[str, Any], *,
                  areas: dict[str, Any] | None = None) -> None:
     """pururu.reload, with a configuration.yaml holding this `pururu:` block."""
     config = _config(devices, floors, areas)
-    with patch("homeassistant.config.load_yaml_config_file", return_value=config):
+    # configuration.yaml includes the generated file: automations reload from it
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {**config,
+                                                      "automation pururu": generated(hass)}):
         await hass.services.async_call(DOMAIN, "reload", blocking=True)
         await hass.async_block_till_done()
 

@@ -36,6 +36,7 @@ from . import dashboard, places, reactions
 from .const import (
     CONF_AREA,
     CONF_AREAS,
+    CONF_AUTOMATIONS,
     CONF_DEVICES,
     CONF_FLOORS,
     CONF_REACTIONS,
@@ -300,8 +301,9 @@ async def _async_apply(
 async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bool:
     """Make floors and areas follow the configuration, then build every device.
 
-    Floors and areas come first: devices will be placed in them. The dashboard
-    comes last: it shows them all.
+    Floors and areas come first: devices will be placed in them. The reactions'
+    automations come after the entities: they watch the ones created. The
+    dashboard comes last: it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -310,7 +312,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         configured.get(CONF_AREAS, {}),
         entry.data,
     )
-    hass.config_entries.async_update_entry(entry, data=managed)
+    hass.config_entries.async_update_entry(entry, data={**entry.data, **managed})
     registry = er.async_get(hass)
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
@@ -321,6 +323,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
+    created = {str(entity.unique_id) for each in built.values() for entity in each}
+    generated = await reactions.async_sync(
+        hass, entry, _automations(hass, devices, created)
+    )
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_AUTOMATIONS: generated}
+    )
     dashboard.async_setup(hass, entry)
 
     @callback
@@ -510,3 +519,33 @@ def _remove_stale(
             domain == DOMAIN and key in keys for domain, key in device.identifiers
         ):
             devices.async_remove_device(device.id)
+
+
+def _automations(
+    hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
+) -> list[dict[str, Any]]:
+    """An automation per reaction of every device; one watching an entity not created is logged."""
+    automations: list[dict[str, Any]] = []
+    for key, config in devices.items():
+        for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
+            entity_id = reaction.get("entity")
+            if (when := reaction.get("when")) is not None:
+                owner_key = reaction.get("device", key)
+                owner, entity_key, platform = _referable(owner_key, devices[owner_key])[
+                    when
+                ]
+                if owner.object_id(entity_key) not in created:
+                    _LOGGER.error(
+                        "automation.%s follows %s, which is not created; "
+                        "not generating it",
+                        reactions.automation_id(key, reaction_key),
+                        owner.entity_id(platform, entity_key),
+                    )
+                    continue
+                entity_id = owner.current_entity_id(hass, platform, entity_key)
+            automations.append(
+                reactions.automation(
+                    key, config[CONF_NAME], reaction_key, reaction, entity_id
+                )
+            )
+    return automations
