@@ -1,8 +1,9 @@
 """pururu: the configuration, devices, capabilities, taken IDs, reloads and the entry.
 
-Two made-up features stand in for real ones: `gauge` creates a sensor and a
+Three made-up features stand in for real ones: `gauge` creates a sensor and a
 binary sensor and provides `activity` (its binary sensor); `echo` requires
-`activity` and shows the entity ID it gets.
+`activity` and shows the entity ID it gets; `tags` is configured: a sensor per
+key of its block, named by the block.
 """
 
 from collections.abc import Iterator
@@ -33,6 +34,9 @@ ECHO = "sensor.pururu_demo_widget_echo"
 GAUGE = {"source": "sensor.demo_source"}
 WIDGET = {"name": "Widget", "gauge": GAUGE}
 PANEL = {"name": "Panel", "gauge": GAUGE}
+FIRST = "sensor.pururu_demo_widget_first"
+SECOND = "sensor.pururu_demo_widget_second"
+TAGS = {"first": {"name": "First"}, "second": {"name": "Second"}}
 
 
 @pytest.fixture(autouse=True)
@@ -58,6 +62,11 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             self._identify(device, Platform.SENSOR, "echo")
             self._attr_native_value = activity
 
+    class Tag(entity.PururuEntity, SensorEntity):
+        def __init__(self, device: Any, entity_key: str, name: str) -> None:
+            self._identify(device, Platform.SENSOR, entity_key, name)
+            self._attr_native_value = entity_key
+
     added = {
         "gauge": feature.Feature(
             schema=vol.Schema({vol.Required("source"): cv.entity_id}),
@@ -73,6 +82,15 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             build=lambda hass, device, config, inputs: [Echo(device, inputs["activity"])],
             example={"activity_from": "gauge"},
             requires=("activity",),
+        ),
+        "tags": feature.Feature(
+            schema=vol.All(vol.Schema({cv.slug: vol.Schema({vol.Required("name"): cv.string})}),
+                           vol.Length(min=1)),
+            entity_keys={},
+            build=lambda hass, device, config, inputs: [Tag(device, key, tag["name"])
+                                                        for key, tag in config.items()],
+            example={"first": {"name": "First"}},
+            configured=Platform.SENSOR,
         ),
     }
     features.update(added)
@@ -119,10 +137,35 @@ async def test_a_capability_reaches_the_feature_that_requires_it(ha: HomeAssista
     pytest.param({"name": "Widget", "gauge": {"source": "not an entity"}}, id="bad feature block"),
     pytest.param({"name": "Widget", "echo": {"activity_from": "gauge"}}, id="from a missing feature"),
     pytest.param({**WIDGET, "echo": {"activity_from": "echo"}}, id="from one that doesn't provide it"),
+    pytest.param({**WIDGET, "tags": {"level": {"name": "Level"}}}, id="configured key of another feature"),
+    pytest.param({**WIDGET, "tags": {"active": {"name": "Active"}}},
+                 id="configured key of another feature on another platform"),
 ])
 async def test_invalid_device_is_refused(ha: HomeAssistant, device: dict[str, Any]) -> None:
     assert not await setup(ha, {"demo_widget": device})
     assert device_of(ha, "demo_widget") is None
+
+
+async def test_a_configured_feature_creates_an_entity_per_key(ha: HomeAssistant) -> None:
+    assert await setup(ha, {"demo_widget": {**WIDGET, "tags": TAGS}})
+    assert held(ha, "demo_widget") == {LEVEL, ACTIVE, FIRST, SECOND}
+    assert ha.states.get(FIRST).attributes["friendly_name"] == "Widget First"
+    entry = er.async_get(ha).async_get(FIRST)
+    assert entry is not None
+    assert entry.unique_id == "pururu_demo_widget_first"
+    assert entry.translation_key is None
+
+
+async def test_a_configured_name_is_the_same_in_portuguese(ha: HomeAssistant) -> None:
+    ha.config.language = "pt-BR"
+    assert await setup(ha, {"demo_widget": {**WIDGET, "tags": TAGS}})
+    assert ha.states.get(SECOND).attributes["friendly_name"] == "Widget Second"
+
+
+async def test_an_entity_key_used_twice_names_both_features(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    assert not await setup(ha, {"demo_widget": {**WIDGET, "tags": {"level": {"name": "Level"}}}})
+    assert "tags: level is already an entity key of gauge" in caplog.text
 
 
 async def test_no_devices_creates_no_entry(ha: HomeAssistant) -> None:

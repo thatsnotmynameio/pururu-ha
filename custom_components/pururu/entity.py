@@ -28,9 +28,22 @@ class PururuEntity(Entity):
     # Entity keys of its own device it takes its value from: without them it isn't created
     sources: tuple[str, ...] = ()
 
-    def _identify(self, device: Device, platform: Platform, entity_key: str) -> None:
-        """Take `device`'s entity ID, unique ID, device and name translation for `entity_key`."""
+    def _identify(
+        self,
+        device: Device,
+        platform: Platform,
+        entity_key: str,
+        name: str | None = None,
+    ) -> None:
+        """Take `device`'s entity ID, unique ID and device for `entity_key`, and a name.
+
+        The name is `name` when given (an entity key from the configuration has
+        no translation), else the translation of `entity_key`.
+        """
         self.entity_id = device.entity_id(platform, entity_key)
         self._attr_unique_id = device.object_id(entity_key)
         self._attr_device_info = device.info
-        self._attr_translation_key = entity_key
+        if name is None:
+            self._attr_translation_key = entity_key
+        else:
+            self._attr_name = name

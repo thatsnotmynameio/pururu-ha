@@ -51,7 +51,7 @@ type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
 
 
 def _device(value: Any) -> dict[str, Any]:
-    """A device: a name, maybe an area, at least one feature, every <capability>_from resolved."""
+    """A device: a name, maybe an area, at least one feature, every <capability>_from resolved, no entity key twice."""
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
@@ -71,6 +71,17 @@ def _device(value: Any) -> dict[str, Any]:
                     f"{name}: {capability}_from must name a feature of this device "
                     f"that provides {capability}"
                 )
+    # Unique IDs leave the platform out: two alike entity keys would share one
+    owners: dict[str, str] = {}  # entity key -> the feature of this device that has it
+    for name in names:
+        feature = FEATURES[name]
+        configured = device[name] if feature.configured is not None else {}
+        for entity_key in (*feature.entity_keys, *configured):
+            if entity_key in owners:
+                raise vol.Invalid(
+                    f"{name}: {entity_key} is already an entity key of {owners[entity_key]}"
+                )
+            owners[entity_key] = name
     return device
 
 
