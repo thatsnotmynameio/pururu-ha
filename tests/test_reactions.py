@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
@@ -349,6 +350,16 @@ async def test_an_unchanged_file_is_neither_rewritten_nor_reloaded(ha: HomeAssis
     await reload(ha, devices(door=DOOR_OPENS))
     assert reloaded == []
     assert path.stat().st_ino == before
+
+
+async def test_a_file_in_another_encoding_is_rewritten(ha: HomeAssistant) -> None:
+    """A file the user saved as Latin-1 is no error: pururu writes its own UTF-8 over it."""
+    path = Path(ha.config.path(AUTOMATIONS))
+    path.parent.mkdir(parents=True)
+    path.write_bytes("- alias: Máquina\n".encode("latin-1"))
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    assert ha.config_entries.async_entries("pururu")[0].state is ConfigEntryState.LOADED
+    assert [a["id"] for a in generated(ha)] == ["pururu_lights_reaction_door"]
 
 
 async def test_a_changed_file_reloads_automations(ha: HomeAssistant, automations: None) -> None:

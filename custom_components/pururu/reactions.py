@@ -179,8 +179,11 @@ def automation(
 
 
 def _write(path: Path, content: str) -> bool:
-    """Write `content` unless the file already holds it; whether it wrote."""
-    if path.is_file() and path.read_text(encoding="utf-8") == content:
+    """Write `content` unless the file already holds it; whether it wrote.
+
+    Bytes are compared: a file saved in another encoding is rewritten, not an error.
+    """
+    if path.is_file() and path.read_bytes() == content.encode("utf-8"):
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     write_utf8_file_atomic(str(path), content)
