@@ -70,6 +70,22 @@ async def test_a_key_of_another_feature_is_refused(
     assert f"switches: {entity_key} is already an entity key of appliance" in caplog.text
 
 
+@pytest.mark.parametrize("other", [
+    pytest.param({"switches": {"heater": SWITCHES["heater"]}}, id="the same platform"),
+    pytest.param({"appliance": {**APPLIANCE, "power": "sensor.pool_heater_power"}},
+                 id="another platform"),
+])
+async def test_two_devices_giving_one_entity_id_are_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, other: dict[str, Any]) -> None:
+    """pool + pump_heater and pool_pump + heater are both pururu_pool_pump_heater."""
+    entity_key = "pump_heater" if "switches" in other else "pump_power"
+    assert not await setup(ha, {
+        KEY: {"name": "Piscina", "switches": {entity_key: SWITCHES["pump"]}},
+        "pool_pump": {"name": "Bomba", **other},
+    })
+    assert f"device pool_pump: pururu_pool_{entity_key} is already an entity of device pool" in caplog.text
+
+
 # --- the device ----------------------------------------------------------------
 
 
@@ -182,6 +198,16 @@ async def test_reload_that_drops_a_switch_removes_it(pool: HomeAssistant) -> Non
     assert er.async_get(pool).async_get(HEATER) is None
     assert pool.states.get(HEATER) is None
     assert held(pool, KEY) == {PUMP}
+
+
+async def test_reload_that_moves_an_entity_key_to_a_switch_removes_the_old_entity(
+        ha: HomeAssistant) -> None:
+    """sensor.pururu_pool_power and switch.pururu_pool_power share a unique ID, not a platform."""
+    assert await setup(ha, {KEY: {"name": "Piscina", "appliance": APPLIANCE}})
+    assert er.async_get(ha).async_get("sensor.pururu_pool_power") is not None
+    await reload(ha, {KEY: {"name": "Piscina", "switches": {"power": SWITCHES["pump"]}}})
+    assert er.async_get(ha).async_get("sensor.pururu_pool_power") is None
+    assert held(ha, KEY) == {"switch.pururu_pool_power"}
 
 
 async def test_after_a_restart_it_shows_the_real_switch(ha: HomeAssistant) -> None:

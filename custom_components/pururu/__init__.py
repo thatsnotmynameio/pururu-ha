@@ -6,6 +6,7 @@ From the real entities and settings in a feature's block, the feature creates
 the device's entities. One config entry owns every floor, area, device and entity.
 """
 
+from collections.abc import Iterator
 import logging
 from typing import Any
 
@@ -73,16 +74,23 @@ def _device(value: Any) -> dict[str, Any]:
                 )
     # Unique IDs leave the platform out: two alike entity keys would share one
     owners: dict[str, str] = {}  # entity key -> the feature of this device that has it
-    for name in names:
-        feature = FEATURES[name]
-        configured = device[name] if feature.configured is not None else {}
-        for entity_key in (*feature.entity_keys, *configured):
-            if entity_key in owners:
-                raise vol.Invalid(
-                    f"{name}: {entity_key} is already an entity key of {owners[entity_key]}"
-                )
-            owners[entity_key] = name
+    for name, entity_key in _entity_keys(device):
+        if entity_key in owners:
+            raise vol.Invalid(
+                f"{name}: {entity_key} is already an entity key of {owners[entity_key]}"
+            )
+        owners[entity_key] = name
     return device
+
+
+def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str]]:
+    """(feature, entity key) of every entity the device's features can create."""
+    for name, feature in FEATURES.items():
+        if name not in device:
+            continue
+        yield from ((name, entity_key) for entity_key in feature.entity_keys)
+        if feature.configured is not None:
+            yield from ((name, entity_key) for entity_key in device[name])
 
 
 def _areas_exist(config: dict[str, Any]) -> dict[str, Any]:
@@ -91,6 +99,26 @@ def _areas_exist(config: dict[str, Any]) -> dict[str, Any]:
         area_id = device.get(CONF_AREA)
         if area_id is not None and area_id not in config[CONF_AREAS]:
             raise vol.Invalid(f"device {key}: area {area_id} is not in areas")
+    return config
+
+
+def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse two devices whose entities would share an ID.
+
+    Device `pool` with the entity key `pump_heater` and device `pool_pump`
+    with `heater` would both have pururu_pool_pump_heater.
+    """
+    owners: dict[str, str] = {}  # object ID -> the device that has it
+    for key, device in config[CONF_DEVICES].items():
+        identity = Device(key=key, name=device[CONF_NAME])
+        for _, entity_key in _entity_keys(device):
+            object_id = identity.object_id(entity_key)
+            if object_id in owners:
+                raise vol.Invalid(
+                    f"device {key}: {object_id} is already an entity of device "
+                    f"{owners[object_id]}"
+                )
+            owners[object_id] = key
     return config
 
 
@@ -114,6 +142,7 @@ CONFIG_SCHEMA = vol.Schema(
             ),
             places.floors_exist,
             _areas_exist,
+            _entity_ids_distinct,
         )
     },
     extra=vol.ALLOW_EXTRA,
@@ -328,13 +357,14 @@ def _remove_stale(
 ) -> None:
     """Remove what the entry has and the configuration no longer creates."""
     registry = er.async_get(hass)
+    # With its platform: an entity key that moved to another platform keeps its unique ID
     wanted = {
-        entity.unique_id
-        for entities in entry.runtime_data.values()
+        (platform, entity.unique_id)
+        for platform, entities in entry.runtime_data.items()
         for entity in entities
     }
     for registered in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if registered.unique_id not in wanted:
+        if (registered.domain, registered.unique_id) not in wanted:
             registry.async_remove(registered.entity_id)
     devices = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(devices, entry.entry_id):

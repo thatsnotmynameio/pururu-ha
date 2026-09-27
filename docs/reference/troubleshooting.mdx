@@ -17,6 +17,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name`.
 - A switch whose key is already an entity key of another feature of the device: `switches: power is already an entity key of appliance`.
+- Two devices that would give an entity the same ID: `device pool_pump: pururu_pool_pump_heater is already an entity of device pool`. Rename a device key or a switch key.
 
 **Developer tools → YAML → Check configuration** shows the same error before you reload.
 

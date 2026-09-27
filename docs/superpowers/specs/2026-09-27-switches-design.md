@@ -30,6 +30,8 @@ pururu:
 | Later, not in this PR | `lights:` (a `LightGroup` of one, with brightness and colour passed through), in its own PR (0.1.5). Then maybe `fans:`, `covers:`, `locks:`, `valves:`: HA has a group entity for each. Each is one more feature with `configured` set to its platform. |
 | How `Feature` declares entity keys that come from YAML | A new optional field, `configured: Platform \| None`. Rejected: `entity_keys` as a function of the configuration (rewrites every feature and the contract test for one case); `switches:` as a special device key like `area:` (a second path around `_creatable`, stale removal and renames). |
 | Two entity keys alike in one device | A configuration error, even across platforms: `switch.pururu_pool_power` and `sensor.pururu_pool_power` would share the unique ID `pururu_pool_power`, and `_creatable` and `_remove_stale` compare unique IDs only. |
+| Two devices giving an entity one ID | A configuration error (added after the final review): with keys chosen in YAML, device `pool` + `pump_heater` and device `pool_pump` + `heater` both give `pururu_pool_pump_heater`. |
+| A reload moving an entity key to another platform | The old entity is removed: stale removal compares platform and unique ID (added after the final review). |
 | "pururu controls nothing" in the docs | Rewritten: pururu never acts on its own. A switch passes on what a person, an automation or a voice assistant asks of it, and nothing else. |
 
 ## Configuration
