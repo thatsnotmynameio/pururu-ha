@@ -1,0 +1,73 @@
+---
+title: Places and dashboard
+description: How places.py gives floors and areas the IDs the YAML chooses, and how dashboard.py shows a dashboard without a public API.
+---
+
+## Floors and areas (`places.py`)
+
+### Choosing the ID
+
+Home Assistant's floor and area registries take no ID: `async_create(name)` derives one from the name. To give a floor the ID `terreo` with the name **Térreo**, `_follow` works in three steps:
+
+1. **Create** the floor named after its key: `async_create("terreo")` returns the ID `terreo`.
+2. **Check** the ID. If Home Assistant gave it anything else, delete it and log `… is left out: HA gave it …`. That can't happen for a free slug, but a stray floor must never be kept.
+3. **Update** it with the configured name, level, icon and aliases.
+
+A floor or area whose ID already exists skips step 1. pururu **adopts** it, whoever created it, and updates it on every sync.
+
+### `async_sync`
+
+`async_sync(hass, floors, areas, managed)` makes the registries follow the configuration and returns the IDs managed from now on. `async_setup_entry` saves them in `entry.data`.
+
+1. **Delete first.** Every managed ID that the configuration dropped is deleted, areas first and then floors. Deleting first frees the names those floors and areas had.
+2. **Floors**, then **areas**. An area whose floor isn't in the registry after step 2 is logged (`Area … is not synced: its floor … is not created`) and skipped.
+3. **Return** the configured IDs that exist in the registries.
+
+`async_remove(hass, managed)` is `async_sync` with empty floors and areas. `async_remove_entry` calls it when the user deletes the entry.
+
+### Refused names
+
+The registries raise `ValueError` for a name another floor or area already has (after normalising case and whitespace). pururu turns that into a logged error, never a failed set-up:
+
+- A **new** one is deleted again and logged as `left out`.
+- An **existing** one keeps its settings and is logged as `not synced`. It stays managed.
+
+These errors are logged without a traceback because they're configuration errors and a traceback would only add noise. Core's ruff settings ignore `TRY400` for the same reason, and Sonar's `python:S8572` is suppressed for `places.py`.
+
+### Validation
+
+`FLOOR_SCHEMA` and `AREA_SCHEMA` validate each entry. `floors_exist` (in `places.py`) and `_areas_exist` (in `__init__.py`) run over the whole block: an area's `floor` must be a key of `floors:`, and a device's `area` must be a key of `areas:`. A floor's `level` is an integer or `None`, and `_level` refuses booleans, because `level: yes` would otherwise pass as `1`.
+
+## Dashboard (`dashboard.py`)
+
+<Warning>
+  Home Assistant has **no public API** for an integration to provide a dashboard. `dashboard.py` uses lovelace's and frontend's internals. Keep every use of them in this module.
+</Warning>
+
+### How it's shown
+
+`async_setup` does what lovelace itself does for a YAML dashboard:
+
+1. It puts a `PururuDashboard` (a subclass of `LovelaceConfig`) in `hass.data[LOVELACE_DATA].dashboards["pururu"]`.
+2. It registers a built-in `lovelace` panel at `/pururu` in **`yaml` mode**. The frontend then treats it as read-only and offers no edit button. The panel has `require_admin=True`.
+
+`PururuDashboard` is constructed **before** the panel is registered. If lovelace's `LovelaceConfig` changed, the constructor fails first and no orphan panel is left behind. `AttributeError` and `TypeError` from either API are logged with a traceback (`lovelace's or frontend's API changed`) and never fail the set-up.
+
+If `/pururu` is already a dashboard or a panel, pururu logs an error and adds nothing.
+
+### What it shows
+
+`async_load` builds the config at **every fetch**, and nothing is saved:
+
+- `managed()` collects the dashboard itself, the floors and areas in `entry.data` that exist, and the entry's devices. Each is an `(ID, name)` pair sorted by ID.
+- `build()` turns them into one `sections` view: a markdown card per total, then a markdown table (ID | Name | Type).
+- The labels come from `translations/*.json` → `common`, in Home Assistant's language.
+- IDs and names are escaped (`escape()`), because the markdown card renders markdown and HTML and evaluates templates.
+
+`async_get_info` reports no `mode`. Otherwise lovelace's system health would report the whole instance as being in `yaml` mode because of pururu.
+
+### Keeping it current
+
+It listens to the floor, area and device registries, filtered to what the entry manages, and fires `lovelace_updated` for `url_path: pururu` when something changes. It fires **twice**, because after each fetch of a YAML dashboard the frontend ignores the next update event (`_ignoreNextUpdateEvent` in `ha-panel-lovelace.ts`).
+
+On unload it removes the dashboard and its panel.

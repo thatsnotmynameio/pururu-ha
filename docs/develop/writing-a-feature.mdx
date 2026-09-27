@@ -1,0 +1,183 @@
+---
+title: Writing a feature
+description: Add a new feature a device can have. The contract test in tests/test_features.py checks most of the wiring for you.
+---
+
+A feature is a configuration block under a device, plus the entities it creates from that block. This page adds a made-up feature, `openings`, which counts how many times a door or window sensor opened. It isn't in the repository; it only shows the steps.
+
+```yaml
+pururu:
+  devices:
+    front_door:
+      name: Porta da frente
+      openings:
+        sensor: binary_sensor.front_door_contact
+```
+
+## 1. The module
+
+Create `custom_components/pururu/features/openings.py`, or a package if the feature grows, as `appliance/` did.
+
+```python title="features/openings.py"
+"""How many times a contact sensor opened, all time."""
+
+from collections.abc import Mapping
+from decimal import Decimal
+from typing import Any, override
+
+import voluptuous as vol
+
+from homeassistant.components.sensor import RestoreSensor, SensorStateClass
+from homeassistant.const import STATE_OFF, STATE_ON, Platform
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.event import async_track_state_change_event
+
+from ..entity import PururuEntity
+from ..feature import Device, Feature
+
+# vol.Schema refuses unknown keys by default: keep it that way
+SCHEMA = vol.Schema({vol.Required("sensor"): cv.entity_id})
+
+
+class Openings(PururuEntity, RestoreSensor):
+    """Times `sensor` went from off to on."""
+
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, device: Device, sensor: str) -> None:
+        """Count `sensor`'s openings as `device`'s openings_total."""
+        self._identify(device, Platform.SENSOR, "openings_total")
+        self._sensor = sensor
+        self._count = 0
+
+    @property
+    @override
+    def native_value(self) -> int:
+        """The count."""
+        return self._count
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Restore the count, then count."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and isinstance(last.native_value, int | float | Decimal):
+            self._count = int(last.native_value)
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, self._sensor, self._changed)
+        )
+
+    @callback
+    def _changed(self, event: Event[EventStateChangedData]) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        if (
+            old is not None
+            and old.state == STATE_OFF
+            and new is not None
+            and new.state == STATE_ON
+        ):
+            self._count += 1
+            self.async_write_ha_state()
+
+
+def build(
+    hass: HomeAssistant,
+    device: Device,
+    config: dict[str, Any],
+    inputs: Mapping[str, str],
+) -> list[PururuEntity]:
+    """The openings counter."""
+    return [Openings(device, config["sensor"])]
+
+
+OPENINGS = Feature(
+    schema=SCHEMA,
+    metrics={"openings_total": Platform.SENSOR},
+    build=build,
+    example={"sensor": "binary_sensor.demo_contact"},
+)
+```
+
+The pieces:
+
+- **`schema`** validates the block. Use `vol.Schema(...)` for every nested mapping that must refuse unknown keys (see [`ALLOW_EXTRA` leaks](/develop/architecture#voluptuous-allowextra-leaks)). For numbers, use `finite_float` from `feature.py`, which refuses `nan` and infinities.
+- **`metrics`** lists **every** metric the feature can create, even those that only exist with some settings, mapped to its platform. A metric name must not be used by any other feature.
+- **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, metric)`, which gives it its entity ID, unique ID, device and translated name.
+- **`example`** is a minimal valid block. The contract test validates it.
+
+## 2. Register it
+
+```python title="features/__init__.py"
+"""Every feature a device can have, by its key in the device's configuration."""
+
+from ..feature import Feature
+from .appliance import APPLIANCE
+from .openings import OPENINGS
+from .phases import PHASES
+
+FEATURES: dict[str, Feature] = {
+    "appliance": APPLIANCE,
+    "phases": PHASES,
+    "openings": OPENINGS,
+}
+```
+
+The key is the configuration key under a device. The device schema picks it up from `FEATURES` automatically.
+
+## 3. Names and icons
+
+For every metric, add a name to **both** `translations/en.json` and `translations/pt-BR.json`, and an icon to `icons.json`:
+
+```json title="translations/en.json"
+"entity": {
+  "sensor": {
+    "openings_total": {"name": "Openings"}
+  }
+}
+```
+
+```json title="icons.json"
+"entity": {
+  "sensor": {
+    "openings_total": {"default": "mdi:door-open"}
+  }
+}
+```
+
+If a metric's platform isn't in `PLATFORMS` (`const.py`), add it there, and add a platform module like `sensor.py` that adds `entry.runtime_data[Platform.X]`.
+
+## 4. Depending on another entity
+
+**On an entity of the same device:** set `sources` on the entity to the metrics it reads. If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another metric's entity, use `device.current_entity_id(hass, platform, metric)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `appliance/runtime.py` is an example.
+
+**On another feature:** declare it as a capability instead of hard-coding the other feature's name:
+
+- The provider maps a capability to the metric that carries it: `provides={"cycle": "running"}`.
+- The consumer lists it in `requires=("cycle",)`. Its schema then **must** have a `cycle_from` key (use `cv.slug`), and its `example` must include it.
+- `build()` receives the providing entity's current ID in `inputs["cycle"]`, and the consumer's entities depend on it automatically.
+- The device schema checks that `cycle_from` names a feature of the same device that provides `cycle`.
+
+`phases.py` is the example to copy.
+
+## 5. What the contract test checks
+
+`tests/test_features.py` runs over every entry in `FEATURES`, so your feature is covered without changing the test:
+
+| Test | Checks |
+|---|---|
+| `test_translation_files_match` | `pt-BR.json` has exactly `en.json`'s keys |
+| `test_no_metric_in_two_features` | No metric name is shared |
+| `test_every_metric_is_named_and_has_an_icon` | A name in both languages and an `mdi:` icon for every metric |
+| `test_example_is_valid_and_unknown_keys_are_refused` | `example` passes `schema`, and `example` plus an unknown key fails |
+| `test_every_platform_is_set_up` | Every metric's platform is in `PLATFORMS` |
+| `test_capabilities_line_up` | `provides` points to real metrics, every `requires` is provided by some feature, and the example has `<capability>_from` |
+
+The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_phases.py` do.
+
+## 6. Document it
+
+- Add `docs/features/<feature>.mdx` with its settings (`<Property>`), its entities and its rules, following [`appliance`](/features/appliance).
+- Add the page to the `Features` group in `docs.json`.
+- If it adds log messages, add them to [Troubleshooting](/reference/troubleshooting).
+- Add it to the table in [Devices and features](/concepts/devices-and-features#a-feature).

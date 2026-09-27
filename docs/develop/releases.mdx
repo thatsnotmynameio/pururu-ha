@@ -1,0 +1,66 @@
+---
+title: Releases and CI
+description: A pull request that bumps the manifest's version is a release. GitHub Actions tags it and HACS offers it.
+---
+
+## Versions
+
+The version is `version` in `custom_components/pururu/manifest.json`. It's semantic: `MAJOR.MINOR.PATCH`, with no prefix and no suffix. Home Assistant and HACS show it.
+
+## Releasing
+
+<Steps>
+  <Step title="Bump the version in a pull request">
+    Change `version` in `manifest.json`. A pull request that changes it **is** a release. One that doesn't change it releases nothing.
+  </Step>
+  <Step title="Merge to main">
+    The **Release** workflow runs **Build** and **Validate** on `main`.
+  </Step>
+  <Step title="Tag and publish">
+    If both pass, `release.py next` prints the tag `vX.Y.Z`, and the workflow creates a GitHub release for it with generated notes. HACS offers it from then on.
+  </Step>
+</Steps>
+
+`release.py` enforces two rules. `python3 release.py check` runs in every Build:
+
+- A version that already has its tag isn't published again.
+- A version **below** the latest release fails the checks.
+
+## Workflows
+
+All in `.github/workflows/`:
+
+| Workflow | When | What |
+|---|---|---|
+| `build.yml` (**Build**) | Pull requests, and called by Release | `release.py check`, `uv run --locked pytest --cov` (tests and core's checks), then the SonarQube Cloud scan with the coverage report |
+| `validate.yml` (**Validate**) | Pull requests, weekly, and called by Release | HACS's own validation of the repository (`hacs/action`) |
+| `release.yml` (**Release**) | Every push to `main` | Build and Validate, then the tag and GitHub release |
+
+`uv run --locked` fails when `uv.lock` is out of date, so every package is pinned by hash.
+
+### Actions are pinned by SHA
+
+Every `uses:` names a full commit SHA with the version in a comment:
+
+```yaml
+- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+```
+
+Dependabot proposes the updates. Keep the SHA and the comment in sync when you update one by hand.
+
+## SonarQube
+
+SonarQube Cloud analyses every pull request. Some of its rules conflict with signatures or conventions Home Assistant requires. For example, a platform's `async_setup_entry` must be `async` and take `hass`, even when it awaits nothing and doesn't use `hass`.
+
+Such a finding is suppressed in `sonar-project.properties`, under `sonar.issue.ignore.multicriteria`, with a comment giving the reason. It's **never** suppressed in the code. Scope each suppression to one rule and to the files where it applies.
+
+## Documentation
+
+This site is served by [docs.page](https://docs.page) from `docs/` and `docs.json` on `main`: `https://docs.page/thatsnotmynameio/pururu-ha`. Preview it locally with:
+
+```sh
+npx @docs.page/cli preview    # live preview in the browser
+npx @docs.page/cli check      # broken links and missing assets
+```
+
+A change to pururu's behaviour updates these pages in the same pull request.
