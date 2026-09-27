@@ -1,12 +1,14 @@
 """Alerts: conditions on the device's own entities that mean something is wrong.
 
-Detection only: each alert is a problem binary sensor, on while its condition
-holds (after `for`). Telling someone about it is left to whatever reads it.
+Each alert is a problem binary sensor, on while its condition holds (after
+`for`). With `notify`, it also says what to tell; Alert2 does the telling,
+reading its attributes. pururu sends nothing.
 """
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import logging
 from typing import Any, override
 
 import voluptuous as vol
@@ -39,6 +41,10 @@ from homeassistant.helpers.start import async_at_started
 from ..entity import PururuEntity, reading
 from ..feature import Device, Feature, finite_float
 
+_LOGGER = logging.getLogger(__name__)
+
+# Alert2 (HACS) delivers what an alert's notify says
+ALERT2 = "alert2"
 PRIORITIES = ("low", "medium", "high")
 # States that are no reading, unless the condition is about them
 NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
@@ -65,17 +71,23 @@ def _one_condition(alert: dict[str, Any]) -> dict[str, Any]:
     return alert
 
 
+# Text a person reads: a blank one would say nothing
+TEXT = vol.All(cv.string, vol.Strip, vol.Length(min=1))
+# What to tell, for Alert2 to deliver; a schema of its own, so unknown keys are refused
+NOTIFY = vol.Schema({vol.Required("message"): TEXT, vol.Required("done_message"): TEXT})
+
 ALERT = vol.All(
     vol.Schema(
         {
             # A blank name would show the alert as its device's name alone
-            vol.Required("name"): vol.All(cv.string, vol.Strip, vol.Length(min=1)),
+            vol.Required("name"): TEXT,
             vol.Required("when"): cv.slug,
             vol.Optional("is"): _state,
             vol.Optional("above"): finite_float,
             vol.Optional("below"): finite_float,
             vol.Optional("for", default=timedelta(0)): cv.positive_time_period,
             vol.Optional("priority", default="low"): vol.In(PRIORITIES),
+            vol.Optional("notify"): NOTIFY,
         }
     ),
     _one_condition,
@@ -137,6 +149,7 @@ class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):
         condition: Condition,
         hold: timedelta,
         priority: str,
+        notify: Mapping[str, str] | None,
     ) -> None:
         """Watch `watched`, the device's `when`, for `condition` held for `hold`."""
         self._identify(device, Platform.BINARY_SENSOR, entity_key, name)
@@ -145,7 +158,12 @@ class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):
         self._condition = condition
         self._hold = hold
         self._attr_is_on = False
-        self._attr_extra_state_attributes = {"priority": priority, "watches": watched}
+        self._attr_extra_state_attributes = {
+            "priority": priority,
+            "watches": watched,
+            **(notify or {}),
+        }
+        self._notifies = notify is not None
         self._pending: CALLBACK_TYPE | None = None
 
     @override
@@ -159,7 +177,15 @@ class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):
 
     @callback
     def _start(self, _hass: HomeAssistant) -> None:
-        """Follow the watched entity: while HA starts, entities pass through unavailable."""
+        """Follow the watched entity: while HA starts, entities pass through unavailable.
+
+        Also the time to know whether Alert2, which delivers `notify`, is set up:
+        it may load after pururu.
+        """
+        if self._notifies and ALERT2 not in self.hass.config.components:
+            _LOGGER.error(
+                "%s has notify, but Alert2 isn't set up to deliver it", self.entity_id
+            )
         self.async_on_remove(
             async_track_state_change_event(self.hass, self._watched, self._changed)
         )
@@ -224,6 +250,7 @@ def build(
             ),
             hold=alert["for"],
             priority=alert["priority"],
+            notify=alert.get("notify"),
         )
         for entity_key, alert in config.items()
     ]

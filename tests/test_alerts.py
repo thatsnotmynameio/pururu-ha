@@ -1,10 +1,16 @@
 """Feature `alerts`: problems on a made-up washer's own entities (its appliance and a switch)."""
 
+import ast
+from collections.abc import Iterable, Iterator
+from pathlib import Path
+import re
 from typing import Any
 
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.template import Template
 import pytest
+import yaml
 
 from helpers import capture, fake, held, reload, restart, settle, setup, tick
 
@@ -92,6 +98,28 @@ async def test_a_when_of_no_entity_key_names_it(
             in caplog.text)
 
 
+NOTIFY = {"message": "Overload!", "done_message": "Back to normal."}
+NOTIFY_PATH = "pururu->devices->demo_washer->alerts->overload->notify"
+
+
+@pytest.mark.parametrize(("notify", "reason"), [
+    pytest.param({"done_message": "OK"}, "required key 'message' not provided", id="no message"),
+    pytest.param({"message": "X"}, "required key 'done_message' not provided",
+                 id="no done_message"),
+    pytest.param({**NOTIFY, "message": " "},
+                 f"length of value must be at least 1 for dictionary value '{NOTIFY_PATH}->message'",
+                 id="empty message"),
+    pytest.param({**NOTIFY, "title": "X"},
+                 f"'title' is an invalid option for 'pururu', check: {NOTIFY_PATH}->title",
+                 id="unknown key"),
+])
+async def test_invalid_notify_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                         notify: dict[str, Any], reason: str) -> None:
+    assert not await setup(ha, devices(overload={**OVERLOAD, "notify": notify}))
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any(reason in message for message in errors), errors
+
+
 # --- the entity ---------------------------------------------------------------------
 
 
@@ -120,6 +148,133 @@ async def test_the_name_is_the_same_in_portuguese(ha: HomeAssistant) -> None:
     ha.config.language = "pt-BR"
     assert await setup(ha, devices(overload=OVERLOAD))
     assert ha.states.get(alert("overload")).attributes["friendly_name"] == "Demo washer Overload"
+
+
+async def test_notify_texts_are_attributes(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
+    attributes = ha.states.get(alert("overload")).attributes
+    assert attributes["message"] == "Overload!"
+    assert attributes["done_message"] == "Back to normal."
+
+
+async def test_without_notify_there_are_no_texts(ha: HomeAssistant) -> None:
+    """Alert2's generator picks the alerts that have a message attribute."""
+    assert await setup(ha, devices(overload=OVERLOAD))
+    attributes = ha.states.get(alert("overload")).attributes
+    assert "message" not in attributes
+    assert "done_message" not in attributes
+
+
+# --- Alert2 ------------------------------------------------------------------------------
+
+NOTIFY_ERROR = "has notify, but Alert2 isn't set up to deliver it"
+
+
+def notify_errors(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records
+            if r.levelname == "ERROR" and NOTIFY_ERROR in r.getMessage()]
+
+
+async def test_notify_without_alert2_is_an_error(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}, other=OVERLOAD))
+    assert notify_errors(caplog) == [f"{alert('overload')} {NOTIFY_ERROR}"]
+
+
+async def test_notify_with_alert2_is_no_error(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    ha.config.components.add("alert2")
+    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
+    assert notify_errors(caplog) == []
+
+
+async def test_without_notify_there_is_no_alert2_error(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    assert await setup(ha, devices(overload=OVERLOAD))
+    assert notify_errors(caplog) == []
+
+
+async def test_alert2_set_up_before_the_start_is_no_error(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Alert2 may load after pururu: the check waits for Home Assistant to start."""
+    ha.set_state(CoreState.not_running)
+    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
+    ha.config.components.add("alert2")
+    await ha.async_start()
+    await ha.async_block_till_done()
+    assert notify_errors(caplog) == []
+
+
+async def test_the_alert2_error_is_logged_once_per_setup(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    config = devices(overload={**OVERLOAD, "notify": NOTIFY})
+    assert await setup(ha, config)
+    caplog.clear()
+    await reload(ha, config)
+    assert notify_errors(caplog) == [f"{alert('overload')} {NOTIFY_ERROR}"]
+
+
+# --- the Alert2 generator of the docs ---------------------------------------------------
+
+ALERTS_PAGE = Path(__file__).resolve().parents[1] / "docs/features/alerts.mdx"
+
+
+def documented_generator() -> dict[str, Any]:
+    """The Alert2 generator on the alerts page, as a reader would copy it."""
+    block = re.search(r"```yaml\n(alert2:\n.*?)```", ALERTS_PAGE.read_text(), re.DOTALL)
+    assert block is not None, "no Alert2 block on the alerts page"
+    generator: dict[str, Any] = yaml.safe_load(block[1])["alert2"]["alerts"][0]
+    return generator
+
+
+def entity_regex(states: Iterable[State], find: str) -> Iterator[dict[str, Any]]:
+    """Alert2's entity_regex filter (config.py), as it runs in its generators."""
+    regex = re.compile(find)
+    for state in states:
+        if match := regex.match(state.entity_id):
+            yield {"genEntityId": state.entity_id, "genGroups": list(match.groups())}
+
+
+def generated(hass: HomeAssistant, generator: str) -> list[dict[str, Any]]:
+    template = Template(generator, hass)
+    template._env.filters["entity_regex"] = entity_regex  # Alert2 adds it to its own
+    return list(ast.literal_eval(template.async_render(parse_result=False)))
+
+
+def rendered(hass: HomeAssistant, field: str, variables: dict[str, Any]) -> str:
+    return str(Template(field, hass).async_render(variables, parse_result=False))
+
+
+async def test_the_documented_generator_picks_the_alerts_with_notify(ha: HomeAssistant) -> None:
+    await fake(ha, REAL_PUMP, "on")
+    assert await setup(ha, devices(pump_on={**PUMP_ON, "priority": "high", "notify": NOTIFY},
+                                   overload=OVERLOAD))
+    generator = documented_generator()
+    [element] = generated(ha, generator["generator"])
+    assert element["genEntityId"] == alert("pump_on")
+    assert generator["domain"] == "pururu"
+    assert rendered(ha, generator["name"], element) == "demo_washer_alert_pump_on"
+    assert rendered(ha, generator["friendly_name"], element) == "Demo washer Pump on"
+    assert rendered(ha, generator["priority"], element) == "high"
+    assert rendered(ha, generator["message"], element) == "Overload!"
+    assert rendered(ha, generator["done_message"], element) == "Back to normal."
+    assert rendered(ha, generator["condition_on"], element) == "True"
+    assert rendered(ha, generator["condition_off"], element) == "False"
+    await fake(ha, REAL_PUMP, "off")
+    assert rendered(ha, generator["condition_on"], element) == "False"
+    assert rendered(ha, generator["condition_off"], element) == "True"
+
+
+async def test_the_documented_generator_leaves_an_unavailable_alert_as_it_is(
+        ha: HomeAssistant) -> None:
+    """During a pururu reload the alert is briefly unavailable: neither on nor off."""
+    await fake(ha, REAL_PUMP, "on")
+    assert await setup(ha, devices(pump_on={**PUMP_ON, "notify": NOTIFY}))
+    generator = documented_generator()
+    [element] = generated(ha, generator["generator"])
+    ha.states.async_set(alert("pump_on"), "unavailable")
+    assert rendered(ha, generator["condition_on"], element) == "False"
+    assert rendered(ha, generator["condition_off"], element) == "False"
 
 
 # --- is ------------------------------------------------------------------------------
