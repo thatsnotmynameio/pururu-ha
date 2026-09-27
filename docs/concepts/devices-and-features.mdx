@@ -29,6 +29,7 @@ pururu:
 - **The key** (`laundry_washer`) identifies the device. It must be a slug: lowercase letters, digits and `_`. It becomes part of every entity ID, `sensor.pururu_laundry_washer_…`, and it's how pururu recognises the device across reloads. If you rename the key, pururu treats it as a new device: the old one and its entities are deleted, and the new one starts with empty history and counters.
 - **`name`** is the name Home Assistant shows. Change it whenever you like. Renaming the device in the UI works too, and pururu keeps your name.
 - **`area`** puts the device in one of the areas declared under `areas:`. It's optional, and it's covered in [Floors and areas](/concepts/floors-and-areas#a-device-in-an-area).
+- **`reactions`** makes the device react to events: each one becomes a Home Assistant automation. It's optional, it isn't a feature, and it's covered in [Reactions](/concepts/reactions).
 - **Features** are the other keys. A device needs at least one.
 
 ## A feature

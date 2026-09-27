@@ -26,6 +26,7 @@
         { "title": "Devices and features", "href": "/concepts/devices-and-features" },
         { "title": "Entity IDs", "href": "/concepts/entity-ids" },
         { "title": "Floors and areas", "href": "/concepts/floors-and-areas" },
+        { "title": "Reactions", "href": "/concepts/reactions" },
         { "title": "Dashboard", "href": "/concepts/dashboard" }
       ]
     },

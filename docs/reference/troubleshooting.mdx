@@ -24,6 +24,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A program step naming something that isn't an entity of another feature of the device: `programs: switch_pool_pump is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_pump`), not as an entity ID.
 - A program step whose entity doesn't take the action: `programs: appliance_power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
 - A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`.
+- A reaction with no source or two (`a reaction needs one source: when, entity, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `device` without `when`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`.
+- A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device laundry_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
 - Two devices that would give an entity the same ID: `device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`. Rename a device key or a switch key.
 
 **Developer tools → YAML → Check configuration** shows the same error before you reload.
@@ -171,6 +173,34 @@ pururu found Home Assistant's dashboards (`lovelace`) not loaded. That shouldn't
 ### `The dashboard is not created: lovelace's or frontend's API changed`
 
 HA has no public way for an integration to add a dashboard, so pururu relies on Home Assistant internals. This error means a newer Home Assistant changed them. Everything else still works. Please [open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the log's traceback and your Home Assistant version.
+
+## Reactions
+
+### The reactions' automations aren't loaded
+
+**Settings → Repairs** shows it, and the log says:
+
+```
+The automations of pururu's reactions are not loaded: add "automation pururu: !include pururu/automations.yaml" to configuration.yaml
+```
+
+**Fix:** add that line to `configuration.yaml`, then reload automations in **Developer tools → YAML → Automations**. See [The include](/concepts/reactions#the-include).
+
+### `automation.… follows …, which is not created; not generating it`
+
+```
+automation.pururu_laundry_lights_reaction_month follows sensor.pururu_laundry_washer_appliance_runtime_month, which is not created; not generating it
+```
+
+The reaction's `when` names a pururu entity that isn't created: its ID is taken, or the device's settings don't create it. Fix that entity, or point `when` at another one, then reload pururu.
+
+### `automation.… is already taken by …; not generating it`
+
+Another automation already has the ID the reaction's automation would have. Rename or delete that one in **Settings → Entities**, then reload pururu.
+
+### `The automations are not written to pururu/automations.yaml: …`
+
+pururu couldn't write the file, usually because of permissions on the configuration folder. The devices keep working; the reactions keep their last written automations.
 
 ## Still stuck?
 
