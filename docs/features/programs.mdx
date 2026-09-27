@@ -48,7 +48,7 @@ Each step has exactly one key:
 | `toggle: <entity key>` | Turns it on if it's off, off if it's on |
 | `delay: <time period>` | Waits, such as `{hours: 2}`, `"00:30:00"` or `90` (seconds) |
 
-An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_pump` for `switch.pururu_pool_switch_pump`. It must be an entity of another feature of the device that takes the action. Today that's a [switch](/features/switches). The same entity can appear in several steps.
+An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_pump` for `switch.pururu_pool_switch_pump`. It must be an entity of another feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps.
 
 Anything else is a configuration error: an entity ID (`switch.pool_pump`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
 
@@ -56,7 +56,7 @@ Anything else is a configuration error: an entity ID (`switch.pool_pump`), anoth
 
 A program is a method of its device, not a script. It acts only on its device's entities, and it never starts by itself:
 
-- **No other device, no real entity.** To act on a real switch, add it to the device under [`switches`](/features/switches).
+- **No other device, no real entity.** To act on a real switch or light, add it to the device under [`switches`](/features/switches) or [`lights`](/features/lights).
 - **No templates, no events, no other actions.** Its steps are the four above.
 - **No triggers.** Something outside presses it: you, an automation, a voice assistant.
 

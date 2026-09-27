@@ -127,6 +127,25 @@ async def test_toggle_flips_the_switch(ha: HomeAssistant) -> None:
     assert reached(calls) == ["turn_off"]
 
 
+@pytest.mark.parametrize(("real", "attributes"), [
+    pytest.param("light.sala_teto", {"supported_color_modes": ["onoff"], "color_mode": "onoff"},
+                 id="a real light"),
+    pytest.param("switch.sonoff_teto", {}, id="a relay driving a lamp"),
+])
+async def test_it_turns_a_light_on_and_off(
+        ha: HomeAssistant, freezer: Any, real: str, attributes: dict[str, Any]) -> None:
+    await fake(ha, real, "off", attributes)
+    evening = {"name": "Noite", "sequence": [
+        {"turn_on": "light_teto"}, {"delay": {"minutes": 30}}, {"turn_off": "light_teto"}]}
+    assert await setup(ha, {"sala": {"name": "Sala",
+                                     "lights": {"teto": {"entity": real, "name": "Teto"}},
+                                     "programs": {"evening": evening}}})
+    calls = capture(ha, "call_service")
+    await press(ha, "button.pururu_sala_program_evening")
+    await tick(ha, freezer, 30 * 60)
+    assert reached(calls, real) == ["turn_on", "turn_off"]
+
+
 async def test_a_press_returns_before_the_delay_ends(pool: HomeAssistant) -> None:
     """As script.turn_on: an automation pressing it doesn't wait two hours."""
     async with asyncio.timeout(5):

@@ -57,7 +57,7 @@ A device is a name plus one or more **features**. `FEATURES` in `features/__init
 | `requires` | capabilities it takes through `<capability>_from` |
 | `configured` | A platform, when its entity keys are the keys of its block, named by the block's `name`; `None` otherwise |
 | `refers` | Given its block, the entity keys of other features of the device it names, in their namespace (`appliance_running`); `None` otherwise |
-| `actions` | Services its entities take on their platform (`turn_on`, `turn_off`, `toggle` for `switches`), which a program can call |
+| `actions` | Services its entities take on their platform (`turn_on`, `turn_off`, `toggle` for `switches` and `lights`), which a program can call |
 | `acts` | Given its block, (action, entity key) of every entity it acts on; each key is in `refers` too; `None` otherwise |
 
 The device schema (`_device` in `__init__.py`) is built from `FEATURES`. It requires at least one feature, it checks that every `<capability>_from` names a feature of the same device that provides that capability, and it refuses a real entity in two configured features of the device (a relay is its switch or its light, not both).

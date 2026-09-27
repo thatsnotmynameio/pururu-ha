@@ -164,7 +164,7 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 **On one entity of another feature, named in the configuration:** set `refers` to a function that returns, from the validated block, the entity keys it names, in their namespace (`appliance_power`). The device schema checks each is another feature's entity key, and `build()` receives its current ID in `inputs[<key>]`. Set `follows` on each entity to the keys it reads. [`alerts`](/features/alerts) (`features/alerts.py`) is the example.
 
-**Acting on another feature's entities:** set `acts` to return, from the validated block, (action, entity key) pairs, each key also in `refers`. The device schema checks the owning feature has the action in its `actions`. A feature whose entities can be acted on declares `actions`, the services of its platform they take: `SWITCHES` has `("turn_on", "turn_off", "toggle")`. [`programs`](/features/programs) (`features/programs.py`) is the example.
+**Acting on another feature's entities:** set `acts` to return, from the validated block, (action, entity key) pairs, each key also in `refers`. The device schema checks the owning feature has the action in its `actions`. A feature whose entities can be acted on declares `actions`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `("turn_on", "turn_off", "toggle")`. [`programs`](/features/programs) (`features/programs.py`) is the example.
 
 ## 5. Entity keys from the configuration
 

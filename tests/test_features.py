@@ -122,8 +122,9 @@ async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, feat
             assert ha.services.has_service(feature.configured, action), f"{name}: {feature.configured}.{action}"
 
 
-def test_switches_take_turn_on_turn_off_and_toggle(features: dict[str, Any]) -> None:
-    assert features["switches"].actions == ("turn_on", "turn_off", "toggle")
+@pytest.mark.parametrize("name", ["switches", "lights"])
+def test_it_takes_turn_on_turn_off_and_toggle(features: dict[str, Any], name: str) -> None:
+    assert features[name].actions == ("turn_on", "turn_off", "toggle")
 
 
 def test_what_a_feature_acts_on_it_refers_to(features: dict[str, Any]) -> None:
