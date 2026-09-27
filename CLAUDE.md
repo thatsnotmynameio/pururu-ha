@@ -32,7 +32,8 @@ python3 release.py check                        # the manifest version must be s
     1. Sync floors and areas (`places.py`).
     2. Build every device's entities.
     3. Hand them to the platforms through `entry.runtime_data`. `sensor.py` and `binary_sensor.py` only call `async_add_entities`.
-    4. Remove stale entities and devices.
+    4. Put each device in its `area:` (a key of `areas:`).
+    5. Remove stale entities and devices.
 - **Features** (`feature.py`, `features/`):
   - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, the `metrics` it can create (metric → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
   - A feature consumes another feature's capability through `<capability>_from: <feature>`. `_build` passes it the current entity ID of the providing metric.

@@ -15,7 +15,12 @@ from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
+from homeassistant.helpers import (
+    area_registry as ar,
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 import voluptuous as vol
@@ -108,6 +113,7 @@ async def test_a_capability_reaches_the_feature_that_requires_it(ha: HomeAssista
     pytest.param({"gauge": GAUGE}, id="no name"),
     pytest.param({"name": "Widget"}, id="no feature"),
     pytest.param({**WIDGET, "colour": "red"}, id="unknown key"),
+    pytest.param({**WIDGET, "area": ["lavanderia"]}, id="area not a slug"),
     pytest.param({"name": "Widget", "gauge": {"source": "not an entity"}}, id="bad feature block"),
     pytest.param({"name": "Widget", "echo": {"activity_from": "gauge"}}, id="from a missing feature"),
     pytest.param({**WIDGET, "echo": {"activity_from": "echo"}}, id="from one that doesn't provide it"),
@@ -120,6 +126,71 @@ async def test_invalid_device_is_refused(ha: HomeAssistant, device: dict[str, An
 async def test_no_devices_creates_no_entry(ha: HomeAssistant) -> None:
     assert await setup(ha, {})
     assert not ha.config_entries.async_entries(DOMAIN)
+
+
+# --- areas --------------------------------------------------------------------
+
+
+def area_of(hass: HomeAssistant, key: str) -> str | None:
+    """The area ID of device `key`."""
+    device = device_of(hass, key)
+    assert device is not None, f"no device {key}"
+    return device.area_id
+
+
+LAVANDERIA = {"lavanderia": {"name": "Lavanderia"}}
+
+
+async def test_a_device_goes_to_its_area(ha: HomeAssistant) -> None:
+    assert await setup(ha, {"demo_widget": {**WIDGET, "area": "lavanderia"}}, areas=LAVANDERIA)
+    assert area_of(ha, "demo_widget") == "lavanderia"
+
+
+async def test_a_reload_takes_the_device_back_to_its_area(ha: HomeAssistant) -> None:
+    """The configuration wins over an area the user picked in the UI."""
+    devices = {"demo_widget": {**WIDGET, "area": "lavanderia"}}
+    assert await setup(ha, devices, areas=LAVANDERIA)
+    kitchen = ar.async_get(ha).async_create("Kitchen")
+    device = device_of(ha, "demo_widget")
+    assert device is not None
+    dr.async_get(ha).async_update_device(device.id, area_id=kitchen.id)
+    await reload(ha, devices, areas=LAVANDERIA)
+    assert area_of(ha, "demo_widget") == "lavanderia"
+
+
+async def test_an_area_left_out_is_an_error_and_the_device_still_created(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """HA refuses the area (its name is another area's): the device stays where it was."""
+    ar.async_get(ha).async_create("Lavanderia")  # ID lavanderia, not configured
+    areas = {"laundry": {"name": "Lavanderia"}}
+    assert await setup(ha, {"demo_widget": {**WIDGET, "area": "laundry"}}, areas=areas)
+    assert area_of(ha, "demo_widget") is None
+    assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any("demo_widget" in message and "laundry" in message for message in errors), errors
+
+
+async def test_without_an_area_the_device_keeps_the_one_it_has(ha: HomeAssistant) -> None:
+    assert await setup(ha, {"demo_widget": {**WIDGET, "area": "lavanderia"}}, areas=LAVANDERIA)
+    await reload(ha, {"demo_widget": WIDGET}, areas=LAVANDERIA)
+    assert area_of(ha, "demo_widget") == "lavanderia"
+
+
+async def test_a_device_with_nothing_created_has_no_area_to_go_to(ha: HomeAssistant) -> None:
+    registry = er.async_get(ha)
+    registry.async_get_or_create(
+        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_level")
+    registry.async_get_or_create(
+        "binary_sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_active")
+    assert await setup(ha, {"demo_widget": {**WIDGET, "area": "lavanderia"}}, areas=LAVANDERIA)
+    assert device_of(ha, "demo_widget") is None
+
+
+async def test_an_area_not_in_areas_is_refused(ha: HomeAssistant) -> None:
+    """Even one made in the UI: the device's area is one of pururu's."""
+    kitchen = ar.async_get(ha).async_create("Kitchen")
+    assert not await setup(ha, {"demo_widget": {**WIDGET, "area": kitchen.id}}, areas=LAVANDERIA)
+    assert device_of(ha, "demo_widget") is None
 
 
 # --- IDs already taken ---------------------------------------------------------

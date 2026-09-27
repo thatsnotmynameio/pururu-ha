@@ -20,6 +20,7 @@ pururu:
   devices:
     laundry_washer:            # the device's key: entity IDs are <platform>.pururu_<key>_<metric>
       name: Máquina de lavar   # the device's name
+      area: lavanderia         # optional: the area it goes in, a key of areas: (below)
       appliance:               # features: at least one
         power: sensor.washer_plug_power
         energy: sensor.washer_plug_energy
@@ -52,6 +53,8 @@ pururu:
         power: sensor.dishwasher_plug_power
         running: {threshold: 3, on_delay: {minutes: 1}, off_delay: {minutes: 5}}
 ```
+
+`area` is a key of `areas:` ([Floors and areas](#floors-and-areas)); any other value is a configuration error. The device goes in it at every start and reload, so an area picked in the UI lasts until then; without `area`, the device keeps the area it has. When HA refused to create that area, the log says so: the device and its entities are still created, in the area they had.
 
 `pururu:` can also come from HA packages: HA merges `devices:` from several of them.
 

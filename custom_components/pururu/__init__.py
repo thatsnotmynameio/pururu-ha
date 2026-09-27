@@ -21,6 +21,7 @@ from homeassistant.core import (
     split_entity_id,
 )
 from homeassistant.helpers import (
+    area_registry as ar,
     config_validation as cv,
     device_registry as dr,
     entity_registry as er,
@@ -31,7 +32,15 @@ from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
 from . import places
-from .const import CONF_AREAS, CONF_DEVICES, CONF_FLOORS, DATA_CONFIG, DOMAIN, PLATFORMS
+from .const import (
+    CONF_AREA,
+    CONF_AREAS,
+    CONF_DEVICES,
+    CONF_FLOORS,
+    DATA_CONFIG,
+    DOMAIN,
+    PLATFORMS,
+)
 from .entity import PururuEntity
 from .feature import Device
 from .features import FEATURES
@@ -42,9 +51,10 @@ type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
 
 
 def _device(value: Any) -> dict[str, Any]:
-    """A device: a name, at least one feature, and every <capability>_from resolved."""
+    """A device: a name, maybe an area, at least one feature, every <capability>_from resolved."""
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
+        vol.Optional(CONF_AREA): cv.slug,
         **{vol.Optional(name): feature.schema for name, feature in FEATURES.items()},
     }
     device: dict[str, Any] = vol.Schema(schema)(value)
@@ -62,6 +72,15 @@ def _device(value: Any) -> dict[str, Any]:
                     f"that provides {capability}"
                 )
     return device
+
+
+def _areas_exist(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a device in an area the configuration doesn't declare."""
+    for key, device in config[CONF_DEVICES].items():
+        area_id = device.get(CONF_AREA)
+        if area_id is not None and area_id not in config[CONF_AREAS]:
+            raise vol.Invalid(f"device {key}: area {area_id} is not in areas")
+    return config
 
 
 # The features are read when a configuration is validated, not at import
@@ -83,6 +102,7 @@ CONFIG_SCHEMA = vol.Schema(
                 }
             ),
             places.floors_exist,
+            _areas_exist,
         )
     },
     extra=vol.ALLOW_EXTRA,
@@ -155,6 +175,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
             built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
     entry.runtime_data = built
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
 
     @callback
@@ -261,6 +282,30 @@ def _holder(
     if state is not None and not state.attributes.get(ATTR_RESTORED):
         return "an entity without a unique ID"
     return None
+
+
+def _place(
+    hass: HomeAssistant, entry: PururuConfigEntry, devices: dict[str, dict[str, Any]]
+) -> None:
+    """Put each created device in its area; an area HA refused is logged.
+
+    The configuration wins over an area picked in the UI; a device without
+    `area`, or whose area is not created, keeps the one it has.
+    """
+    areas = ar.async_get(hass)
+    registry = dr.async_get(hass)
+    for key, config in devices.items():
+        if (area_id := config.get(CONF_AREA)) is None:
+            continue
+        device = registry.async_get_device_by_identifier((DOMAIN, key), entry.entry_id)
+        if device is None:  # none of its entities is created
+            continue
+        if areas.async_get_area(area_id) is None:
+            _LOGGER.error(
+                "Device %s is not placed: its area %s is not created", key, area_id
+            )
+        elif device.area_id != area_id:
+            registry.async_update_device(device.id, area_id=area_id)
 
 
 def _remove_stale(

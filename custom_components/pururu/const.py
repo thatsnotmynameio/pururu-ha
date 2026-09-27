@@ -13,6 +13,8 @@ CONF_AREAS: Final = "areas"
 CONF_FLOOR: Final = "floor"
 CONF_LEVEL: Final = "level"
 CONF_ALIASES: Final = "aliases"
+# A device's area: a key of areas
+CONF_AREA: Final = "area"
 # Every entity ID is <platform>.pururu_<device key>_<metric>
 ENTITY_PREFIX: Final = "pururu"
 PLATFORMS: Final = [Platform.BINARY_SENSOR, Platform.SENSOR]
