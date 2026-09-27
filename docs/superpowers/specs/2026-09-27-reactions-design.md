@@ -1,10 +1,10 @@
 # Reactions — design
 
-Version: pururu 0.1.8. Branch: `feat/automations`. Builds on #14 (alerts, 0.1.6) and #15 (lights, 0.1.7).
+Version: the one after the last release merged (0.1.9 if nothing else merges first; `feat/alert-notify` also asks for 0.1.8). Branch: `worktree-feat+automations`, on `main` after #16 (programs, 0.1.8). Builds on alerts' entity keys (`when`) and `_creatable`.
 
 ## Goal
 
-A device **listens** to events and **reacts** to them. This spec is the listening half: a device declares **reactions**, each with one source (an entity of the device, an entity of another pururu device, a real entity, a time of day, the sun), and pururu turns each reaction into a real **Home Assistant automation**. The automation fires on the source, shows up in HA's automation list with its traces and on/off toggle, and has **no actions yet**. What a reaction does (`then:`) is a later spec; it will become the automation's `actions`.
+A device **listens** to events and **reacts** to them. This spec is the listening half: a device declares **reactions**, each with one source (an entity of the device, an entity of another pururu device, a real entity, a time of day, the sun), and pururu turns each reaction into a real **Home Assistant automation**. The automation fires on the source, shows up in HA's automation list with its traces and on/off toggle, and has **no actions yet**. What a reaction does (`then:`) is a later spec; it will become the automation's `actions`, and the natural first action is running one of the device's own [programs](../../features/programs.mdx) (`button.press` on `button.pururu_<device>_program_<key>`), which programs' spec already defers to "pururu's own triggers and automations".
 
 ```yaml
 pururu:
@@ -48,7 +48,7 @@ automation pururu: !include pururu/automations.yaml
 | `device.when` in one string | No: `laundry_washer.appliance_running` reads as an entity ID, and a device may be keyed `light`. `device`, `when` and `entity` are separate keys, and `when` means exactly what it means in `alerts`. |
 | `unavailable` in between | HA's rules, since the automation is HA's. With `to` and no `from`, pururu adds `not_from: [unavailable, unknown]`, so a plug reconnecting (`unavailable → off`) never fires. A transition passing through `unavailable` (`on → unavailable → off`) isn't seen. Documented. |
 | The automation's entity ID | `automation.pururu_<device key>_reaction_<reaction key>`, the pururu pattern. HA derives it from the alias, so pururu pre-registers the entity with the public registry API before HA loads the file. A rename in the UI is kept. |
-| Is `reactions` a `Feature` | No. The `Feature` contract is about creating pururu entities (`entity_keys`, `build()`, translations, icons), and reactions create none. It's a device key, as `area`, in its own module. It doesn't count as a feature: a device still needs one. |
+| Is `reactions` a `Feature` | No. The `Feature` contract is about creating pururu entities (`entity_keys`, `build()`, translations, icons), and reactions create none. It's a device key, as `area`, in its own module. It doesn't count as a feature: a device still needs one. Programs' spec rejected a special device key because it would be a second path around `_creatable`, renames and stale removal; reactions have no entities of their own for those to handle, and they read `_creatable`'s result rather than going around it. |
 
 ## Configuration
 
@@ -70,13 +70,17 @@ automation pururu: !include pururu/automations.yaml
 
 "One source" means exactly one of `when`, `entity`, `at`, `sun`.
 
-Configuration errors added (voluptuous messages; exact wording fixed in the plan and matched in the docs):
+Configuration errors added, checked in this order (the docs quote them):
 
-- no source, or two sources;
-- `to` together with `above`/`below`, or neither on a state source; `above` not lower than `below`;
-- `from` without `to`; `device` without `when`; `for` without a state source; `offset` without `sun`; `to`, `from`, `above`, `below` on `at` or `sun`;
-- `reactions: <key> is not an entity key of this device` (a `when` without `device`), checked in `_device`;
-- `device <key>: reactions: <reaction>: device <other> is not in devices`, and `… <when> is not an entity key of device <other>`, checked by a new top-level validator next to `_entity_ids_distinct`, since it needs every device.
+- `a reaction needs one source: when, entity, at or sun` (none, or two);
+- `a reaction's device goes with when`;
+- `a reaction's offset goes with sun`;
+- `a reaction on at or sun takes no to, from, above, below or for`;
+- `a reaction on a state needs to, or above and/or below, not both`;
+- `a reaction's from goes with to`;
+- `a reaction's above must be lower than its below`;
+- `reactions: <reaction>: <when> is not an entity key of this device` (a `when` without `device`), checked in `_device`;
+- `device <key>: reactions: <reaction>: device <other> is not in devices` and `device <key>: reactions: <reaction>: <when> is not an entity key of device <other>`, checked by a new top-level validator next to `_entity_ids_distinct`, since it needs every device.
 
 Every entity key a device's features **can** create counts, as for alerts: `when: appliance_runtime_month` is valid without `statistics`, and the reaction simply isn't generated (see Generation). Reactions have no entity keys, so a reaction can't listen to a reaction.
 
@@ -106,7 +110,7 @@ Translation:
 | `sun` (+ `offset`) | `sun` with `event` and `offset` |
 
 - `entity_id` for `when` is the watched entity's **current** ID (`current_entity_id`): a rename reloads the entry, which regenerates the file.
-- `for` is written as `HH:MM:SS`, `offset` as `[-]HH:MM:SS`.
+- `for` is written as `HH:MM:SS`, `offset` as `[-]HH:MM:SS`, whole seconds.
 - `actions` is an empty list, which HA accepts: the automation fires and does nothing; its trace shows when and why.
 - As for every HA automation, a pending `for` is lost on restart.
 
@@ -118,8 +122,8 @@ Translation:
 - **The file:** `<config>/pururu/automations.yaml`, a header comment (`# Generated by pururu from its configuration. Don't edit: it is rewritten on every reload.`) and the list, `[]` when there is none. pururu builds the content on every setup and **writes only when it changed**, atomically (`write_utf8_file_atomic`, in the executor), creating `pururu/` if needed.
 - **Pre-registration:** for each generated reaction, `er.async_get_or_create("automation", "automation", <id>, suggested_object_id=<id>)` before the file is loaded. If `automation.<id>` is already held by another registry entry (a user's automation, say), the reaction isn't generated and the log says who holds it, as for entities: never a `_2`. An entry that already exists for this unique ID (renamed by the user) is left alone.
 - **Reload:** when the file changed, pururu calls `automation.reload` once HA has started (`async_at_started`). At boot with an unchanged file, HA has already loaded it and nothing is called. `manifest.json` gets `after_dependencies: ["automation"]`.
-- **Stale:** the IDs of the generated automations are kept in `entry.data["automations"]`, as floors and areas are. An ID no longer generated has its registry entry removed after the reload.
-- **The include is missing:** after the reload (or at start when nothing changed), if a generated ID has no `automation.*` state whose `id` attribute is it, pururu raises a Repairs issue (`automations_not_included`, not fixable, severity warning) whose text gives the `automation pururu: !include pururu/automations.yaml` line, and logs a warning. The issue is deleted as soon as every generated automation is loaded, and when nothing is generated.
+- **Stale:** the IDs of the generated automations are kept in `entry.data["automations"]`, as floors and areas are (the floors-and-areas update keeps that key). An ID no longer generated has its registry entry removed after the reload.
+- **The include is missing:** after the reload (or at start when nothing changed), and again at every `automation_reloaded` event (the user adding the include and reloading automations), if a generated ID has no `automation.*` state whose `id` attribute is it, pururu raises a Repairs issue (`automations_not_included`, not fixable, severity warning) whose text gives the `automation pururu: !include pururu/automations.yaml` line, and logs a warning. The issue is deleted as soon as every generated automation is loaded, and when nothing is generated.
 - **Never a failed setup:** a failed write or reload is a logged error; the devices and their entities keep working.
 - **Removal:** `async_remove_entry` writes `[]`, reloads automations if HA is running, removes the pre-registered entries and deletes the Repairs issue.
 
@@ -171,4 +175,4 @@ Same PR:
 
 ## Release
 
-`version` `0.1.8` in `manifest.json`; `python3 release.py check`.
+`version` in `manifest.json`: the patch after the latest release on `main` when the PR is opened (0.1.9 today); `python3 release.py check`.
