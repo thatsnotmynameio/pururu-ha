@@ -63,9 +63,9 @@ def async_sync(
 ) -> dict[str, list[str]]:
     """Make the registries follow the configuration; the IDs managed from now on.
 
-    Deletes first, so that a name a dropped floor or area had is free again. A
-    floor or area HA refuses is logged and left out, and so is an area on such
-    a floor.
+    Deletes first, so that a name a dropped floor or area had is free again. What
+    HA refuses is logged: a new floor or area is left out, and so is a new area on
+    a floor left out; one that exists stays as it is, and managed.
     """
     floor_registry = fr.async_get(hass)
     area_registry = ar.async_get(hass)
@@ -75,21 +75,20 @@ def async_sync(
     for floor_id in managed.get(CONF_FLOORS, []):
         if floor_id not in floors and floor_registry.async_get_floor(floor_id):
             floor_registry.async_delete(floor_id)
-    kept_floors = [
-        floor_id
-        for floor_id, config in floors.items()
-        if _floor(floor_registry, floor_id, config)
-    ]
-    kept_areas: list[str] = []
+    for floor_id, config in floors.items():
+        _floor(floor_registry, floor_id, config)
     for area_id, config in areas.items():
         floor_id = config.get(CONF_FLOOR)
-        if floor_id is not None and floor_id not in kept_floors:
+        if floor_id is None or floor_registry.async_get_floor(floor_id):
+            _area(area_registry, area_id, config)
+        else:
             _LOGGER.error(
-                "Area %s is left out: its floor %s is not created", area_id, floor_id
+                "Area %s is not synced: its floor %s is not created", area_id, floor_id
             )
-        elif _area(area_registry, area_id, config):
-            kept_areas.append(area_id)
-    return {CONF_FLOORS: kept_floors, CONF_AREAS: kept_areas}
+    return {
+        CONF_FLOORS: [f for f in floors if floor_registry.async_get_floor(f)],
+        CONF_AREAS: [a for a in areas if area_registry.async_get_area(a)],
+    }
 
 
 @callback
@@ -98,8 +97,8 @@ def async_remove(hass: HomeAssistant, managed: Mapping[str, Any]) -> None:
     async_sync(hass, {}, {}, managed)
 
 
-def _floor(registry: fr.FloorRegistry, floor_id: str, config: dict[str, Any]) -> bool:
-    """Whether the floor exists now, as configured."""
+def _floor(registry: fr.FloorRegistry, floor_id: str, config: dict[str, Any]) -> None:
+    """Create or update the floor as configured."""
 
     def update() -> None:
         registry.async_update(
@@ -110,7 +109,7 @@ def _floor(registry: fr.FloorRegistry, floor_id: str, config: dict[str, Any]) ->
             aliases=set(config[CONF_ALIASES]),
         )
 
-    return _follow(
+    _follow(
         "Floor",
         floor_id,
         exists=registry.async_get_floor(floor_id) is not None,
@@ -120,8 +119,8 @@ def _floor(registry: fr.FloorRegistry, floor_id: str, config: dict[str, Any]) ->
     )
 
 
-def _area(registry: ar.AreaRegistry, area_id: str, config: dict[str, Any]) -> bool:
-    """Whether the area exists now, as configured."""
+def _area(registry: ar.AreaRegistry, area_id: str, config: dict[str, Any]) -> None:
+    """Create or update the area as configured."""
 
     def update() -> None:
         registry.async_update(
@@ -132,7 +131,7 @@ def _area(registry: ar.AreaRegistry, area_id: str, config: dict[str, Any]) -> bo
             aliases=set(config[CONF_ALIASES]),
         )
 
-    return _follow(
+    _follow(
         "Area",
         area_id,
         exists=registry.async_get_area(area_id) is not None,
@@ -150,30 +149,28 @@ def _follow(
     create: Callable[[str], str],
     delete: Callable[[str], None],
     update: Callable[[], None],
-) -> bool:
-    """Create `place_id` if missing, then update it; False, logged, if HA refuses.
+) -> None:
+    """Create `place_id` if missing, then update it; logged if HA refuses.
 
     HA refuses a name another floor (or area) already has, whitespace and case
-    aside: creating one named after the key, or renaming it.
+    aside: creating one named after the key, or renaming it. A new one it
+    refuses is not kept.
     """
     if not exists:
         try:
             new_id = create(place_id)
         except ValueError as err:
-            return _left_out(kind, place_id, err)
+            _LOGGER.error("%s %s is left out: %s", kind, place_id, err)
+            return
         if new_id != place_id:  # can't happen for a free slug; never keep a stray
             delete(new_id)
-            return _left_out(kind, place_id, f"HA gave it the ID {new_id}")
+            _LOGGER.error("%s %s is left out: HA gave it %s", kind, place_id, new_id)
+            return
     try:
         update()
     except ValueError as err:
-        if not exists:
+        if exists:
+            _LOGGER.error("%s %s is not synced: %s", kind, place_id, err)
+        else:
             delete(place_id)
-        return _left_out(kind, place_id, err)
-    return True
-
-
-def _left_out(kind: str, place_id: str, reason: object) -> bool:
-    """Log why a floor or area is not created; False."""
-    _LOGGER.error("%s %s is left out: %s", kind, place_id, reason)
-    return False
+            _LOGGER.error("%s %s is left out: %s", kind, place_id, err)

@@ -84,7 +84,8 @@ pururu:
 - The key is the floor's or area's ID. HA makes IDs from names, so pururu creates a new one named after its key, then renames it.
 - A floor or area with that ID follows the configuration at every start and reload, even one made in the UI: a key left out is cleared, and changes made in the UI are undone.
 - A floor or area the configuration drops is deleted at the next reload, and deleting the integration deletes them all. HA then takes a deleted floor off its areas, and a deleted area off its devices and entities.
-- A name that a floor or area not in the configuration already has (whitespace and case aside), or a key that is already such a name, is an error in the log: that floor or area is not created, nor the areas on that floor.
+- A name that a floor or area not in the configuration already has (whitespace and case aside), or a key that is already such a name, is an error in the log: a new floor or area is not created, nor the new areas on that floor; one that already exists stays as it is, and pururu's.
+- An unknown key under `pururu:` (e.g. `floor:` for `floors:`) is a configuration error: a reload with it changes nothing.
 
 ## Features
 

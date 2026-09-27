@@ -67,17 +67,21 @@ def _device(value: Any) -> dict[str, Any]:
 # The features are read when a configuration is validated, not at import
 CONFIG_SCHEMA = vol.Schema(
     {
+        # A schema of its own: ALLOW_EXTRA would let a typo (`floor:`) through,
+        # and so delete every floor the entry manages
         DOMAIN: vol.All(
-            {
-                # Schemas of their own: ALLOW_EXTRA would skip a key that isn't a slug
-                vol.Optional(CONF_FLOORS, default={}): vol.Schema(
-                    {cv.slug: places.FLOOR_SCHEMA}
-                ),
-                vol.Optional(CONF_AREAS, default={}): vol.Schema(
-                    {cv.slug: places.AREA_SCHEMA}
-                ),
-                vol.Optional(CONF_DEVICES, default={}): {cv.slug: _device},
-            },
+            vol.Schema(
+                {
+                    # Schemas of their own: ALLOW_EXTRA would skip a key that isn't a slug
+                    vol.Optional(CONF_FLOORS, default={}): vol.Schema(
+                        {cv.slug: places.FLOOR_SCHEMA}
+                    ),
+                    vol.Optional(CONF_AREAS, default={}): vol.Schema(
+                        {cv.slug: places.AREA_SCHEMA}
+                    ),
+                    vol.Optional(CONF_DEVICES, default={}): {cv.slug: _device},
+                }
+            ),
             places.floors_exist,
         )
     },

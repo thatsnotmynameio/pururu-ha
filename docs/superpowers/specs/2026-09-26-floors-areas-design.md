@@ -50,7 +50,8 @@ On every setup of the config entry (start and reload), in this order:
    - ID free → `async_create(name=<id>)`. If the generated ID is not `<id>`, delete the new floor and log an error. Otherwise `async_update(name=<name>, level, icon, aliases)`; if that fails, delete the new floor and log an error.
    - `ValueError` (name already used by a floor pururu does not manage) → logged error, floor skipped.
 3. **Areas.** The same as floors, with `floor_id` set to the configured floor. An area whose floor was skipped in step 2 is skipped too, with a logged error ("… follows floor terreo, which is not created").
-4. **Record.** `entry.data` becomes `{"floors": [...], "areas": [...]}`: the IDs created or adopted in this run, and nothing that was skipped.
+4. **Record.** `entry.data` becomes `{"floors": [...], "areas": [...]}`: every configured ID that exists in its registry after this run. A floor or area that exists but HA refused to update ("is not synced") stays recorded, so it is still deleted once the configuration drops it; an area whose floor exists follows it even if that floor could not be updated.
+   An unknown key under `pururu:` is a configuration error (a typo such as `floor:` must not delete every managed floor).
 5. **Devices**, as today.
 
 Nothing in steps 1–4 fails the entry's setup: every problem is a logged error, and the rest is still created. This follows `_creatable` for entities.

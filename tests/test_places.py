@@ -1,6 +1,7 @@
 """pururu: floors and areas from the configuration, with the IDs their keys give them."""
 
 from typing import Any
+from unittest.mock import patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -184,9 +185,38 @@ async def test_swapping_names_is_logged_not_raised(
 
     managed = sync(ha, {"a": {"name": "Dois"}, "b": {"name": "Um"}, "c": {"name": "Três"}}, {}, managed)
 
-    assert managed == {"floors": ["c"], "areas": []}
-    assert "Floor a is left out" in errors(caplog)
-    assert "Floor b is left out" in errors(caplog)
+    assert managed == {"floors": ["a", "b", "c"], "areas": []}
+    assert "Floor a is not synced" in errors(caplog)
+    assert "Floor b is not synced" in errors(caplog)
+
+
+async def test_what_exists_but_is_not_synced_stays_managed(ha: HomeAssistant) -> None:
+    managed = sync(ha, {"a": {"name": "Um"}, "b": {"name": "Dois"}},
+                   {"x": {"name": "Sala", "floor": "a"}})
+    managed = sync(ha, {"a": {"name": "Dois"}, "b": {"name": "Um"}},
+                   {"x": {"name": "Sala grande", "floor": "a"}}, managed)
+    assert managed == {"floors": ["a", "b"], "areas": ["x"]}
+    room = area(ha, "x")
+    assert room is not None
+    assert (room.name, room.floor_id) == ("Sala grande", "a")  # its floor exists
+
+    assert sync(ha, {}, {}, managed) == {"floors": [], "areas": []}
+
+    assert floor(ha, "a") is None
+    assert floor(ha, "b") is None
+    assert area(ha, "x") is None
+
+
+async def test_an_adopted_floor_that_cannot_be_renamed_is_still_managed(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    floors = fr.async_get(ha)
+    floors.async_create("Terreo")
+    floors.async_create("Térreo velho")
+
+    managed = sync(ha, {"terreo": {"name": "Térreo velho"}}, {})
+
+    assert managed == {"floors": ["terreo"], "areas": []}
+    assert "Floor terreo is not synced" in errors(caplog)
 
 
 async def test_remove_deletes_only_what_is_managed(ha: HomeAssistant) -> None:
@@ -255,6 +285,15 @@ async def test_invalid_floors_and_areas_are_refused(
     assert not await setup(ha, {}, floors=floors, areas=areas)
     assert not ha.config_entries.async_entries(DOMAIN)
     assert not list(fr.async_get(ha).async_list_floors())
+
+
+async def test_an_unknown_key_under_pururu_is_refused_and_deletes_nothing(ha: HomeAssistant) -> None:
+    assert await setup(ha, {}, floors={"terreo": TERREO})
+    config = {DOMAIN: {"floor": {"terreo": TERREO}}}  # singular: a typo
+    with patch("homeassistant.config.load_yaml_config_file", return_value=config):
+        await ha.services.async_call(DOMAIN, "reload", blocking=True)
+        await ha.async_block_till_done()
+    assert floor(ha, "terreo") is not None
 
 
 async def test_invalid_reload_keeps_floors_and_areas(ha: HomeAssistant) -> None:
