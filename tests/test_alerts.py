@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 import pytest
 
-from helpers import fake, held, restart, settle, setup, tick
+from helpers import capture, fake, held, reload, restart, settle, setup, tick
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
@@ -78,7 +78,7 @@ async def test_an_alert_is_a_problem_sensor_in_the_device(ha: HomeAssistant) -> 
     assert overload.attributes["friendly_name"] == "Demo washer Overload"
     assert overload.attributes["device_class"] == "problem"
     assert overload.attributes["priority"] == "low"
-    assert overload.attributes["entity_id"] == MIRROR
+    assert overload.attributes["watches"] == MIRROR
     assert alert("overload") in held(ha, KEY)
     entry = er.async_get(ha).async_get(alert("overload"))
     assert entry is not None
@@ -208,6 +208,47 @@ async def test_is_unavailable_turns_on_when_the_plug_goes_offline(
     assert state(ha, alert("offline")) == "off"
 
 
+OFFLINE = {"name": "Offline", "when": "appliance_power", "is": "unavailable"}
+
+
+def states_of(events: list[Any], entity_id: str) -> list[str]:
+    """The states `entity_id` was written with, in order."""
+    return [event.data["new_state"].state for event in events
+            if event.data["entity_id"] == entity_id and event.data["new_state"] is not None]
+
+
+async def test_setting_up_with_a_reading_raises_no_false_alarm(ha: HomeAssistant) -> None:
+    """At setup, the watched entity may not exist yet: that's no reading, not offline."""
+    await fake(ha, POWER, "10")
+    events = capture(ha, "state_changed")
+    assert await setup(ha, devices(offline=OFFLINE))
+    assert "on" not in states_of(events, alert("offline"))
+    assert state(ha, alert("offline")) == "off"
+
+
+async def test_a_reload_with_a_reading_raises_no_false_alarm(ha: HomeAssistant) -> None:
+    await fake(ha, POWER, "10")
+    assert await setup(ha, devices(offline=OFFLINE))
+    events = capture(ha, "state_changed")
+    await reload(ha, devices(offline=OFFLINE))
+    assert "on" not in states_of(events, alert("offline"))
+    assert state(ha, alert("offline")) == "off"
+
+
+async def test_a_restart_with_a_reading_raises_no_false_alarm(ha: HomeAssistant) -> None:
+    await fake(ha, POWER, "10")
+    events = capture(ha, "state_changed")
+    await restart(ha, devices(offline=OFFLINE), (State(alert("offline"), "off"), {}))
+    assert "on" not in states_of(events, alert("offline"))
+    assert state(ha, alert("offline")) == "off"
+
+
+async def test_a_plug_offline_at_start_turns_it_on(ha: HomeAssistant) -> None:
+    await fake(ha, POWER, "unavailable")
+    await restart(ha, devices(offline=OFFLINE), (State(alert("offline"), "off"), {}))
+    assert state(ha, alert("offline")) == "on"
+
+
 async def test_a_missing_entity_counts_as_unavailable(ha: HomeAssistant) -> None:
     offline = {"name": "Offline", "when": "appliance_power", "is": "unavailable"}
     assert await setup(ha, devices(offline=offline))
@@ -246,7 +287,7 @@ async def test_follows_a_renamed_entity(ha: HomeAssistant) -> None:
     assert await setup(ha, devices(overload=OVERLOAD))
     er.async_get(ha).async_update_entity(MIRROR, new_entity_id="sensor.washer_power")
     await ha.async_block_till_done()
-    assert ha.states.get(alert("overload")).attributes["entity_id"] == "sensor.washer_power"
+    assert ha.states.get(alert("overload")).attributes["watches"] == "sensor.washer_power"
     await fake(ha, POWER, "3000")
     assert state(ha, alert("overload")) == "on"
 

@@ -16,6 +16,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.const import (
+    ATTR_RESTORED,
     STATE_OFF,
     STATE_ON,
     STATE_UNAVAILABLE,
@@ -33,6 +34,7 @@ from homeassistant.core import (
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.start import async_at_started
 
 from ..entity import PururuEntity, reading
 from ..feature import Device, Feature, finite_float
@@ -88,8 +90,11 @@ class Condition:
         """Whether `state` is a problem; None when it is no reading.
 
         A condition on unavailable or unknown compares those states, a missing
-        entity counting as unavailable.
+        entity counting as unavailable. A state HA restored for an entity not
+        loaded yet (at start, during a reload) is no reading.
         """
+        if state is not None and state.attributes.get(ATTR_RESTORED):
+            return None
         if self.state is not None:
             current = STATE_UNAVAILABLE if state is None else state.state
             if current in NO_READING and self.state not in NO_READING:
@@ -126,20 +131,27 @@ class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):
         self._condition = condition
         self._hold = hold
         self._attr_is_on = False
-        self._attr_extra_state_attributes = {"priority": priority, "entity_id": watched}
+        self._attr_extra_state_attributes = {"priority": priority, "watches": watched}
         self._pending: CALLBACK_TYPE | None = None
 
     @override
     async def async_added_to_hass(self) -> None:
-        """Restore the state, then follow the watched entity."""
+        """Restore the state, then follow the watched entity once HA has started."""
         await super().async_added_to_hass()
         if (last := await self.async_get_last_state()) is not None:
             self._attr_is_on = last.state == STATE_ON
+        self.async_on_remove(self._cancel)
+        self.async_on_remove(async_at_started(self.hass, self._start))
+
+    @callback
+    def _start(self, _hass: HomeAssistant) -> None:
+        """Follow the watched entity: while HA starts, entities pass through unavailable."""
         self.async_on_remove(
             async_track_state_change_event(self.hass, self._watched, self._changed)
         )
-        self.async_on_remove(self._cancel)
-        self._evaluate(self.hass.states.get(self._watched))
+        # Not there yet, as the device's other platforms set up alongside: no reading
+        if (state := self.hass.states.get(self._watched)) is not None:
+            self._evaluate(state)
 
     @callback
     def _changed(self, event: Event[EventStateChangedData]) -> None:

@@ -66,7 +66,7 @@ Because a switch's entity keys come from its block, `when: switch_pump` is valid
 - **No reading:** the watched entity is missing, `unknown` or `unavailable`, or (for `above`/`below`) not a number. Then the alert keeps its state and cancels a pending `for`. Exception: with `is: unavailable` or `is: unknown`, a missing entity counts as `unavailable` and those states are compared like any other.
 - **Holds, alert off:** it turns on after `for` (at once with no `for`). Stops holding before that: the pending `for` is cancelled.
 - **Doesn't hold:** the alert turns off at once, and a pending `for` is cancelled.
-- **Start and reload:** the alert restores its last state, then evaluates the watched entity's current state. A condition already holding starts its `for` from now; with no reading, the restored state stays.
+- **Start and reload:** the alert restores its last state, then follows the watched entity once HA has started, and evaluates its current state. A condition already holding starts its `for` from now; with no reading, the restored state stays. A watched entity that isn't there yet, or whose state HA restored while it isn't loaded (`restored: true`), is no reading: at a start or reload they pass through `unavailable`, which must not raise an `is: unavailable` alert.
 - **Follows renames:** the watched entity's current ID comes from the registry (`current_entity_id`), and a rename reloads the entry, as for every pururu entity.
 - **Dependency:** when the watched entity isn't created (its ID is taken, or it follows something not created), the alert isn't created either, with the usual logged error (`… follows …, which is not created; not creating it`).
 
@@ -77,7 +77,7 @@ Because a switch's entity keys come from its block, `when: switch_pump` is valid
 | ID | `binary_sensor.pururu_<device key>_alert_<alert key>` |
 | Name | `<device name> <name>` |
 | Device class | `problem`: states "Problem"/"OK", HA's alert icons |
-| Attributes | `priority`; `entity_id`: the watched entity's current ID |
+| Attributes | `priority`; `watches`: the watched entity's current ID (not `entity_id`, which HA reads as a group's members) |
 | Restores | its state |
 
 No entity category: an alert is a primary entity of its device.
@@ -106,7 +106,7 @@ The alerts feature: `namespace="alert"`, `configured=Platform.BINARY_SENSOR`, `e
   - Restart: restored `on` stays on while the condition holds; restored state stays with no reading; a holding condition starts `for` over.
   - Renaming the watched entity; the watched entity's ID taken → no alert, logged.
   - Refused blocks: no `name`, empty `name`, `is` with `above`, neither, `above` ≥ `below`, unknown `priority`, `when` naming an alert or an unknown key.
-  - Entity: ID, name (and the same in Portuguese), device class, `priority` default and set, `entity_id` attribute.
+  - Entity: ID, name (and the same in Portuguese), device class, `priority` default and set, `watches` attribute.
 
 ## Docs
 

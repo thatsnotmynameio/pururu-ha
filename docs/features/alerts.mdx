@@ -69,7 +69,7 @@ An alert needs **either** `is` **or** `above`/`below`, not both.
 - **The condition stops holding:** the alert turns off at once. If it stops before `for` passes, the count starts over the next time it holds.
 - **The watched entity has no reading** (`unknown`, `unavailable`, or not a number for `above`/`below`): the alert **keeps its state**, and a count in progress starts over when readings return. A washer's alert doesn't clear because its plug dropped off Wi-Fi for a minute.
 - **An alert about the reading itself**, `is: unavailable`, compares that state like any other, so it turns on for a plug gone offline. An entity that disappears counts as `unavailable`.
-- **After a restart or reload,** the alert comes back as it was. A condition that holds starts its `for` over.
+- **After a restart or reload,** the alert comes back as it was, and follows the watched entity again once Home Assistant has started: entities pass through `unavailable` while it starts, and that raises no alert. A condition that holds starts its `for` over.
 
 ## Entity
 
@@ -77,7 +77,7 @@ An alert needs **either** `is` **or** `above`/`below`, not both.
 |---|---|
 | `binary_sensor.pururu_<key>_alert_<alert key>` | On while the problem lasts. Device class `problem`. |
 
-Its attributes are **`priority`** and **`entity_id`**, the entity it watches. It's in the device, so it's in the device's area.
+Its attributes are **`priority`** and **`watches`**, the entity it watches. It's in the device, so it's in the device's area.
 
 ## Needs
 
