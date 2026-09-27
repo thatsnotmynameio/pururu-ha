@@ -54,7 +54,7 @@ The pururu light is a new entity. The real one stays as it is. pururu doesn't ow
 `_device` (in `__init__.py`) goes through the device's `configured` blocks and refuses a real entity found in two of them:
 
 ```
-lights: switch.sonoff_abajur is already in switches
+switches: switch.sonoff_abajur is already in lights
 ```
 
 ## Shared code: `features/standing.py`
@@ -72,7 +72,7 @@ def is_pururu(hass: HomeAssistant, entity: str) -> bool:
     """The registry says `entity` is pururu's (catches a pururu_… renamed in the UI)."""
 ```
 
-- `switches.py` uses `standing.schema(Platform.SWITCH)` and `standing.is_pururu`. Its behaviour, error messages and log lines don't change, and `tests/test_switches.py` passes unedited.
+- `switches.py` uses `standing.schema(Platform.SWITCH)` and `standing.is_pururu`. Its behaviour and log lines don't change, and `tests/test_switches.py` passes unedited. One configuration message changes: another domain reads `light.pool_light is not a switch` (a light: `sensor.x is not a light or switch`) instead of HA's `does not belong to domain`, which would print a list for two domains.
 - Each feature logs its own message when `is_pururu` is true, so the predicate stays free of side effects.
 
 ## The entities (`features/lights.py`)
@@ -152,7 +152,7 @@ A light over a real switch, on HA's `GroupEntity` as `SwitchGroup` and `LightGro
   - an unknown key;
   - an empty block;
   - a key that isn't a slug;
-  - the same real entity in `switches:` and `lights:` of one device, both ways round.
+  - the same real entity in `switches:` and `lights:` of one device, in either order in the YAML (the message names the features in `FEATURES` order).
 - **Accepted:**
   - the same real switch as a light in one device and a switch in another;
   - `switches: pump` next to `lights: pump`;
@@ -181,8 +181,8 @@ The `features/standing.py` extraction is checked by `tests/test_switches.py` pas
 - `docs/index.mdx`: "It never acts on its own" names lights too.
 - `docs/reference/configuration.mdx`: `lights:` in the example and the features list, and the one-configured-feature rule.
 - `docs/reference/troubleshooting.mdx`:
-  - the error `lights: switch.x is already in switches`;
-  - the log line `… is a pururu entity: name the real one; not creating …`;
+  - the error `switches: switch.x is already in lights`;
+  - the log line `… is a pururu light: name the real one; not creating …` next to the switch one (both `is a pururu <domain>`);
   - a new section, "A light is `unavailable`".
 - `docs/develop/architecture.mdx`, `docs/develop/index.mdx` and `docs/develop/writing-a-feature.mdx`:
   - `light.py` and `features/standing.py`;
