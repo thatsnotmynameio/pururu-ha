@@ -23,8 +23,8 @@ APPLIANCE: dict[str, Any] = {
 DEVICES = {KEY: {"name": "Demo washer", "appliance": APPLIANCE}}
 
 
-def sensor(metric: str) -> str:
-    return f"sensor.pururu_{KEY}_{metric}"
+def sensor(entity_key: str) -> str:
+    return f"sensor.pururu_{KEY}_{entity_key}"
 
 
 def running(hass: HomeAssistant) -> str:
@@ -199,8 +199,8 @@ async def test_names_in_portuguese(ha: HomeAssistant) -> None:
 LAST = ("last_cycle_start", "last_cycle_duration", "last_cycle_energy", "last_cycle_end")
 
 
-def value(hass: HomeAssistant, metric: str) -> str:
-    return hass.states.get(sensor(metric)).state
+def value(hass: HomeAssistant, entity_key: str) -> str:
+    return hass.states.get(sensor(entity_key)).state
 
 
 async def test_a_finished_cycle_is_recorded(washer: HomeAssistant, freezer: Any) -> None:
@@ -221,8 +221,8 @@ async def test_a_finished_cycle_is_recorded(washer: HomeAssistant, freezer: Any)
 
 
 async def test_before_the_first_cycle_everything_is_unknown(washer: HomeAssistant) -> None:
-    for metric in LAST:
-        assert value(washer, metric) == "unknown", metric
+    for entity_key in LAST:
+        assert value(washer, entity_key) == "unknown", entity_key
     assert value(washer, "cycles_total") == "0"
 
 
@@ -232,9 +232,9 @@ async def test_end_is_written_last(washer: HomeAssistant, freezer: Any) -> None:
     changes = capture(washer, "state_changed")
     await end_cycle(washer, freezer)
     order = [event.data["entity_id"] for event in changes
-             if event.data["entity_id"] in {sensor(metric) for metric in LAST}]
+             if event.data["entity_id"] in {sensor(entity_key) for entity_key in LAST}]
     assert order[-1] == sensor("last_cycle_end"), order
-    assert set(order) == {sensor(metric) for metric in LAST}, order
+    assert set(order) == {sensor(entity_key) for entity_key in LAST}, order
 
 
 @pytest.mark.parametrize(("unit", "start", "end"), [

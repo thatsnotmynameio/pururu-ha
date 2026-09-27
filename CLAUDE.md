@@ -36,11 +36,11 @@ python3 release.py check                        # the manifest version must be s
     5. Remove stale entities and devices.
     6. Show the dashboard (`dashboard.py`).
 - **Features** (`feature.py`, `features/`):
-  - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, the `metrics` it can create (metric → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
-  - A feature consumes another feature's capability through `<capability>_from: <feature>`. `_build` passes it the current entity ID of the providing metric.
-  - `tests/test_features.py` is a contract test over every entry in `FEATURES`. It checks translations and icons for each metric, that the example is valid, and more. A new feature gets checked there without changes to the test.
+  - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, the `entity_keys` it can create (entity key → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
+  - A feature consumes another feature's capability through `<capability>_from: <feature>`. `_build` passes it the current entity ID of the providing entity key.
+  - `tests/test_features.py` is a contract test over every entry in `FEATURES`. It checks translations and icons for each entity key, that the example is valid, and more. A new feature gets checked there without changes to the test.
 - **Entity IDs are the identity:**
-  - Every entity is `<platform>.pururu_<device key>_<metric>`, and its unique ID is the part after the platform (`Device.object_id`).
+  - Every entity is `<platform>.pururu_<device key>_<entity key>`, and its unique ID is the part after the platform (`Device.object_id`).
   - An ID already held by another integration is logged as an error and not created. Anything that follows it (`sources`) is dropped too (`_creatable`); IDs are never suffixed with `_2`.
   - A user rename in the UI is followed: `current_entity_id`, plus a registry listener that reloads the entry.
 - **Floors and areas** (`places.py`):

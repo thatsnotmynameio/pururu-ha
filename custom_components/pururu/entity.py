@@ -21,16 +21,16 @@ def reading(state: State | None) -> float | None:
 
 
 class PururuEntity(Entity):
-    """An entity of a configured device, named after its metric."""
+    """An entity of a configured device, named after its entity key."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    # Metrics of its own device it takes its value from: without them it isn't created
+    # Entity keys of its own device it takes its value from: without them it isn't created
     sources: tuple[str, ...] = ()
 
-    def _identify(self, device: Device, platform: Platform, metric: str) -> None:
-        """Take `device`'s entity ID, unique ID, device and name translation for `metric`."""
-        self.entity_id = device.entity_id(platform, metric)
-        self._attr_unique_id = device.object_id(metric)
+    def _identify(self, device: Device, platform: Platform, entity_key: str) -> None:
+        """Take `device`'s entity ID, unique ID, device and name translation for `entity_key`."""
+        self.entity_id = device.entity_id(platform, entity_key)
+        self._attr_unique_id = device.object_id(entity_key)
         self._attr_device_info = device.info
-        self._attr_translation_key = metric
+        self._attr_translation_key = entity_key

@@ -8,20 +8,20 @@ description: Every entity pururu creates has a predictable ID. pururu follows yo
 Every entity pururu creates has the ID
 
 ```
-<platform>.pururu_<device key>_<metric>
+<platform>.pururu_<device key>_<entity key>
 ```
 
 - **platform**: `sensor` or `binary_sensor`.
 - **device key**: the device's key under `devices:`.
-- **metric**: what the entity measures. Each feature's page lists its metrics. A metric counted per period ends with that period, as in `runtime_month`.
+- **entity key**: which of the device's entities it is. Each feature's page lists its entity keys. An entity key counted per period ends with that period, as in `runtime_month`.
 
-So the `running` metric of the device `laundry_washer` is always `binary_sensor.pururu_laundry_washer_running`. You can write automations and dashboards against it before the device even exists.
+So the `running` entity of the device `laundry_washer` is always `binary_sensor.pururu_laundry_washer_running`. You can write automations and dashboards against it before the device even exists.
 
 The entity's **unique ID** is the same text without the platform: `pururu_laundry_washer_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
 
 ## Names
 
-An entity's name comes from its metric, in Home Assistant's language: English and Portuguese are translated. It's shown after the device's name, so `running` on **Máquina de lavar** is **Máquina de lavar Running**, or **Máquina de lavar Em funcionamento** in Portuguese. You can rename any entity in the UI as usual.
+An entity's name comes from its entity key, in Home Assistant's language: English and Portuguese are translated. It's shown after the device's name, so `running` on **Máquina de lavar** is **Máquina de lavar Running**, or **Máquina de lavar Em funcionamento** in Portuguese. You can rename any entity in the UI as usual.
 
 ## Renaming an entity ID
 

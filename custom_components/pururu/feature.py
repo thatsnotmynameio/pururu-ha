@@ -38,21 +38,21 @@ class Device:
         """The device every entity of this device belongs to."""
         return DeviceInfo(identifiers={(DOMAIN, self.key)}, name=self.name)
 
-    def object_id(self, metric: str) -> str:
-        """The entity ID of `metric` without its platform, which is also its unique ID."""
-        return f"{ENTITY_PREFIX}_{self.key}_{metric}"
+    def object_id(self, entity_key: str) -> str:
+        """The entity ID of `entity_key` without its platform, which is also its unique ID."""
+        return f"{ENTITY_PREFIX}_{self.key}_{entity_key}"
 
-    def entity_id(self, platform: Platform, metric: str) -> str:
-        """The entity ID `metric` is created with."""
-        return f"{platform}.{self.object_id(metric)}"
+    def entity_id(self, platform: Platform, entity_key: str) -> str:
+        """The entity ID `entity_key` is created with."""
+        return f"{platform}.{self.object_id(entity_key)}"
 
     def current_entity_id(
-        self, hass: HomeAssistant, platform: Platform, metric: str
+        self, hass: HomeAssistant, platform: Platform, entity_key: str
     ) -> str:
-        """The entity ID `metric` has now: the user may have renamed it in the UI."""
+        """The entity ID `entity_key` has now: the user may have renamed it in the UI."""
         return er.async_get(hass).async_get_entity_id(
-            platform, DOMAIN, self.object_id(metric)
-        ) or self.entity_id(platform, metric)
+            platform, DOMAIN, self.object_id(entity_key)
+        ) or self.entity_id(platform, entity_key)
 
 
 type Build = Callable[
@@ -66,13 +66,13 @@ class Feature:
 
     # Validates its block; refuses unknown keys
     schema: Callable[[Any], Any]
-    # Everything it can create: metric -> the platform of its entity
-    metrics: Mapping[str, Platform]
+    # Everything it can create: entity key -> the platform of its entity
+    entity_keys: Mapping[str, Platform]
     # Its entities, from its validated block and the entity IDs of what it requires
     build: Build
     # A minimal valid block, for the contract test
     example: Mapping[str, Any]
-    # capability -> the metric whose entity carries it; others take it with <capability>_from
+    # capability -> the entity key whose entity carries it; others take it with <capability>_from
     provides: Mapping[str, str] = field(default_factory=dict)
     # capabilities it takes through <capability>_from: build() gets their current
     # entity IDs, and its entities aren't created when those entities aren't

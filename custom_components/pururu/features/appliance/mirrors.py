@@ -12,11 +12,11 @@ class Mirror(PururuEntity, SensorGroup):
     """One real sensor's value, unit and classes."""
 
     def __init__(
-        self, hass: HomeAssistant, device: Device, metric: str, source: str
+        self, hass: HomeAssistant, device: Device, entity_key: str, source: str
     ) -> None:
-        """Follow `source` as `metric` of `device`."""
+        """Follow `source` as `entity_key` of `device`."""
         SensorGroup.__init__(
-            self, hass, None, metric, [source], False, "last", None, None, None
+            self, hass, None, entity_key, [source], False, "last", None, None, None
         )
-        del self._attr_name  # the name comes from the metric's translation
-        self._identify(device, Platform.SENSOR, metric)
+        del self._attr_name  # the name comes from the entity key's translation
+        self._identify(device, Platform.SENSOR, entity_key)

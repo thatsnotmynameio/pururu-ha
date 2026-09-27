@@ -61,7 +61,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
     added = {
         "gauge": feature.Feature(
             schema=vol.Schema({vol.Required("source"): cv.entity_id}),
-            metrics={"level": Platform.SENSOR, "active": Platform.BINARY_SENSOR},
+            entity_keys={"level": Platform.SENSOR, "active": Platform.BINARY_SENSOR},
             build=lambda hass, device, config, inputs: [Level(device, config["source"]),
                                                         Active(device)],
             example=GAUGE,
@@ -69,7 +69,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
         ),
         "echo": feature.Feature(
             schema=vol.Schema({vol.Required("activity_from"): cv.slug}),
-            metrics={"echo": Platform.SENSOR},
+            entity_keys={"echo": Platform.SENSOR},
             build=lambda hass, device, config, inputs: [Echo(device, inputs["activity"])],
             example={"activity_from": "gauge"},
             requires=("activity",),
@@ -344,7 +344,7 @@ async def test_reload_sets_up_a_failed_entry_again(ha: HomeAssistant) -> None:
         return original.build(hass, device, config, inputs)
 
     features["gauge"] = feature.Feature(
-        schema=original.schema, metrics=original.metrics, build=flaky_build,
+        schema=original.schema, entity_keys=original.entity_keys, build=flaky_build,
         example=original.example, provides=original.provides,
     )
     assert await setup(ha, {"demo_widget": WIDGET})

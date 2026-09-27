@@ -51,7 +51,7 @@ Reload with **Developer tools → YAML → Pururu**. Open **Settings → Devices
 | `sensor.pururu_laundry_washer_cycles_total` | Cycles counted since you added the device |
 | `sensor.pururu_laundry_washer_runtime_total` | Hours it has run since you added the device |
 
-Every entity ID follows the same pattern, `<platform>.pururu_<device key>_<metric>`, so you can predict it before it exists. See [Entity IDs](/concepts/entity-ids).
+Every entity ID follows the same pattern, `<platform>.pururu_<device key>_<entity key>`, so you can predict it before it exists. See [Entity IDs](/concepts/entity-ids).
 
 The `last_cycle_*` sensors stay `unknown` until the first cycle ends. Run a wash, or wait for the next one.
 

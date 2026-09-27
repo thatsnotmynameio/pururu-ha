@@ -34,21 +34,21 @@ def test_translation_files_match() -> None:
     assert paths(load("translations/pt-BR.json")) == paths(load("translations/en.json"))
 
 
-def test_no_metric_in_two_features(features: dict[str, Any]) -> None:
+def test_no_entity_key_in_two_features(features: dict[str, Any]) -> None:
     seen: dict[str, str] = {}
     for name, feature in features.items():
-        for metric in feature.metrics:
-            assert metric not in seen, f"{metric} in {seen.get(metric)} and {name}"
-            seen[metric] = name
+        for entity_key in feature.entity_keys:
+            assert entity_key not in seen, f"{entity_key} in {seen.get(entity_key)} and {name}"
+            seen[entity_key] = name
 
 
-def test_every_metric_is_named_and_has_an_icon(features: dict[str, Any]) -> None:
+def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> None:
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
     for feature in features.values():
-        for metric, platform in feature.metrics.items():
+        for entity_key, platform in feature.entity_keys.items():
             for translations in (en, pt):
-                assert translations["entity"][platform][metric]["name"], metric
-            assert icons["entity"][platform][metric]["default"].startswith("mdi:"), metric
+                assert translations["entity"][platform][entity_key]["name"], entity_key
+            assert icons["entity"][platform][entity_key]["default"].startswith("mdi:"), entity_key
 
 
 def test_example_is_valid_and_unknown_keys_are_refused(features: dict[str, Any]) -> None:
@@ -61,15 +61,15 @@ def test_example_is_valid_and_unknown_keys_are_refused(features: dict[str, Any])
 def test_every_platform_is_set_up(features: dict[str, Any]) -> None:
     platforms = module("const").PLATFORMS
     for name, feature in features.items():
-        for metric, platform in feature.metrics.items():
-            assert platform in platforms, f"{name}'s {metric} is on {platform}, not in PLATFORMS"
+        for entity_key, platform in feature.entity_keys.items():
+            assert platform in platforms, f"{name}'s {entity_key} is on {platform}, not in PLATFORMS"
 
 
 def test_capabilities_line_up(features: dict[str, Any]) -> None:
     provided = {capability for feature in features.values() for capability in feature.provides}
     for name, feature in features.items():
-        for capability, metric in feature.provides.items():
-            assert metric in feature.metrics, f"{name} provides {capability} by unknown {metric}"
+        for capability, entity_key in feature.provides.items():
+            assert entity_key in feature.entity_keys, f"{name} provides {capability} by unknown {entity_key}"
         for capability in feature.requires:
             assert capability in provided, f"{name} requires {capability}, nobody provides it"
             assert f"{capability}_from" in feature.example, f"{name}'s example lacks {capability}_from"

@@ -93,7 +93,7 @@ def build(
 
 OPENINGS = Feature(
     schema=SCHEMA,
-    metrics={"openings_total": Platform.SENSOR},
+    entity_keys={"openings_total": Platform.SENSOR},
     build=build,
     example={"sensor": "binary_sensor.demo_contact"},
 )
@@ -102,8 +102,8 @@ OPENINGS = Feature(
 The pieces:
 
 - **`schema`** validates the block. Use `vol.Schema(...)` for every nested mapping that must refuse unknown keys (see [`ALLOW_EXTRA` leaks](/develop/architecture#voluptuous-allowextra-leaks)). For numbers, use `finite_float` from `feature.py`, which refuses `nan` and infinities.
-- **`metrics`** lists **every** metric the feature can create, even those that only exist with some settings, mapped to its platform. A metric name must not be used by any other feature.
-- **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, metric)`, which gives it its entity ID, unique ID, device and translated name.
+- **`entity_keys`** lists **every** entity key the feature can create, even those that only exist with some settings, mapped to its platform. An entity key must not be used by any other feature.
+- **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, entity_key)`, which gives it its entity ID, unique ID, device and translated name.
 - **`example`** is a minimal valid block. The contract test validates it.
 
 ## 2. Register it
@@ -127,7 +127,7 @@ The key is the configuration key under a device. The device schema picks it up f
 
 ## 3. Names and icons
 
-For every metric, add a name to **both** `translations/en.json` and `translations/pt-BR.json`, and an icon to `icons.json`:
+For every entity key, add a name to **both** `translations/en.json` and `translations/pt-BR.json`, and an icon to `icons.json`:
 
 ```json title="translations/en.json"
 "entity": {
@@ -145,15 +145,15 @@ For every metric, add a name to **both** `translations/en.json` and `translation
 }
 ```
 
-If a metric's platform isn't in `PLATFORMS` (`const.py`), add it there, and add a platform module like `sensor.py` that adds `entry.runtime_data[Platform.X]`.
+If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and add a platform module like `sensor.py` that adds `entry.runtime_data[Platform.X]`.
 
 ## 4. Depending on another entity
 
-**On an entity of the same device:** set `sources` on the entity to the metrics it reads. If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another metric's entity, use `device.current_entity_id(hass, platform, metric)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `appliance/runtime.py` is an example.
+**On an entity of the same device:** set `sources` on the entity to the entity keys it reads. If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another entity key's entity, use `device.current_entity_id(hass, platform, entity_key)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `appliance/runtime.py` is an example.
 
 **On another feature:** declare it as a capability instead of hard-coding the other feature's name:
 
-- The provider maps a capability to the metric that carries it: `provides={"cycle": "running"}`.
+- The provider maps a capability to the entity key that carries it: `provides={"cycle": "running"}`.
 - The consumer lists it in `requires=("cycle",)`. Its schema then **must** have a `cycle_from` key (use `cv.slug`), and its `example` must include it.
 - `build()` receives the providing entity's current ID in `inputs["cycle"]`, and the consumer's entities depend on it automatically.
 - The device schema checks that `cycle_from` names a feature of the same device that provides `cycle`.
@@ -167,11 +167,11 @@ If a metric's platform isn't in `PLATFORMS` (`const.py`), add it there, and add 
 | Test | Checks |
 |---|---|
 | `test_translation_files_match` | `pt-BR.json` has exactly `en.json`'s keys |
-| `test_no_metric_in_two_features` | No metric name is shared |
-| `test_every_metric_is_named_and_has_an_icon` | A name in both languages and an `mdi:` icon for every metric |
+| `test_no_entity_key_in_two_features` | No entity key is shared |
+| `test_every_entity_key_is_named_and_has_an_icon` | A name in both languages and an `mdi:` icon for every entity key |
 | `test_example_is_valid_and_unknown_keys_are_refused` | `example` passes `schema`, and `example` plus an unknown key fails |
-| `test_every_platform_is_set_up` | Every metric's platform is in `PLATFORMS` |
-| `test_capabilities_line_up` | `provides` points to real metrics, every `requires` is provided by some feature, and the example has `<capability>_from` |
+| `test_every_platform_is_set_up` | Every entity key's platform is in `PLATFORMS` |
+| `test_capabilities_line_up` | `provides` points to real entity keys, every `requires` is provided by some feature, and the example has `<capability>_from` |
 
 The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_phases.py` do.
 
