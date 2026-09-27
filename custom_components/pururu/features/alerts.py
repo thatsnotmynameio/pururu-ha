@@ -102,22 +102,23 @@ class Condition:
         """
         if state is not None and state.attributes.get(ATTR_RESTORED):
             return None
-        if isinstance(self.state, float):
-            if (value := reading(state)) is None:
-                return None
-            return value == self.state
-        if self.state is not None:
-            current = STATE_UNAVAILABLE if state is None else state.state
-            if self.state in NO_READING:
-                return current in NO_READING
-            if current in NO_READING:
-                return None
-            return current == self.state
+        if isinstance(self.state, str):
+            return self._is(STATE_UNAVAILABLE if state is None else state.state)
         if (value := reading(state)) is None:
             return None
+        if self.state is not None:  # a number
+            return value == self.state
         return (self.above is None or value > self.above) and (
             self.below is None or value < self.below
         )
+
+    def _is(self, current: str) -> bool | None:
+        """`is` a state: no reading for other states, unless it is about no reading."""
+        if self.state in NO_READING:
+            return current in NO_READING
+        if current in NO_READING:
+            return None
+        return current == self.state
 
 
 class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):

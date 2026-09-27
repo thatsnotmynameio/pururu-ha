@@ -68,6 +68,13 @@ def _device(value: Any) -> dict[str, Any]:
         raise vol.Invalid(
             f"a device needs at least one feature ({', '.join(FEATURES)})"
         )
+    _capabilities_provided(device, names)
+    _references_resolved(device, names)
+    return device
+
+
+def _capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
+    """Refuse a <capability>_from that names no feature of the device providing it."""
     for name in names:
         for capability in FEATURES[name].requires:
             source = device[name][f"{capability}_from"]
@@ -76,6 +83,10 @@ def _device(value: Any) -> dict[str, Any]:
                     f"{name}: {capability}_from must name a feature of this device "
                     f"that provides {capability}"
                 )
+
+
+def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
+    """Refuse an entity key a feature refers to that isn't another feature's."""
     # Every entity key the device can create, in its namespace -> its feature
     owners = {
         qualified(FEATURES[name].namespace, entity_key): name
@@ -90,7 +101,6 @@ def _device(value: Any) -> dict[str, Any]:
                     f"{name}: {key} is not an entity key of another feature "
                     "of this device"
                 )
-    return device
 
 
 def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:

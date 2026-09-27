@@ -109,12 +109,12 @@ alert:
 alert2:
   alerts:
     - generator_name: pururu
-      generator: "{{ states.binary_sensor | entity_regex('binary_sensor.pururu_(.*)_alert_(.*)$') | list }}"
-      domain: "{{ genGroups[0] }}"
-      name: "{{ genGroups[1] }}"
+      generator: "{{ states.binary_sensor | entity_regex('binary_sensor\\.pururu_(.+_alert_.+)$') | list }}"
+      domain: pururu
+      name: "{{ genGroups[0] }}"
       condition: "{{ is_state(genEntityId, 'on') }}"
       friendly_name: "{{ state_attr(genEntityId, 'friendly_name') }}"
       priority: "{{ state_attr(genEntityId, 'priority') }}"
 ```
 
-The regular expression splits the ID at the last `_alert_`, so an alert key containing `_alert_` (such as `high_alert_level`) would split in the wrong place. See Alert2's documentation for its notifier, reminder and acknowledgement settings.
+Each Alert2 alert is named after the rest of the pururu alert's ID, without splitting it into device and alert: `binary_sensor.pururu_laundry_washer_alert_long_cycle` becomes `alert2.pururu_laundry_washer_alert_long_cycle`, whatever the device and alert keys contain. See Alert2's documentation for its notifier, reminder and acknowledgement settings.
