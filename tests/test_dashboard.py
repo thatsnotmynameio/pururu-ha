@@ -2,19 +2,22 @@
 
 import html
 from typing import Any
+from unittest.mock import patch
 
 from homeassistant.components import frontend
+from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
     floor_registry as fr,
 )
+from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from helpers import DOMAIN, module, reload, setup
+from helpers import DOMAIN, capture, device_of, module, reload, setup
 
 URL = "pururu"
 FLOORS = {"terreo": {"name": "Térreo"}, "superior": {"name": "Superior"}}
@@ -162,3 +165,70 @@ async def test_a_language_pururu_is_not_translated_in_falls_back_to_english(
     config = await fetch(ha, hass_ws_client)
     assert totals(config)[3] == "# 1\nDevices"
     assert table(config)[0] == ["ID", "Name", "Type"]
+
+
+def errors(caplog: pytest.LogCaptureFixture) -> str:
+    return "\n".join(r.getMessage() for r in caplog.records if r.levelname == "ERROR")
+
+
+async def test_a_rename_shows_and_refreshes_an_open_page(
+        ha: HomeAssistant, hass_ws_client: WebSocketGenerator, appliance: dict[str, Any]) -> None:
+    """Renaming a floor, an area or a device in the UI: an open page fetches again."""
+    assert await setup(ha, devices(appliance, washer="Washer"),
+                       floors={"terreo": FLOORS["terreo"]}, areas={"quintal": AREAS["quintal"]})
+    updated = capture(ha, "lovelace_updated")
+    fr.async_get(ha).async_update("terreo", name="Ground")
+    ar.async_get(ha).async_update("quintal", name="Garden")
+    device = device_of(ha, "washer")
+    assert device is not None
+    dr.async_get(ha).async_update_device(device.id, name_by_user="My washer")
+    await ha.async_block_till_done()
+    assert len(updated) >= 6, updated  # two per change
+    assert {event.data["url_path"] for event in updated} == {URL}
+    assert [row[1] for row in table(await fetch(ha, hass_ws_client))[1:]] == [
+        "Pururu", "Ground", "Garden", "My washer"]
+
+
+async def test_a_url_already_taken_is_an_error_and_left_alone(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, appliance: dict[str, Any]) -> None:
+    frontend.async_register_built_in_panel(ha, "iframe", frontend_url_path=URL,
+                                           config={"url": "https://example.com"})
+    assert await setup(ha, devices(appliance, washer="Washer"))
+    assert "/pururu is already taken" in errors(caplog)
+    assert ha.data[frontend.DATA_PANELS][URL].component_name == "iframe"
+    assert URL not in ha.data[LOVELACE_DATA].dashboards
+    assert device_of(ha, "washer") is not None
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    assert await ha.config_entries.async_unload(entry.entry_id)
+    assert ha.data[frontend.DATA_PANELS][URL].component_name == "iframe"
+
+
+async def test_a_user_dashboard_at_pururu_is_refused(
+        ha: HomeAssistant, hass_ws_client: WebSocketGenerator, appliance: dict[str, Any]) -> None:
+    assert await setup(ha, devices(appliance, washer="Washer"))
+    client = await hass_ws_client(ha)
+    await client.send_json_auto_id({"type": "lovelace/dashboards/create", "url_path": URL,
+                                    "title": "Mine", "allow_single_word": True})
+    assert not (await client.receive_json())["success"]
+    assert table(await fetch(ha, hass_ws_client))[1] == ["pururu", "Pururu", "Dashboard"]
+
+
+async def test_without_lovelace_data_an_error_and_no_dashboard(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, appliance: dict[str, Any]) -> None:
+    assert await async_setup_component(ha, "lovelace", {})
+    ha.data.pop(LOVELACE_DATA)
+    assert await setup(ha, devices(appliance, washer="Washer"))
+    assert "The dashboard is not created" in errors(caplog)
+    assert URL not in ha.data.get(frontend.DATA_PANELS, {})
+    assert device_of(ha, "washer") is not None
+
+
+async def test_a_changed_lovelace_api_is_an_error_and_no_dashboard(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, appliance: dict[str, Any]) -> None:
+    assert await async_setup_component(ha, "lovelace", {})  # it registers panels too
+    with patch.object(frontend, "async_register_built_in_panel",
+                      side_effect=TypeError("unexpected keyword argument")):
+        assert await setup(ha, devices(appliance, washer="Washer"))
+    assert "unexpected keyword argument" in errors(caplog)
+    assert URL not in ha.data[LOVELACE_DATA].dashboards
+    assert device_of(ha, "washer") is not None

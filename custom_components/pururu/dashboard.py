@@ -3,7 +3,8 @@
 HA has no public API for an integration's dashboard. As lovelace does for a
 YAML dashboard, a LovelaceConfig goes in lovelace's dashboards, and a
 `lovelace` panel in `yaml` mode shows it: the UI offers no editing. Its config
-is built at every fetch, from the entry and the registries, and never saved.
+is built at every fetch, from the entry and the registries, and never saved;
+a change in the registries makes an open page fetch it again.
 """
 
 from collections.abc import Mapping
@@ -14,7 +15,8 @@ from homeassistant.components import frontend
 from homeassistant.components.lovelace.const import LOVELACE_DATA, MODE_YAML
 from homeassistant.components.lovelace.dashboard import LovelaceConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import EVENT_LOVELACE_UPDATED
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
@@ -175,17 +177,34 @@ class PururuDashboard(LovelaceConfig):
 
 @callback
 def async_setup(hass: HomeAssistant, entry: ConfigEntry[Any]) -> None:
-    """Show the entry's dashboard at /pururu until the entry unloads."""
-    dashboards = hass.data[LOVELACE_DATA].dashboards
-    frontend.async_register_built_in_panel(
-        hass,
-        "lovelace",
-        sidebar_title=TITLE,
-        sidebar_icon=ICON,
-        frontend_url_path=URL_PATH,
-        config={"mode": MODE_YAML},
-        require_admin=True,
-    )
+    """Show the entry's dashboard at /pururu until the entry unloads.
+
+    What keeps it from being created is a logged error, never a failed setup:
+    lovelace not set up, /pururu already taken (as a taken entity ID), or
+    lovelace's or frontend's private API no longer the one pururu knows.
+    """
+    if (lovelace := hass.data.get(LOVELACE_DATA)) is None:
+        _LOGGER.error("The dashboard is not created: lovelace is not set up")
+        return
+    try:
+        dashboards = lovelace.dashboards
+        if URL_PATH in dashboards or frontend.async_panel_exists(hass, URL_PATH):
+            _LOGGER.error(
+                "The dashboard is not created: /%s is already taken", URL_PATH
+            )
+            return
+        frontend.async_register_built_in_panel(
+            hass,
+            "lovelace",
+            sidebar_title=TITLE,
+            sidebar_icon=ICON,
+            frontend_url_path=URL_PATH,
+            config={"mode": MODE_YAML},
+            require_admin=True,
+        )
+    except (AttributeError, TypeError) as err:
+        _LOGGER.error("The dashboard is not created: %s", err)
+        return
     dashboards[URL_PATH] = PururuDashboard(hass, entry)
 
     @callback
@@ -194,4 +213,30 @@ def async_setup(hass: HomeAssistant, entry: ConfigEntry[Any]) -> None:
         dashboards.pop(URL_PATH, None)
         frontend.async_remove_panel(hass, URL_PATH, warn_if_unknown=False)
 
+    @callback
+    def changed(event: Event[Any]) -> None:
+        """A floor, an area or a device changed: an open page fetches again."""
+        _async_refresh(hass)
+
     entry.async_on_unload(remove)
+    entry.async_on_unload(
+        hass.bus.async_listen(fr.EVENT_FLOOR_REGISTRY_UPDATED, changed)
+    )
+    entry.async_on_unload(
+        hass.bus.async_listen(ar.EVENT_AREA_REGISTRY_UPDATED, changed)
+    )
+    entry.async_on_unload(
+        hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, changed)
+    )
+    _async_refresh(hass)
+
+
+@callback
+def _async_refresh(hass: HomeAssistant) -> None:
+    """Make an open dashboard fetch its config again.
+
+    Twice: after each fetch of a yaml dashboard, the frontend ignores the next
+    update (`_ignoreNextUpdateEvent` in ha-panel-lovelace.ts).
+    """
+    for _ in range(2):
+        hass.bus.async_fire(EVENT_LOVELACE_UPDATED, {"url_path": URL_PATH})
