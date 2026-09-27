@@ -67,7 +67,7 @@ pururu:
         washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off"}
         night: {name: Noite, at: "22:00"}
 
-automation pururu: !include pururu/automations.yaml
+automation pururu: !include_dir_merge_list pururu/automations
 ```
 
 ## General rules

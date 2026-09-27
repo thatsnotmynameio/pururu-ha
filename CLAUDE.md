@@ -34,7 +34,7 @@ python3 release.py check                        # the manifest version must be s
     3. Hand them to the platforms through `entry.runtime_data`. The platforms (`sensor.py`, `binary_sensor.py`, `switch.py`, `light.py`, `button.py`) only call `async_add_entities`.
     4. Put each device in its `area:` (a key of `areas:`).
     5. Remove stale entities and devices.
-    6. Generate the reactions' automations (`reactions.py`): `pururu/automations.yaml`, which `configuration.yaml` includes (`automation pururu: !include …`), entity IDs pre-registered, automations reloaded when it changed, a Repairs issue while it isn't included. `reactions` is a device key, not a `Feature`.
+    6. Generate the reactions' automations (`reactions.py`): `pururu/automations/reactions.yaml`, whose folder `configuration.yaml` includes (`automation pururu: !include_dir_merge_list pururu/automations`, as a missing folder loads as `[]` while a missing file stops HA's configuration), entity IDs pre-registered, automations reloaded when it changed, a Repairs issue while it isn't included. `reactions` is a device key, not a `Feature`.
     7. Show the dashboard (`dashboard.py`).
 - **Features** (`feature.py`, `features/`):
   - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, a `namespace`, the `entity_keys` it can create (entity key → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.

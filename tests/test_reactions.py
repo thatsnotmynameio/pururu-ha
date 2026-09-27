@@ -12,6 +12,7 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from homeassistant.util.file import WriteError
+from homeassistant.util.yaml import load_yaml_dict
 import pytest
 
 from helpers import AUTOMATIONS, capture, fake, generated, module, reload, restart, setup, tick
@@ -376,7 +377,19 @@ def issue(ha: HomeAssistant) -> ir.IssueEntry | None:
     return ir.async_get(ha).async_get_issue("pururu", "automations_not_included")
 
 
-INCLUDE = "automation pururu: !include pururu/automations.yaml"
+INCLUDE = "automation pururu: !include_dir_merge_list pururu/automations"
+
+
+async def test_the_include_tolerates_a_missing_folder_and_reads_the_file(
+        ha: HomeAssistant) -> None:
+    """Before pururu has written anything, HA still loads its configuration."""
+    configuration = Path(ha.config.path("configuration.yaml"))
+    configuration.write_text(f"{INCLUDE}\n", encoding="utf-8")
+    assert not Path(ha.config.path("pururu/automations")).exists()
+    assert load_yaml_dict(configuration) == {"automation pururu": []}
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    assert load_yaml_dict(configuration) == {"automation pururu": generated(ha)}
+    assert generated(ha) != []
 
 
 async def test_without_the_include_an_issue_says_what_to_add(
@@ -433,7 +446,7 @@ async def test_a_failed_write_is_logged_and_the_setup_goes_on(
     reactions = module("reactions")
     with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
         assert await setup(ha, devices(door=DOOR_OPENS))
-    assert "The automations are not written to pururu/automations.yaml: disk full" in caplog.text
+    assert "The automations are not written to pururu/automations/reactions.yaml: disk full" in caplog.text
     assert ha.states.get("light.pururu_lights_light_teto") is not None
 
 

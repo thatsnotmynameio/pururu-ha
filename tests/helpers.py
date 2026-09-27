@@ -20,7 +20,7 @@ import yaml
 
 DOMAIN = "pururu"
 # The automations pururu generates, relative to the configuration folder
-AUTOMATIONS = "pururu/automations.yaml"
+AUTOMATIONS = "pururu/automations/reactions.yaml"
 # Loop turns settle() gives: far more than any chain of our callbacks needs
 SETTLE_TURNS = 100
 

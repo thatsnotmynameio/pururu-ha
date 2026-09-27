@@ -181,7 +181,7 @@ HA has no public way for an integration to add a dashboard, so pururu relies on 
 **Settings → Repairs** shows it, and the log says:
 
 ```
-The automations of pururu's reactions are not loaded: add "automation pururu: !include pururu/automations.yaml" to configuration.yaml
+The automations of pururu's reactions are not loaded: add "automation pururu: !include_dir_merge_list pururu/automations" to configuration.yaml
 ```
 
 **Fix:** add that line to `configuration.yaml`, then reload automations in **Developer tools → YAML → Automations**. See [The include](/concepts/reactions#the-include).
@@ -198,7 +198,7 @@ The reaction's `when` names a pururu entity that isn't created: its ID is taken,
 
 Another automation already has the ID the reaction's automation would have. Rename or delete that one in **Settings → Entities**, then reload pururu.
 
-### `The automations are not written to pururu/automations.yaml: …`
+### `The automations are not written to pururu/automations/reactions.yaml: …`
 
 pururu couldn't write the file, usually because of permissions on the configuration folder. The devices keep working; the reactions keep their last written automations.
 

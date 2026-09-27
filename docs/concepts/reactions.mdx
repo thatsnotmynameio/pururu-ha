@@ -28,25 +28,25 @@ pururu:
         night:       {name: Noite, at: "22:00"}
         dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
 
-automation pururu: !include pururu/automations.yaml
+automation pururu: !include_dir_merge_list pururu/automations
 ```
 
 This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da lavanderia Lavadora terminou**, and one automation for each other reaction.
 
 ## The include
 
-pururu writes the automations to `pururu/automations.yaml`, next to `configuration.yaml`. Home Assistant only loads automations its configuration names, so add this line **once** to `configuration.yaml`:
+pururu writes the automations to `pururu/automations/reactions.yaml`, in a `pururu` folder next to `configuration.yaml`. Home Assistant only loads automations its configuration names, so add this line **once** to `configuration.yaml`:
 
 ```yaml title="configuration.yaml"
-automation pururu: !include pururu/automations.yaml
+automation pururu: !include_dir_merge_list pururu/automations
 ```
 
-It lives next to your own `automation: !include automations.yaml`, which it doesn't touch. After adding it, restart Home Assistant, or reload automations in **Developer tools → YAML → Automations**.
+It includes the folder, not the file, so Home Assistant still starts when the folder isn't there yet (before pururu first runs): a missing folder is no automations. It lives next to your own `automation: !include automations.yaml`, which it doesn't touch. After adding it, restart Home Assistant, or reload automations in **Developer tools → YAML → Automations**.
 
 Until the line is there, the automations exist only in the file. **Settings → Repairs** shows **The reactions' automations aren't loaded**, with the line to add, and the log says the same. The repair goes away once the automations load.
 
 <Warning>
-  Don't edit `pururu/automations.yaml`. pururu rewrites it whenever the configuration changes. The automations show as read-only in the editor because they come from YAML. Change the reaction instead.
+  Don't edit `pururu/automations/reactions.yaml`, and don't put your own files in `pururu/automations`: the include loads every file there. pururu rewrites it whenever the configuration changes. The automations show as read-only in the editor because they come from YAML. Change the reaction instead.
 </Warning>
 
 ## Settings
@@ -144,4 +144,4 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 - **A pururu entity renamed in the UI:** `when` follows it, because pururu writes the entity's current ID into the file at every reload.
 - **A pururu entity that isn't created** (its ID is taken, or the device's settings don't create it, as `appliance_runtime_month` without `statistics`): its reactions aren't generated, and the log says why.
 - **A reaction removed from the YAML:** its automation leaves the file, and its entity leaves Home Assistant.
-- **Removing pururu:** the file becomes an empty list, so the include stays valid until you remove the line.
+- **Removing pururu:** the file becomes an empty list, so its automations go. The line can stay until you remove it.
