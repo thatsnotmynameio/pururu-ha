@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from homeassistant.core import Context, HomeAssistant
+from homeassistant.core import Context, CoreState, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 import pytest
 
@@ -301,6 +301,16 @@ async def test_after_a_restart_it_shows_the_real_switch(ha: HomeAssistant) -> No
     await fake(ha, REAL_ARANDELA, "on")
     await restart(ha, {KEY: {"name": "Sala", "lights": {"arandela": ARANDELA_BLOCK}}})
     assert state(ha, ARANDELA) == "on"
+
+
+@pytest.mark.parametrize("entity_key", ["teto", "arandela"])
+async def test_until_home_assistant_starts_it_is_unavailable(
+        ha: HomeAssistant, entity_key: str) -> None:
+    """The group waits for the start to read its member: a bulb's or a relay's light alike."""
+    ha.set_state(CoreState.not_running)
+    assert await setup(ha, {KEY: {"name": "Sala", "lights": {
+        "teto": LIGHTS["teto"], "arandela": ARANDELA_BLOCK}}})
+    assert state(ha, f"light.pururu_sala_light_{entity_key}") == "unavailable"
 
 
 async def test_bulbs_and_relays_in_one_device(ha: HomeAssistant) -> None:

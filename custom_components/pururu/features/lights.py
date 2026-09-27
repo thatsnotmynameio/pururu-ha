@@ -44,6 +44,8 @@ class Light(PururuEntity, LightGroup):
 class SwitchLight(PururuEntity, GroupEntity, LightEntity):
     """The real switch's state as a light's; turning it on or off turns the real one."""
 
+    # Until HA starts and it reads the real switch, as LightGroup and SwitchGroup
+    _attr_available = False
     _attr_color_mode = ColorMode.ONOFF
     _attr_supported_color_modes = {ColorMode.ONOFF}
 
