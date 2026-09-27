@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.page/schema.json",
+  "name": "Pururu",
+  "description": "A Home Assistant integration that turns real entities and a few settings into floors, areas and devices.",
+  "social": {
+    "github": "thatsnotmynameio/pururu-ha"
+  },
+  "tabs": [
+    { "id": "guide", "title": "Guide", "href": "/" },
+    { "id": "develop", "title": "Develop", "href": "/develop" }
+  ],
+  "sidebar": [
+    {
+      "group": "Getting started",
+      "tab": "guide",
+      "pages": [
+        { "title": "What is pururu", "href": "/" },
+        { "title": "Install", "href": "/getting-started/install" },
+        { "title": "Your first device", "href": "/getting-started/first-device" }
+      ]
+    },
+    {
+      "group": "Concepts",
+      "tab": "guide",
+      "pages": [
+        { "title": "Devices and features", "href": "/concepts/devices-and-features" },
+        { "title": "Entity IDs", "href": "/concepts/entity-ids" },
+        { "title": "Floors and areas", "href": "/concepts/floors-and-areas" },
+        { "title": "Dashboard", "href": "/concepts/dashboard" }
+      ]
+    },
+    {
+      "group": "Features",
+      "tab": "guide",
+      "pages": [
+        { "title": "appliance", "href": "/features/appliance" },
+        { "title": "phases", "href": "/features/phases" }
+      ]
+    },
+    {
+      "group": "Reference",
+      "tab": "guide",
+      "pages": [
+        { "title": "Configuration", "href": "/reference/configuration" },
+        { "title": "Troubleshooting", "href": "/reference/troubleshooting" }
+      ]
+    },
+    {
+      "group": "Develop",
+      "tab": "develop",
+      "pages": [
+        { "title": "Getting set up", "href": "/develop" },
+        { "title": "Architecture", "href": "/develop/architecture" },
+        { "title": "Writing a feature", "href": "/develop/writing-a-feature" },
+        { "title": "Places and dashboard", "href": "/develop/places-and-dashboard" },
+        { "title": "Testing", "href": "/develop/testing" },
+        { "title": "Releases and CI", "href": "/develop/releases" }
+      ]
+    }
+  ]
+}

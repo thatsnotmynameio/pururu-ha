@@ -1,0 +1,81 @@
+---
+title: Install
+description: Add pururu to Home Assistant, give it a pururu block, and reload it after every change.
+---
+
+pururu needs **Home Assistant 2026.9.0 or later**. It has no Python requirements of its own, because it builds on integrations that ship with Home Assistant (`group`, `utility_meter` and `lovelace`).
+
+## 1. Get the files
+
+<Tabs groupId="install">
+  <TabItem label="HACS" value="hacs">
+    pururu isn't in the HACS default list yet, so add it as a custom repository.
+
+    <Steps>
+      <Step title="Add the repository">
+        In HACS, open the **⋮** menu → **Custom repositories**. Add `https://github.com/thatsnotmynameio/pururu-ha` with the type **Integration**.
+      </Step>
+      <Step title="Download it">
+        Search for **Pururu** in HACS, open it and click **Download**. Pick the latest release.
+      </Step>
+      <Step title="Restart Home Assistant">
+        HACS offers new releases as updates from now on.
+      </Step>
+    </Steps>
+  </TabItem>
+  <TabItem label="By hand" value="manual">
+    <Steps>
+      <Step title="Copy the integration">
+        Download the [latest release](https://github.com/thatsnotmynameio/pururu-ha/releases/latest). Copy its `custom_components/pururu/` folder into the `custom_components/` folder of your Home Assistant configuration, next to `configuration.yaml`.
+      </Step>
+      <Step title="Restart Home Assistant" />
+    </Steps>
+  </TabItem>
+</Tabs>
+
+## 2. Add a `pururu:` block
+
+pururu has no setup screen in **Settings → Devices & services**. Everything is configured in YAML. Add a `pururu:` block to `configuration.yaml`. The smallest useful one declares a single device:
+
+```yaml title="configuration.yaml"
+pururu:
+  devices:
+    dishwasher:
+      name: Lava-louças
+      appliance:
+        power: sensor.dishwasher_plug_power
+        running: {threshold: 3, on_delay: {minutes: 1}, off_delay: {minutes: 5}}
+```
+
+Replace `sensor.dishwasher_plug_power` with the power sensor of one of your plugs. [Your first device](/getting-started/first-device) explains every line.
+
+Then **restart Home Assistant** once. A restart is needed the first time because it's what loads pururu. After that:
+
+- **Settings → Devices & services** lists a **Pururu** entry. It's created from the YAML and has nothing to configure.
+- The sidebar has a **Pururu** [dashboard](/concepts/dashboard).
+- The device **Lava-louças** exists, with its entities.
+
+<Info>
+  pururu creates its entry only once the block declares at least one floor, area or device. An empty `pururu:` does nothing.
+</Info>
+
+## 3. Reload after every change
+
+You don't need to restart for later changes. After you edit the block, reload it in either of these ways:
+
+- **Developer tools → YAML → Pururu**, in the list of YAML configuration you can reload.
+- The `pururu.reload` action, from a script, an automation or **Developer tools → Actions**. Only administrators can call it.
+
+A reload reads `pururu:` again and makes floors, areas, devices and entities match it: new ones are created, changed ones updated, and removed ones deleted.
+
+<Warning>
+  If the YAML is invalid, for example because of a typo in a key or an area that doesn't exist, Home Assistant logs why and **the reload changes nothing**. Your devices keep running as they were. Check **Settings → System → Logs** when a reload seems to have no effect.
+</Warning>
+
+## Packages
+
+`pururu:` can also live in [packages](https://www.home-assistant.io/docs/configuration/packages/). Home Assistant merges the `pururu:` blocks of all packages into one, so a package can declare its own floors, areas and devices. For example, you could keep a `laundry.yaml` package that holds the laundry area and its washer and dryer. The one thing you can't do is set the same value twice, such as the same device's `name` in two packages. Home Assistant reports that as a configuration error.
+
+## Uninstall
+
+Delete the **Pururu** entry in **Settings → Devices & services**. This deletes every device and entity pururu created, and every floor and area it manages. Then remove the `pururu:` block, so that the next restart doesn't create them again, and remove the integration from HACS or delete `custom_components/pururu/`.

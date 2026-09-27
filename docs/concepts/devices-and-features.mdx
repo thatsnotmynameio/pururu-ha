@@ -1,0 +1,66 @@
+---
+title: Devices and features
+description: A pururu device is a key, a name and one or more features, and the features create its entities.
+---
+
+## A device
+
+Every entry under `devices:` is one device in Home Assistant:
+
+```yaml
+pururu:
+  devices:
+    laundry_washer:          # the key
+      name: Máquina de lavar # required
+      area: lavanderia       # optional
+      appliance: {…}         # one or more features
+      phases: {…}
+```
+
+- **The key** (`laundry_washer`) identifies the device. It must be a slug: lowercase letters, digits and `_`. It becomes part of every entity ID, `sensor.pururu_laundry_washer_…`, and it's how pururu recognises the device across reloads. If you rename the key, pururu treats it as a new device: the old one and its entities are deleted, and the new one starts with empty history and counters.
+- **`name`** is the name Home Assistant shows. Change it whenever you like. Renaming the device in the UI works too, and pururu keeps your name.
+- **`area`** puts the device in one of the areas declared under `areas:`. It's optional, and it's covered in [Floors and areas](/concepts/floors-and-areas#a-device-in-an-area).
+- **Features** are the other keys. A device needs at least one.
+
+## A feature
+
+A feature is a ready-made piece of behaviour. It reads real entities, such as a plug's power sensor, and applies a few settings, such as a threshold. From those it creates the device's entities, and pururu keeps them up to date.
+
+| Feature | What it does |
+|---|---|
+| [`appliance`](/features/appliance) | An appliance on a power-measuring plug: when it runs, its cycles, their duration and energy, runtime and cycle counts per period |
+| [`phases`](/features/phases) | The phase of a cycle (heating, spinning…), from bands of a sensor's value |
+
+Each feature appears at most once per device, and everything under its key is that feature's configuration. An unknown key inside a feature, such as a typo, is a configuration error, so a mistake never passes silently.
+
+## Features that build on each other
+
+Some features need something another feature of the same device provides. `phases` only makes sense during a cycle, and cycles come from `appliance`. So `phases` asks for a **cycle**, and you name the feature it comes from with `cycle_from`:
+
+```yaml
+laundry_washer:
+  name: Máquina de lavar
+  appliance:
+    power: sensor.washer_plug_power
+    running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+  phases:
+    cycle_from: appliance     # the cycle comes from this device's appliance feature
+    sensor: sensor.washer_plug_power
+    defaults: {stopped: idle, running: washing}
+    bands:
+      heating: {above: 1000}
+```
+
+The same pattern will hold for every future feature: `<what it needs>_from: <feature>`. Two rules apply:
+
+- The named feature must be **on the same device** and must **provide** what's needed. `cycle_from: phases` or `cycle_from: dryer` is a configuration error.
+- If the providing entity can't be created, the entities that depend on it aren't created either, and the log says so. That can happen when another integration already took its ID. See [Entity IDs](/concepts/entity-ids#an-id-already-taken).
+
+| Feature | Provides | Needs |
+|---|---|---|
+| `appliance` | `cycle`, carried by `binary_sensor.pururu_<key>_running` | nothing |
+| `phases` | nothing | `cycle`, through `cycle_from` |
+
+## Two devices, one plug?
+
+Each device is independent, so two devices can read the same plug. For example, one device can count cycles with a low threshold while another uses a higher threshold. Their entity IDs never collide, because each one carries its device's key.

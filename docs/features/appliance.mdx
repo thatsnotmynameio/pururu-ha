@@ -1,0 +1,126 @@
+---
+title: appliance
+description: An appliance on a power-measuring plug. It tells when the appliance runs, records its cycles and counts runtime and cycles per period.
+---
+
+`appliance` turns a smart plug that measures power into an appliance that knows when it's running. Each run is a **cycle**. pururu records each cycle's start, end, duration and energy, and it counts runtime and cycles over time.
+
+```yaml
+pururu:
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      appliance:
+        power: sensor.washer_plug_power
+        energy: sensor.washer_plug_energy
+        running:
+          threshold: 4
+          on_delay: {minutes: 1}
+          off_delay: {minutes: 2}
+        statistics:
+          runtime: [today, week, month, year]
+          cycles: [today, week, month, year]
+```
+
+## Settings
+
+<Property name="power" type="entity ID" required>
+  The plug's power sensor. Its value is compared with `running.threshold`, in the sensor's own unit (usually W).
+</Property>
+
+---
+
+<Property name="energy" type="entity ID" optional>
+  The plug's **lifetime** energy counter, the one that only goes up. Any energy unit works (Wh, kWh, MWh…); a counter with no unit is read as kWh. Without it, the device has no `energy_total` and no `last_cycle_energy`.
+</Property>
+
+---
+
+<Property name="running.threshold" type="number" required>
+  Above this power the appliance is working. The threshold itself isn't above: with `threshold: 4`, a reading of exactly 4 W counts as stopped.
+</Property>
+
+---
+
+<Property name="running.on_delay" type="time period" required>
+  How long the power must stay **above** the threshold before a cycle starts. It ignores button presses and short spikes.
+</Property>
+
+---
+
+<Property name="running.off_delay" type="time period" required>
+  How long the power must stay **at or below** the threshold before the cycle ends. It carries the cycle through pauses and the appliance's end-of-cycle tail. A reading back above the threshold during this delay cancels the end.
+</Property>
+
+---
+
+<Property name="statistics.runtime" type="list of periods" optional>
+  For each period, a sensor with the hours run in the current period. The periods are `today`, `week`, `month` and `year`, each listed at most once.
+</Property>
+
+---
+
+<Property name="statistics.cycles" type="list of periods" optional>
+  For each period, a sensor with the cycles finished in the current period. The periods are the same as for `runtime`.
+</Property>
+
+A **time period** can be written as `{minutes: 1}` (with any of `days`, `hours`, `minutes`, `seconds`), as `"00:01:30"`, or as a number of seconds (`90`). Picking the threshold and delays for your appliance is covered in [Your first device](/getting-started/first-device#picking-the-numbers).
+
+## When a cycle starts and ends
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Off
+    Off --> Starting: power > threshold
+    Starting --> Off: power ≤ threshold
+    Starting --> On: on_delay passes
+    On --> Ending: power ≤ threshold
+    Ending --> On: power > threshold
+    Ending --> Off: off_delay passes
+```
+
+`running` turns on after `on_delay` and off after `off_delay`. That affects what the cycle records:
+
+- A cycle **starts** when `running` turns on, so `last_cycle_start` is `on_delay` after the power first went up.
+- A cycle **ends** when `running` turns off, so `last_cycle_end` and `last_cycle_duration` include `off_delay`.
+- While the plug has **no value** (`unknown`, `unavailable`, or not a number), `running` keeps its state, and a pending start or end is cancelled. It resumes from the next reading. A plug dropping off Wi-Fi for a minute doesn't split a cycle.
+- A **restart or reload** in the middle of a cycle doesn't lose it. `running` is restored, and the cycle keeps its original start and is counted once when it ends.
+
+## Entities
+
+`<key>` is the device's key. Entities marked *with `energy`* exist only when `energy` is set.
+
+| Entity | Unit | What it is |
+|---|---|---|
+| `sensor.pururu_<key>_power` | the plug's | The plug's power, with its unit and classes, inside this device |
+| `sensor.pururu_<key>_energy_total` | the plug's | The plug's energy counter, inside this device. *With `energy`.* |
+| `binary_sensor.pururu_<key>_running` | | On while a cycle runs. Device class `running`. |
+| `sensor.pururu_<key>_last_cycle_start` | timestamp | When the last cycle started |
+| `sensor.pururu_<key>_last_cycle_end` | timestamp | When the last cycle ended. **Written last**: trigger on it. |
+| `sensor.pururu_<key>_last_cycle_duration` | min | How long the last cycle took |
+| `sensor.pururu_<key>_last_cycle_energy` | kWh | Energy the last cycle used. *With `energy`.* |
+| `sensor.pururu_<key>_cycles_total` | cycles | Cycles finished, all time |
+| `sensor.pururu_<key>_runtime_total` | h | Hours run, all time |
+| `sensor.pururu_<key>_runtime_<period>` | h | Hours run this period, one per `statistics.runtime` entry |
+| `sensor.pururu_<key>_cycles_<period>` | cycles | Cycles finished this period, one per `statistics.cycles` entry |
+
+### Last cycle
+
+- The four `last_cycle_*` sensors are `unknown` until the first cycle ends. After that they change **only** when a cycle ends, and they keep their values across restarts.
+- `last_cycle_end` is written **after** the other three `last_cycle_*` sensors and `cycles_total`. An automation that triggers on it reads a complete cycle. [Your first device](/getting-started/first-device#step-5-the-laundry-is-done) has an example.
+- `last_cycle_energy` is always in **kWh**, whatever the counter's unit. It's the counter's reading at the end minus its reading at the start, and it's never negative. It's `unknown` for a cycle when the counter had no value at the start or at the end, or when the counter's unit isn't an energy unit.
+
+### Totals
+
+- `cycles_total` and `runtime_total` count from when the device was created and survive restarts. They're `total_increasing`, so Home Assistant keeps long-term statistics for them.
+- `runtime_total` is brought up to date **every minute** while running. A restart or reload during a cycle can lose up to a minute of it, and time while Home Assistant is down isn't counted.
+
+### Per period
+
+- `runtime_<period>` and `cycles_<period>` measure how much their total grew in the current period. They use Home Assistant's own `utility_meter`, and they live inside the device.
+- They reset in Home Assistant's time zone: `today` at midnight, `week` on Monday, `month` on the 1st and `year` on 1 January.
+
+## Provides
+
+`appliance` provides a **cycle**, carried by `running`. Other features of the same device use it through `cycle_from: appliance`, as [`phases`](/features/phases) does.

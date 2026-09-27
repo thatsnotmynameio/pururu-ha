@@ -1,0 +1,81 @@
+---
+title: What is pururu
+description: A Home Assistant integration that turns the entities you already have into well-organised devices, with a few lines of YAML.
+---
+
+pururu is a [Home Assistant](https://www.home-assistant.io) integration. You describe your home in a `pururu:` block of YAML: its floors, its areas and its devices. pururu then creates them in Home Assistant and keeps them as you described.
+
+A pururu device isn't new hardware. It is built from **entities you already have** plus a few settings, and pururu calculates new entities from them.
+
+## An example: the washing machine
+
+Say your washing machine is plugged into a smart plug that measures power. Home Assistant shows you two entities, and that's all:
+
+| Entity | State |
+|---|---|
+| `sensor.washer_plug_power` | `1843.2 W` |
+| `sensor.washer_plug_energy` | `412.77 kWh` |
+
+That tells you how many watts the washer draws right now. It doesn't tell you whether it's washing, when it finished, how long the last wash took or how much it cost. You'd have to build that yourself out of template sensors, `history_stats`, `utility_meter` and a few automations. It's fragile, and you'd do it again for every appliance.
+
+With pururu you write this:
+
+```yaml title="configuration.yaml"
+pururu:
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      appliance:
+        power: sensor.washer_plug_power
+        energy: sensor.washer_plug_energy
+        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+        statistics:
+          cycles: [month]
+      phases:
+        cycle_from: appliance
+        sensor: sensor.washer_plug_power
+        defaults: {stopped: idle, running: washing}
+        bands:
+          heating: {above: 1000}
+          spinning: {above: 50, below: 1000, for: {minutes: 3}}
+```
+
+and you get a device called **Máquina de lavar** with these entities:
+
+| Entity | What it tells you |
+|---|---|
+| `binary_sensor.pururu_laundry_washer_running` | Whether the washer is running a cycle right now |
+| `sensor.pururu_laundry_washer_phase` | `idle`, `washing`, `heating` or `spinning` |
+| `sensor.pururu_laundry_washer_last_cycle_end` | When the last wash finished: trigger your "laundry is done" automation on it |
+| `sensor.pururu_laundry_washer_last_cycle_duration` | How long it took, in minutes |
+| `sensor.pururu_laundry_washer_last_cycle_energy` | How much energy it used, in kWh |
+| `sensor.pururu_laundry_washer_cycles_month` | How many washes this month |
+| … | [and more](/features/appliance#entities) |
+
+Change the YAML, reload, and the device follows.
+
+## What pururu creates
+
+- **Floors and areas**, with the IDs you choose. See [Floors and areas](/concepts/floors-and-areas).
+- **Devices**, each one a name plus one or more **features**. A feature is a ready-made piece of behaviour, such as [`appliance`](/features/appliance) (an appliance on a power-measuring plug) or [`phases`](/features/phases) (which phase its cycle is in). See [Devices and features](/concepts/devices-and-features).
+- **Entities** inside each device, with predictable IDs. See [Entity IDs](/concepts/entity-ids).
+- **A dashboard** in the sidebar that lists what pururu manages. See [Dashboard](/concepts/dashboard).
+
+## What pururu doesn't do
+
+- **It controls nothing.** It only reads the entities you point it to, and it never switches a plug or talks to a device or a cloud service.
+- **It isn't configured in the UI.** Everything lives in YAML, so your home is described in text you can version, review and copy. Floors, areas and a device's area always follow the YAML, and a change the UI makes to them is undone at the next reload. Renaming a device or an entity in the UI is kept, and pururu follows a new entity ID.
+
+## Where to next
+
+<CardGroup cols={3}>
+  <Card title="Install" icon="download" href="/getting-started/install">
+    Add pururu to Home Assistant through HACS or by hand.
+  </Card>
+  <Card title="Your first device" icon="shirt" href="/getting-started/first-device">
+    Build the washing machine above, one step at a time.
+  </Card>
+  <Card title="Features" icon="puzzle-piece" href="/features/appliance">
+    Every setting and every entity a feature creates.
+  </Card>
+</CardGroup>
