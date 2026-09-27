@@ -32,12 +32,13 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import dashboard, places
+from . import dashboard, places, reactions
 from .const import (
     CONF_AREA,
     CONF_AREAS,
     CONF_DEVICES,
     CONF_FLOORS,
+    CONF_REACTIONS,
     DATA_CONFIG,
     DOMAIN,
     PLATFORMS,
@@ -62,6 +63,7 @@ def _device(value: Any) -> dict[str, Any]:
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
+        vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
         **{vol.Optional(name): feature.schema for name, feature in FEATURES.items()},
     }
     device: dict[str, Any] = vol.Schema(schema)(value)
@@ -73,6 +75,7 @@ def _device(value: Any) -> dict[str, Any]:
     _capabilities_provided(device, names)
     _references_resolved(device, names)
     _real_entities_distinct(device, names)
+    _reactions_on_this_device(device)
     return device
 
 
@@ -128,6 +131,21 @@ def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
                 raise vol.Invalid(f"{name}: {key} does not take {action}")
 
 
+def _reactions_on_this_device(device: dict[str, Any]) -> None:
+    """Refuse a reaction's `when` without `device` that isn't an entity key of the device."""
+    keys = {
+        qualified(FEATURES[name].namespace, entity_key)
+        for name, entity_key, _ in _entity_keys(device)
+    }
+    for key, reaction in device.get(CONF_REACTIONS, {}).items():
+        if "device" in reaction or (when := reaction.get("when")) is None:
+            continue
+        if when not in keys:
+            raise vol.Invalid(
+                f"reactions: {key}: {when} is not an entity key of this device"
+            )
+
+
 def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
     """(feature, entity key, platform) of every entity the device's features can create."""
     for name, feature in FEATURES.items():
@@ -172,6 +190,23 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _reactions_resolved(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a reaction's `device` that isn't a device, or its `when` that isn't that device's."""
+    devices = config[CONF_DEVICES]
+    for key, device in devices.items():
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
+            if (other := reaction.get("device")) is None:
+                continue
+            where = f"device {key}: reactions: {reaction_key}"
+            if other not in devices:
+                raise vol.Invalid(f"{where}: device {other} is not in devices")
+            if reaction["when"] not in _referable(other, devices[other]):
+                raise vol.Invalid(
+                    f"{where}: {reaction['when']} is not an entity key of device {other}"
+                )
+    return config
+
+
 def _referable(
     key: str, config: dict[str, Any]
 ) -> dict[str, tuple[Device, str, Platform]]:
@@ -211,6 +246,7 @@ CONFIG_SCHEMA = vol.Schema(
             places.floors_exist,
             _areas_exist,
             _entity_ids_distinct,
+            _reactions_resolved,
         )
     },
     extra=vol.ALLOW_EXTRA,

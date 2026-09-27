@@ -15,6 +15,8 @@ CONF_LEVEL: Final = "level"
 CONF_ALIASES: Final = "aliases"
 # A device's area: a key of areas
 CONF_AREA: Final = "area"
+# A device's reactions: each one an automation pururu generates
+CONF_REACTIONS: Final = "reactions"
 # Every entity ID is <platform>.pururu_<device key>_<namespace>_<entity key>
 ENTITY_PREFIX: Final = "pururu"
 PLATFORMS: Final = [

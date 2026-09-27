@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
-from homeassistant.const import Platform
+from homeassistant.const import STATE_OFF, STATE_ON, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN, ENTITY_PREFIX
@@ -24,6 +24,13 @@ def finite_float(value: Any) -> float:
     if not math.isfinite(number):
         raise vol.Invalid(f"expected a finite number, got {value!r}")
     return number
+
+
+def state_text(value: Any) -> str:
+    """A state as text: YAML reads an unquoted on/yes/true (off/no/false) as a boolean."""
+    if isinstance(value, bool):
+        return STATE_ON if value else STATE_OFF
+    return str(vol.All(cv.string, vol.Strip, vol.Length(min=1))(value))
 
 
 def qualified(namespace: str, entity_key: str) -> str:

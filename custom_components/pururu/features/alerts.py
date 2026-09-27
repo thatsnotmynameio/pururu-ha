@@ -19,7 +19,6 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.const import (
     ATTR_RESTORED,
-    STATE_OFF,
     STATE_ON,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
@@ -39,7 +38,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 
 from ..entity import PururuEntity, reading
-from ..feature import Device, Feature, finite_float
+from ..feature import Device, Feature, finite_float, state_text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,14 +52,11 @@ NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 def _state(value: Any) -> str | float:
     """A state to compare with, or a number to compare a reading with.
 
-    YAML reads an unquoted on/yes/true (off/no/false) as a boolean: it means
-    on (off). A number is compared as a number, so 1 matches a state of 1.0.
+    A number is compared as a number, so 1 matches a state of 1.0.
     """
-    if isinstance(value, bool):
-        return STATE_ON if value else STATE_OFF
-    if isinstance(value, int | float):
+    if isinstance(value, int | float) and not isinstance(value, bool):
         return finite_float(value)
-    return str(vol.All(cv.string, vol.Strip, vol.Length(min=1))(value))
+    return state_text(value)
 
 
 def _one_condition(alert: dict[str, Any]) -> dict[str, Any]:
