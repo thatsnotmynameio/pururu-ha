@@ -252,6 +252,22 @@ async def test_a_switch_renamed_to_what_it_stands_for_stays_as_it_is(
         await reload(ha, devices)
 
 
+async def test_a_switch_standing_for_itself_passes_nothing_on(ha: HomeAssistant) -> None:
+    """Its state set by hand (developer tools) makes it neither available nor calling itself."""
+    devices = {KEY: {"name": "Piscina", "switches": {
+        "heater": {"entity": "switch.aquecedor", "name": "Aquecedor"}}}}
+    assert await setup(ha, devices)
+    er.async_get(ha).async_update_entity(HEATER, new_entity_id="switch.aquecedor")
+    await ha.async_block_till_done()
+    await fake(ha, "switch.aquecedor", "on")
+    calls = capture(ha, "call_service")
+    await ha.services.async_call("switch", "turn_on", {"entity_id": "switch.aquecedor"},
+                                 blocking=True)
+    await settle()
+    assert [event.data["service_data"] for event in calls] == [
+        {"entity_id": "switch.aquecedor"}]
+
+
 async def test_reload_that_drops_a_switch_removes_it(pool: HomeAssistant) -> None:
     await reload(pool, {KEY: {"name": "Piscina", "switches": {"pump": SWITCHES["pump"]}}})
     assert er.async_get(pool).async_get(HEATER) is None

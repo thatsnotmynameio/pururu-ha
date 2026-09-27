@@ -455,6 +455,19 @@ async def test_a_light_renamed_to_what_it_stands_for_stays_as_it_is(
         await reload(ha, devices)
 
 
+async def test_a_light_standing_for_itself_passes_nothing_on(ha: HomeAssistant) -> None:
+    """Its state set by hand (developer tools) makes it neither available nor calling itself."""
+    devices = {KEY: {"name": "Sala", "lights": {
+        "abajur": {"entity": "light.sala_luminaria", "name": "Abajur"}}}}
+    assert await setup(ha, devices)
+    er.async_get(ha).async_update_entity(ABAJUR, new_entity_id="light.sala_luminaria")
+    await ha.async_block_till_done()
+    await fake(ha, "light.sala_luminaria", "on", ONOFF)
+    calls = await forwarded(ha, "light.sala_luminaria", "turn_on", {}, Context(),
+                            "light.sala_luminaria")
+    assert calls == []
+
+
 async def test_reload_that_drops_a_light_removes_it(sala: HomeAssistant) -> None:
     await reload(sala, {KEY: {"name": "Sala", "lights": {"teto": LIGHTS["teto"]}}})
     assert er.async_get(sala).async_get(ABAJUR) is None

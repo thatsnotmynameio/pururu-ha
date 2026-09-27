@@ -35,9 +35,11 @@ _LOGGER = logging.getLogger(__name__)
 class Light(PururuEntity, LightGroup):
     """The real light's state and what it offers; commands go to the real one."""
 
-    def __init__(self, device: Device, entity_key: str, entity: str, name: str) -> None:
-        """Stand for `entity` as `entity_key` of `device`, named `name`."""
-        LightGroup.__init__(self, None, name, [entity], None)
+    def __init__(
+        self, device: Device, entity_key: str, entity: str | None, name: str
+    ) -> None:
+        """Stand for `entity` as `entity_key` of `device`, named `name`; None: for nothing."""
+        LightGroup.__init__(self, None, name, standing.members(entity), None)
         self._identify(device, Platform.LIGHT, entity_key, name)
 
 
@@ -49,10 +51,12 @@ class SwitchLight(PururuEntity, GroupEntity, LightEntity):
     _attr_color_mode = ColorMode.ONOFF
     _attr_supported_color_modes = {ColorMode.ONOFF}
 
-    def __init__(self, device: Device, entity_key: str, entity: str, name: str) -> None:
-        """Stand for `entity` as `entity_key` of `device`, named `name`."""
-        self._entity_ids = [entity]
-        self._attr_extra_state_attributes = {ATTR_ENTITY_ID: [entity]}
+    def __init__(
+        self, device: Device, entity_key: str, entity: str | None, name: str
+    ) -> None:
+        """Stand for `entity` as `entity_key` of `device`, named `name`; None: for nothing."""
+        self._entity_ids = standing.members(entity)
+        self._attr_extra_state_attributes = {ATTR_ENTITY_ID: self._entity_ids}
         self._identify(device, Platform.LIGHT, entity_key, name)
 
     @override
@@ -91,7 +95,7 @@ class SwitchLight(PururuEntity, GroupEntity, LightEntity):
 
 
 # The domains `entity:` takes, and the light standing for each
-KINDS: dict[Platform, Callable[[Device, str, str, str], PururuEntity]] = {
+KINDS: dict[Platform, Callable[[Device, str, str | None, str], PururuEntity]] = {
     Platform.LIGHT: Light,
     Platform.SWITCH: SwitchLight,
 }
@@ -107,17 +111,20 @@ def build(
 
     The configuration refuses <domain>.pururu_…; a pururu entity renamed in the
     UI gets past that, and only the registry still knows it is ours. A light
-    renamed to its own entity is kept, unavailable, so that its rename stays
-    and every reload gives the same.
+    renamed to its own entity is kept, standing for nothing: unavailable, never
+    calling itself, its rename kept, and every reload gives the same.
     """
     lights: list[PururuEntity] = []
     for entity_key, light in config.items():
         entity = light["entity"]
         domain = split_entity_id(entity)[0]
+        kind = KINDS[Platform(domain)]
         current = device.current_entity_id(hass, Platform.LIGHT, entity_key)
         if entity == current:
             _LOGGER.error("%s is this light itself: name the real one", entity)
-        elif standing.is_pururu(hass, entity):
+            lights.append(kind(device, entity_key, None, light["name"]))
+            continue
+        if standing.is_pururu(hass, entity):
             _LOGGER.error(
                 "%s is a pururu %s: name the real one; not creating %s",
                 entity,
@@ -125,7 +132,6 @@ def build(
                 current,
             )
             continue
-        kind = KINDS[Platform(domain)]
         lights.append(kind(device, entity_key, entity, light["name"]))
     return lights
 

@@ -23,9 +23,11 @@ _LOGGER = logging.getLogger(__name__)
 class Switch(PururuEntity, SwitchGroup):
     """The real switch's state; turning it on or off turns the real one."""
 
-    def __init__(self, device: Device, entity_key: str, entity: str, name: str) -> None:
-        """Stand for `entity` as `entity_key` of `device`, named `name`."""
-        SwitchGroup.__init__(self, None, name, [entity], None)
+    def __init__(
+        self, device: Device, entity_key: str, entity: str | None, name: str
+    ) -> None:
+        """Stand for `entity` as `entity_key` of `device`, named `name`; None: for nothing."""
+        SwitchGroup.__init__(self, None, name, standing.members(entity), None)
         self._identify(device, Platform.SWITCH, entity_key, name)
 
 
@@ -39,8 +41,8 @@ def build(
 
     The configuration refuses switch.pururu_…; a pururu switch renamed in the
     UI gets past that, and only the registry still knows it is ours. A switch
-    renamed to its own entity is kept, unavailable, so that its rename stays
-    and every reload gives the same.
+    renamed to its own entity is kept, standing for nothing: unavailable, never
+    calling itself, its rename kept, and every reload gives the same.
     """
     switches: list[PururuEntity] = []
     for entity_key, switch in config.items():
@@ -48,7 +50,9 @@ def build(
         current = device.current_entity_id(hass, Platform.SWITCH, entity_key)
         if entity == current:
             _LOGGER.error("%s is this switch itself: name the real one", entity)
-        elif standing.is_pururu(hass, entity):
+            switches.append(Switch(device, entity_key, None, switch["name"]))
+            continue
+        if standing.is_pururu(hass, entity):
             _LOGGER.error(
                 "%s is a pururu switch: name the real one; not creating %s",
                 entity,

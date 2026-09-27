@@ -53,3 +53,12 @@ def is_pururu(hass: HomeAssistant, entity_id: str) -> bool:
     """Whether `entity_id` is pururu's: renamed in the UI, it no longer says so."""
     registered = er.async_get(hass).async_get(entity_id)
     return registered is not None and registered.platform == DOMAIN
+
+
+def members(entity: str | None) -> list[str]:
+    """The group members of an entity standing for `entity`; None: for nothing.
+
+    One renamed in the UI to what it stands for is kept for its rename, but a
+    group of itself would follow itself and pass every command on to itself.
+    """
+    return [] if entity is None else [entity]
