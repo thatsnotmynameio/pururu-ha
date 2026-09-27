@@ -29,7 +29,7 @@ So the `running` entity of the device `laundry_washer` is always `binary_sensor.
 The entity's **unique ID** is the same text without the platform: `pururu_laundry_washer_appliance_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
 
 <Info>
-  Before pururu 0.1.5, IDs had no namespace (`binary_sensor.pururu_laundry_washer_running`, `switch.pururu_pool_pump`). Updating removes those entities, with their history, and creates the new ones. Update the automations and dashboards that name them.
+  Before pururu 0.1.5, IDs had no namespace (`binary_sensor.pururu_laundry_washer_running`, `switch.pururu_pool_pump`). Updating removes those entities, with their history, and creates the new ones: counters such as `cycles_total` and `runtime_total` start again from 0, and renames you made in the UI are lost. Update the automations and dashboards that name them.
 </Info>
 
 ## Names
