@@ -3,6 +3,8 @@
 from datetime import timedelta
 from typing import override
 
+import voluptuous as vol
+
 from homeassistant.components.utility_meter.const import (
     DAILY,
     DATA_TARIFF_SENSORS,
@@ -13,10 +15,11 @@ from homeassistant.components.utility_meter.const import (
 )
 from homeassistant.components.utility_meter.sensor import UtilityMeterSensor
 from homeassistant.const import Platform
+from homeassistant.helpers import config_validation as cv
 
 from ...const import DOMAIN
 from ...entity import PururuEntity
-from ...feature import Device
+from ...feature import Device, Item, item_key
 
 # A period's name in the configuration and in entity IDs -> utility_meter's cycle
 PERIODS: dict[str, str] = {
@@ -27,16 +30,33 @@ PERIODS: dict[str, str] = {
 }
 
 
+def _distinct(periods: list[str]) -> list[str]:
+    if len(set(periods)) != len(periods):
+        raise vol.Invalid(f"a period is repeated: {periods}")
+    return periods
+
+
+# A list of periods in a feature's statistics, each at most once
+PERIOD_LIST = vol.All(cv.ensure_list, [vol.In(PERIODS)], _distinct)
+
+
 class Meter(PururuEntity, UtilityMeterSensor):
     """How much a total grew in the current period; utility_meter resets it."""
 
     def __init__(
-        self, device: Device, entity_key: str, total: str, source: str, period: str
+        self,
+        device: Device,
+        entity_key: str,
+        total: str,
+        source: str,
+        period: str,
+        *,
+        item: Item | None = None,
     ) -> None:
-        """Meter `source`, the entity of `total`, over `period` as `entity_key` of `device`."""
-        self.sources = (total,)
+        """Meter `source`, the entity of `total`, over `period` as `entity_key` (of `item`)."""
+        self.sources = (item_key(total, item),)
         # Where utility_meter looks itself up; ':' keeps it apart from YAML meter names
-        self._meter = f"{DOMAIN}:{device.object_id(entity_key)}"
+        self._meter = f"{DOMAIN}:{device.object_id(item_key(entity_key, item))}"
         UtilityMeterSensor.__init__(  # type: ignore[no-untyped-call]  # core leaves it unannotated
             self,
             cron_pattern=None,
@@ -54,7 +74,7 @@ class Meter(PururuEntity, UtilityMeterSensor):
             sensor_always_available=False,
         )
         del self._attr_name  # the name comes from the entity key's translation
-        self._identify(device, Platform.SENSOR, entity_key)
+        self._identify(device, Platform.SENSOR, entity_key, item=item)
 
     @override
     async def async_added_to_hass(self) -> None:

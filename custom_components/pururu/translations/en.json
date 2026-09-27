@@ -51,7 +51,40 @@
           "idle": "Idle", "washing": "Washing", "heating": "Heating", "spinning": "Spinning",
           "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling"
         }
-      }
+      },
+      "mode_current": {
+        "name": "Mode",
+        "state": {
+          "idle": "Idle", "dispensing": "Dispensing", "washing": "Washing", "heating": "Heating",
+          "spinning": "Spinning", "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling"
+        }
+      },
+      "mode_last": {
+        "name": "Last mode",
+        "state": {
+          "dispensing": "Dispensing", "washing": "Washing", "heating": "Heating",
+          "spinning": "Spinning", "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling"
+        }
+      },
+      "mode_last_cycle_start": {"name": "{mode} last cycle start"},
+      "mode_last_cycle_end": {"name": "{mode} last cycle end"},
+      "mode_last_cycle_duration": {"name": "{mode} last cycle duration"},
+      "mode_last_cycle_energy": {"name": "{mode} last cycle energy"},
+      "mode_cycles_total": {"name": "{mode} cycles", "unit_of_measurement": "cycles"},
+      "mode_runtime_total": {"name": "{mode} runtime"},
+      "mode_energy_total": {"name": "{mode} energy"},
+      "mode_runtime_today": {"name": "{mode} runtime today"},
+      "mode_runtime_week": {"name": "{mode} runtime this week"},
+      "mode_runtime_month": {"name": "{mode} runtime this month"},
+      "mode_runtime_year": {"name": "{mode} runtime this year"},
+      "mode_cycles_today": {"name": "{mode} cycles today"},
+      "mode_cycles_week": {"name": "{mode} cycles this week"},
+      "mode_cycles_month": {"name": "{mode} cycles this month"},
+      "mode_cycles_year": {"name": "{mode} cycles this year"},
+      "mode_energy_today": {"name": "{mode} energy today"},
+      "mode_energy_week": {"name": "{mode} energy this week"},
+      "mode_energy_month": {"name": "{mode} energy this month"},
+      "mode_energy_year": {"name": "{mode} energy this year"}
     }
   }
 }

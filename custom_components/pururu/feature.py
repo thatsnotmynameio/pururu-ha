@@ -37,6 +37,19 @@ def state_text(value: Any) -> str:
     return str(TEXT(value))
 
 
+def bounded(what: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """A band of a sensor's value (`what`: band, mode): above, below or both, above lower."""
+
+    def validate(band: dict[str, Any]) -> dict[str, Any]:
+        if "above" not in band and "below" not in band:
+            raise vol.Invalid(f"a {what} needs above, below or both")
+        if "above" in band and "below" in band and band["above"] >= band["below"]:
+            raise vol.Invalid(f"a {what}'s above must be lower than its below")
+        return band
+
+    return validate
+
+
 def qualified(namespace: str, entity_key: str) -> str:
     """`entity_key` in `namespace`: the end of its entity ID, and its translation key.
 
@@ -44,6 +57,23 @@ def qualified(namespace: str, entity_key: str) -> str:
     `switch` is `switch_switch`.
     """
     return f"{namespace}_{entity_key}"
+
+
+@dataclass(frozen=True, kw_only=True)
+class Item:
+    """An item of a feature's block with entity keys of its own (Feature.per_item): a mode."""
+
+    slug: str
+    name: str
+
+    def key(self, suffix: str) -> str:
+        """The entity key of `suffix` for this item."""
+        return f"{self.slug}_{suffix}"
+
+
+def item_key(suffix: str, item: Item | None) -> str:
+    """`suffix` as an entity key: the item's own, or the feature's without an item."""
+    return suffix if item is None else item.key(suffix)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -118,3 +148,9 @@ class Feature:
     # (action, entity key in its namespace) of every entity its validated block
     # acts on: each entity key is in refers too, and its feature must take the action
     acts: Callable[[Any], Iterable[tuple[str, str]]] | None = None
+    # Entity keys repeated for every item of its block: suffix -> platform. An
+    # item's entity key is <slug>_<suffix>, named by the suffix's translation
+    # with the item's name as the placeholder named after the namespace ({mode})
+    per_item: Mapping[str, Platform] = field(default_factory=dict)
+    # The items of its validated block, when it has per_item
+    items: Callable[[Any], Iterable[Item]] | None = None

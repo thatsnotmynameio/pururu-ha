@@ -23,7 +23,7 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from ..entity import PururuEntity, reading
-from ..feature import Device, Feature, finite_float
+from ..feature import Device, Feature, bounded, finite_float
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -40,14 +40,6 @@ class Band:
         return (self.above is None or value > self.above) and (
             self.below is None or value < self.below
         )
-
-
-def _bounded(band: dict[str, Any]) -> dict[str, Any]:
-    if "above" not in band and "below" not in band:
-        raise vol.Invalid("a band needs above, below or both")
-    if "above" in band and "below" in band and band["above"] >= band["below"]:
-        raise vol.Invalid("a band's above must be lower than its below")
-    return band
 
 
 def _distinct(config: dict[str, Any]) -> dict[str, Any]:
@@ -67,7 +59,7 @@ BAND = vol.All(
         vol.Optional("below"): finite_float,
         vol.Optional("for", default=timedelta(0)): cv.positive_time_period,
     },
-    _bounded,
+    bounded("band"),
 )
 SCHEMA = vol.All(
     vol.Schema(
