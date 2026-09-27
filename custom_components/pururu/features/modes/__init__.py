@@ -1,7 +1,7 @@
 """The modes of an appliance: kinds of cycle, each a band of a sensor's value with its own delays.
 
-A cycle is of one mode: leaving the mode's band ends it, another mode starting
-ends it too. A mode cycle runs only inside the appliance's (`cycle_from`).
+A cycle is of one mode: leaving the mode's band ends it, and another mode waits
+for it to end. A mode cycle runs only inside the appliance's (`cycle_from`).
 """
 
 from collections.abc import Mapping
@@ -17,9 +17,23 @@ from homeassistant.helpers import config_validation as cv
 
 from ...entity import PururuEntity
 from ...feature import TEXT, Device, Feature, Item, bounded, finite_float
-from ..cycle.statistics import PERIOD_LIST
+from ..cycle.last import LAST_CYCLE, LastCycleValue
+from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
+from ..cycle.totals import CyclesTotal, EnergyTotal, RuntimeTotal
 from .current import IDLE, Current, Mode
 from .last import Last
+
+COUNTERS = ("runtime", "cycles", "energy")
+# Every mode's entity keys: <slug>_<suffix>
+PER_MODE: dict[str, Platform] = {
+    **{description.key: Platform.SENSOR for description in LAST_CYCLE},
+    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS},
+    **{
+        f"{counter}_{period}": Platform.SENSOR
+        for counter in COUNTERS
+        for period in PERIODS
+    },
+}
 
 
 def _not_idle(modes: dict[str, Any]) -> dict[str, Any]:
@@ -104,18 +118,41 @@ def build(
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """The running mode and the last one."""
+    """The running mode, the last one, and each mode's cycles, totals and meters."""
     modes = modes_of(config)
-    return [
+    energy: str | None = config.get("energy")
+    entities: list[PururuEntity] = [
         Current(
             device,
             cycle=inputs["cycle"],
             sensor=config["sensor"],
-            energy=config.get("energy"),
+            energy=energy,
             modes=modes,
         ),
         Last(device, tuple(mode.item for mode in modes)),
     ]
+    current = device.current_entity_id(hass, Platform.SENSOR, "current")
+    for mode in modes:
+        item = mode.item
+        entities.extend(
+            LastCycleValue(device, description, source="current", item=item)
+            for description in LAST_CYCLE
+            if energy is not None or description.key != "last_cycle_energy"
+        )
+        entities.append(CyclesTotal(device, source="current", item=item))
+        entities.append(
+            RuntimeTotal(device, current, item.slug, source="current", item=item)
+        )
+        if energy is not None:
+            entities.append(EnergyTotal(device, source="current", item=item))
+        for counter in COUNTERS:
+            total = f"{counter}_total"
+            source = device.current_entity_id(hass, Platform.SENSOR, item.key(total))
+            entities.extend(
+                Meter(device, f"{counter}_{period}", total, source, period, item=item)
+                for period in config["statistics"][counter]
+            )
+    return entities
 
 
 MODES = Feature(
@@ -136,4 +173,6 @@ MODES = Feature(
     },
     namespace="mode",
     requires=("cycle",),
+    per_item=PER_MODE,
+    items=lambda config: (mode.item for mode in modes_of(config)),
 )

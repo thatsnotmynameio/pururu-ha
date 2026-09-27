@@ -8,7 +8,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 import pytest
 
-from helpers import fake, reload, restart, setup, tick
+from helpers import capture, fake, reload, restart, setup, tick
 
 KEY = "demo_filter"
 POWER = "sensor.demo_plug_power"
@@ -327,3 +327,191 @@ async def test_names_in_portuguese(ha: HomeAssistant) -> None:
     assert await setup(ha, DEVICES)
     assert ha.states.get(CURRENT).attributes["friendly_name"] == "Demo filter Modo"
     assert ha.states.get(LAST).attributes["friendly_name"] == "Demo filter Último modo"
+# --- per mode --------------------------------------------------------------------
+
+
+def sensor(entity_key: str) -> str:
+    return f"sensor.pururu_{KEY}_mode_{entity_key}"
+
+
+def value(hass: HomeAssistant, entity_key: str) -> str:
+    return hass.states.get(sensor(entity_key)).state
+
+
+async def kwh(hass: HomeAssistant, reading: float | str) -> None:
+    await fake(hass, ENERGY, str(reading))
+
+
+LAST_CYCLE = ("last_cycle_start", "last_cycle_end", "last_cycle_duration", "last_cycle_energy")
+
+
+async def test_a_mode_cycle_is_recorded(purifier: HomeAssistant, freezer: Any) -> None:
+    await kwh(purifier, 100.0)
+    await cool(purifier, freezer)
+    started = dt_util.utcnow()
+    await tick(purifier, freezer, 600)
+    await kwh(purifier, 100.05)
+    await watts(purifier, IDLE_W)
+    await tick(purifier, freezer, 35)
+    start = dt_util.parse_datetime(value(purifier, "gelar_last_cycle_start"))
+    end = dt_util.parse_datetime(value(purifier, "gelar_last_cycle_end"))
+    assert abs((start - started).total_seconds()) < 5
+    assert abs((end - dt_util.utcnow()).total_seconds()) < 5
+    assert float(value(purifier, "gelar_last_cycle_duration")) == pytest.approx(
+        (end - start).total_seconds() / 60, abs=0.1)
+    assert float(value(purifier, "gelar_last_cycle_energy")) == pytest.approx(0.05)
+    assert value(purifier, "gelar_cycles_total") == "1"
+    assert float(value(purifier, "gelar_energy_total")) == pytest.approx(0.05)
+    assert value(purifier, "quente_cycles_total") == "0"
+    for entity_key in LAST_CYCLE:
+        assert value(purifier, f"quente_{entity_key}") == "unknown", entity_key
+
+
+async def test_the_next_mode_starts_when_the_running_one_ends(purifier: HomeAssistant,
+                                                               freezer: Any) -> None:
+    """gelar ends 30 s after 1000 W; quente, armed since 10 s, starts at that same instant."""
+    await cool(purifier, freezer)
+    await tick(purifier, freezer, 60)
+    await watts(purifier, 1000)
+    await tick(purifier, freezer, 12)
+    assert value(purifier, "gelar_cycles_total") == "0"  # quente armed, waiting
+    await tick(purifier, freezer, 18)
+    assert value(purifier, "gelar_cycles_total") == "1"
+    gelar_end = dt_util.parse_datetime(value(purifier, "gelar_last_cycle_end"))
+    assert abs((dt_util.utcnow() - gelar_end).total_seconds()) < 1
+    await tick(purifier, freezer, 60)
+    await watts(purifier, IDLE_W)
+    await tick(purifier, freezer, 35)
+    assert value(purifier, "quente_last_cycle_start") == value(purifier, "gelar_last_cycle_end")
+
+
+async def test_end_is_written_last_and_last_before_it(purifier: HomeAssistant,
+                                                     freezer: Any) -> None:
+    await kwh(purifier, 100.0)
+    await cool(purifier, freezer)
+    changes = capture(purifier, "state_changed")
+    await watts(purifier, IDLE_W)
+    await tick(purifier, freezer, 35)
+    watched = {LAST, *(sensor(f"gelar_{key}") for key in LAST_CYCLE)}
+    order = [event.data["entity_id"] for event in changes if event.data["entity_id"] in watched]
+    assert order[-1] == sensor("gelar_last_cycle_end"), order
+    assert set(order) == watched, order
+
+
+async def test_energy_total_adds_the_cycles_and_skips_the_unknown(purifier: HomeAssistant,
+                                                                  freezer: Any) -> None:
+    for start, end in ((100.0, 100.05), ("unavailable", 100.2), (100.2, 100.23)):
+        await kwh(purifier, start)
+        await cool(purifier, freezer)
+        await kwh(purifier, end)
+        await watts(purifier, IDLE_W)
+        await tick(purifier, freezer, 125)
+    assert value(purifier, "gelar_cycles_total") == "3"
+    assert float(value(purifier, "gelar_energy_total")) == pytest.approx(0.08)
+
+
+async def test_runtime_per_mode(purifier: HomeAssistant, freezer: Any) -> None:
+    """Timers fire at the end of each tick: every tick below ends where one is due."""
+    await cool(purifier, freezer)  # gelar starts at 35 s
+    await tick(purifier, freezer, 600)
+    await watts(purifier, 1000)
+    await tick(purifier, freezer, 30)  # gelar ends at 665 s, quente starts then
+    await tick(purifier, freezer, 300)
+    await watts(purifier, IDLE_W)
+    await tick(purifier, freezer, 30)  # quente ends at 995 s
+    await tick(purifier, freezer, 95)
+    assert float(value(purifier, "gelar_runtime_total")) == pytest.approx(630 / 3600, abs=0.002)
+    assert float(value(purifier, "quente_runtime_total")) == pytest.approx(330 / 3600, abs=0.002)
+    assert float(value(purifier, "bebendo_runtime_total")) == 0
+
+
+async def test_meters_per_mode(ha: HomeAssistant, freezer: Any) -> None:
+    periods = {"runtime": ["today"], "cycles": ["today", "month"], "energy": ["today"]}
+    assert await setup(ha, with_modes(statistics=periods))
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    for _ in range(2):
+        await kwh(ha, 100.0)
+        await cool(ha, freezer)
+        await kwh(ha, 100.05)
+        await watts(ha, IDLE_W)
+        await tick(ha, freezer, 125)
+    await tick(ha, freezer, 60)
+    assert float(value(ha, "gelar_cycles_today")) == 2
+    assert float(value(ha, "gelar_cycles_month")) == 2
+    assert float(value(ha, "gelar_energy_today")) == pytest.approx(0.1)
+    assert float(value(ha, "gelar_runtime_today")) == pytest.approx(
+        float(value(ha, "gelar_runtime_total")), abs=0.01)
+    assert float(value(ha, "quente_cycles_today")) == 0
+    assert ha.states.get(sensor("gelar_runtime_month")) is None
+    assert ha.states.get(sensor("gelar_cycles_today")).attributes["unit_of_measurement"] == "cycles"
+
+
+async def test_without_energy_no_energy_per_mode(ha: HomeAssistant) -> None:
+    assert await setup(ha, {KEY: {"name": "Demo filter", "appliance": APPLIANCE,
+                                  "modes": {k: v for k, v in MODES.items() if k != "energy"}}})
+    assert ha.states.get(sensor("gelar_energy_total")) is None
+    assert ha.states.get(sensor("gelar_last_cycle_energy")) is None
+    assert ha.states.get(sensor("gelar_cycles_total")) is not None
+
+
+async def test_restart_mid_cycle_keeps_its_start(ha: HomeAssistant, freezer: Any) -> None:
+    since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
+    await restart(
+        ha, DEVICES,
+        (State(RUNNING, "on"), {"since": since, "since_energy": None}),
+        (State(CURRENT, "gelar"), {"since": since, "since_energy": None}),
+    )
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 35)
+    assert float(value(ha, "gelar_last_cycle_duration")) == pytest.approx(20.6, abs=0.2)
+    assert value(ha, "gelar_cycles_total") == "1"
+
+
+async def test_reload_mid_cycle_counts_one(purifier: HomeAssistant, freezer: Any) -> None:
+    await cool(purifier, freezer)
+    started = dt_util.utcnow()
+    await tick(purifier, freezer, 600)
+    await reload(purifier, DEVICES)
+    await tick(purifier, freezer, 600)
+    await watts(purifier, IDLE_W)
+    await tick(purifier, freezer, 35)
+    assert value(purifier, "gelar_cycles_total") == "1"
+    start = dt_util.parse_datetime(value(purifier, "gelar_last_cycle_start"))
+    assert abs((start - started).total_seconds()) < 5
+
+
+async def test_totals_restore(ha: HomeAssistant) -> None:
+    await restart(
+        ha, DEVICES,
+        (State(sensor("gelar_cycles_total"), "7"), {"native_value": 7, "native_unit_of_measurement": None}),
+        (State(sensor("gelar_energy_total"), "1.2"), {"native_value": 1.2, "native_unit_of_measurement": "kWh"}),
+        (State(sensor("gelar_runtime_total"), "3.5"), {"native_value": 3.5, "native_unit_of_measurement": "h"}),
+    )
+    assert value(ha, "gelar_cycles_total") == "7"
+    assert float(value(ha, "gelar_energy_total")) == 1.2
+    assert float(value(ha, "gelar_runtime_total")) == 3.5
+
+
+async def test_per_mode_names_carry_the_mode_name(ha: HomeAssistant) -> None:
+    assert await setup(ha, DEVICES)
+    name = ha.states.get(sensor("quente_cycles_total")).attributes["friendly_name"]
+    assert name == "Demo filter Água quente cycles"
+
+
+async def test_per_mode_names_in_portuguese(ha: HomeAssistant) -> None:
+    ha.config.language = "pt-BR"
+    assert await setup(ha, DEVICES)
+    name = ha.states.get(sensor("quente_cycles_total")).attributes["friendly_name"]
+    assert name == "Demo filter Ciclos de Água quente"
+
+
+async def test_an_alert_can_watch_a_mode_entity(ha: HomeAssistant) -> None:
+    assert await setup(ha, {KEY: {**DEVICES[KEY], "alerts": {
+        "hot": {"name": "Muito quente", "when": "mode_quente_cycles_total", "above": 10}}}})
+    assert ha.states.get("binary_sensor.pururu_demo_filter_alert_hot") is not None
+
+
+async def test_an_alert_on_a_mode_that_does_not_exist_is_refused(ha: HomeAssistant) -> None:
+    assert not await setup(ha, {KEY: {**DEVICES[KEY], "alerts": {
+        "hot": {"name": "Morno", "when": "mode_morno_cycles_total", "above": 10}}}})

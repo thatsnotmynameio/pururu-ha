@@ -66,7 +66,26 @@
           "dispensing": "Dispensando", "washing": "Lavando", "heating": "Aquecendo",
           "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando", "cooling": "Esfriando"
         }
-      }
+      },
+      "mode_last_cycle_start": {"name": "Início do último ciclo de {mode}"},
+      "mode_last_cycle_end": {"name": "Fim do último ciclo de {mode}"},
+      "mode_last_cycle_duration": {"name": "Duração do último ciclo de {mode}"},
+      "mode_last_cycle_energy": {"name": "Energia do último ciclo de {mode}"},
+      "mode_cycles_total": {"name": "Ciclos de {mode}", "unit_of_measurement": "ciclos"},
+      "mode_runtime_total": {"name": "Tempo de {mode}"},
+      "mode_energy_total": {"name": "Energia de {mode}"},
+      "mode_runtime_today": {"name": "Tempo de {mode} hoje"},
+      "mode_runtime_week": {"name": "Tempo de {mode} na semana"},
+      "mode_runtime_month": {"name": "Tempo de {mode} no mês"},
+      "mode_runtime_year": {"name": "Tempo de {mode} no ano"},
+      "mode_cycles_today": {"name": "Ciclos de {mode} hoje"},
+      "mode_cycles_week": {"name": "Ciclos de {mode} na semana"},
+      "mode_cycles_month": {"name": "Ciclos de {mode} no mês"},
+      "mode_cycles_year": {"name": "Ciclos de {mode} no ano"},
+      "mode_energy_today": {"name": "Energia de {mode} hoje"},
+      "mode_energy_week": {"name": "Energia de {mode} na semana"},
+      "mode_energy_month": {"name": "Energia de {mode} no mês"},
+      "mode_energy_year": {"name": "Energia de {mode} no ano"}
     }
   }
 }

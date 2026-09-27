@@ -148,3 +148,9 @@ class Feature:
     # (action, entity key in its namespace) of every entity its validated block
     # acts on: each entity key is in refers too, and its feature must take the action
     acts: Callable[[Any], Iterable[tuple[str, str]]] | None = None
+    # Entity keys repeated for every item of its block: suffix -> platform. An
+    # item's entity key is <slug>_<suffix>, named by the suffix's translation
+    # with the item's name as the placeholder named after the namespace ({mode})
+    per_item: Mapping[str, Platform] = field(default_factory=dict)
+    # The items of its validated block, when it has per_item
+    items: Callable[[Any], Iterable[Item]] | None = None

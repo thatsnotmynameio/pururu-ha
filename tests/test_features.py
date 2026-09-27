@@ -26,6 +26,11 @@ def paths(tree: Any, prefix: str = "") -> set[str]:
     return {path for key, value in tree.items() for path in paths(value, f"{prefix}/{key}")}
 
 
+def named_keys(feature: Any) -> dict[str, Any]:
+    """Every key a feature's translations name: its entity keys and its per-item suffixes."""
+    return {**feature.entity_keys, **feature.per_item}
+
+
 @pytest.fixture
 def features(ha: HomeAssistant) -> dict[str, Any]:
     return module("features").FEATURES
@@ -49,7 +54,7 @@ def test_namespaces_are_distinct_slugs(features: dict[str, Any]) -> None:
 def test_no_entity_key_repeats_its_namespace(features: dict[str, Any]) -> None:
     """phases' `phase` would be sensor.pururu_<key>_phase_phase: its key is `current`."""
     for name, feature in features.items():
-        assert feature.namespace not in feature.entity_keys, name
+        assert feature.namespace not in named_keys(feature), name
 
 
 def test_refers_names_entity_keys_as_in_an_entity_id(features: dict[str, Any]) -> None:
@@ -64,7 +69,7 @@ def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> 
     qualified = module("feature").qualified
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
     for feature in features.values():
-        for entity_key, platform in feature.entity_keys.items():
+        for entity_key, platform in named_keys(feature).items():
             key = qualified(feature.namespace, entity_key)
             for translations in (en, pt):
                 assert translations["entity"][platform][key]["name"], key
@@ -76,7 +81,7 @@ def test_every_translated_entity_key_is_created(features: dict[str, Any]) -> Non
     qualified = module("feature").qualified
     created = {(str(platform), qualified(feature.namespace, entity_key))
                for feature in features.values()
-               for entity_key, platform in feature.entity_keys.items()}
+               for entity_key, platform in named_keys(feature).items()}
     for name in ("translations/en.json", "icons.json"):
         listed = {(platform, key) for platform, keys in load(name)["entity"].items() for key in keys}
         assert listed <= created, f"{name}: {sorted(listed - created)}"
@@ -92,7 +97,7 @@ def test_example_is_valid_and_unknown_keys_are_refused(features: dict[str, Any])
 def test_every_platform_is_set_up(features: dict[str, Any]) -> None:
     platforms = module("const").PLATFORMS
     for name, feature in features.items():
-        for entity_key, platform in feature.entity_keys.items():
+        for entity_key, platform in named_keys(feature).items():
             assert platform in platforms, f"{name}'s {entity_key} is on {platform}, not in PLATFORMS"
         if feature.configured is not None:
             assert feature.configured in platforms, (
@@ -135,3 +140,23 @@ def test_what_a_feature_acts_on_it_refers_to(features: dict[str, Any]) -> None:
         assert feature.refers is not None, f"{name} acts on entities it doesn't refer to"
         block = feature.schema(dict(feature.example))
         assert {key for _, key in feature.acts(block)} <= set(feature.refers(block)), name
+
+
+def test_per_item_goes_with_items(features: dict[str, Any]) -> None:
+    """Suffixes need items to repeat for, and items need suffixes."""
+    for name, feature in features.items():
+        assert (feature.items is None) == (not feature.per_item), name
+        if feature.items is not None:
+            for item in feature.items(feature.schema(dict(feature.example))):
+                assert cv.slug(item.slug) == item.slug, name
+
+
+def test_every_per_item_name_has_its_placeholder(features: dict[str, Any]) -> None:
+    """A per-item entity's name is its item's: {<namespace>} in every language."""
+    qualified = module("feature").qualified
+    for translations in (load("translations/en.json"), load("translations/pt-BR.json")):
+        for feature in features.values():
+            for suffix, platform in feature.per_item.items():
+                key = qualified(feature.namespace, suffix)
+                name = translations["entity"][platform][key]["name"]
+                assert f"{{{feature.namespace}}}" in name, key

@@ -158,6 +158,12 @@ def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
         )
         if (configured := feature.configured) is not None:
             yield from ((name, entity_key, configured) for entity_key in device[name])
+        if (items := feature.items) is not None:
+            yield from (
+                (name, item.key(suffix), platform)
+                for item in items(device[name])
+                for suffix, platform in feature.per_item.items()
+            )
 
 
 def _areas_exist(config: dict[str, Any]) -> dict[str, Any]:
