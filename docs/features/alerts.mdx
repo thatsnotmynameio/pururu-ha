@@ -40,7 +40,10 @@ This creates `binary_sensor.pururu_laundry_washer_alert_long_cycle`, shown as **
 ---
 
 <Property name="is" type="state" optional>
-  The state that is a problem: `"on"`, `"off"`, a phase such as `spinning`, or `unavailable`. `on` and `off` work with or without quotes.
+  The state that is a problem: `"on"`, `"off"`, a phase such as `spinning`, `unavailable`, or a number.
+
+  - `on` and `off` work with or without quotes. Without quotes, YAML also reads `yes`/`true` as `on` and `no`/`false` as `off`.
+  - A number without quotes is compared as a number: `is: 1` matches a state of `1`, `1.0` or `1.00`. In quotes (`is: "1"`) it's compared as text.
 </Property>
 
 ---

@@ -44,10 +44,16 @@ PRIORITIES = ("low", "medium", "high")
 NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
 
-def _state(value: Any) -> str:
-    """A state to compare with; YAML reads an unquoted on/off as a boolean."""
+def _state(value: Any) -> str | float:
+    """A state to compare with, or a number to compare a reading with.
+
+    YAML reads an unquoted on/yes/true (off/no/false) as a boolean: it means
+    on (off). A number is compared as a number, so 1 matches a state of 1.0.
+    """
     if isinstance(value, bool):
         return STATE_ON if value else STATE_OFF
+    if isinstance(value, int | float):
+        return finite_float(value)
     return str(vol.All(cv.string, vol.Strip, vol.Length(min=1))(value))
 
 
@@ -80,9 +86,9 @@ SCHEMA = vol.All(vol.Schema({cv.slug: ALERT}), vol.Length(min=1))
 
 @dataclass(frozen=True, kw_only=True)
 class Condition:
-    """What makes the watched entity's state a problem: a state, or a range."""
+    """What makes the watched entity's state a problem: a state, a number, or a range."""
 
-    state: str | None
+    state: str | float | None
     above: float | None
     below: float | None
 
@@ -95,6 +101,10 @@ class Condition:
         """
         if state is not None and state.attributes.get(ATTR_RESTORED):
             return None
+        if isinstance(self.state, float):
+            if (value := reading(state)) is None:
+                return None
+            return value == self.state
         if self.state is not None:
             current = STATE_UNAVAILABLE if state is None else state.state
             if current in NO_READING and self.state not in NO_READING:

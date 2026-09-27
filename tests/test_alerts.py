@@ -126,6 +126,31 @@ async def test_unquoted_on_means_the_on_state(ha: HomeAssistant) -> None:
     assert state(ha, alert("pump_on")) == "on"
 
 
+@pytest.mark.parametrize("unquoted", [True, "yes"])
+async def test_yaml_booleans_mean_on(ha: HomeAssistant, unquoted: Any) -> None:
+    """YAML reads unquoted on, yes and true alike; "yes" stands for what the loader gives."""
+    await fake(ha, REAL_PUMP, "on")
+    value = True if unquoted == "yes" else unquoted
+    assert await setup(ha, devices(pump_on={**PUMP_ON, "is": value}))
+    assert state(ha, alert("pump_on")) == "on"
+
+
+@pytest.mark.parametrize("watts", ["1", "1.0", "1.00"])
+async def test_a_number_in_is_compares_as_a_number(ha: HomeAssistant, watts: str) -> None:
+    assert await setup(ha, devices(one={"name": "One", "when": "appliance_power", "is": 1}))
+    await fake(ha, POWER, watts)
+    assert state(ha, alert("one")) == "on"
+
+
+async def test_a_number_in_is_holds_its_state_without_a_reading(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices(one={"name": "One", "when": "appliance_power", "is": 1}))
+    await fake(ha, POWER, "1")
+    await fake(ha, POWER, "unavailable")
+    assert state(ha, alert("one")) == "on"
+    await fake(ha, POWER, "2")
+    assert state(ha, alert("one")) == "off"
+
+
 async def test_for_starts_over_when_the_condition_stops_holding(
         ha: HomeAssistant, freezer: Any) -> None:
     await fake(ha, REAL_PUMP, "off")
