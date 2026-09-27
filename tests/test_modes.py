@@ -551,3 +551,36 @@ async def test_a_handover_never_shows_idle(purifier: HomeAssistant, freezer: Any
               if event.data["entity_id"] == CURRENT]
     assert states == ["quente"], states
     assert last(purifier) == "gelar"
+
+
+# --- PR review ----------------------------------------------------------------------
+
+
+async def test_a_restored_mode_ends_when_the_cycle_is_already_off(ha: HomeAssistant,
+                                                                  freezer: Any) -> None:
+    """A sensor still in gelar's band sends no reading: the stopped appliance ends it at start."""
+    selector = "sensor.demo_selector"
+    ha.states.async_set(selector, "120")
+    since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
+    await restart(
+        ha, with_modes(sensor=selector),
+        (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+        (State(CURRENT, "gelar"), {"since": since, "since_energy": None}),
+    )
+    assert mode(ha) == "idle"
+    assert last(ha) == "gelar"
+    assert value(ha, "gelar_cycles_total") == "1"
+    await tick(ha, freezer, 600)
+    assert float(value(ha, "gelar_runtime_total")) == 0
+
+
+async def test_short_cycles_add_up_their_energy(purifier: HomeAssistant, freezer: Any) -> None:
+    """A sip uses a fraction of a Wh: rounding each cycle to 0.001 kWh would add nothing."""
+    for start, end in ((100.0, 100.0004), (100.0004, 100.0008)):
+        await kwh(purifier, start)
+        await cool(purifier, freezer)
+        await kwh(purifier, end)
+        await watts(purifier, IDLE_W)
+        await tick(purifier, freezer, 125)
+    assert float(value(purifier, "gelar_energy_total")) == pytest.approx(0.0008, abs=1e-6)
+    assert value(purifier, "gelar_last_cycle_energy") == "0.0"

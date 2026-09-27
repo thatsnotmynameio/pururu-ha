@@ -83,8 +83,8 @@ class EnergyTotal(PururuEntity, RestoreSensor):
     @property
     @override
     def native_value(self) -> float:
-        """The kWh."""
-        return round(self._kwh, 3)
+        """The kWh, to the mWh: shown to the Wh, but a sip's share still counts."""
+        return round(self._kwh, 6)
 
     @override
     async def async_added_to_hass(self) -> None:

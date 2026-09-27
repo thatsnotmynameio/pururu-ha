@@ -10,12 +10,14 @@ from homeassistant.core import (
     CALLBACK_TYPE,
     Event,
     EventStateChangedData,
+    HomeAssistant,
     State,
     callback,
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 
 from ...entity import PururuEntity, reading
@@ -98,7 +100,8 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         """Restore the running mode and its start, then follow the sensor and the cycle.
 
         Nothing ends here, even with the cycle already off: the mode's other
-        entities may not listen yet. A reading out of its band ends it.
+        entities may not listen yet. Once HA has started, a restored mode
+        whose cycle is off ends (its sensor may send no reading to end it).
         """
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
@@ -116,6 +119,13 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         )
         self.async_on_remove(self._cancel)
         self._take(self.hass.states.get(self._sensor))
+        self.async_on_remove(async_at_started(self.hass, self._started))
+
+    @callback
+    def _started(self, _hass: HomeAssistant) -> None:
+        """Every entity of the modes listens now: a restored mode whose cycle is off ends."""
+        if self._running is not None:
+            self._gate(self.hass.states.get(self._cycle))
 
     @callback
     def _sensor_changed(self, event: Event[EventStateChangedData]) -> None:
@@ -123,13 +133,17 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
 
     @callback
     def _cycle_changed(self, event: Event[EventStateChangedData]) -> None:
+        self._gate(event.data["new_state"])
+
+    @callback
+    def _gate(self, state: State | None) -> None:
         """The cycle on starts the armed mode; off ends the running one. Unknown does neither."""
-        if (new := event.data["new_state"]) is None:
+        if state is None:
             return
-        if new.state == STATE_ON and self._running is None:
+        if state.state == STATE_ON and self._running is None:
             if self._start_armed(dt_util.utcnow()):
                 self.async_write_ha_state()
-        elif new.state == STATE_OFF and (running := self._running) is not None:
+        elif state.state == STATE_OFF and (running := self._running) is not None:
             self._end(running, dt_util.utcnow())
             # Its band may hold still (a sensor other than the gate's plug): no
             # new reading will arm it again, so it's armed for the next cycle

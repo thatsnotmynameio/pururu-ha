@@ -21,7 +21,10 @@ def kwh_now(hass: HomeAssistant, counter: str | None) -> float | None:
 
 
 def kwh_used(start: float | None, end: float | None) -> float | None:
-    """How much the counter grew from `start` to `end`, never negative; None when either is unknown."""
+    """How much the counter grew from `start` to `end`, never negative; None when either is unknown.
+
+    Not rounded: a sip's fraction of a Wh must still add up in a total.
+    """
     if start is None or end is None:
         return None
-    return round(max(end - start, 0.0), 3)
+    return max(end - start, 0.0)

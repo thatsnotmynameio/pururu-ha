@@ -43,7 +43,9 @@ LAST_CYCLE: tuple[LastCycleDescription, ...] = (
         key="last_cycle_energy",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        value=lambda cycle: cycle.energy_kwh,
+        value=lambda cycle: (
+            None if cycle.energy_kwh is None else round(cycle.energy_kwh, 3)
+        ),
     ),
     LastCycleDescription(
         key="last_cycle_end",
