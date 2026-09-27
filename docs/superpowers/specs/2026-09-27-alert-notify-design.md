@@ -30,7 +30,8 @@ alert2:
       generator: "{{ states.binary_sensor | selectattr('attributes.message', 'defined') | entity_regex('binary_sensor\\.pururu_(.+_alert_.+)$') | list }}"
       domain: pururu
       name: "{{ genGroups[0] }}"
-      condition: "{{ is_state(genEntityId, 'on') }}"
+      condition_on: "{{ is_state(genEntityId, 'on') }}"
+      condition_off: "{{ is_state(genEntityId, 'off') }}"
       friendly_name: "{{ state_attr(genEntityId, 'friendly_name') }}"
       priority: "{{ state_attr(genEntityId, 'priority') }}"
       message: "{{ state_attr(genEntityId, 'message') }}"

@@ -102,7 +102,7 @@ An alert needs the entity it watches. If that entity isn't created (its ID is al
 
 ## Getting notified
 
-pururu sends nothing itself. [Alert2](https://github.com/redstone99/hass-alert2) delivers the alerts that have `notify`, with one `generator` you add to Alert2's configuration once. It covers every alert with `notify`, including the ones you add later:
+pururu sends nothing itself. [Alert2](https://github.com/redstone99/hass-alert2) delivers the alerts that have `notify`, with one `generator` you add to Alert2's configuration once. It covers every alert with `notify`, including new ones:
 
 ```yaml
 alert2:
@@ -114,7 +114,8 @@ alert2:
       generator: "{{ states.binary_sensor | selectattr('attributes.message', 'defined') | entity_regex('binary_sensor\\.pururu_(.+_alert_.+)$') | list }}"
       domain: pururu
       name: "{{ genGroups[0] }}"
-      condition: "{{ is_state(genEntityId, 'on') }}"
+      condition_on: "{{ is_state(genEntityId, 'on') }}"
+      condition_off: "{{ is_state(genEntityId, 'off') }}"
       friendly_name: "{{ state_attr(genEntityId, 'friendly_name') }}"
       priority: "{{ state_attr(genEntityId, 'priority') }}"
       message: "{{ state_attr(genEntityId, 'message') }}"
@@ -123,6 +124,8 @@ alert2:
 
 - **What each alert says** comes from its `notify`. **How** it's told is the same for every alert, in Alert2's `defaults` or in this block: who is told, reminders, acknowledging, a title. See Alert2's documentation.
 - It picks only the alerts with `notify` (they alone have a `message`).
+- **After adding `notify` to an alert that already exists, or removing it, reload Alert2** (the `alert2.reload` action, or **Developer tools → YAML → Alert2**). Alert2 looks for pururu alerts again only when one is created or removed, not when an existing one changes. A new alert is picked up by itself.
+- `condition_on` and `condition_off`, rather than one `condition`, keep the Alert2 alert as it is while the pururu alert is briefly `unavailable`, as during a pururu reload: no "resolved" then "fired" again.
 - Each Alert2 alert is named after the rest of the pururu alert's ID: `binary_sensor.pururu_laundry_washer_alert_long_cycle` becomes `alert2.pururu_laundry_washer_alert_long_cycle`, whatever the device and alert keys contain.
 - If an alert has `notify` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
 
