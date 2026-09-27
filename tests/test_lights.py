@@ -21,6 +21,9 @@ BULB = {"supported_color_modes": ["hs"], "color_mode": "hs", "brightness": 128,
         "hs_color": [30.0, 50.0], "effect_list": ["rainbow", "strobe"], "effect": "rainbow",
         "supported_features": 44}
 ONOFF = {"supported_color_modes": ["onoff"], "color_mode": "onoff"}
+REAL_ARANDELA = "switch.sonoff_arandela"
+ARANDELA = "light.pururu_sala_light_arandela"
+ARANDELA_BLOCK = {"entity": REAL_ARANDELA, "name": "Arandela"}
 
 
 def state(hass: HomeAssistant, entity_id: str) -> str:
@@ -218,6 +221,97 @@ async def test_turning_on_without_the_real_light_does_nothing(ha: HomeAssistant)
     assert state(ha, TETO) == "unavailable"
 
 
+# --- a real switch as a light ---------------------------------------------------------
+
+
+@pytest.fixture
+async def arandela(ha: HomeAssistant) -> HomeAssistant:
+    await fake(ha, REAL_ARANDELA, "off")
+    assert await setup(ha, {KEY: {"name": "Sala", "lights": {"arandela": ARANDELA_BLOCK}}})
+    return ha
+
+
+async def test_a_real_switch_is_a_light(arandela: HomeAssistant) -> None:
+    assert held(arandela, KEY) == {ARANDELA}
+    assert arandela.states.get(ARANDELA).attributes["friendly_name"] == "Sala Arandela"
+    assert arandela.states.get(ARANDELA).attributes["entity_id"] == [REAL_ARANDELA]
+    entry = er.async_get(arandela).async_get(ARANDELA)
+    assert entry is not None
+    assert entry.translation_key is None
+
+
+@pytest.mark.parametrize(("real", "expected"), [
+    ("on", "on"), ("off", "off"), ("unknown", "unknown"), ("unavailable", "unavailable"),
+])
+async def test_follows_the_real_switch(arandela: HomeAssistant, real: str, expected: str) -> None:
+    await fake(arandela, REAL_ARANDELA, real)
+    assert state(arandela, ARANDELA) == expected
+
+
+async def test_without_the_real_switch_it_is_unavailable(ha: HomeAssistant) -> None:
+    assert await setup(ha, {KEY: {"name": "Sala", "lights": {"arandela": ARANDELA_BLOCK}}})
+    assert state(ha, ARANDELA) == "unavailable"
+
+
+async def test_follows_the_real_switch_going_and_coming_back(arandela: HomeAssistant) -> None:
+    arandela.states.async_remove(REAL_ARANDELA)
+    await settle()
+    assert state(arandela, ARANDELA) == "unavailable"
+    await fake(arandela, REAL_ARANDELA, "on")
+    assert state(arandela, ARANDELA) == "on"
+
+
+async def test_assumed_state_follows_the_real_switch(arandela: HomeAssistant) -> None:
+    await fake(arandela, REAL_ARANDELA, "on", {"assumed_state": True})
+    assert arandela.states.get(ARANDELA).attributes.get("assumed_state") is True
+
+
+async def test_a_switch_offers_on_and_off(arandela: HomeAssistant) -> None:
+    await fake(arandela, REAL_ARANDELA, "on")
+    light = attributes(arandela, ARANDELA)
+    assert light["supported_color_modes"] == ["onoff"]
+    assert light["color_mode"] == "onoff"
+    assert light.get("brightness") is None
+    assert light["supported_features"] == 0
+
+
+async def test_turning_it_on_and_off_switches_the_real_one(arandela: HomeAssistant) -> None:
+    context = Context()
+    assert await forwarded(arandela, ARANDELA, "turn_on", {}, context, REAL_ARANDELA) == [
+        ("switch", "turn_on", {}, context.id)]
+    assert await forwarded(arandela, ARANDELA, "turn_off", {}, context, REAL_ARANDELA) == [
+        ("switch", "turn_off", {}, context.id)]
+
+
+async def test_light_arguments_on_a_switch_turn_it_on(arandela: HomeAssistant) -> None:
+    """HA drops what an on/off light can't take; the relay still turns on."""
+    context = Context()
+    calls = await forwarded(arandela, ARANDELA, "turn_on",
+                            {"brightness_pct": 50, "transition": 2}, context, REAL_ARANDELA)
+    assert calls == [("switch", "turn_on", {}, context.id)]
+
+
+async def test_turning_on_without_the_real_switch_does_nothing(ha: HomeAssistant) -> None:
+    assert await setup(ha, {KEY: {"name": "Sala", "lights": {"arandela": ARANDELA_BLOCK}}})
+    assert await forwarded(ha, ARANDELA, "turn_on", {}, Context(), REAL_ARANDELA) == []
+    assert state(ha, ARANDELA) == "unavailable"
+
+
+async def test_after_a_restart_it_shows_the_real_switch(ha: HomeAssistant) -> None:
+    await fake(ha, REAL_ARANDELA, "on")
+    await restart(ha, {KEY: {"name": "Sala", "lights": {"arandela": ARANDELA_BLOCK}}})
+    assert state(ha, ARANDELA) == "on"
+
+
+async def test_bulbs_and_relays_in_one_device(ha: HomeAssistant) -> None:
+    await fake(ha, REAL_TETO, "on", BULB)
+    await fake(ha, REAL_ARANDELA, "on")
+    assert await setup(ha, {KEY: {"name": "Sala", "lights": {
+        "teto": LIGHTS["teto"], "arandela": ARANDELA_BLOCK}}})
+    assert attributes(ha, TETO)["supported_color_modes"] == ["hs"]
+    assert attributes(ha, ARANDELA)["supported_color_modes"] == ["onoff"]
+
+
 # --- IDs, renames, reloads and restarts --------------------------------------------------
 
 
@@ -242,6 +336,7 @@ async def test_follows_its_own_rename(sala: HomeAssistant) -> None:
 
 @pytest.mark.parametrize(("renamed", "new_id"), [
     pytest.param(TETO, "light.teto", id="a pururu light"),
+    pytest.param("switch.pururu_sala_switch_pump", "switch.bomba", id="a pururu switch"),
 ])
 async def test_a_renamed_pururu_entity_is_not_a_real_one(
         sala: HomeAssistant, caplog: pytest.LogCaptureFixture, renamed: str, new_id: str) -> None:
