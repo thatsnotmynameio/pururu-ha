@@ -2,11 +2,13 @@
 
 from ..feature import Feature
 from .appliance import APPLIANCE
+from .lights import LIGHTS
 from .phases import PHASES
 from .switches import SWITCHES
 
 FEATURES: dict[str, Feature] = {
     "appliance": APPLIANCE,
+    "lights": LIGHTS,
     "phases": PHASES,
     "switches": SWITCHES,
 }
