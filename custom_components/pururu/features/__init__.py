@@ -3,5 +3,10 @@
 from ..feature import Feature
 from .appliance import APPLIANCE
 from .phases import PHASES
+from .switches import SWITCHES
 
-FEATURES: dict[str, Feature] = {"appliance": APPLIANCE, "phases": PHASES}
+FEATURES: dict[str, Feature] = {
+    "appliance": APPLIANCE,
+    "phases": PHASES,
+    "switches": SWITCHES,
+}
