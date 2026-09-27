@@ -30,7 +30,8 @@ The pururu light is a new entity. The real one stays as it is. pururu doesn't ow
 | Which real entities | `light.*` and `switch.*`. A relay that drives a lamp is common, and it should be a light for voice assistants and area actions. |
 | Rejected: HA's `switch_as_x` helper (its config entries, or its `LightSwitch` class) | `LightSwitch` moves the entity into the real switch's device, takes the switch's name, copies its Assist exposure and unexposes the real switch. Creating `switch_as_x` config entries would mean managing another integration's entries. |
 | What a light offers | What the real entity exposes, read at run time and not listed in pururu's code. A `light.*` gives its colour modes, brightness, colours, colour temperature and its range, effects and supported features. When they change (a firmware update), the pururu light follows. A `switch.*` exposes only on and off, so its light is `ColorMode.ONOFF`. |
-| One real entity or several | One for now: `entity:` takes one entity ID. The design allows several later. Both entity classes take a list of members (always one today). `entity:` can later accept a list without breaking a configuration. A light with several members of mixed domains is decided then, not now. |
+| One real entity or several | One, always: `entity:` is singular, in `lights` as in `switches`. Several bulbs as one light will be a group of pururu lights, a feature of its own (see "Later: `groups:`"), and not a list in `entity:`. |
+| Rejected: `entity:` taking a list later, or `entities:` in an item | A key that is a string or a list makes every rule handle both. Groups of pururu lights keep each bulb controllable on its own, as HA's groups do. |
 | The same real switch as a switch and as a light | Refused **within one device**: a real entity appears in one `configured` feature of a device at most. The rule is generic, so it covers future `fans:` and `covers:`, which may take `switch.*` too. Across devices it's allowed: a relay can be a light in `sala` and a switch in `piscina`. |
 | The same real entity twice in one feature | Allowed, as in `switches` today, in one device or across devices. |
 | An entity standing for a pururu entity | Refused. `light.pururu_…` would call itself forever, and `switch.pururu_…` already stands for a real switch. A pururu entity renamed in the UI gets past the prefix: `build()` checks the entity registry, logs the error and skips that light. |
@@ -55,8 +56,6 @@ The pururu light is a new entity. The real one stays as it is. pururu doesn't ow
 ```
 lights: switch.sonoff_abajur is already in switches
 ```
-
-It reads each item's `entity` as one or more members, so it doesn't change when `entity:` accepts a list.
 
 ## Shared code: `features/standing.py`
 
@@ -83,7 +82,7 @@ KINDS = {Platform.LIGHT: Light, Platform.SWITCH: SwitchLight}
 SCHEMA = standing.schema(*KINDS)
 ```
 
-`build()` goes through the block. It skips (and logs) an entity that `standing.is_pururu` says is pururu's. Otherwise it picks the class by the real entity's domain (`split_entity_id`) and creates it with `[entity]` as its members. The domains the schema takes and the class of each come from one mapping.
+`build()` goes through the block. It skips (and logs) an entity that `standing.is_pururu` says is pururu's. Otherwise it picks the class by the real entity's domain (`split_entity_id`) and creates it standing for `entity`. The group classes take a list of members, and it holds that one entity. The domains the schema takes and the class of each come from one mapping.
 
 ### `Light(PururuEntity, LightGroup)`, for `light.*`
 
@@ -192,6 +191,30 @@ The `features/standing.py` extraction is checked by `tests/test_switches.py` pas
 - `docs/develop/testing.mdx`: `test_lights.py` in the table.
 - `CLAUDE.md`: `light.py` next to `switch.py`, `lights` next to `switches`, and `features/standing.py`.
 - Checked with `pnpm docs:check`.
+
+## Later: `groups:`
+
+Not in this PR. It gets its own spec and PR. It's written down here so that nothing in `lights` gets in its way.
+
+```yaml
+sala:
+  name: Sala
+  lights:
+    teto: {entity: light.sala_teto, name: Teto}
+    lustre_1: {entity: light.lustre_1, name: Lustre 1}
+    lustre_2: {entity: light.lustre_2, name: Lustre 2}
+  groups:
+    lustre:
+      name: Lustre
+      lights: [lustre_1, lustre_2]
+# → light.pururu_sala_light_lustre_1, light.pururu_sala_light_lustre_2
+# → light.pururu_sala_group_lustre: a LightGroup of the two above
+```
+
+- A group gathers pururu entities of its own device by their keys, not real entity IDs. Each bulb stays a light of its own, and the group turns them together. The key inside the group (`lights:`) says what it gathers, so `switches:` can follow.
+- The namespace is `group`, not `light_group`: the contract test refuses a namespace that is another one followed by `_`.
+- The core needs something new. Today a feature takes from another only through `<capability>_from`, and only fixed entity keys. A group takes the configured entity keys of `lights`, in another namespace. `_build` and `_creatable` will resolve them: the current entity ID (renames followed), and no group when a member isn't created.
+- A light that goes from one bulb (`lights: lustre`) to several (`groups: lustre`) changes its ID, from `light_lustre` to `group_lustre`. It's a different thing, and the docs will say so.
 
 ## Risks
 
