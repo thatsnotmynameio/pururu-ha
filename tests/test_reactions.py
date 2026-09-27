@@ -6,13 +6,14 @@ from typing import Any
 from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant, State
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
+from homeassistant.util.file import WriteError
 import pytest
 
-from helpers import AUTOMATIONS, capture, fake, generated, module, reload, setup, tick
+from helpers import AUTOMATIONS, capture, fake, generated, module, reload, restart, setup, tick
 
 WASHER = "washer"
 LIGHTS = "lights"
@@ -365,3 +366,83 @@ async def test_a_dropped_reaction_leaves_the_file_and_the_registry(
     assert ha.states.get(automation("door")) is None
     entry = ha.config_entries.async_entries("pururu")[0]
     assert entry.data["automations"] == ["pururu_lights_reaction_night"]
+
+
+# --- the include, failures, removal --------------------------------------------------
+
+
+def issue(ha: HomeAssistant) -> ir.IssueEntry | None:
+    return ir.async_get(ha).async_get_issue("pururu", "automations_not_included")
+
+
+INCLUDE = "automation pururu: !include pururu/automations.yaml"
+
+
+async def test_without_the_include_an_issue_says_what_to_add(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {}):
+        assert await async_setup_component(ha, "automation", {})
+        assert await setup(ha, devices(door=DOOR_OPENS))
+    found = issue(ha)
+    assert found is not None
+    assert found.severity == ir.IssueSeverity.WARNING
+    assert not found.is_fixable
+    assert found.translation_placeholders == {"include": INCLUDE, "file": AUTOMATIONS}
+    assert (f'The automations of pururu\'s reactions are not loaded: add "{INCLUDE}" '
+            "to configuration.yaml") in caplog.text
+
+
+async def test_the_issue_goes_once_the_include_is_there(ha: HomeAssistant) -> None:
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {}) as loader:
+        assert await async_setup_component(ha, "automation", {})
+        assert await setup(ha, devices(door=DOOR_OPENS))
+        assert issue(ha) is not None
+        loader.side_effect = lambda *_args, **_kwargs: {"automation pururu": generated(ha)}
+        await ha.services.async_call("automation", "reload", blocking=True)
+        await ha.async_block_till_done()
+    assert issue(ha) is None
+    assert ha.states.get(automation("door")) is not None
+
+
+async def test_with_the_include_there_is_no_issue(ha: HomeAssistant, automations: None) -> None:
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    assert issue(ha) is None
+
+
+async def test_without_reactions_there_is_no_issue(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices())
+    assert issue(ha) is None
+
+
+async def test_a_disabled_automation_is_no_missing_include(ha: HomeAssistant,
+                                                           automations: None) -> None:
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    er.async_get(ha).async_update_entity(automation("door"),
+                                         disabled_by=er.RegistryEntryDisabler.USER)
+    await ha.async_block_till_done()
+    await ha.services.async_call("automation", "reload", blocking=True)
+    await ha.async_block_till_done()
+    assert issue(ha) is None
+
+
+async def test_a_failed_write_is_logged_and_the_setup_goes_on(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    reactions = module("reactions")
+    with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
+        assert await setup(ha, devices(door=DOOR_OPENS))
+    assert "The automations are not written to pururu/automations.yaml: disk full" in caplog.text
+    assert ha.states.get("light.pururu_lights_light_teto") is not None
+
+
+async def test_removing_the_entry_leaves_an_empty_file(ha: HomeAssistant,
+                                                      automations: None) -> None:
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    entry = ha.config_entries.async_entries("pururu")[0]
+    await ha.config_entries.async_remove(entry.entry_id)
+    await ha.async_block_till_done()
+    assert generated(ha) == []
+    assert er.async_get(ha).async_get(automation("door")) is None
+    assert ha.states.get(automation("door")) is None
+    assert issue(ha) is None

@@ -129,7 +129,7 @@ rules:
     comment: Configured in YAML.
   repair-issues:
     status: todo
-    comment: A configured real entity that doesn't exist is not reported yet; the repo's tests catch typos before a deploy.
+    comment: Reactions' automations not loaded (the include missing) raise a Repairs issue; a configured real entity that doesn't exist is not reported yet.
   stale-devices: done
 
   # Platinum

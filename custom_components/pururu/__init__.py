@@ -354,8 +354,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
-    """Delete the floors and areas the entry managed."""
+    """Delete the floors and areas the entry managed, and its reactions' automations."""
     places.async_remove(hass, entry.data)
+    await reactions.async_remove(hass, entry)
 
 
 def _build(
