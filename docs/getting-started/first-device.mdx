@@ -43,13 +43,13 @@ Reload with **Developer tools → YAML → Pururu**. Open **Settings → Devices
 
 | Entity | |
 |---|---|
-| `sensor.pururu_laundry_washer_power` | The plug's power, repeated inside this device |
-| `binary_sensor.pururu_laundry_washer_running` | On while a cycle runs |
-| `sensor.pururu_laundry_washer_last_cycle_start` | When the last cycle started |
-| `sensor.pururu_laundry_washer_last_cycle_end` | When it ended |
-| `sensor.pururu_laundry_washer_last_cycle_duration` | How long it took, in minutes |
-| `sensor.pururu_laundry_washer_cycles_total` | Cycles counted since you added the device |
-| `sensor.pururu_laundry_washer_runtime_total` | Hours it has run since you added the device |
+| `sensor.pururu_laundry_washer_appliance_power` | The plug's power, repeated inside this device |
+| `binary_sensor.pururu_laundry_washer_appliance_running` | On while a cycle runs |
+| `sensor.pururu_laundry_washer_appliance_last_cycle_start` | When the last cycle started |
+| `sensor.pururu_laundry_washer_appliance_last_cycle_end` | When it ended |
+| `sensor.pururu_laundry_washer_appliance_last_cycle_duration` | How long it took, in minutes |
+| `sensor.pururu_laundry_washer_appliance_cycles_total` | Cycles counted since you added the device |
+| `sensor.pururu_laundry_washer_appliance_runtime_total` | Hours it has run since you added the device |
 
 Every entity ID follows the same pattern, `<platform>.pururu_<device key>_<entity key>`, so you can predict it before it exists. See [Entity IDs](/concepts/entity-ids).
 
@@ -80,10 +80,10 @@ After a reload, the device also has:
 
 | Entity | |
 |---|---|
-| `sensor.pururu_laundry_washer_energy_total` | The plug's energy counter, repeated inside this device |
-| `sensor.pururu_laundry_washer_last_cycle_energy` | Energy the last cycle used, always in kWh |
-| `sensor.pururu_laundry_washer_runtime_week`, `_runtime_month` | Hours run this week and this month |
-| `sensor.pururu_laundry_washer_cycles_month`, `_cycles_year` | Cycles this month and this year |
+| `sensor.pururu_laundry_washer_appliance_energy_total` | The plug's energy counter, repeated inside this device |
+| `sensor.pururu_laundry_washer_appliance_last_cycle_energy` | Energy the last cycle used, always in kWh |
+| `sensor.pururu_laundry_washer_appliance_runtime_week`, `_runtime_month` | Hours run this week and this month |
+| `sensor.pururu_laundry_washer_appliance_cycles_month`, `_cycles_year` | Cycles this month and this year |
 
 Each period restarts on its own: `today` at midnight, `week` on Monday, `month` on the 1st and `year` on 1 January.
 
@@ -172,13 +172,13 @@ After a reload, Home Assistant has a floor **Térreo** with the ID `terreo`, and
 
 ## Step 5: "the laundry is done"
 
-`sensor.pururu_laundry_washer_last_cycle_end` changes once per finished cycle, and it's **written last**. By the time it changes, the cycle's start, duration and energy and `cycles_total` are already up to date, so an automation that triggers on it can read them:
+`sensor.pururu_laundry_washer_appliance_last_cycle_end` changes once per finished cycle, and it's **written last**. By the time it changes, the cycle's start, duration and energy and `cycles_total` are already up to date, so an automation that triggers on it can read them:
 
 ```yaml title="automations.yaml"
 - alias: Laundry is done
   triggers:
     - trigger: state
-      entity_id: sensor.pururu_laundry_washer_last_cycle_end
+      entity_id: sensor.pururu_laundry_washer_appliance_last_cycle_end
       not_to: [unknown, unavailable]
   conditions:
     # Ignore a restart or a reload: only a real change from a known value counts
@@ -191,8 +191,8 @@ After a reload, Home Assistant has a floor **Térreo** with the ID `terreo`, and
       data:
         title: Laundry is done
         message: >-
-          {{ states('sensor.pururu_laundry_washer_last_cycle_duration') }} min,
-          {{ states('sensor.pururu_laundry_washer_last_cycle_energy') }} kWh.
+          {{ states('sensor.pururu_laundry_washer_appliance_last_cycle_duration') }} min,
+          {{ states('sensor.pururu_laundry_washer_appliance_last_cycle_energy') }} kWh.
 ```
 
 Swap `persistent_notification.create` for your phone's `notify` action to get a push notification.

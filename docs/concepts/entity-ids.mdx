@@ -8,16 +8,29 @@ description: Every entity pururu creates has a predictable ID. pururu follows yo
 Every entity pururu creates has the ID
 
 ```
-<platform>.pururu_<device key>_<entity key>
+<platform>.pururu_<device key>_<namespace>_<entity key>
 ```
 
 - **platform**: `sensor`, `binary_sensor` or `switch`.
 - **device key**: the device's key under `devices:`.
-- **entity key**: which of the device's entities it is. Each feature's page lists its entity keys. An entity key counted per period ends with that period, as in `runtime_month`.
+- **namespace**: the feature that creates the entity. Each feature has its own, so two features never give two entities one ID.
+- **entity key**: which of the feature's entities it is. Each feature's page lists its entity keys. An entity key counted per period ends with that period, as in `runtime_month`.
 
-So the `running` entity of the device `laundry_washer` is always `binary_sensor.pururu_laundry_washer_running`. You can write automations and dashboards against it before the device even exists.
+| Feature | Namespace | Example |
+|---|---|---|
+| [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_laundry_washer_appliance_running` |
+| [`phases`](/features/phases) | `phase` | `sensor.pururu_laundry_washer_phase` |
+| [`switches`](/features/switches) | `switch` | `switch.pururu_pool_switch_pump` |
 
-The entity's **unique ID** is the same text without the platform: `pururu_laundry_washer_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
+An entity key that is its feature's namespace isn't written twice: the only entity of `phases`, `phase`, is `sensor.pururu_laundry_washer_phase`.
+
+So the `running` entity of the device `laundry_washer` is always `binary_sensor.pururu_laundry_washer_appliance_running`. You can write automations and dashboards against it before the device even exists.
+
+The entity's **unique ID** is the same text without the platform: `pururu_laundry_washer_appliance_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
+
+<Info>
+  Before pururu 0.1.5, IDs had no namespace (`binary_sensor.pururu_laundry_washer_running`, `switch.pururu_pool_pump`). Updating removes those entities, with their history, and creates the new ones. Update the automations and dashboards that name them.
+</Info>
 
 ## Names
 
@@ -41,7 +54,7 @@ You can change an entity ID in the UI, as with any entity. pururu handles it thi
 
 pururu **never** creates an entity whose ID already belongs to someone else, whether that's another integration's entity or an entity without a unique ID. It also never falls back to `…_2`. A suffixed ID would silently break every automation written against the predictable one. Instead:
 
-1. The log shows an error: `sensor.pururu_laundry_washer_power is already taken by the template integration; not creating it`.
+1. The log shows an error: `sensor.pururu_laundry_washer_appliance_power is already taken by the template integration; not creating it`.
 2. The entity isn't created.
 3. Anything that depends on it isn't created either, each with its own error: `… follows …, which is not created; not creating it`. For example, if `running` can't be created, the whole cycle goes with it: the last cycle sensors, the counters and `phase`.
 
