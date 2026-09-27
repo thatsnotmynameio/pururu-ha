@@ -6,14 +6,17 @@ pururu/automations.yaml, which configuration.yaml includes. It has no actions
 yet: it fires, and its trace shows when and why.
 """
 
+from collections.abc import Mapping
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_NAME
+from homeassistant.const import CONF_NAME, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import config_validation as cv
 
-from .feature import finite_float, state_text
+from .const import ENTITY_PREFIX
+from .feature import finite_float, qualified, state_text
 
 # The namespace of every reaction's automation ID
 NAMESPACE = "reaction"
@@ -74,3 +77,67 @@ REACTION = vol.All(
 )
 # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
 SCHEMA = vol.All(vol.Schema({cv.slug: REACTION}), vol.Length(min=1))
+
+
+def automation_id(device_key: str, reaction_key: str) -> str:
+    """The automation's ID, and the object ID of its entity ID: the pururu pattern."""
+    return f"{ENTITY_PREFIX}_{device_key}_{qualified(NAMESPACE, reaction_key)}"
+
+
+def _period(value: timedelta) -> str:
+    """A time period as HA reads it: [-]HH:MM:SS, in whole seconds."""
+    seconds = int(value.total_seconds())
+    sign = "-" if seconds < 0 else ""
+    hours, rest = divmod(abs(seconds), 3600)
+    minutes, seconds = divmod(rest, 60)
+    return f"{sign}{hours:02}:{minutes:02}:{seconds:02}"
+
+
+def triggers(
+    reaction: Mapping[str, Any], entity_id: str | None
+) -> list[dict[str, Any]]:
+    """The HA triggers of a validated reaction; `entity_id` is the entity it watches.
+
+    With `to` and no `from`, a state coming back from no reading doesn't fire:
+    a plug reconnecting (unavailable → off) is no "turned off".
+    """
+    if "at" in reaction:
+        return [{"trigger": "time", "at": reaction["at"].isoformat()}]
+    if "sun" in reaction:
+        sun: dict[str, Any] = {"trigger": "sun", "event": reaction["sun"]}
+        if "offset" in reaction:
+            sun["offset"] = _period(reaction["offset"])
+        return [sun]
+    trigger: dict[str, Any]
+    if "to" in reaction:
+        trigger = {"trigger": "state", "entity_id": entity_id}
+        if "from" in reaction:
+            trigger["from"] = reaction["from"]
+        else:
+            trigger["not_from"] = [STATE_UNAVAILABLE, STATE_UNKNOWN]
+        trigger["to"] = reaction["to"]
+    else:
+        trigger = {"trigger": "numeric_state", "entity_id": entity_id}
+        for key in ("above", "below"):
+            if key in reaction:
+                trigger[key] = reaction[key]
+    if "for" in reaction:
+        trigger["for"] = _period(reaction["for"])
+    return [trigger]
+
+
+def automation(
+    device_key: str,
+    device_name: str,
+    reaction_key: str,
+    reaction: Mapping[str, Any],
+    entity_id: str | None,
+) -> dict[str, Any]:
+    """The automation of a reaction: no actions yet."""
+    return {
+        "id": automation_id(device_key, reaction_key),
+        "alias": f"{device_name} {reaction[CONF_NAME]}",
+        "description": f"pururu: {device_key}, {reaction_key}",
+        "triggers": triggers(reaction, entity_id),
+        "actions": [],
+    }

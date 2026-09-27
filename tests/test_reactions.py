@@ -5,7 +5,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 import pytest
 
-from helpers import setup
+from helpers import module, setup
 
 WASHER = "washer"
 LIGHTS = "lights"
@@ -120,3 +120,70 @@ async def test_the_american_spelling_of_a_key_is_refused(ha: HomeAssistant) -> N
     config = devices()
     config[LIGHTS]["reaction"] = {"door": DOOR_OPENS}
     assert not await setup(ha, config)
+
+
+# --- translation ----------------------------------------------------------------------
+
+
+def translated(ha: HomeAssistant, reaction: dict[str, Any],
+               entity_id: str | None = None) -> list[dict[str, Any]]:
+    """The triggers of a reaction as validated, watching `entity_id`."""
+    reactions = module("reactions")
+    return reactions.triggers(reactions.REACTION(reaction), entity_id)
+
+
+def test_to_adds_not_from_unavailable(ha: HomeAssistant) -> None:
+    assert translated(ha, DOOR_OPENS, DOOR) == [{
+        "trigger": "state", "entity_id": DOOR,
+        "not_from": ["unavailable", "unknown"], "to": "on",
+    }]
+
+
+def test_from_replaces_not_from(ha: HomeAssistant) -> None:
+    assert translated(ha, {**DOOR_OPENS, "from": "off", "for": {"minutes": 5}}, DOOR) == [{
+        "trigger": "state", "entity_id": DOOR, "from": "off", "to": "on", "for": "00:05:00",
+    }]
+
+
+def test_unquoted_on_and_off_are_states(ha: HomeAssistant) -> None:
+    triggers = translated(ha, {**DOOR_OPENS, "from": False, "to": True}, DOOR)
+    assert (triggers[0]["from"], triggers[0]["to"]) == ("off", "on")
+
+
+def test_a_number_in_to_is_text(ha: HomeAssistant) -> None:
+    assert translated(ha, {**DOOR_OPENS, "to": 1}, DOOR)[0]["to"] == "1"
+
+
+def test_above_and_below_are_numeric_state(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "X", "entity": POWER, "above": 10, "below": 2500,
+                           "for": {"hours": 1, "seconds": 5}}, POWER) == [{
+        "trigger": "numeric_state", "entity_id": POWER, "above": 10.0, "below": 2500.0,
+        "for": "01:00:05",
+    }]
+
+
+def test_at_is_a_time_trigger(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "Noite", "at": "22:00"}) == [
+        {"trigger": "time", "at": "22:00:00"}]
+
+
+def test_sun_with_a_negative_offset(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "X", "sun": "sunset", "offset": {"minutes": -30}}) == [
+        {"trigger": "sun", "event": "sunset", "offset": "-00:30:00"}]
+
+
+def test_sun_without_offset(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "X", "sun": "sunrise"}) == [
+        {"trigger": "sun", "event": "sunrise"}]
+
+
+def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    assert reactions.automation(LIGHTS, "Luzes", "door", reactions.REACTION(DOOR_OPENS),
+                                DOOR) == {
+        "id": "pururu_lights_reaction_door",
+        "alias": "Luzes Porta abriu",
+        "description": "pururu: lights, door",
+        "triggers": translated(ha, DOOR_OPENS, DOOR),
+        "actions": [],
+    }
