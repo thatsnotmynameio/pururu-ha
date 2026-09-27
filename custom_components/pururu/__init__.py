@@ -1,8 +1,9 @@
-"""pururu: devices configured in YAML, whose entities the integration creates.
+"""pururu: floors, areas and devices configured in YAML, which the integration creates.
 
+`pururu: floors:` and `areas:` map an ID to a floor or an area (places.py).
 `pururu: devices:` maps a device key to its name and features (features/).
 From the real entities and settings in a feature's block, the feature creates
-the device's entities. One config entry owns every device and entity.
+the device's entities. One config entry owns every floor, area, device and entity.
 """
 
 import logging
@@ -29,7 +30,8 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_DEVICES, DATA_DEVICES, DOMAIN, PLATFORMS
+from . import places
+from .const import CONF_AREAS, CONF_DEVICES, CONF_FLOORS, DATA_CONFIG, DOMAIN, PLATFORMS
 from .entity import PururuEntity
 from .feature import Device
 from .features import FEATURES
@@ -64,13 +66,31 @@ def _device(value: Any) -> dict[str, Any]:
 
 # The features are read when a configuration is validated, not at import
 CONFIG_SCHEMA = vol.Schema(
-    {DOMAIN: {vol.Optional(CONF_DEVICES, default={}): {cv.slug: _device}}},
+    {
+        # A schema of its own: ALLOW_EXTRA would let a typo (`floor:`) through,
+        # and so delete every floor the entry manages
+        DOMAIN: vol.All(
+            vol.Schema(
+                {
+                    # Schemas of their own: ALLOW_EXTRA would skip a key that isn't a slug
+                    vol.Optional(CONF_FLOORS, default={}): vol.Schema(
+                        {cv.slug: places.FLOOR_SCHEMA}
+                    ),
+                    vol.Optional(CONF_AREAS, default={}): vol.Schema(
+                        {cv.slug: places.AREA_SCHEMA}
+                    ),
+                    vol.Optional(CONF_DEVICES, default={}): {cv.slug: _device},
+                }
+            ),
+            places.floors_exist,
+        )
+    },
     extra=vol.ALLOW_EXTRA,
 )
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Keep the configured devices for the entry, and apply them again on reload."""
+    """Keep the configuration for the entry, and apply it again on reload."""
 
     async def reload(call: ServiceCall) -> None:
         reloaded = await async_integration_yaml_config(hass, DOMAIN)
@@ -86,13 +106,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def _async_apply(
     hass: HomeAssistant, config: ConfigType, *, reloading: bool
 ) -> None:
-    """Keep the configured devices; set the entry up again, or create it the first time.
+    """Keep the configuration; set the entry up again, or create it the first time.
 
     On a reload, an existing entry is always set up again, whatever its current
     state (e.g. after a SETUP_ERROR), unless the user disabled it. At start-up,
     only an already loaded entry is reloaded; HA sets a fresh one up itself.
     """
-    hass.data[DATA_DEVICES] = config.get(DOMAIN, {}).get(CONF_DEVICES, {})
+    hass.data[DATA_CONFIG] = config.get(DOMAIN, {})
     entries = hass.config_entries.async_entries(DOMAIN)
     if entries:
         entry = entries[0]
@@ -101,7 +121,10 @@ async def _async_apply(
                 await hass.config_entries.async_reload(entry.entry_id)
         elif entry.state is ConfigEntryState.LOADED:
             await hass.config_entries.async_reload(entry.entry_id)
-    elif hass.data[DATA_DEVICES]:
+    elif any(
+        hass.data[DATA_CONFIG].get(key)
+        for key in (CONF_FLOORS, CONF_AREAS, CONF_DEVICES)
+    ):
         # Not awaited at start-up: HA sets the entry up once the flow creates it
         hass.async_create_task(
             hass.config_entries.flow.async_init(
@@ -111,9 +134,20 @@ async def _async_apply(
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bool:
-    """Build every configured device's entities and hand them to the platforms."""
+    """Make floors and areas follow the configuration, then build every device.
+
+    Floors and areas come first: devices will be placed in them.
+    """
+    configured = hass.data.get(DATA_CONFIG, {})
+    managed = places.async_sync(
+        hass,
+        configured.get(CONF_FLOORS, {}),
+        configured.get(CONF_AREAS, {}),
+        entry.data,
+    )
+    hass.config_entries.async_update_entry(entry, data=managed)
     registry = er.async_get(hass)
-    devices = hass.data.get(DATA_DEVICES, {})
+    devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
     for key, config in devices.items():
         device = Device(key=key, name=config[CONF_NAME])
@@ -142,6 +176,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
 async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bool:
     """Remove the entities; a reload builds them again."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
+    """Delete the floors and areas the entry managed."""
+    places.async_remove(hass, entry.data)
 
 
 def _build(

@@ -2,7 +2,7 @@
   "services": {
     "reload": {
       "name": "Recarregar",
-      "description": "Recarrega os dispositivos da configuração YAML."
+      "description": "Recarrega os andares, as áreas e os dispositivos da configuração YAML."
     }
   },
   "entity": {

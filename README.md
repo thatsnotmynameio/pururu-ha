@@ -1,6 +1,6 @@
 # pururu
 
-A Home Assistant integration that creates devices, and their entities, from real entities and a few settings. Each device composes **features**; each feature creates entities inside the device.
+A Home Assistant integration that creates floors, areas and devices, and the devices' entities, from real entities and a few settings. Each device composes **features**; each feature creates entities inside the device.
 
 ## Install
 
@@ -54,6 +54,38 @@ pururu:
 ```
 
 `pururu:` can also come from HA packages: HA merges `devices:` from several of them.
+
+### Floors and areas
+
+```yaml
+pururu:
+  floors:
+    terreo:                  # the floor's ID in HA
+      name: Térreo
+      level: 0
+      icon: mdi:home-floor-0
+      aliases: [embaixo]
+  areas:
+    cozinha:                 # the area's ID in HA
+      name: Cozinha
+      floor: terreo          # a key of floors:
+      icon: mdi:stove
+    quintal:
+      name: Quintal          # no floor
+```
+
+| Key | | |
+|---|---|---|
+| `name` | required | The name HA shows. |
+| `level` | optional, floors | The floor's level: 0 the ground floor, negative below it. |
+| `floor` | optional, areas | The area's floor: a key of `floors:`. |
+| `icon`, `aliases` | optional | The icon (`mdi:…`) and other names, e.g. for voice assistants. |
+
+- The key is the floor's or area's ID. HA makes IDs from names, so pururu creates a new one named after its key, then renames it.
+- A floor or area with that ID follows the configuration at every start and reload, even one made in the UI: a key left out is cleared, and changes made in the UI are undone.
+- A floor or area the configuration drops is deleted at the next reload, and deleting the integration deletes them all. HA then takes a deleted floor off its areas, and a deleted area off its devices and entities.
+- A name that a floor or area not in the configuration already has (whitespace and case aside), or a key that is already such a name, is an error in the log: a new floor or area is not created, nor the new areas on that floor; one that already exists stays as it is, and pururu's.
+- An unknown key under `pururu:` (e.g. `floor:` for `floors:`) is a configuration error: a reload with it changes nothing.
 
 ## Features
 
