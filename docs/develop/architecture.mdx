@@ -20,7 +20,8 @@ flowchart TD
     P2 --> P3["3. entry.runtime_data → platforms<br/>sensor.py, binary_sensor.py,<br/>switch.py, light.py, button.py"]
     P3 --> P4["4. put each device in its area"]
     P4 --> P5["5. remove stale entities and devices"]
-    P5 --> P6["6. dashboard.async_setup"]
+    P5 --> P6["6. reactions.async_sync"]
+    P6 --> P7["7. dashboard.async_setup"]
 ```
 
 ### `async_setup`
