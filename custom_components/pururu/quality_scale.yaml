@@ -1,0 +1,142 @@
+# HA's Integration Quality Scale (hassfest checks this file only for core
+# integrations; tests/test_code.py checks it here). pururu is a helper
+# configured in YAML, like core's template, group and utility_meter: it talks
+# to no service or device, and its docs are its README.
+rules:
+  # Bronze
+  action-setup: done
+  appropriate-polling:
+    status: exempt
+    comment: Nothing polls; every entity reacts to state changes and timers.
+  brands:
+    status: exempt
+    comment: Not in HA's brands repository; installed as a custom integration.
+  common-modules: done
+  config-flow:
+    status: exempt
+    comment: Configured in YAML; the import flow only creates the entry that owns the devices.
+  config-flow-test-coverage:
+    status: done
+    comment: The import flow creates the entry on the first device (at start-up or on reload), none without devices, and a second import aborts (single_config_entry); tests/test_init.py.
+  dependency-transparency:
+    status: exempt
+    comment: No requirements; it uses core's group and utility_meter.
+  docs-actions:
+    status: exempt
+    comment: Not in HA's docs; the README documents the reload action.
+  docs-conditions:
+    status: exempt
+    comment: It has no conditions.
+  docs-high-level-description:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  docs-installation-instructions:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  docs-removal-instructions:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  docs-triggers:
+    status: exempt
+    comment: It has no triggers.
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure:
+    status: exempt
+    comment: Nothing to connect to.
+  test-before-setup:
+    status: exempt
+    comment: Nothing to connect to.
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: reload follows HA's YAML reload helper, which logs an invalid configuration and keeps the running one.
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: exempt
+    comment: No options flow.
+  docs-installation-parameters:
+    status: exempt
+    comment: No installation parameters.
+  entity-unavailable:
+    status: exempt
+    comment: Derived entities hold their last state while a source has no value, by design (a plug dropping off must not end a cycle); the mirrors follow the plug's availability.
+  integration-owner:
+    status: exempt
+    comment: No code owner listed in the manifest.
+  log-when-unavailable:
+    status: exempt
+    comment: Nothing to connect to.
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: No authentication.
+  test-coverage:
+    status: done
+    comment: 99% of the integration's statements (pytest --cov in the Build workflow, reported to SonarQube Cloud).
+
+  # Gold
+  devices: done
+  diagnostics:
+    status: exempt
+    comment: Every value is an entity state.
+  discovery:
+    status: exempt
+    comment: Nothing to discover; devices come from YAML.
+  discovery-update-info:
+    status: exempt
+    comment: Nothing to discover.
+  docs-data-update:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  docs-examples:
+    status: exempt
+    comment: Not in HA's docs; the README has examples.
+  docs-known-limitations:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  docs-supported-devices:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  docs-supported-functions:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  docs-troubleshooting:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  docs-use-cases:
+    status: exempt
+    comment: Not in HA's docs; the README.
+  dynamic-devices: done
+  entity-category:
+    status: done
+    comment: No entity needs a category; all are primary (the appliance's readings and statistics, the phase).
+  entity-device-class: done
+  entity-disabled-by-default:
+    status: exempt
+    comment: Every entity comes from a feature the user configured.
+  entity-translations: done
+  exception-translations:
+    status: exempt
+    comment: It raises no HomeAssistantError; configuration errors are YAML validation.
+  icon-translations: done
+  reconfiguration-flow:
+    status: exempt
+    comment: Configured in YAML.
+  repair-issues:
+    status: todo
+    comment: A configured real entity that doesn't exist is not reported yet; the repo's tests catch typos before a deploy.
+  stale-devices: done
+
+  # Platinum
+  async-dependency:
+    status: exempt
+    comment: No library dependency.
+  inject-websession:
+    status: exempt
+    comment: No HTTP.
+  strict-typing: done
