@@ -312,6 +312,31 @@ async def test_bulbs_and_relays_in_one_device(ha: HomeAssistant) -> None:
     assert attributes(ha, ARANDELA)["supported_color_modes"] == ["onoff"]
 
 
+# --- one real entity, one kind per device ----------------------------------------------
+
+
+@pytest.mark.parametrize("lights_first", [True, False], ids=["lights first", "switches first"])
+async def test_one_real_entity_in_two_features_of_a_device_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, lights_first: bool) -> None:
+    """A relay is a switch or a light of the device, not both; FEATURES order names them."""
+    lights = ("lights", {"arandela": ARANDELA_BLOCK})
+    switches = ("switches", {"arandela": ARANDELA_BLOCK})
+    blocks = dict([lights, switches] if lights_first else [switches, lights])
+    assert not await setup(ha, {KEY: {"name": "Sala", **blocks}})
+    assert f"switches: {REAL_ARANDELA} is already in lights" in caplog.text
+
+
+async def test_one_real_switch_as_a_light_and_as_a_switch_in_two_devices(
+        ha: HomeAssistant) -> None:
+    await fake(ha, REAL_ARANDELA, "on")
+    assert await setup(ha, {
+        KEY: {"name": "Sala", "lights": {"arandela": ARANDELA_BLOCK}},
+        "varanda": {"name": "Varanda", "switches": {"arandela": ARANDELA_BLOCK}},
+    })
+    assert state(ha, ARANDELA) == "on"
+    assert state(ha, "switch.pururu_varanda_switch_arandela") == "on"
+
+
 # --- IDs, renames, reloads and restarts --------------------------------------------------
 
 

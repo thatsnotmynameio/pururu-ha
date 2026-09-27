@@ -52,7 +52,11 @@ type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
 
 
 def _device(value: Any) -> dict[str, Any]:
-    """A device: a name, maybe an area, at least one feature, every <capability>_from resolved."""
+    """A device: a name, maybe an area, at least one feature, every <capability>_from resolved.
+
+    A real entity is in one configured feature of the device at most: a relay
+    is the device's switch or its light, not both.
+    """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
@@ -72,6 +76,16 @@ def _device(value: Any) -> dict[str, Any]:
                     f"{name}: {capability}_from must name a feature of this device "
                     f"that provides {capability}"
                 )
+    owners: dict[str, str] = {}  # real entity -> the configured feature that has it
+    for name in names:
+        if FEATURES[name].configured is None:
+            continue
+        for item in device[name].values():
+            # A configured key need not stand for a real entity
+            if (entity := item.get("entity")) is None:
+                continue
+            if owners.setdefault(entity, name) != name:
+                raise vol.Invalid(f"{name}: {entity} is already in {owners[entity]}")
     return device
 
 
