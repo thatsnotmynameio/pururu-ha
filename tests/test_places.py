@@ -276,6 +276,8 @@ async def test_a_reload_without_anything_deletes_them_all(ha: HomeAssistant) -> 
     pytest.param({}, {"cozinha": COZINHA}, id="area on a floor not in floors"),
     pytest.param({"terreo": {"level": 0}}, {}, id="floor without a name"),
     pytest.param({"terreo": {**TERREO, "level": "ground"}}, {}, id="level not an integer"),
+    pytest.param({"terreo": {**TERREO, "level": True}}, {}, id="level a boolean"),
+    pytest.param({"terreo": {**TERREO, "level": 1.5}}, {}, id="level a float"),
     pytest.param({"terreo": {**TERREO, "colour": "red"}}, {}, id="unknown floor key"),
     pytest.param({}, {"quintal": {"name": "Quintal", "picture": "x"}}, id="unknown area key"),
     pytest.param({"Térreo": TERREO}, {}, id="key not a slug"),

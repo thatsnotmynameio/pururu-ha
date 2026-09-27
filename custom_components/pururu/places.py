@@ -26,11 +26,19 @@ _LOGGER = logging.getLogger(__name__)
 
 _ALIASES = vol.All(cv.ensure_list, [cv.string])
 
+
+def _level(value: Any) -> int | None:
+    """A floor's level: an integer, or None to clear it; not a bool (`level: yes`)."""
+    if value is None or (isinstance(value, int) and not isinstance(value, bool)):
+        return value
+    raise vol.Invalid(f"expected an integer level, got {value!r}")
+
+
 FLOOR_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_NAME): cv.string,
         # None clears it, as HA's own floor editor does (its hint says int only)
-        vol.Optional(CONF_LEVEL, default=None): vol.Any(int, None),
+        vol.Optional(CONF_LEVEL, default=None): _level,
         vol.Optional(CONF_ICON): cv.icon,
         vol.Optional(CONF_ALIASES, default=[]): _ALIASES,
     }
