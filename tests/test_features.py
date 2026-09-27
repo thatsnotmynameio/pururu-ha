@@ -6,6 +6,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.setup import async_setup_component
 import pytest
 import voluptuous as vol
 
@@ -108,3 +109,28 @@ def test_capabilities_line_up(features: dict[str, Any]) -> None:
         for capability in feature.requires:
             assert capability in provided, f"{name} requires {capability}, nobody provides it"
             assert f"{capability}_from" in feature.example, f"{name}'s example lacks {capability}_from"
+
+
+async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, features: dict[str, Any]) -> None:
+    """A program calls <platform>.<action> on the entity: the platform must have that service."""
+    for name, feature in features.items():
+        if not feature.actions:
+            continue
+        assert feature.configured is not None, f"{name} takes actions: its entities must be on one platform"
+        assert await async_setup_component(ha, feature.configured, {})
+        for action in feature.actions:
+            assert ha.services.has_service(feature.configured, action), f"{name}: {feature.configured}.{action}"
+
+
+def test_switches_take_turn_on_turn_off_and_toggle(features: dict[str, Any]) -> None:
+    assert features["switches"].actions == ("turn_on", "turn_off", "toggle")
+
+
+def test_what_a_feature_acts_on_it_refers_to(features: dict[str, Any]) -> None:
+    """acts' entity keys go through refers: validated, resolved in inputs, followed."""
+    for name, feature in features.items():
+        if feature.acts is None:
+            continue
+        assert feature.refers is not None, f"{name} acts on entities it doesn't refer to"
+        block = feature.schema(dict(feature.example))
+        assert {key for _, key in feature.acts(block)} <= set(feature.refers(block)), name
