@@ -1,0 +1,149 @@
+---
+title: Reactions
+description: How a device behaves. Each reaction listens to one thing and becomes a Home Assistant automation.
+---
+
+A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
+
+<Info>
+  In this version a reaction **fires and does nothing yet**. Its automation has no actions. Use its trace to check that it fires when you expect. What a reaction does comes in a later version.
+</Info>
+
+```yaml title="configuration.yaml"
+pururu:
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      appliance:
+        power: sensor.washer_plug_power
+        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+    laundry_lights:
+      name: Luzes da lavanderia
+      lights:
+        teto: {entity: light.lavanderia_teto, name: Teto}
+      reactions:
+        teto_on:     {name: Teto acendeu, when: light_teto, to: "on"}
+        washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off"}
+        door:        {name: Porta abriu, entity: binary_sensor.porta_lavanderia, to: "on", for: {minutes: 5}}
+        night:       {name: Noite, at: "22:00"}
+        dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
+
+automation pururu: !include_dir_merge_list pururu/automations
+```
+
+This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da lavanderia Lavadora terminou**, and one automation for each other reaction.
+
+## The include
+
+pururu writes the automations to `pururu/automations/reactions.yaml`, in a `pururu` folder next to `configuration.yaml`. Home Assistant only loads automations its configuration names, so add this line **once** to `configuration.yaml`:
+
+```yaml title="configuration.yaml"
+automation pururu: !include_dir_merge_list pururu/automations
+```
+
+The line goes in `configuration.yaml` itself, not in a package: an include's path is relative to the file that contains it. It includes the folder, not the file, so Home Assistant still starts when the folder isn't there yet (before pururu first runs): a missing folder is no automations. pururu always writes the file, even without reactions: then it's an empty list. It lives next to your own `automation: !include automations.yaml`, which it doesn't touch. After adding it, restart Home Assistant, or reload automations in **Developer tools → YAML → Automations**.
+
+Until the line is there, the automations exist only in the file. **Settings → Repairs** shows **The reactions' automations aren't loaded**, with the line to add, and the log says the same. The repair goes away once the automations load.
+
+<Warning>
+  Don't edit `pururu/automations/reactions.yaml`, and don't put your own files in `pururu/automations`: the include loads every file there. pururu rewrites it whenever the configuration changes. The automations show as read-only in the editor because they come from YAML. Change the reaction instead.
+</Warning>
+
+## Settings
+
+`reactions` is a key of a device, next to `name` and `area`. It's a map of **reaction key → reaction**, with at least one reaction. The key is a slug, and it ends the automation's ID after the namespace `reaction`: `washer_done` → `automation.pururu_laundry_lights_reaction_washer_done`. `reactions` isn't a feature: a device still needs at least one feature.
+
+<Property name="name" type="string" required>
+  Shown after the device's name, as the automation's name. It can't be empty, and it's the same in every language.
+</Property>
+
+A reaction listens to **exactly one** of these sources.
+
+### An entity of the device
+
+<Property name="when" type="entity key">
+  An entity of **this device**, written as its entity ID ends after the device key: `light_teto`, `appliance_running`, `alert_overload`. See [Entity IDs](/concepts/entity-ids#the-pattern).
+</Property>
+
+### An entity of another device
+
+<Property name="device" type="device key">
+  The key of another device under `devices:`, with `when` naming one of **its** entities: `device: laundry_washer`, `when: appliance_running`.
+</Property>
+
+### Any entity
+
+<Property name="entity" type="entity ID">
+  Any entity in Home Assistant: `binary_sensor.porta_lavanderia`.
+</Property>
+
+### What an entity must do
+
+For `when` and `entity`, give **either** `to` **or** `above`/`below`:
+
+<Property name="to" type="state" optional>
+  The state it changes to: `"on"`, `"off"`, `spinning`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: 1` matches a state of `1`, not `1.0`.
+</Property>
+
+---
+
+<Property name="from" type="state" optional>
+  The state it must change from. Only with `to`.
+</Property>
+
+---
+
+<Property name="above, below" type="number" optional>
+  Fires when a number crosses into the range: strictly above `above`, strictly below `below`. Give one or both; `above` must be lower than `below`.
+</Property>
+
+---
+
+<Property name="for" type="time period" optional>
+  How long the new state must hold before the reaction fires, such as `{minutes: 5}`. A [time period](/features/appliance#settings).
+</Property>
+
+### A time of day
+
+<Property name="at" type="time">
+  `"22:00"` or `"22:00:30"`, every day.
+</Property>
+
+### The sun
+
+<Property name="sun" type="sunrise | sunset">
+  Fires at sunrise or sunset, where Home Assistant says your home is.
+</Property>
+
+---
+
+<Property name="offset" type="time period" optional>
+  Before (negative) or after the sun event: `{minutes: -30}` is half an hour before sunset. Only with `sun`.
+</Property>
+
+## When a reaction fires
+
+The automation follows Home Assistant's own triggers, so it behaves exactly like an automation you'd write yourself:
+
+- **`to` without `from`** doesn't fire when the entity comes back from `unavailable` or `unknown`. A plug reconnecting (`unavailable → off`) is no "turned off". pururu adds `not_from: [unavailable, unknown]` for you.
+- **A change passing through `unavailable`** (`on → unavailable → off`) isn't seen as `on → off`. That's Home Assistant's rule for `from`.
+- **`above`/`below`** fires when the number crosses into the range, not while it stays there.
+- **A pending `for`** is lost on a restart.
+
+## The automation
+
+| | |
+|---|---|
+| Entity ID | `automation.pururu_<device key>_reaction_<reaction key>` |
+| Name | `<device name> <reaction name>` |
+| ID | `pururu_<device key>_reaction_<reaction key>`: its traces are under this ID |
+| Actions | none, in this version |
+
+- **Renaming** the automation's entity in the UI is kept.
+- **An ID already taken:** if another automation already has `automation.pururu_…`, or one of your own automations has the same `id`, pururu leaves it alone and logs it. It never suffixes one with `_2`, and never takes over an automation it didn't write.
+- **Two reactions with one ID:** device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b` with the reaction `c` would both be `automation.pururu_lights_reaction_b_reaction_c`. That's a configuration error: rename a device key or a reaction key.
+- **A reload that didn't take:** if reloading automations fails, or the include was missing, pururu reloads them again at its next reload, even when the file hasn't changed. An automation you dropped from the YAML that Home Assistant still runs keeps its ID until a reload drops it.
+- **A pururu entity renamed in the UI:** `when` follows it, because pururu writes the entity's current ID into the file at every reload.
+- **A pururu entity that isn't created** (its ID is taken, or the device's settings don't create it, as `appliance_runtime_month` without `statistics`): its reactions aren't generated, and the log says why.
+- **A reaction removed from the YAML:** its automation leaves the file, and its entity leaves Home Assistant.
+- **Removing pururu:** the file becomes an empty list, so its automations go. The line can stay until you remove it. If the file can't be written, its automations keep running with their IDs: delete the file by hand.

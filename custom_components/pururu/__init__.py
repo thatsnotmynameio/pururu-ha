@@ -32,12 +32,14 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import dashboard, places
+from . import dashboard, places, reactions
 from .const import (
     CONF_AREA,
     CONF_AREAS,
+    CONF_AUTOMATIONS,
     CONF_DEVICES,
     CONF_FLOORS,
+    CONF_REACTIONS,
     DATA_CONFIG,
     DOMAIN,
     PLATFORMS,
@@ -62,6 +64,7 @@ def _device(value: Any) -> dict[str, Any]:
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
+        vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
         **{vol.Optional(name): feature.schema for name, feature in FEATURES.items()},
     }
     device: dict[str, Any] = vol.Schema(schema)(value)
@@ -73,6 +76,7 @@ def _device(value: Any) -> dict[str, Any]:
     _capabilities_provided(device, names)
     _references_resolved(device, names)
     _real_entities_distinct(device, names)
+    _reactions_on_this_device(device)
     return device
 
 
@@ -128,6 +132,21 @@ def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
                 raise vol.Invalid(f"{name}: {key} does not take {action}")
 
 
+def _reactions_on_this_device(device: dict[str, Any]) -> None:
+    """Refuse a reaction's `when` without `device` that isn't an entity key of the device."""
+    keys = {
+        qualified(FEATURES[name].namespace, entity_key)
+        for name, entity_key, _ in _entity_keys(device)
+    }
+    for key, reaction in device.get(CONF_REACTIONS, {}).items():
+        if "device" in reaction or (when := reaction.get("when")) is None:
+            continue
+        if when not in keys:
+            raise vol.Invalid(
+                f"reactions: {key}: {when} is not an entity key of this device"
+            )
+
+
 def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
     """(feature, entity key, platform) of every entity the device's features can create."""
     for name, feature in FEATURES.items():
@@ -172,6 +191,42 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _reaction_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse two reactions whose automations would share an ID.
+
+    Device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b`
+    with the reaction `c` would both have pururu_lights_reaction_b_reaction_c.
+    """
+    owners: dict[str, str] = {}  # automation ID -> the device that has it
+    for key, device in config[CONF_DEVICES].items():
+        for reaction_key in device.get(CONF_REACTIONS, {}):
+            automation_id = reactions.automation_id(key, reaction_key)
+            if automation_id in owners:
+                raise vol.Invalid(
+                    f"device {key}: automation.{automation_id} is already a reaction "
+                    f"of device {owners[automation_id]}"
+                )
+            owners[automation_id] = key
+    return config
+
+
+def _reactions_resolved(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a reaction's `device` that isn't a device, or its `when` that isn't that device's."""
+    devices = config[CONF_DEVICES]
+    for key, device in devices.items():
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
+            if (other := reaction.get("device")) is None:
+                continue
+            where = f"device {key}: reactions: {reaction_key}"
+            if other not in devices:
+                raise vol.Invalid(f"{where}: device {other} is not in devices")
+            if reaction["when"] not in _referable(other, devices[other]):
+                raise vol.Invalid(
+                    f"{where}: {reaction['when']} is not an entity key of device {other}"
+                )
+    return config
+
+
 def _referable(
     key: str, config: dict[str, Any]
 ) -> dict[str, tuple[Device, str, Platform]]:
@@ -211,6 +266,8 @@ CONFIG_SCHEMA = vol.Schema(
             places.floors_exist,
             _areas_exist,
             _entity_ids_distinct,
+            _reaction_ids_distinct,
+            _reactions_resolved,
         )
     },
     extra=vol.ALLOW_EXTRA,
@@ -264,8 +321,9 @@ async def _async_apply(
 async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bool:
     """Make floors and areas follow the configuration, then build every device.
 
-    Floors and areas come first: devices will be placed in them. The dashboard
-    comes last: it shows them all.
+    Floors and areas come first: devices will be placed in them. The reactions'
+    automations come after the entities: they watch the ones created. The
+    dashboard comes last: it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -274,7 +332,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         configured.get(CONF_AREAS, {}),
         entry.data,
     )
-    hass.config_entries.async_update_entry(entry, data=managed)
+    hass.config_entries.async_update_entry(entry, data={**entry.data, **managed})
     registry = er.async_get(hass)
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
@@ -285,6 +343,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
+    created = {str(entity.unique_id) for each in built.values() for entity in each}
+    generated = await reactions.async_sync(
+        hass, entry, _automations(hass, devices, created)
+    )
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_AUTOMATIONS: generated}
+    )
     dashboard.async_setup(hass, entry)
 
     @callback
@@ -309,8 +374,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
-    """Delete the floors and areas the entry managed."""
+    """Delete the floors and areas the entry managed, and its reactions' automations."""
     places.async_remove(hass, entry.data)
+    await reactions.async_remove(hass, entry)
 
 
 def _build(
@@ -474,3 +540,33 @@ def _remove_stale(
             domain == DOMAIN and key in keys for domain, key in device.identifiers
         ):
             devices.async_remove_device(device.id)
+
+
+def _automations(
+    hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
+) -> list[dict[str, Any]]:
+    """An automation per reaction of every device; one watching an entity not created is logged."""
+    automations: list[dict[str, Any]] = []
+    for key, config in devices.items():
+        for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
+            entity_id = reaction.get("entity")
+            if (when := reaction.get("when")) is not None:
+                owner_key = reaction.get("device", key)
+                owner, entity_key, platform = _referable(owner_key, devices[owner_key])[
+                    when
+                ]
+                if owner.object_id(entity_key) not in created:
+                    _LOGGER.error(
+                        "automation.%s follows %s, which is not created; "
+                        "not generating it",
+                        reactions.automation_id(key, reaction_key),
+                        owner.entity_id(platform, entity_key),
+                    )
+                    continue
+                entity_id = owner.current_entity_id(hass, platform, entity_key)
+            automations.append(
+                reactions.automation(
+                    key, config[CONF_NAME], reaction_key, reaction, entity_id
+                )
+            )
+    return automations

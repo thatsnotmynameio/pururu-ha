@@ -20,7 +20,8 @@ flowchart TD
     P2 --> P3["3. entry.runtime_data → platforms<br/>sensor.py, binary_sensor.py,<br/>switch.py, light.py, button.py"]
     P3 --> P4["4. put each device in its area"]
     P4 --> P5["5. remove stale entities and devices"]
-    P5 --> P6["6. dashboard.async_setup"]
+    P5 --> P6["6. reactions.async_sync"]
+    P6 --> P7["7. dashboard.async_setup"]
 ```
 
 ### `async_setup`
@@ -33,12 +34,13 @@ flowchart TD
 
 It does all the work, in this order:
 
-1. **Floors and areas** (`places.async_sync`). They come first because devices are placed in them. The IDs it now manages are saved in `entry.data`, as `{"floors": [...], "areas": [...]}`.
+1. **Floors and areas** (`places.async_sync`). They come first because devices are placed in them. The IDs it now manages are saved in `entry.data`, as `{"floors": [...], "areas": [...], "automations": [...]}`, where `automations` holds the IDs of the reactions' automations (step 6).
 2. **Build every device's entities.** For each device, each feature's `build()` returns entities. `_creatable` drops the ones whose ID is taken, and then everything that follows them (see [Entity IDs are the identity](#entity-ids-are-the-identity)).
 3. **Hand them to the platforms.** The entities go in `entry.runtime_data` (`dict[Platform, list[Entity]]`), and `sensor.py`, `binary_sensor.py`, `switch.py`, `light.py` and `button.py` only call `async_add_entities` with their list.
 4. **Place each device** in its configured `area`, if that area exists.
 5. **Remove what's stale**: every entity and device of the entry that this configuration didn't build.
-6. **Show the dashboard.** It comes last because it lists everything above.
+6. **Generate the reactions' automations** (`reactions.py`): each reaction's `when` becomes the current entity ID of a created entity, the automations are written to `pururu/automations/reactions.yaml` when it changed (`configuration.yaml` includes the folder with `!include_dir_merge_list`, so a missing one loads as no automations), their entity IDs are registered first so they get the pururu pattern, HA's automations are reloaded once HA has started when the file changed or HA doesn't run what it holds (so a reload that didn't take is retried), in a task the entry's unload waits for, and a Repairs issue says when the include is missing. An automation ID the entry doesn't manage is the user's own and is never taken over; a dropped one keeps its registry entry until HA no longer runs it (a restored placeholder state still carries its `id` attribute). `reactions` is a device key, not a `Feature`: it creates no pururu entity.
+7. **Show the dashboard.** It comes last because it lists everything above.
 
 Finally it listens for entity registry updates. When one of the entry's entities gets a new entity ID, it schedules a reload of the entry, so that everything that follows that entity picks up the new ID.
 

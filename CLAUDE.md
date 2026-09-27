@@ -34,7 +34,8 @@ python3 release.py check                        # the manifest version must be s
     3. Hand them to the platforms through `entry.runtime_data`. The platforms (`sensor.py`, `binary_sensor.py`, `switch.py`, `light.py`, `button.py`) only call `async_add_entities`.
     4. Put each device in its `area:` (a key of `areas:`).
     5. Remove stale entities and devices.
-    6. Show the dashboard (`dashboard.py`).
+    6. Generate the reactions' automations (`reactions.py`): `pururu/automations/reactions.yaml`, whose folder `configuration.yaml` includes (`automation pururu: !include_dir_merge_list pururu/automations`, as a missing folder loads as `[]` while a missing file stops HA's configuration), entity IDs pre-registered (an ID the entry doesn't manage is the user's, never taken over), automations reloaded when it changed or HA doesn't run it (retried at the next reload), in an entry task, a Repairs issue while it isn't included. A dropped automation's registry entry goes once HA no longer runs it: a restored placeholder state still carries the `id` attribute, so it doesn't count as running. `reactions` is a device key, not a `Feature`.
+    7. Show the dashboard (`dashboard.py`).
 - **Features** (`feature.py`, `features/`):
   - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, a `namespace`, the `entity_keys` it can create (entity key → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
   - A feature consumes another feature's capability through `<capability>_from: <feature>`. `_build` passes it the current entity ID of the providing entity key.
@@ -49,7 +50,7 @@ python3 release.py check                        # the manifest version must be s
 - **Floors and areas** (`places.py`):
   - HA's registries accept no ID, so a new floor or area is created named after its YAML key (the ID becomes the key), then renamed.
   - Anything with a configured ID is adopted and synced.
-  - The IDs the entry manages live in `entry.data` (`{"floors": [...], "areas": [...]}`). What the YAML drops is deleted, and `async_remove_entry` deletes everything the entry manages.
+  - The IDs the entry manages live in `entry.data` (`{"floors": [...], "areas": [...], "automations": [...]}`, the last the IDs of the reactions' automations). What the YAML drops is deleted, and `async_remove_entry` deletes everything the entry manages.
   - Names HA refuses are logged errors and never fail the setup.
 - **Dashboard** (`dashboard.py`):
   - HA has no public API for an integration's dashboard. A `LovelaceConfig` subclass goes in `hass.data[LOVELACE_DATA].dashboards["pururu"]`, and a `lovelace` panel in `yaml` mode (read-only in the UI) shows it. This is private lovelace API: keep every use of it in this module.

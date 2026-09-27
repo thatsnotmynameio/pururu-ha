@@ -30,6 +30,12 @@ def expected_lingering_timers() -> bool:
 
 
 @pytest.fixture
+def hass_config_dir(hass_tmp_config_dir: str) -> str:
+    """A configuration folder per test: pururu writes pururu/automations/reactions.yaml into it."""
+    return hass_tmp_config_dir
+
+
+@pytest.fixture
 def ha(hass: HomeAssistant, enable_custom_integrations: None,
        monkeypatch: pytest.MonkeyPatch, freezer: Any) -> HomeAssistant:
     """`hass` at START, with custom_components/pururu where HA's loader looks.

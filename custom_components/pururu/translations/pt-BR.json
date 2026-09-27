@@ -18,6 +18,12 @@
     "name": "Nome",
     "type": "Tipo"
   },
+  "issues": {
+    "automations_not_included": {
+      "title": "As automações das reações não estão carregadas",
+      "description": "O pururu escreve uma automação para cada reação em `{file}`, mas o Home Assistant não as carregou. Adicione esta linha ao `configuration.yaml`:\n\n`{include}`\n\nDepois recarregue as automações em **Ferramentas de desenvolvedor → YAML → Automações**, ou reinicie o Home Assistant."
+    }
+  },
   "entity": {
     "binary_sensor": {
       "appliance_running": {"name": "Em funcionamento"}

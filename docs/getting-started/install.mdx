@@ -59,6 +59,10 @@ Then **restart Home Assistant** once. A restart is needed the first time because
   pururu creates its entry only once the block declares at least one floor, area or device. An empty `pururu:` does nothing.
 </Info>
 
+<Info>
+  Using [reactions](/concepts/reactions)? Also add `automation pururu: !include_dir_merge_list pururu/automations` to `configuration.yaml`, once. pururu writes the reactions' automations to that folder.
+</Info>
+
 ## 3. Reload after every change
 
 You don't need to restart for later changes. After you edit the block, reload it in either of these ways:

@@ -63,6 +63,11 @@ pururu:
       lights:
         teto: {entity: light.sala_teto, name: Teto}
         abajur: {entity: switch.sonoff_abajur, name: Abajur}
+      reactions:
+        washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off"}
+        night: {name: Noite, at: "22:00"}
+
+automation pururu: !include_dir_merge_list pururu/automations
 ```
 
 ## General rules
@@ -140,6 +145,12 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 
 <Property name="area" type="area ID" optional>
   The area the device goes in. It must be a key of `areas:`. See [A device in an area](/concepts/floors-and-areas#a-device-in-an-area).
+</Property>
+
+---
+
+<Property name="reactions" type="map" optional>
+  A map of **reaction key → reaction**, each one a Home Assistant automation. It isn't a feature. See [Reactions](/concepts/reactions#settings).
 </Property>
 
 ---
