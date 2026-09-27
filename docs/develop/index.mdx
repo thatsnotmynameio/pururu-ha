@@ -48,9 +48,11 @@ custom_components/pururu/     the integration
   features/                   one module or package per feature, and FEATURES
     appliance/                running, cycles, runtime, mirrors, statistics
     phases.py
+    switches.py
   places.py                   floors and areas from YAML
   dashboard.py                the read-only dashboard (private lovelace API)
-  sensor.py, binary_sensor.py the platforms: they only add what the entry built
+  sensor.py, binary_sensor.py, switch.py
+                              the platforms: they only add what the entry built
   translations/               en.json and pt-BR.json, with the same keys
   icons.json, services.yaml, manifest.json, quality_scale.yaml
 tests/                        pytest, with the HA test plugin

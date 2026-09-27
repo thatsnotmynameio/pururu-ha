@@ -33,12 +33,13 @@ pururu:
 
 ## A feature
 
-A feature is a ready-made piece of behaviour. It reads real entities, such as a plug's power sensor, and applies a few settings, such as a threshold. From those it creates the device's entities, and pururu keeps them up to date.
+A feature is a ready-made piece of behaviour. It reads real entities, such as a plug's power sensor, and applies a few settings, such as a threshold, or, for [`switches`](/features/switches), passes commands on to them. From those it creates the device's entities, and pururu keeps them up to date.
 
 | Feature | What it does |
 |---|---|
 | [`appliance`](/features/appliance) | An appliance on a power-measuring plug: when it runs, its cycles, their duration and energy, runtime and cycle counts per period |
 | [`phases`](/features/phases) | The phase of a cycle (heating, spinning…), from bands of a sensor's value |
+| [`switches`](/features/switches) | Real switches inside the device, each named in the YAML, that show their switch's state and turn it on and off |
 
 Each feature appears at most once per device, and everything under its key is that feature's configuration. An unknown key inside a feature, such as a typo, is a configuration error, so a mistake never passes silently.
 
@@ -69,6 +70,7 @@ The same pattern will hold for every future feature: `<what it needs>_from: <fea
 |---|---|---|
 | `appliance` | `cycle`, carried by `binary_sensor.pururu_<key>_running` | nothing |
 | `phases` | nothing | `cycle`, through `cycle_from` |
+| `switches` | nothing | nothing |
 
 ## Two devices, one plug?
 

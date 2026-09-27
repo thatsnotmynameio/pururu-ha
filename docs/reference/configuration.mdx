@@ -39,12 +39,18 @@ pururu:
         bands:
           heating: {above: 1000}
           spinning: {above: 50, below: 1000, for: {minutes: 3}}
+    pool:
+      name: Piscina
+      switches:
+        pump: {entity: switch.pool_pump, name: Bomba}
 ```
 
 ## General rules
 
 - `pururu:` has three optional keys: `floors`, `areas` and `devices`. Any other key is an error.
-- Every **key** you choose, whether of a floor, an area, a device or a phase, is a **slug**: lowercase letters, digits and `_`.
+- Every **key** you choose, whether of a floor, an area, a device, a phase or a switch, is a **slug**: lowercase letters, digits and `_`.
+- In a device, every entity key is different: a switch can't take the key of an entity another feature of the device creates. See [switches](/features/switches#settings).
+- No two devices give an entity the same ID. Device `pool` with the switch `pump_heater` and device `pool_pump` with the switch `heater` would both have `switch.pururu_pool_pump_heater`, so that's a configuration error. Both rules count every entity key a feature can create, even one its settings don't: an `appliance` on `pool` without `energy:` still keeps a device `pool_energy` from having a switch `total` (`pururu_pool_energy_total`), so turning a setting on later never breaks the configuration.
 - An unknown key anywhere is a configuration error. When the configuration is invalid, Home Assistant logs why, and a reload **changes nothing**.
 - The blocks can be split across [packages](/getting-started/install#packages).
 
@@ -121,6 +127,7 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 
   - [`appliance`](/features/appliance#settings): an appliance on a power-measuring plug.
   - [`phases`](/features/phases#settings): the phase of a cycle.
+  - [`switches`](/features/switches#settings): real switches inside the device.
 </Property>
 
 ## Actions
