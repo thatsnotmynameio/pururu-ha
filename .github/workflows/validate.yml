@@ -1,0 +1,27 @@
+# HACS's own validation of the repository (hacs.json, manifest, description,
+# topics, issues), so it stays installable as a HACS custom repository.
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
+        with:
+          category: integration
+          # No brand icon nor README images yet: add brand/icon.png and drop these
+          ignore: brands images
+          comment: "false"

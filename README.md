@@ -4,7 +4,14 @@ A Home Assistant integration that creates devices, and their entities, from real
 
 ## Install
 
-Copy `custom_components/pururu/` into your configuration's `custom_components/`, add a `pururu:` block to `configuration.yaml`, then restart. **Developer tools → YAML → Pururu** reloads the block afterwards.
+With [HACS](https://hacs.xyz):
+
+1. HACS → ⋮ → **Custom repositories**: add `https://github.com/thatsnotmynameio/pururu-ha` with type **Integration**.
+2. Find **Pururu** in HACS, **Download** it (pick a release), and restart Home Assistant.
+
+Or by hand: copy `custom_components/pururu/` into your configuration's `custom_components/` and restart.
+
+Then add a `pururu:` block to `configuration.yaml` (below) and restart. **Developer tools → YAML → Pururu** reloads the block afterwards.
 
 ## Configure
 
