@@ -237,9 +237,14 @@ def async_setup(hass: HomeAssistant, entry: ConfigEntry[Any]) -> None:
     def device_shown(data: dr.EventDeviceRegistryUpdatedData) -> bool:
         """Whether the device that changed is (or was) the entry's."""
         if data["action"] == "remove":
-            return entry.entry_id in data["device"]["config_entries"]
+            return bool(data["device"]["config_entry_id"] == entry.entry_id)
+        if (
+            data["action"] == "update"
+            and data["changes"].get("config_entry_id") == entry.entry_id
+        ):
+            return True  # moved to another entry
         device = devices.async_get(data["device_id"])
-        return device is not None and entry.entry_id in device.config_entries
+        return device is not None and device.config_entry_id == entry.entry_id
 
     entry.async_on_unload(remove)
     entry.async_on_unload(

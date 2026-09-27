@@ -265,3 +265,30 @@ async def test_changes_to_what_pururu_does_not_manage_refresh_nothing(
     devices_registry.async_remove_device(tv.id)
     await ha.async_block_till_done()
     assert updated == []
+
+
+async def test_a_device_moved_to_another_entry_refreshes_an_open_page(
+        ha: HomeAssistant, hass_ws_client: WebSocketGenerator, appliance: dict[str, Any]) -> None:
+    """The device stays in the registry, no longer pururu's: an open page drops it."""
+    assert await setup(ha, devices(appliance, washer="Washer"))
+    other = MockConfigEntry(domain="other")
+    other.add_to_hass(ha)
+    device = device_of(ha, "washer")
+    assert device is not None
+    updated = capture(ha, "lovelace_updated")
+    dr.async_get(ha).async_update_device(device.id, new_config_entry_id=other.entry_id)
+    await ha.async_block_till_done()
+    assert updated, "no refresh"
+    assert [row[0] for row in table(await fetch(ha, hass_ws_client))[1:]] == ["pururu"]
+
+
+async def test_a_removed_device_refreshes_an_open_page(
+        ha: HomeAssistant, hass_ws_client: WebSocketGenerator, appliance: dict[str, Any]) -> None:
+    assert await setup(ha, devices(appliance, washer="Washer"))
+    device = device_of(ha, "washer")
+    assert device is not None
+    updated = capture(ha, "lovelace_updated")
+    dr.async_get(ha).async_remove_device(device.id)
+    await ha.async_block_till_done()
+    assert updated, "no refresh"
+    assert [row[0] for row in table(await fetch(ha, hass_ws_client))[1:]] == ["pururu"]
