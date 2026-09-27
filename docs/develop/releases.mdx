@@ -54,6 +54,19 @@ SonarQube Cloud analyses every pull request. Some of its rules conflict with sig
 
 Such a finding is suppressed in `sonar-project.properties`, under `sonar.issue.ignore.multicriteria`, with a comment giving the reason. It's **never** suppressed in the code. Scope each suppression to one rule and to the files where it applies.
 
+## Security
+
+The repository is public, so GitHub's security features cost nothing. These are on:
+
+- **Secret scanning** with **push protection**: a push that contains a known kind of token is refused.
+- **CodeQL** (default setup) on `actions` and `python`, for every pull request, every push to `main` and weekly.
+- **Dependabot alerts** and **security updates**. Version updates cover only GitHub Actions, because the Home Assistant pin (`pytest-homeassistant-custom-component`), ruff, mypy and `fetch_hassfest.py` move together by hand.
+- **Private vulnerability reporting**, described in `SECURITY.md`.
+
+A security update fails when the fix needs a version Home Assistant doesn't allow yet. Home Assistant pins its libraries exactly (`cryptography==48.0.1`, for example), and pururu's tests use the versions of the release they're pinned to, so `uv` can't satisfy both. Such an alert closes when the Home Assistant pin is bumped to a release that ships the fixed version.
+
+GitHub Code Quality is off: its AI features are billed even on public repositories, and SonarQube Cloud covers the same ground.
+
 ## Documentation
 
 This site is served by [docs.page](https://docs.page) from `docs/` and `docs.json` on `main`: `https://docs.page/thatsnotmynameio/pururu-ha`. Preview it locally with:
