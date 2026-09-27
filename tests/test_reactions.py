@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
@@ -502,4 +502,27 @@ async def test_at_first_start_the_new_file_is_reloaded_once_and_included(
     assert state.state != STATE_UNAVAILABLE
     assert state.attributes.get("id") == "pururu_lights_reaction_door"
     assert len(reloaded) == 1
+    assert issue(ha) is None
+
+
+async def test_a_restart_with_an_unchanged_file_reloads_nothing(ha: HomeAssistant) -> None:
+    """Every restart: HA loads the file it already holds, then pururu finds it unchanged."""
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    entry = ha.config_entries.async_entries("pururu")[0]
+    await ha.config_entries.async_unload(entry.entry_id)
+    await ha.async_block_till_done()
+    ha.set_state(CoreState.not_running)
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {"automation pururu": generated(ha)}):
+        assert await async_setup_component(ha, "automation",
+                                           {"automation pururu": generated(ha)})
+        reloaded = capture(ha, "automation_reloaded")
+        assert await ha.config_entries.async_setup(entry.entry_id)
+        await ha.async_start()
+        await ha.async_block_till_done()
+    assert reloaded == []
+    state = ha.states.get(automation("door"))
+    assert state is not None
+    assert state.state != STATE_UNAVAILABLE
+    assert state.attributes["id"] == "pururu_lights_reaction_door"
     assert issue(ha) is None
