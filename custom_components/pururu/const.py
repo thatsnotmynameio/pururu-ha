@@ -19,6 +19,7 @@ CONF_AREA: Final = "area"
 ENTITY_PREFIX: Final = "pururu"
 PLATFORMS: Final = [
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.LIGHT,
     Platform.SENSOR,
     Platform.SWITCH,
