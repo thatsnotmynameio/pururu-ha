@@ -69,6 +69,7 @@ A program is a method of its device, not a script. It acts only on its device's 
 - **A step that fails**, such as a real switch reporting an error, stops the program, and the log says why. A switch that's `unavailable` doesn't stop it: that step does nothing and the program goes on.
 - **A reload** of pururu stops a running program. What it already did stays: if the pump was on, it stays on. Renaming any pururu entity in the UI reloads pururu too.
 - **A restart** of Home Assistant loses a running program, as it does Home Assistant's scripts. The button comes back with the time of its last press.
+- **An entity it acts on that you disable** in the UI makes the button `unavailable`, so it can't be pressed to do nothing. Enable the entity again and the button comes back.
 - If an entity it acts on isn't created, the program isn't either, and the log says so. See [Troubleshooting](/reference/troubleshooting).
 
 ## Good to know

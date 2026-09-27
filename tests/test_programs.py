@@ -203,6 +203,41 @@ async def test_a_failing_step_stops_it_and_is_logged(
                for message in errors), errors
 
 
+# --- a disabled target -----------------------------------------------------------------
+
+
+async def disable(hass: HomeAssistant, entity_id: str, disabled: bool = True) -> None:
+    er.async_get(hass).async_update_entity(
+        entity_id, disabled_by=er.RegistryEntryDisabler.USER if disabled else None)
+    await hass.async_block_till_done()
+
+
+async def test_a_disabled_target_makes_it_unavailable(pool: HomeAssistant) -> None:
+    """A button that looks usable and does nothing would mislead: it says why not."""
+    await disable(pool, PUMP)
+    assert pool.states.get(CLEAN).state == "unavailable"
+    calls = capture(pool, "call_service")
+    await press(pool)
+    assert reached(calls, PUMP) == []
+
+
+async def test_a_target_disabled_before_a_reload_keeps_it_unavailable(pool: HomeAssistant) -> None:
+    await disable(pool, PUMP)
+    await reload(pool, devices())
+    assert pool.states.get(CLEAN).state == "unavailable"
+
+
+async def test_it_comes_back_when_the_target_is_enabled(pool: HomeAssistant, freezer: Any) -> None:
+    await disable(pool, PUMP)
+    await disable(pool, PUMP, disabled=False)
+    assert pool.states.get(CLEAN).state != "unavailable"
+    await tick(pool, freezer, 31)  # HA reloads the entry, which creates the pump again
+    await pool.async_block_till_done()
+    calls = capture(pool, "call_service")
+    await press(pool)
+    assert reached(calls) == ["turn_on"]
+
+
 # --- reloads, renames, taken IDs and restarts --------------------------------------------
 
 

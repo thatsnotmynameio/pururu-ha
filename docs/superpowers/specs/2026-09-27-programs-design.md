@@ -38,6 +38,7 @@ pururu:
 | How a step names an entity | As its entity ID ends after the device key (`switch_pump`), as alerts' `when:`. Namespaces never contain `_`, so the first `_` splits it. Rejected: `switch.pump` (reads as `self.switch.pump`, but alerts, already written, uses `switch_pump`, and it looks like an entity ID); `pump` alone (ambiguous once `lights:` has the same key). |
 | How programs see other features' entities | Alerts' `refers` for which entity, plus a new `Feature.actions` for what can be done to it. Rejected: `programs` as a special device key like `area:` (a second path around `_creatable`, renames and stale removal); resolving targets inside `build()` (circular import, a wrong target only found at build time). |
 | Mode | `single`, fixed: a press while running is ignored with a warning. |
+| A target disabled in the registry | The button is `unavailable` while any target is disabled, and available again when it is enabled (added after the PR review). Rejected: keeping it pressable, doing nothing (a button that looks usable and does nothing misleads); not creating the program (it would vanish from the device and its area). |
 | Later, not in this PR | Seeing what is running; stopping a program; `mode:`; `if:` and other conditions on its device's states; pururu's own triggers and automations managing programs (for example, run `clean` when an alert turns on). |
 
 ## Configuration
@@ -93,7 +94,8 @@ For each program:
 | Pressed | Starts the sequence and **returns at once**, as `script.turn_on`: an automation calling `button.press` doesn't wait two hours. The button's state becomes the time of the press. |
 | Who pressed it | The press's context goes to the `Script`, so the logbook names who started what the program did. |
 | Pressed while running | Ignored; HA logs `Piscina Limpar: Already running` as a warning. |
-| A step fails | The program stops and HA logs the error, as for its own scripts. An `unavailable` switch is not a failure: HA warns and the program goes on. |
+| A step fails | The program stops and HA logs the error, as for its own scripts. An `unavailable` switch is not a failure: HA skips it and the program goes on. |
+| A target is disabled in the registry | The button is `unavailable`, so it can't be pressed; it follows the registry, and is available again once every target is enabled. |
 | Reload (YAML, a rename in the UI) or unload | A running program is stopped (`async_stop`). What it already did stays: the pump stays on. |
 | HA restart | A running program is lost, as HA's scripts. The button comes back with the time of its last press (`ButtonEntity` restores it). |
 | Name | `name:`, after the device's name: "Piscina Limpar". |

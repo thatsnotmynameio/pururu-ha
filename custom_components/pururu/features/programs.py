@@ -14,8 +14,9 @@ import voluptuous as vol
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import Platform
-from homeassistant.core import Context, HomeAssistant, split_entity_id
-from homeassistant.helpers import config_validation as cv
+from homeassistant.core import Context, Event, HomeAssistant, callback, split_entity_id
+from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.event import async_track_entity_registry_updated_event
 from homeassistant.helpers.script import SCRIPT_MODE_SINGLE, Script
 
 from ..const import DOMAIN
@@ -100,11 +101,15 @@ class Program(PururuEntity, ButtonEntity):
         entity_key: str,
         name: str,
         sequence: list[dict[str, Any]],
-        follows: tuple[str, ...],
+        follows: Mapping[str, str],
     ) -> None:
-        """Run `sequence` as `entity_key` of `device`, named `name`, acting on `follows`."""
+        """Run `sequence` as `entity_key` of `device`, named `name`.
+
+        `follows` maps each entity key it acts on to that entity's current ID.
+        """
         self._identify(device, Platform.BUTTON, entity_key, name)
-        self.follows = follows
+        self.follows = tuple(follows)
+        self._targets = tuple(follows.values())
         self._title = f"{device.name} {name}"
         self._sequence = sequence
         # Built once added: an entity that is never added leaves no script behind
@@ -113,6 +118,14 @@ class Program(PururuEntity, ButtonEntity):
     @override
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        # A disabled target isn't there to act on: the button says so, until
+        # it is enabled again (HA then reloads the entry, creating it)
+        self._follow_targets()
+        self.async_on_remove(
+            async_track_entity_registry_updated_event(
+                self.hass, self._targets, self._target_updated
+            )
+        )
         self._script = Script(
             self.hass,
             self._sequence,
@@ -121,6 +134,19 @@ class Program(PururuEntity, ButtonEntity):
             logger=_LOGGER,
             script_mode=SCRIPT_MODE_SINGLE,
         )
+
+    def _follow_targets(self) -> None:
+        """Available unless one of the entities it acts on is disabled."""
+        registry = er.async_get(self.hass)
+        self._attr_available = not any(
+            (entry := registry.async_get(entity_id)) is not None and entry.disabled
+            for entity_id in self._targets
+        )
+
+    @callback
+    def _target_updated(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
+        self._follow_targets()
+        self.async_write_ha_state()
 
     @override
     async def async_will_remove_from_hass(self) -> None:
@@ -163,7 +189,7 @@ def build(
             entity_key,
             program["name"],
             _translated(program, inputs),
-            tuple(dict.fromkeys(key for _, key in _targets(program))),
+            {key: inputs[key] for _, key in _targets(program)},
         )
         for entity_key, program in config.items()
     ]
