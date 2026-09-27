@@ -47,6 +47,23 @@ def qualified(namespace: str, entity_key: str) -> str:
 
 
 @dataclass(frozen=True, kw_only=True)
+class Item:
+    """An item of a feature's block with entity keys of its own (Feature.per_item): a mode."""
+
+    slug: str
+    name: str
+
+    def key(self, suffix: str) -> str:
+        """The entity key of `suffix` for this item."""
+        return f"{self.slug}_{suffix}"
+
+
+def item_key(suffix: str, item: Item | None) -> str:
+    """`suffix` as an entity key: the item's own, or the feature's without an item."""
+    return suffix if item is None else item.key(suffix)
+
+
+@dataclass(frozen=True, kw_only=True)
 class Device:
     """A configured device as one of its features sees it: key, display name, that feature's namespace."""
 

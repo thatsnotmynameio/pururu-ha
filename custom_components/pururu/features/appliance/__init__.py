@@ -9,26 +9,17 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.const import Platform
+from homeassistant.const import STATE_ON, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from ...entity import PururuEntity
 from ...feature import Device, Feature, finite_float
-from .cycle import LAST_CYCLE, CyclesTotal, LastCycleValue
+from ..cycle.last import LAST_CYCLE, LastCycleValue
+from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
+from ..cycle.totals import CyclesTotal, RuntimeTotal
 from .mirrors import Mirror
 from .running import Running
-from .runtime import RuntimeTotal
-from .statistics import PERIODS, Meter
-
-
-def _distinct(periods: list[str]) -> list[str]:
-    if len(set(periods)) != len(periods):
-        raise vol.Invalid(f"a period is repeated: {periods}")
-    return periods
-
-
-PERIOD_LIST = vol.All(cv.ensure_list, [vol.In(PERIODS)], _distinct)
 
 SCHEMA = vol.Schema(
     {
@@ -84,13 +75,16 @@ def build(
             off_delay=settings["off_delay"],
         ),
         *(
-            LastCycleValue(device, description)
+            LastCycleValue(device, description, source="running")
             for description in LAST_CYCLE
             if energy is not None or description.key != "last_cycle_energy"
         ),
-        CyclesTotal(device),
+        CyclesTotal(device, source="running"),
         RuntimeTotal(
-            device, device.current_entity_id(hass, Platform.BINARY_SENSOR, "running")
+            device,
+            device.current_entity_id(hass, Platform.BINARY_SENSOR, "running"),
+            STATE_ON,
+            source="running",
         ),
     ]
     if energy is not None:
