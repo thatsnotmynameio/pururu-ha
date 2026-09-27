@@ -27,7 +27,7 @@ pururu:
 alert2:
   alerts:
     - generator_name: pururu
-      generator: "{{ states.binary_sensor | selectattr('attributes.message', 'defined') | entity_regex('binary_sensor\\.pururu_(.+_alert_.+)$') | list }}"
+      generator: "{{ states.binary_sensor | selectattr('attributes.message', 'defined') | entity_regex('binary_sensor[.]pururu_(.+_alert_.+)$') | list }}"
       domain: pururu
       name: "{{ genGroups[0] }}"
       condition_on: "{{ is_state(genEntityId, 'on') }}"

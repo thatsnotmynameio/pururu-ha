@@ -111,7 +111,7 @@ alert2:
     reminder_frequency_mins: [8, 20]   # while the problem lasts
   alerts:
     - generator_name: pururu
-      generator: "{{ states.binary_sensor | selectattr('attributes.message', 'defined') | entity_regex('binary_sensor\\.pururu_(.+_alert_.+)$') | list }}"
+      generator: "{{ states.binary_sensor | selectattr('attributes.message', 'defined') | entity_regex('binary_sensor[.]pururu_(.+_alert_.+)$') | list }}"
       domain: pururu
       name: "{{ genGroups[0] }}"
       condition_on: "{{ is_state(genEntityId, 'on') }}"
