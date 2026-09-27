@@ -45,6 +45,12 @@ def test_namespaces_are_distinct_slugs(features: dict[str, Any]) -> None:
                 assert not theirs.namespace.startswith(f"{feature.namespace}_"), f"{name} and {other}"
 
 
+def test_no_entity_key_repeats_its_namespace(features: dict[str, Any]) -> None:
+    """phases' `phase` would be sensor.pururu_<key>_phase_phase: its key is `current`."""
+    for name, feature in features.items():
+        assert feature.namespace not in feature.entity_keys, name
+
+
 def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> None:
     qualified = module("feature").qualified
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")

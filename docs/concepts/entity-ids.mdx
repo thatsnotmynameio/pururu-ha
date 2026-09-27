@@ -19,10 +19,10 @@ Every entity pururu creates has the ID
 | Feature | Namespace | Example |
 |---|---|---|
 | [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_laundry_washer_appliance_running` |
-| [`phases`](/features/phases) | `phase` | `sensor.pururu_laundry_washer_phase_phase` |
+| [`phases`](/features/phases) | `phase` | `sensor.pururu_laundry_washer_phase_current` |
 | [`switches`](/features/switches) | `switch` | `switch.pururu_pool_switch_pump` |
 
-There's no exception, even when an entity key is the same word as its namespace: the only entity of `phases`, `phase`, is `sensor.pururu_laundry_washer_phase_phase`, and a switch keyed `switch` is `switch.pururu_pool_switch_switch`.
+There's no exception, even when an entity key is the same word as its namespace: a switch keyed `switch` is `switch.pururu_pool_switch_switch`.
 
 So the `running` entity of the device `laundry_washer` is always `binary_sensor.pururu_laundry_washer_appliance_running`. You can write automations and dashboards against it before the device even exists.
 

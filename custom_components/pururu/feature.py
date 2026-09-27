@@ -29,7 +29,8 @@ def finite_float(value: Any) -> float:
 def qualified(namespace: str, entity_key: str) -> str:
     """`entity_key` in `namespace`: the end of its entity ID, and its translation key.
 
-    No exception, even for an entity key alike its namespace: phases' `phase_phase`.
+    No exception, even for an entity key alike its namespace: a switch keyed
+    `switch` is `switch_switch`.
     """
     return f"{namespace}_{entity_key}"
 

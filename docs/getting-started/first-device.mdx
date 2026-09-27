@@ -121,7 +121,7 @@ pururu:
 - Each **band** is a range of the sensor's value. `heating` holds as soon as the power goes above 1000 W. `spinning` holds once the power has stayed between 50 and 1000 W for 3 minutes.
 - When several bands hold, **the first one listed wins**. When none holds, the phase is `running`'s default, `washing`.
 
-You now have `sensor.pururu_laundry_washer_phase_phase`. It shows `idle` outside a cycle and `washing`, `heating` or `spinning` during one. Its `seen` attribute lists the bands the current (or last) cycle went through.
+You now have `sensor.pururu_laundry_washer_phase_current`. It shows `idle` outside a cycle and `washing`, `heating` or `spinning` during one. Its `seen` attribute lists the bands the current (or last) cycle went through.
 
 Watch a wash in **History** and tune the bands to your machine. Your own names work too: a name the translations don't know, such as `soaking`, is shown as written.
 

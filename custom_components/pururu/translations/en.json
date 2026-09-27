@@ -39,7 +39,7 @@
       "appliance_cycles_week": {"name": "Cycles this week"},
       "appliance_cycles_month": {"name": "Cycles this month"},
       "appliance_cycles_year": {"name": "Cycles this year"},
-      "phase_phase": {
+      "phase_current": {
         "name": "Phase",
         "state": {
           "idle": "Idle", "washing": "Washing", "heating": "Heating", "spinning": "Spinning",

@@ -106,7 +106,7 @@ The pieces:
 - **`entity_keys`** lists **every** entity key the feature can create, even those that only exist with some settings, mapped to its platform.
 - **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, entity_key)`, which gives it its entity ID, unique ID, device and translated name.
 - **`example`** is a minimal valid block. The contract test validates it.
-- **`namespace`** is where the feature's entity keys live in an entity ID: `total` becomes `sensor.pururu_front_door_openings_total`. It's a slug no other feature uses, and not another feature's namespace followed by `_`. There's no exception for an entity key that is the same word: `phases`' `phase` is `sensor.pururu_<key>_phase_phase`. `build()` gets a `device` already in this namespace, so the feature only ever writes its own entity keys.
+- **`namespace`** is where the feature's entity keys live in an entity ID: `total` becomes `sensor.pururu_front_door_openings_total`. It's a slug no other feature uses, and not another feature's namespace followed by `_`. There's no exception for an entity key that is the same word as the namespace, so don't name one that way: `phases`' only entity key is `current` (`sensor.pururu_<key>_phase_current`), not `phase`. `build()` gets a `device` already in this namespace, so the feature only ever writes its own entity keys.
 
 ## 2. Register it
 
@@ -181,6 +181,7 @@ For a feature that stands for real entities of one domain, build each entity on 
 |---|---|
 | `test_translation_files_match` | `pt-BR.json` has exactly `en.json`'s keys |
 | `test_namespaces_are_distinct_slugs` | Every namespace is a slug, no two are equal, and none is another's followed by `_` |
+| `test_no_entity_key_repeats_its_namespace` | No fixed entity key is its feature's namespace, which would read `…_phase_phase` |
 | `test_every_entity_key_is_named_and_has_an_icon` | A name in both languages and an `mdi:` icon for every entity key, under its key in its namespace |
 | `test_every_translated_entity_key_is_created` | Every name and icon is under a key some feature creates |
 | `test_example_is_valid_and_unknown_keys_are_refused` | `example` passes `schema`, and `example` plus an unknown key fails |
