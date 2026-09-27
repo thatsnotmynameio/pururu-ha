@@ -47,11 +47,13 @@ custom_components/pururu/     the integration
   entity.py                   PururuEntity (the base of every entity) and reading()
   features/                   one module or package per feature, and FEATURES
     appliance/                running, cycles, runtime, mirrors, statistics
+    lights.py
     phases.py
+    standing.py               what switches and lights share: their schema, is_pururu
     switches.py
   places.py                   floors and areas from YAML
   dashboard.py                the read-only dashboard (private lovelace API)
-  sensor.py, binary_sensor.py, switch.py
+  sensor.py, binary_sensor.py, switch.py, light.py
                               the platforms: they only add what the entry built
   translations/               en.json and pt-BR.json, with the same keys
   icons.json, services.yaml, manifest.json, quality_scale.yaml

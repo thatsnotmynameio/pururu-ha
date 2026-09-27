@@ -17,7 +17,7 @@ flowchart TD
     RS["pururu.reload<br/>re-reads YAML"] --> S
     E["async_setup_entry"] --> P1["1. places.async_sync<br/>floors and areas"]
     P1 --> P2["2. build every device's entities<br/>(features)"]
-    P2 --> P3["3. entry.runtime_data → platforms<br/>sensor.py, binary_sensor.py, switch.py"]
+    P2 --> P3["3. entry.runtime_data → platforms<br/>sensor.py, binary_sensor.py,<br/>switch.py, light.py"]
     P3 --> P4["4. put each device in its area"]
     P4 --> P5["5. remove stale entities and devices"]
     P5 --> P6["6. dashboard.async_setup"]
@@ -35,7 +35,7 @@ It does all the work, in this order:
 
 1. **Floors and areas** (`places.async_sync`). They come first because devices are placed in them. The IDs it now manages are saved in `entry.data`, as `{"floors": [...], "areas": [...]}`.
 2. **Build every device's entities.** For each device, each feature's `build()` returns entities. `_creatable` drops the ones whose ID is taken, and then everything that follows them (see [Entity IDs are the identity](#entity-ids-are-the-identity)).
-3. **Hand them to the platforms.** The entities go in `entry.runtime_data` (`dict[Platform, list[Entity]]`), and `sensor.py`, `binary_sensor.py` and `switch.py` only call `async_add_entities` with their list.
+3. **Hand them to the platforms.** The entities go in `entry.runtime_data` (`dict[Platform, list[Entity]]`), and `sensor.py`, `binary_sensor.py`, `switch.py` and `light.py` only call `async_add_entities` with their list.
 4. **Place each device** in its configured `area`, if that area exists.
 5. **Remove what's stale**: every entity and device of the entry that this configuration didn't build.
 6. **Show the dashboard.** It comes last because it lists everything above.
@@ -52,12 +52,12 @@ A device is a name plus one or more **features**. `FEATURES` in `features/__init
 | `entity_keys` | Everything it can create: entity key → platform |
 | `build` | `(hass, device, config, inputs) → list[PururuEntity]` |
 | `example` | A minimal valid block, for the contract test |
-| `namespace` | Where its entity keys live in an entity ID: `appliance`, `phase`, `switch` |
+| `namespace` | Where its entity keys live in an entity ID: `appliance`, `light`, `phase`, `switch` |
 | `provides` | capability → the entity key whose entity carries it |
 | `requires` | capabilities it takes through `<capability>_from` |
 | `configured` | A platform, when its entity keys are the keys of its block, named by the block's `name`; `None` otherwise |
 
-The device schema (`_device` in `__init__.py`) is built from `FEATURES`. It requires at least one feature, and it checks that every `<capability>_from` names a feature of the same device that provides that capability.
+The device schema (`_device` in `__init__.py`) is built from `FEATURES`. It requires at least one feature, it checks that every `<capability>_from` names a feature of the same device that provides that capability, and it refuses a real entity in two configured features of the device (a relay is its switch or its light, not both).
 
 It doesn't compare entity keys between features. Each feature has its own `namespace`, and the entity keys it creates are in it (`appliance_power`, `switch_power`), so they can't meet. The contract test checks that namespaces are distinct slugs and that none is another's followed by `_`. Between devices, `_entity_ids_distinct` still refuses two that would give an entity one ID: `pool` with the switch `switch_pump` and `pool_switch` with the switch `pump`.
 
@@ -69,7 +69,7 @@ When a feature requires a capability, `_build` looks up the providing entity key
 
 - Every entity is `<platform>.pururu_<device key>_<namespace>_<entity key>`, with no exception (a switch keyed `switch` is `…_switch_switch`). Its unique ID is the part after the platform: `Device.object_id(entity_key)`. `_build` gives each feature's `build()` a `Device` in that feature's namespace, so a feature only writes its own entity keys (`"running"`).
 - A device's identifier is `(pururu, <device key>)`.
-- `PururuEntity._identify()` sets the entity ID, unique ID and device info from the device and the entity key, and its name. Without a `name`, the translation key is the entity key in its namespace (`Device.qualified`, as `appliance_running`) and the name comes from `translations/*.json` → `entity.<platform>.<namespace>_<entity key>.name`. With one, as for a configured feature, the entity has that name and no translation key.
+- `PururuEntity._identify()` sets the entity ID, unique ID and device info from the device and the entity key, and its name. Without a `name`, the translation key is the entity key in its namespace (`Device.qualified`, as `appliance_running`) and the name comes from `translations/*.json` → `entity.<platform>.<namespace>_<entity key>.name`. With one, as for a configured feature, the entity has that name and no translation key, even when its base class brings one (`LightGroup`'s `"light"`).
 
 ### Taken IDs
 

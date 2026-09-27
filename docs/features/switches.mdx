@@ -47,9 +47,9 @@ A switch's key can be one another feature uses, such as `power` next to `applian
 - Its attribute **`entity_id`** names the real switch, and its details show it.
 - It keeps no state of its own. After a restart, it shows the real switch again.
 
-## Only `switch.*`, for now
+## Only `switch.*`
 
-A light, a fan or a cover exposed as a switch would only turn on and off: no brightness or colour, no speed, no position, and a voice assistant wouldn't treat it as a light. So each kind of entity gets a feature of its own, whose entity keeps everything its kind offers. `lights` comes next.
+A light, a fan or a cover exposed as a switch would only turn on and off: no brightness or colour, no speed, no position, and a voice assistant wouldn't treat it as a light. So each kind of entity gets a feature of its own, whose entity keeps everything its kind offers. Lights go in [`lights`](/features/lights), and so does a relay that drives a lamp. In one device, a real switch is in `switches` or in `lights`, not both.
 
 ## Good to know
 

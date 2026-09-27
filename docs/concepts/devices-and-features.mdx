@@ -33,11 +33,12 @@ pururu:
 
 ## A feature
 
-A feature is a ready-made piece of behaviour. It reads real entities, such as a plug's power sensor, and applies a few settings, such as a threshold, or, for [`switches`](/features/switches), passes commands on to them. From those it creates the device's entities, and pururu keeps them up to date.
+A feature is a ready-made piece of behaviour. It reads real entities, such as a plug's power sensor, and applies a few settings, such as a threshold, or, for [`switches`](/features/switches) and [`lights`](/features/lights), passes commands on to them. From those it creates the device's entities, and pururu keeps them up to date.
 
 | Feature | What it does |
 |---|---|
 | [`appliance`](/features/appliance) | An appliance on a power-measuring plug: when it runs, its cycles, their duration and energy, runtime and cycle counts per period |
+| [`lights`](/features/lights) | Real lights, or relays that drive a lamp, inside the device, each named in the YAML, that show their light's state, offer what it offers and pass commands on |
 | [`phases`](/features/phases) | The phase of a cycle (heating, spinning…), from bands of a sensor's value |
 | [`switches`](/features/switches) | Real switches inside the device, each named in the YAML, that show their switch's state and turn it on and off |
 
@@ -69,6 +70,7 @@ The same pattern will hold for every future feature: `<what it needs>_from: <fea
 | Feature | Provides | Needs |
 |---|---|---|
 | `appliance` | `cycle`, carried by `binary_sensor.pururu_<key>_appliance_running` | nothing |
+| `lights` | nothing | nothing |
 | `phases` | nothing | `cycle`, through `cycle_from` |
 | `switches` | nothing | nothing |
 
