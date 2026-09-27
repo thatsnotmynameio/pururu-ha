@@ -63,7 +63,7 @@ Change the YAML, reload, and the device follows.
 
 ## What pururu doesn't do
 
-- **It never acts on its own.** Its sensors only read the entities you point them to. A [switch](/features/switches) or a [light](/features/lights) passes on to its real entity what you, an automation or a voice assistant ask of it, and a [program](/features/programs) runs its steps when one of them presses it, and nothing else. pururu never turns anything on or off by itself, and never talks to a device or a cloud service.
+- **It never acts on its own.** Its sensors only read the entities you point them to. A [switch](/features/switches) or a [light](/features/lights) passes on to its real entity what you, an automation or a voice assistant ask of it, and nothing else. A [program](/features/programs) starts only when one of them presses it; then it runs all its steps, so a step after a `delay` happens later without another press. pururu never starts anything by itself, and never talks to a device or a cloud service.
 - **It isn't configured in the UI.** Everything lives in YAML, so your home is described in text you can version, review and copy. Floors, areas and a device's area always follow the YAML, and a change the UI makes to them is undone at the next reload. Renaming a device or an entity in the UI is kept, and pururu follows a new entity ID.
 
 ## Where to next

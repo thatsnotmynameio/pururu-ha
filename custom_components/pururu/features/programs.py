@@ -14,7 +14,7 @@ import voluptuous as vol
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, split_entity_id
+from homeassistant.core import Context, HomeAssistant, split_entity_id
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.script import SCRIPT_MODE_SINGLE, Script
 
@@ -135,16 +135,18 @@ class Program(PururuEntity, ButtonEntity):
         """Start the sequence without waiting for it, as script.turn_on."""
         if self._script is None:
             return
+        # This press's context, taken now: another press may set a new one
         self.hass.async_create_background_task(
-            self._run(self._script),
+            self._run(self._script, self._context),
             f"{DOMAIN} program {self.entity_id}",
         )
 
-    async def _run(self, script: Script) -> None:
+    async def _run(self, script: Script, context: Context | None) -> None:
         """Run it once; a failed step stops it, and the script has logged why."""
         try:
-            await script.async_run(context=self._context)
-        except Exception:  # noqa: BLE001 - logged by the script, with the program's name
+            await script.async_run(context=context)
+        # The script logged it, with the program's name
+        except Exception:  # noqa: BLE001
             return
 
 
