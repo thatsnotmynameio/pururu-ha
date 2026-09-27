@@ -211,7 +211,7 @@ sala:
 # → light.pururu_sala_group_lustre: a LightGroup of the two above
 ```
 
-- A group gathers pururu entities of its own device by their keys, not real entity IDs. Each bulb stays a light of its own, and the group turns them together. The key inside the group (`lights:`) says what it gathers, so `switches:` can follow.
+- A group gathers pururu entities of its own device by their keys, not real entity IDs. Each bulb stays a light of its own, and the group turns them together. A group has a type (light, switch…), which sets its platform and what it may gather. How the YAML states it is decided in its spec: the key inside the group (`lights:`) is one way.
 - The namespace is `group`, not `light_group`: the contract test refuses a namespace that is another one followed by `_`.
 - The core needs something new. Today a feature takes from another only through `<capability>_from`, and only fixed entity keys. A group takes the configured entity keys of `lights`, in another namespace. `_build` and `_creatable` will resolve them: the current entity ID (renames followed), and no group when a member isn't created.
 - A light that goes from one bulb (`lights: lustre`) to several (`groups: lustre`) changes its ID, from `light_lustre` to `group_lustre`. It's a different thing, and the docs will say so.
