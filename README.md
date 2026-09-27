@@ -100,3 +100,7 @@ uv run mypy custom_components/pururu
 ```
 
 `ruff.toml` and `mypy.ini` hold core's settings at the pinned Home Assistant. hassfest comes from that release's source, downloaded once into `.hassfest/` (`uv run fetch_hassfest.py` does it by hand).
+
+## Releases
+
+Versions are semantic (`MAJOR.MINOR.PATCH`) and come from `version` in `custom_components/pururu/manifest.json`. A pull request that changes it is a release: once it is merged and the checks pass on `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release, which HACS offers. A version that already has its tag is not published again, and a version below the latest release fails the checks (`python3 release.py check`).

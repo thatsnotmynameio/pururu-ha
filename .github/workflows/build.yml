@@ -1,14 +1,13 @@
 # The integration's tests and core's checks (ruff, format, mypy, hassfest,
 # quality scale) at the Home Assistant version pyproject.toml pins, then
-# SonarQube Cloud's analysis with the tests' coverage report.
+# SonarQube Cloud's analysis with the tests' coverage report. On main, Release
+# runs it before publishing.
 name: Build
 on:
-  push:
-    branches:
-      - main
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -31,6 +30,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
           cache-python: true
+      # The manifest's version is MAJOR.MINOR.PATCH and not below the latest release
+      - run: python3 release.py check
       # hassfest from HA's source archive (~29 MB), keyed on the pinned version and sha256
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

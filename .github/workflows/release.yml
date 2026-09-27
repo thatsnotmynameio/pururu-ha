@@ -1,0 +1,45 @@
+# Every push to main (a merged PR): Build and Validate, then the manifest's
+# version is published as tag vX.Y.Z and a GitHub release, unless that version
+# already has its tag (release.py). A PR bumps `version` to release.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Releases in merge order; a run never cancels another
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+
+  validate:
+    uses: ./.github/workflows/validate.yml
+
+  # The only job that can write: it creates the tag and the release
+  publish:
+    needs: [build, validate]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # release.py reads the existing v* tags
+      - id: version
+        run: echo "tag=$(python3 release.py next)" >> "$GITHUB_OUTPUT"
+      - if: steps.version.outputs.tag != ''
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
