@@ -70,7 +70,7 @@ class Feature:
     metrics: Mapping[str, Platform]
     # Its entities, from its validated block and the entity IDs of what it requires
     build: Build
-    # A minimal valid block, for the contract test and the README
+    # A minimal valid block, for the contract test
     example: Mapping[str, Any]
     # capability -> the metric whose entity carries it; others take it with <capability>_from
     provides: Mapping[str, str] = field(default_factory=dict)

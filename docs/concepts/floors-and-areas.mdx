@@ -1,0 +1,87 @@
+---
+title: Floors and areas
+description: Declare floors and areas in YAML with the IDs you choose. pururu creates them, keeps them as declared and deletes what you drop.
+---
+
+```yaml title="configuration.yaml"
+pururu:
+  floors:
+    terreo:                  # the floor's ID
+      name: Térreo
+      level: 0
+      icon: mdi:home-floor-0
+      aliases: [embaixo]
+  areas:
+    cozinha:                 # the area's ID
+      name: Cozinha
+      floor: terreo          # a key of floors:
+      icon: mdi:stove
+    quintal:
+      name: Quintal          # an area on no floor
+```
+
+The keys each floor and area accepts are listed in the [configuration reference](/reference/configuration#floors).
+
+## The key is the ID
+
+When you create a floor or an area in the UI, Home Assistant makes its ID from the name. **Térreo** becomes `terreo`, and if you later rename it **Ground floor**, the ID stays `terreo`. You never get to choose the ID.
+
+pururu lets you choose it: the key is the ID. To make that happen, pururu first creates the floor or area named after its key, so that Home Assistant gives it exactly that ID, and then renames it to your `name`. The result is IDs that are stable, readable and known in advance. Use them in automations (`area_id: cozinha`), in dashboards, and in a device's `area`.
+
+## YAML wins
+
+A floor or an area with a configured key **follows the YAML at every start and reload**:
+
+- A change made in the UI, such as a new name, icon or floor, is **undone** at the next reload.
+- A floor or area you **delete** in the UI is created again at the next reload.
+- A key you leave out is **cleared**. If you remove `icon:`, the icon goes away. If you remove `level:`, the floor has no level.
+- If a floor or area with that ID **already exists**, for example one you made in the UI before installing pururu, pururu **adopts** it. From then on it follows the YAML as if pururu had created it.
+
+## What gets deleted
+
+pururu remembers the floors and areas it manages:
+
+- One you **drop from the YAML** is deleted at the next reload.
+- **Deleting the Pururu integration** deletes all of them.
+
+When a floor is deleted, Home Assistant takes it off its areas. When an area is deleted, Home Assistant takes it off its devices and entities. Your devices and entities aren't deleted; they just no longer have an area.
+
+<Warning>
+  This includes floors and areas pururu **adopted**. If you add an existing area to the YAML and later remove it, pururu deletes it. To stop managing one without deleting it, keep it in the YAML.
+</Warning>
+
+## Names Home Assistant refuses
+
+Home Assistant doesn't allow two floors, or two areas, with the same name, ignoring case and surrounding spaces. When the YAML asks for a name that a floor or area **outside the YAML** already has, pururu logs an error instead of failing:
+
+- A **new** floor or area with that name isn't created. The new areas on a floor that wasn't created aren't created either.
+- An **existing** one keeps its current settings. It's still managed by pururu.
+
+The same happens when the key itself is already the name of another floor or area. That's because pururu creates each new one named after its key first.
+
+The rest of the configuration is still applied. [Troubleshooting](/reference/troubleshooting#floors-and-areas) lists the exact messages.
+
+## A device in an area
+
+A device's `area` must be a key under `areas:`. Anything else is a configuration error, and the reload changes nothing.
+
+```yaml
+pururu:
+  areas:
+    lavanderia: {name: Lavanderia}
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      area: lavanderia
+      appliance:
+        power: sensor.washer_plug_power
+        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+```
+
+- The device is put in its area **at every start and reload**. If you move it in the UI, it stays there until the next reload.
+- A device **without** `area` keeps whatever area it has, so you can place it in the UI.
+- If Home Assistant refused to create that area, the log says so. The device and its entities are still created, in the area they already had.
+
+## Typos
+
+An unknown key under `pururu:` is a configuration error. So is an unknown key inside a floor or an area. Writing `floor:` instead of `floors:` is an example. It matters because, if pururu read the block without any floors, it would delete every floor it manages. Instead, the reload stops and changes nothing.

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-pururu is a Home Assistant custom integration (`custom_components/pururu/`). It reads a `pururu:` YAML block and creates floors, areas and devices from it. It builds each device's entities from real entities and a few settings. The README is the user-facing reference for every configuration key and entity.
+pururu is a Home Assistant custom integration (`custom_components/pururu/`). It reads a `pururu:` YAML block and creates floors, areas and devices from it. It builds each device's entities from real entities and a few settings. The docs site is the user-facing reference for every configuration key and entity (see Docs below); the README is a short entry point that links to it.
 
 ## Commands
 
@@ -63,6 +63,14 @@ python3 release.py check                        # the manifest version must be s
   - `restart` restores saved state.
   - `tick` and `fake` drive time and real-entity states.
   - `device_of` and `held` inspect the registries.
+
+## Docs
+
+- **Where:** [docs.page](https://docs.page/thatsnotmynameio/pururu-ha) serves `docs.json` (tabs and sidebar) and `docs/**/*.mdx` from `main`. Only `.mdx` is published, so `docs/superpowers/` (specs and plans) is not.
+- **Two tabs:** `Guide` (`/`) for users (getting started, concepts, one page per feature in `FEATURES`, configuration reference, troubleshooting) and `Develop` (`/develop`) for contributors.
+- **Keep it true:** a change in behaviour, configuration, entities or log messages updates the matching pages in the same PR. A new feature gets `docs/features/<feature>.mdx` and a sidebar entry.
+- **MDX:** `{` and `<` outside code are JSX, so keep them in backticks or code blocks.
+- **Check:** `npx @docs.page/cli check` (broken links) and `npx @docs.page/cli preview` (live preview).
 
 ## Releases and CI
 

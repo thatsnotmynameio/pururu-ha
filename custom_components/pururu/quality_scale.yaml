@@ -1,7 +1,7 @@
 # HA's Integration Quality Scale (hassfest checks this file only for core
 # integrations; tests/test_code.py checks it here). pururu is a helper
 # configured in YAML, like core's template, group and utility_meter: it talks
-# to no service or device, and its docs are its README.
+# to no service or device, and its docs are its own site (docs/, on docs.page).
 rules:
   # Bronze
   action-setup: done
@@ -23,19 +23,19 @@ rules:
     comment: No requirements; it uses core's group, utility_meter and lovelace.
   docs-actions:
     status: exempt
-    comment: Not in HA's docs; the README documents the reload action.
+    comment: Not in HA's docs; its own docs (docs/) document the reload action.
   docs-conditions:
     status: exempt
     comment: It has no conditions.
   docs-high-level-description:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   docs-installation-instructions:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   docs-removal-instructions:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   docs-triggers:
     status: exempt
     comment: It has no triggers.
@@ -92,25 +92,25 @@ rules:
     comment: Nothing to discover.
   docs-data-update:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   docs-examples:
     status: exempt
-    comment: Not in HA's docs; the README has examples.
+    comment: Not in HA's docs; its own docs (docs/) have examples.
   docs-known-limitations:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   docs-supported-devices:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   docs-supported-functions:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   docs-troubleshooting:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   docs-use-cases:
     status: exempt
-    comment: Not in HA's docs; the README.
+    comment: Not in HA's docs; its own docs (docs/).
   dynamic-devices: done
   entity-category:
     status: done

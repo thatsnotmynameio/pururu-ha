@@ -1,0 +1,109 @@
+---
+title: Troubleshooting
+description: What each error pururu logs means, and what to do about it.
+---
+
+pururu reports problems in **Settings → System → Logs**, under the **Pururu** integration. Only an invalid configuration stops it. Anything else is logged, and the rest of the configuration is still applied.
+
+## The reload changed nothing
+
+The configuration is probably invalid. Home Assistant logs the reason as `Invalid config for 'pururu'`, and pururu keeps everything as it was. Common causes:
+
+- A typo in a key, such as `floor:` for `floors:` or `treshold:` for `threshold:`.
+- A key that isn't a slug, such as `Laundry Washer:` instead of `laundry_washer:`.
+- A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
+- A device with no feature.
+- `cycle_from` naming a feature that isn't on the same device.
+- A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
+
+**Developer tools → YAML → Check configuration** shows the same error before you reload.
+
+## I changed something in the UI and it came back
+
+That's expected for what the YAML describes. Floors, areas and a device's `area` follow the YAML at every start and reload. Change the YAML instead. Renaming a device or an entity in the UI, or changing an entity ID, is kept. See [Floors and areas: YAML wins](/concepts/floors-and-areas#yaml-wins).
+
+## Entities
+
+### `… is already taken by …; not creating it`
+
+```
+sensor.pururu_laundry_washer_power is already taken by the template integration; not creating it
+```
+
+Another integration's entity, or an entity without a unique ID, already has that ID. pururu [never takes an ID](/concepts/entity-ids#an-id-already-taken) that belongs to someone else, and it never suffixes one with `_2`.
+
+**Fix:** rename or delete the other entity in **Settings → Entities**, then reload pururu.
+
+### `… follows …, which is not created; not creating it`
+
+```
+sensor.pururu_laundry_washer_phase follows binary_sensor.pururu_laundry_washer_running, which is not created; not creating it
+```
+
+This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back.
+
+### An entity stays `unknown`
+
+- The `last_cycle_*` sensors are `unknown` until the first cycle **ends**.
+- `last_cycle_energy` is `unknown` for a cycle when the energy counter had no value at the start or end of the cycle, or when its unit isn't an energy unit.
+- A period sensor (`runtime_month`, `cycles_year`…) starts from its total's current value. If the total has no value yet, the period sensor waits for it.
+
+### The cycle ends too early, or never starts
+
+- **Ends in the middle of a wash:** the appliance paused for longer than `off_delay`. Increase `off_delay`.
+- **Never starts:** the power never stays above `threshold` for `on_delay`. Check the power sensor's history, and lower the threshold or shorten `on_delay`.
+- **Starts on its own:** standby spikes last longer than `on_delay`, or the threshold is below the standby power.
+
+See [Picking the numbers](/getting-started/first-device#picking-the-numbers).
+
+## Devices
+
+### `Device … is not placed: its area … is not created`
+
+```
+Device laundry_washer is not placed: its area lavanderia is not created
+```
+
+The device's area exists in the YAML, but Home Assistant refused to create it (see [Floors and areas](#floors-and-areas) below). The device and its entities are still created, in the area they already had. Fix the area's error and reload.
+
+## Floors and areas
+
+### `Floor … is left out: …` and `Area … is left out: …`
+
+```
+Area cozinha is left out: The name Cozinha (cozinha) is already in use
+```
+
+Home Assistant refused to create a **new** floor or area, because its name, or its key, is already the name of a floor or area that isn't in the YAML. Nothing is created for it.
+
+**Fix:** rename or delete the other floor or area in the UI, or choose another `name` or key. Then reload.
+
+### `Floor … is not synced: …` and `Area … is not synced: …`
+
+The same refusal for a floor or area that **already exists**. It keeps its current settings and is still managed by pururu.
+
+### `Area … is not synced: its floor … is not created`
+
+```
+Area cozinha is not synced: its floor terreo is not created
+```
+
+The area's floor was left out (see above), so the area isn't created or updated either. Fix the floor and the area follows.
+
+## Dashboard
+
+### `The dashboard is not created: /pururu is already taken`
+
+Another panel or dashboard already uses `/pururu`. pururu adds no dashboard, and everything else works. Remove or move the other dashboard (**Settings → Dashboards**), then reload pururu.
+
+### `The dashboard is not created: lovelace is not set up`
+
+pururu found Home Assistant's dashboards (`lovelace`) not loaded. That shouldn't happen, because pururu requires `lovelace` and Home Assistant loads it first. Please [open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the log and your Home Assistant version.
+
+### `The dashboard is not created: lovelace's or frontend's API changed`
+
+HA has no public way for an integration to add a dashboard, so pururu relies on Home Assistant internals. This error means a newer Home Assistant changed them. Everything else still works. Please [open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the log's traceback and your Home Assistant version.
+
+## Still stuck?
+
+[Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with your `pururu:` block, the errors from the log and your Home Assistant version.

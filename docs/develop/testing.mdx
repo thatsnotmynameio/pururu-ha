@@ -1,0 +1,92 @@
+---
+title: Testing
+description: The ha fixture, the helpers in tests/helpers.py, and the checks in tests/test_code.py.
+---
+
+Tests use [pytest-homeassistant-custom-component](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component), which runs a real Home Assistant (the pinned version) in the test process. There are no mocks of Home Assistant itself: a test sets pururu up from a `pururu:` block, plays the real entities' states, moves the clock and reads the resulting states.
+
+## The `ha` fixture
+
+Every test that needs Home Assistant takes `ha` (from `tests/conftest.py`) instead of the plugin's `hass`. It:
+
+- **Freezes time** at a fixed Wednesday, 16 September 2026, 10:00, in Home Assistant's time zone. The few hours a test simulates then never cross a day, week, month or year by accident.
+- **Puts the repository's `custom_components`** on Home Assistant's loader path.
+
+It also marks lingering timers as expected: `running`'s delays and the phase bands' `for` may still be pending when a test ends.
+
+Load the integration's modules with `helpers.module("<name>")` **after** the fixture, not with a top-level import. The loader path only includes the repository once `ha` has run.
+
+```python
+from helpers import module
+
+def test_something(ha: HomeAssistant) -> None:
+    FEATURES = module("features").FEATURES
+```
+
+## Helpers (`tests/helpers.py`)
+
+| Helper | What it does |
+|---|---|
+| `setup(hass, devices, *, floors=, areas=)` | Sets pururu up from a `pururu:` block. Returns `False` when Home Assistant refuses the configuration. |
+| `reload(hass, devices, *, floors=, areas=)` | Calls `pururu.reload` with a `configuration.yaml` that holds this block. |
+| `restart(hass, devices, *saved)` | Starts as after a restart. `saved` is what `.storage` held, as `(State, extra data)` pairs. |
+| `fake(hass, entity_id, state, attributes=None)` | Plays a real device: sets its state and lets pururu react. |
+| `tick(hass, freezer, seconds)` | Moves the clock forward and runs whatever became due. |
+| `settle()` | Lets every ready callback run. |
+| `device_of(hass, key)` | The device registry entry of a device key, or `None`. |
+| `held(hass, key)` | The entity IDs in a device, from the entity registry. |
+| `capture(hass, *event_types)` | Records events in the order they're fired. |
+
+A typical test:
+
+```python
+from helpers import fake, setup, tick
+
+WASHER = {"laundry_washer": {"name": "Washer", "appliance": {
+    "power": "sensor.plug_power",
+    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+}}}
+
+
+async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
+    await fake(ha, "sensor.plug_power", "0")
+    assert await setup(ha, WASHER)
+    await fake(ha, "sensor.plug_power", "500")
+    await tick(ha, freezer, 59)
+    assert ha.states.get("binary_sensor.pururu_laundry_washer_running").state == "off"
+    await tick(ha, freezer, 1)
+    assert ha.states.get("binary_sensor.pururu_laundry_washer_running").state == "on"
+```
+
+## Test files
+
+| File | Covers |
+|---|---|
+| `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices |
+| `test_features.py` | The [contract](/develop/writing-a-feature#5-what-the-contract-test-checks) over every feature in `FEATURES` |
+| `test_appliance.py` | `running`, cycles, energy, runtime, meters, restores |
+| `test_phases.py` | Bands, `for`, `seen`, restores, translations |
+| `test_places.py` | Floors and areas: creation, adoption, deletion, refused names |
+| `test_dashboard.py` | The dashboard's content, refreshes, and what keeps it from being created |
+| `test_entity.py` | `reading()` |
+| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale |
+| `test_release.py`, `test_fetch_hassfest.py` | The release and hassfest scripts |
+
+## `test_code.py`: core's checks
+
+`uv run pytest` also runs the tools Home Assistant core runs on its own integrations, at the pinned version:
+
+- `ruff check` and `ruff format --check`, with `ruff.toml`.
+- `mypy`, strict, with `mypy.ini`.
+- **hassfest**, which validates the manifest, services, translations, icons and config flow. It comes from the pinned release's source. `fetch_hassfest.py` downloads it once into `.hassfest/`, before the HA plugin blocks sockets, and you can run it by hand with `uv run fetch_hassfest.py`.
+- **The quality scale**: `quality_scale.yaml` must list every rule of the pinned hassfest. A rule that isn't `done` needs a comment with the reason.
+
+## Running tests
+
+```sh
+uv run pytest                                      # everything, 4 processes
+uv run pytest tests/test_phases.py -n 0 -q         # one file, one process
+uv run pytest "tests/test_places.py::test_name[param id]" -n 0
+```
+
+Use `-n 0`, not `-p no:xdist`, to run in a single process (see [Getting set up](/develop#commands)).

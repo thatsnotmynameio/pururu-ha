@@ -1,0 +1,56 @@
+---
+title: Entity IDs
+description: Every entity pururu creates has a predictable ID. pururu follows your renames and never takes an ID that belongs to someone else.
+---
+
+## The pattern
+
+Every entity pururu creates has the ID
+
+```
+<platform>.pururu_<device key>_<metric>
+```
+
+- **platform**: `sensor` or `binary_sensor`.
+- **device key**: the device's key under `devices:`.
+- **metric**: what the entity measures. Each feature's page lists its metrics. A metric counted per period ends with that period, as in `runtime_month`.
+
+So the `running` metric of the device `laundry_washer` is always `binary_sensor.pururu_laundry_washer_running`. You can write automations and dashboards against it before the device even exists.
+
+The entity's **unique ID** is the same text without the platform: `pururu_laundry_washer_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
+
+## Names
+
+An entity's name comes from its metric, in Home Assistant's language: English and Portuguese are translated. It's shown after the device's name, so `running` on **Máquina de lavar** is **Máquina de lavar Running**, or **Máquina de lavar Em funcionamento** in Portuguese. You can rename any entity in the UI as usual.
+
+## Renaming an entity ID
+
+You can change an entity ID in the UI, as with any entity. pururu handles it this way:
+
+- The entity **stays in its device** and keeps its history.
+- Everything that reads it **follows the new ID**. For example, `phases` reads `running`, and a monthly counter reads its total. pururu reloads itself when you rename one of its entities, so this happens straight away.
+- The rename **survives restarts and reloads**. pururu finds the entity by its unique ID, not by its ID.
+
+<Info>
+  Automations and dashboards you wrote yourself don't follow a rename. Home Assistant doesn't update them for any integration. Update them or keep the original ID.
+</Info>
+
+## An ID already taken
+
+pururu **never** creates an entity whose ID already belongs to someone else, whether that's another integration's entity or an entity without a unique ID. It also never falls back to `…_2`. A suffixed ID would silently break every automation written against the predictable one. Instead:
+
+1. The log shows an error: `sensor.pururu_laundry_washer_power is already taken by the template integration; not creating it`.
+2. The entity isn't created.
+3. Anything that depends on it isn't created either, each with its own error: `… follows …, which is not created; not creating it`. For example, if `running` can't be created, the whole cycle goes with it: the last cycle sensors, the counters and `phase`.
+
+The rest of the device is still created. To fix it, free the ID (rename or delete the other entity) and reload pururu.
+
+## Entities pururu removes
+
+At every start and reload, pururu deletes the entities and devices that the YAML no longer creates. For example:
+
+- If you remove `energy`, then `energy_total` and `last_cycle_energy` go away.
+- If you remove `month` from `statistics.cycles`, then `cycles_month` goes away.
+- If you remove a device, the device and all its entities go away.
+
+Their history stays in the recorder until it's purged, as with any deleted entity.

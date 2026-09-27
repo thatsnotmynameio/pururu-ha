@@ -1,0 +1,130 @@
+---
+title: Configuration
+description: Every key of the pururu block on one page.
+---
+
+```yaml title="configuration.yaml"
+pururu:
+  floors:
+    terreo:
+      name: Térreo
+      level: 0
+      icon: mdi:home-floor-0
+      aliases: [embaixo]
+  areas:
+    lavanderia:
+      name: Lavanderia
+      floor: terreo
+      icon: mdi:washing-machine
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      area: lavanderia
+      appliance:
+        power: sensor.washer_plug_power
+        energy: sensor.washer_plug_energy
+        running:
+          threshold: 4
+          on_delay: {minutes: 1}
+          off_delay: {minutes: 2}
+        statistics:
+          runtime: [today, week, month, year]
+          cycles: [today, week, month, year]
+      phases:
+        cycle_from: appliance
+        sensor: sensor.washer_plug_power
+        defaults:
+          stopped: idle
+          running: washing
+        bands:
+          heating: {above: 1000}
+          spinning: {above: 50, below: 1000, for: {minutes: 3}}
+```
+
+## General rules
+
+- `pururu:` has three optional keys: `floors`, `areas` and `devices`. Any other key is an error.
+- Every **key** you choose, whether of a floor, an area, a device or a phase, is a **slug**: lowercase letters, digits and `_`.
+- An unknown key anywhere is a configuration error. When the configuration is invalid, Home Assistant logs why, and a reload **changes nothing**.
+- The blocks can be split across [packages](/getting-started/install#packages).
+
+## floors
+
+A map of **floor ID → floor**. See [Floors and areas](/concepts/floors-and-areas).
+
+<Property name="name" type="string" required>
+  The name Home Assistant shows.
+</Property>
+
+---
+
+<Property name="level" type="integer" optional>
+  The floor's level: `0` for the ground floor, negative below it and positive above it. Leaving it out clears it.
+</Property>
+
+---
+
+<Property name="icon" type="icon" optional>
+  An icon such as `mdi:home-floor-0`. Leaving it out clears it.
+</Property>
+
+---
+
+<Property name="aliases" type="list of strings" optional>
+  Other names for the floor, for example for voice assistants. A single string is allowed too.
+</Property>
+
+## areas
+
+A map of **area ID → area**. See [Floors and areas](/concepts/floors-and-areas).
+
+<Property name="name" type="string" required>
+  The name Home Assistant shows.
+</Property>
+
+---
+
+<Property name="floor" type="floor ID" optional>
+  The area's floor. It must be a key of `floors:`. Without it, the area is on no floor.
+</Property>
+
+---
+
+<Property name="icon" type="icon" optional>
+  An icon such as `mdi:stove`. Leaving it out clears it.
+</Property>
+
+---
+
+<Property name="aliases" type="list of strings" optional>
+  Other names for the area. A single string is allowed too.
+</Property>
+
+## devices
+
+A map of **device key → device**. See [Devices and features](/concepts/devices-and-features).
+
+<Property name="name" type="string" required>
+  The device's name.
+</Property>
+
+---
+
+<Property name="area" type="area ID" optional>
+  The area the device goes in. It must be a key of `areas:`. See [A device in an area](/concepts/floors-and-areas#a-device-in-an-area).
+</Property>
+
+---
+
+<Property name="<feature>" type="map" required>
+  At least one feature, under its own key:
+
+  - [`appliance`](/features/appliance#settings): an appliance on a power-measuring plug.
+  - [`phases`](/features/phases#settings): the phase of a cycle.
+</Property>
+
+## Actions
+
+<Property name="pururu.reload" type="action">
+  Reads `pururu:` from the YAML again and applies it. Only administrators can call it. It's the same as **Developer tools → YAML → Pururu**.
+</Property>

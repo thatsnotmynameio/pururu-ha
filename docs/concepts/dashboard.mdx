@@ -1,0 +1,25 @@
+---
+title: Dashboard
+description: A read-only dashboard at /pururu that lists every floor, area and device pururu manages.
+---
+
+pururu adds **Pururu** to Home Assistant's sidebar, at `/pururu`. It's a read-only overview of what pururu manages, and only administrators see it.
+
+It shows:
+
+- **Totals**: how many dashboards (this one), floors, areas and devices pururu manages.
+- **A table** of each of them, with its ID, name and type. A floor's or an area's ID is its key under `floors:` or `areas:`. A device's ID is its key under `devices:`.
+
+## Only what pururu manages
+
+Floors, areas and devices made in the UI or by other integrations aren't listed. An existing floor or area appears once pururu has [adopted](/concepts/floors-and-areas#yaml-wins) it.
+
+## Always current
+
+The dashboard isn't saved anywhere. It's built from Home Assistant's registries each time you open it, and an open page refreshes when something it lists changes: a reload, a rename in the UI or a deleted device. Its labels are in Home Assistant's language: English or Portuguese, and English for any other language.
+
+It's read-only: the UI offers no **Edit** button. To change what it shows, change the YAML.
+
+## When it doesn't appear
+
+If `/pururu` is already taken by another panel or dashboard, pururu logs `The dashboard is not created: /pururu is already taken` and adds no dashboard. Everything else (floors, areas, devices, entities) is still created. See [Troubleshooting](/reference/troubleshooting#dashboard).

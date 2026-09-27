@@ -1,0 +1,74 @@
+---
+title: Getting set up
+description: Clone, run the tests and the checks, and find your way around the repository.
+---
+
+This tab is for contributors. It explains how pururu is built, how to add a feature, how it's tested and how it's released. To use pururu, see the [Guide](/).
+
+## Prerequisites
+
+- [uv](https://docs.astral.sh/uv/). It installs Python 3.14 and every dependency from `uv.lock`.
+- Git.
+
+Home Assistant itself is pinned through `pytest-homeassistant-custom-component` in `pyproject.toml`, which pins `homeassistant==2026.9.3`. There's nothing else to install.
+
+## Commands
+
+Run everything from the repository root:
+
+```sh
+uv run pytest                                   # all tests, plus ruff, ruff format, mypy, hassfest and the quality scale
+uv run pytest tests/test_places.py -n 0 -q      # one file, in a single process
+uv run pytest "tests/test_places.py::test_name[param id]" -n 0
+uv run ruff check --fix custom_components/pururu
+uv run ruff format custom_components/pururu
+uv run mypy custom_components/pururu
+python3 release.py check                        # the manifest's version is semver and not below the latest release
+```
+
+`uv run pytest` is the one command that must pass. It includes the lint, format, type and hassfest checks (`tests/test_code.py`), so CI runs nothing you can't run locally.
+
+<Warning>
+  **Single process:** the `addopts` in `pyproject.toml` already pass `-n 4 --dist loadfile` (pytest-xdist). Use `-n 0` to run in one process, for example to debug. `-p no:xdist` breaks the run, because the options it leaves behind are unknown without the plugin.
+</Warning>
+
+<Warning>
+  **Working directory:** never leave the shell inside `.venv/…/homeassistant/helpers/`. That folder has an `importlib.py` that shadows the standard library's, so any Python started there crashes, including editor and git hooks.
+</Warning>
+
+## Repository layout
+
+```
+custom_components/pururu/     the integration
+  __init__.py                 CONFIG_SCHEMA, set-up, reload, building devices, removing stale ones
+  const.py                    names shared by the modules
+  config_flow.py              the import-only flow that creates the single entry
+  feature.py                  Device and Feature: the contract every feature fulfils
+  entity.py                   PururuEntity (the base of every entity) and reading()
+  features/                   one module or package per feature, and FEATURES
+    appliance/                running, cycles, runtime, mirrors, statistics
+    phases.py
+  places.py                   floors and areas from YAML
+  dashboard.py                the read-only dashboard (private lovelace API)
+  sensor.py, binary_sensor.py the platforms: they only add what the entry built
+  translations/               en.json and pt-BR.json, with the same keys
+  icons.json, services.yaml, manifest.json, quality_scale.yaml
+tests/                        pytest, with the HA test plugin
+docs/, docs.json              this site (docs.page)
+docs/superpowers/             design specs and implementation plans (not published)
+release.py                    semver checks and the tag to publish
+fetch_hassfest.py             downloads hassfest for the pinned HA
+ruff.toml, mypy.ini           Home Assistant core's settings
+```
+
+## Code style
+
+- ruff and mypy run only on `custom_components/pururu`, with core's settings, and mypy is strict. Tests aren't linted.
+- Match the surrounding code: short docstrings that say *what* and *why*, comments only where the code can't speak for itself, and names that read as prose (`_creatable`, `current_entity_id`).
+- A SonarQube Cloud finding that conflicts with a signature or convention Home Assistant requires is suppressed in `sonar-project.properties`, with a comment giving the reason, never in the code. See [Releases and CI](/develop/releases#sonarqube).
+
+## Where to go next
+
+- [Architecture](/develop/architecture): how a `pururu:` block becomes devices and entities.
+- [Writing a feature](/develop/writing-a-feature): add something a device can do.
+- [Testing](/develop/testing): the fixtures and helpers.
