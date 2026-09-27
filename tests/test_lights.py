@@ -77,6 +77,22 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
     assert not await setup(ha, {KEY: {"name": "Sala", "lights": block}})
 
 
+@pytest.mark.parametrize(("entity", "message"), [
+    pytest.param("sensor.sala_teto", "sensor.sala_teto is not a light or switch",
+                 id="another domain"),
+    pytest.param(TETO, f"{TETO} is a pururu light: name the real one", id="a pururu light"),
+    pytest.param("switch.pururu_pool_switch_pump",
+                 "switch.pururu_pool_switch_pump is a pururu switch: name the real one",
+                 id="a pururu switch"),
+])
+async def test_the_error_names_what_is_wrong(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, entity: str, message: str) -> None:
+    """The messages the docs quote (troubleshooting)."""
+    assert not await setup(ha, {KEY: {"name": "Sala", "lights": {
+        "teto": {"entity": entity, "name": "Teto"}}}})
+    assert message in caplog.text
+
+
 async def test_a_light_keyed_light_repeats_it(ha: HomeAssistant) -> None:
     """No exception to the pattern: the namespace, then the key, even when they are alike."""
     await fake(ha, REAL_TETO, "on", ONOFF)

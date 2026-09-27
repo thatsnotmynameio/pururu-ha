@@ -62,6 +62,18 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
     assert not await setup(ha, {KEY: {"name": "Piscina", "switches": block}})
 
 
+@pytest.mark.parametrize(("entity", "message"), [
+    pytest.param("light.pool_light", "light.pool_light is not a switch", id="another domain"),
+    pytest.param(PUMP, f"{PUMP} is a pururu switch: name the real one", id="a pururu switch"),
+])
+async def test_the_error_names_what_is_wrong(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, entity: str, message: str) -> None:
+    """The messages the docs quote (troubleshooting)."""
+    assert not await setup(ha, {KEY: {"name": "Piscina", "switches": {
+        "pump": {"entity": entity, "name": "Bomba"}}}})
+    assert message in caplog.text
+
+
 @pytest.mark.parametrize("entity_key", ["power", "running", "runtime_month"])
 async def test_a_key_of_another_feature_is_accepted(ha: HomeAssistant, entity_key: str) -> None:
     """The switch is in the switch namespace, the appliance's entities in theirs."""
