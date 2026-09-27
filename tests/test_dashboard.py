@@ -172,6 +172,11 @@ def errors(caplog: pytest.LogCaptureFixture) -> str:
     return "\n".join(r.getMessage() for r in caplog.records if r.levelname == "ERROR")
 
 
+def logged_exceptions(caplog: pytest.LogCaptureFixture) -> list[BaseException]:
+    """The exceptions logged with their traceback."""
+    return [r.exc_info[1] for r in caplog.records if r.exc_info and r.exc_info[1]]
+
+
 async def test_a_rename_shows_and_refreshes_an_open_page(
         ha: HomeAssistant, hass_ws_client: WebSocketGenerator, appliance: dict[str, Any]) -> None:
     """Renaming a floor, an area or a device in the UI: an open page fetches again."""
@@ -230,7 +235,8 @@ async def test_a_changed_lovelace_api_is_an_error_and_no_dashboard(
     with patch.object(frontend, "async_register_built_in_panel",
                       side_effect=TypeError("unexpected keyword argument")):
         assert await setup(ha, devices(appliance, washer="Washer"))
-    assert "unexpected keyword argument" in errors(caplog)
+    assert "The dashboard is not created" in errors(caplog)
+    assert [str(err) for err in logged_exceptions(caplog)] == ["unexpected keyword argument"]
     assert URL not in ha.data[LOVELACE_DATA].dashboards
     assert device_of(ha, "washer") is not None
 
@@ -242,7 +248,8 @@ async def test_a_dashboard_that_cannot_be_built_is_an_error_and_leaves_no_panel(
     with patch.object(dashboard.PururuDashboard, "__init__",
                       side_effect=TypeError("abstract method async_new")):
         assert await setup(ha, devices(appliance, washer="Washer"))
-    assert "abstract method async_new" in errors(caplog)
+    assert "The dashboard is not created" in errors(caplog)
+    assert [str(err) for err in logged_exceptions(caplog)] == ["abstract method async_new"]
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.state is ConfigEntryState.LOADED
     assert URL not in ha.data.get(frontend.DATA_PANELS, {})

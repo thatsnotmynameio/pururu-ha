@@ -204,8 +204,11 @@ def async_setup(hass: HomeAssistant, entry: ConfigEntry[Any]) -> None:
             config={"mode": MODE_YAML},
             require_admin=True,
         )
-    except (AttributeError, TypeError) as err:
-        _LOGGER.error("The dashboard is not created: %s", err)
+    except AttributeError, TypeError:
+        # With the traceback: it shows what changed in lovelace or frontend
+        _LOGGER.exception(
+            "The dashboard is not created: lovelace's or frontend's API changed"
+        )
         return
     dashboards[URL_PATH] = created
     devices = dr.async_get(hass)
