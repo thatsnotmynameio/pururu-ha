@@ -1,6 +1,7 @@
 """Reactions: a made-up washer and the laundry's lights, which react to it, to a door, to time."""
 
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -8,7 +9,12 @@ from unittest.mock import patch
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import CoreState, HomeAssistant, State
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import (
+    config_validation as cv,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
@@ -133,6 +139,19 @@ async def test_the_american_spelling_of_a_key_is_refused(ha: HomeAssistant) -> N
     assert not await setup(ha, config)
 
 
+async def test_two_reactions_with_one_automation_id_are_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """lights' b_reaction_c and lights_reaction_b's c would both be pururu_lights_reaction_b_reaction_c."""
+    config = devices(b_reaction_c=DOOR_OPENS)
+    config["lights_reaction_b"] = {
+        "name": "Outras", "lights": {"x": {"entity": "light.demo_x", "name": "X"}},
+        "reactions": {"c": DOOR_OPENS},
+    }
+    assert not await setup(ha, config)
+    assert ("device lights_reaction_b: automation.pururu_lights_reaction_b_reaction_c is already "
+            "a reaction of device lights") in caplog.text
+
+
 # --- translation ----------------------------------------------------------------------
 
 
@@ -186,6 +205,16 @@ def test_sun_with_a_negative_offset(ha: HomeAssistant) -> None:
 def test_sun_without_offset(ha: HomeAssistant) -> None:
     assert translated(ha, {"name": "X", "sun": "sunrise"}) == [
         {"trigger": "sun", "event": "sunrise"}]
+
+
+def test_a_fraction_of_a_second_is_kept(ha: HomeAssistant) -> None:
+    """A reaction never fires earlier than configured: HA reads the fraction back."""
+    held = translated(ha, {**DOOR_OPENS, "for": {"seconds": 1.9}}, DOOR)[0]["for"]
+    assert held == "00:00:01.900000"
+    assert cv.time_period(held) == timedelta(seconds=1.9)
+    offset = translated(ha, {"name": "X", "sun": "sunset", "offset": {"seconds": -0.5}})[0]
+    assert offset["offset"] == "-00:00:00.500000"
+    assert cv.time_period(offset["offset"]) == timedelta(seconds=-0.5)
 
 
 def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
@@ -276,6 +305,17 @@ async def test_an_automation_id_already_taken_is_not_generated(
     assert ("automation.pururu_lights_reaction_door is already taken by the automation "
             "integration; not generating it") in caplog.text
     assert er.async_get(ha).async_get(f"{automation('door')}_2") is None
+
+
+async def test_an_automation_of_ones_own_with_the_same_id_is_not_adopted(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """An automation pururu never generated keeps its ID and its actions."""
+    er.async_get(ha).async_get_or_create("automation", "automation",
+                                         "pururu_lights_reaction_door", suggested_object_id="mine")
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    assert generated(ha) == []
+    assert ("automation.pururu_lights_reaction_door is already taken by automation.mine, an "
+            "automation with the same ID; not generating it") in caplog.text
 
 
 async def test_a_state_reaction_fires(ha: HomeAssistant, automations: None) -> None:
@@ -526,3 +566,70 @@ async def test_a_restart_with_an_unchanged_file_reloads_nothing(ha: HomeAssistan
     assert state.state != STATE_UNAVAILABLE
     assert state.attributes["id"] == "pururu_lights_reaction_door"
     assert issue(ha) is None
+
+
+# --- review: reloads that don't take, and failures that must leave things as they were -----
+
+NIGHT = {"name": "Noite", "at": "22:00"}
+
+
+def loaded(ha: HomeAssistant, key: str) -> bool:
+    """Whether HA's automation component has the reaction's automation, not a placeholder."""
+    state = ha.states.get(automation(key))
+    return (state is not None and not state.attributes.get("restored")
+            and state.attributes.get("id") == f"pururu_lights_reaction_{key}")
+
+
+async def test_automations_not_loaded_are_reloaded_at_the_next_reload(ha: HomeAssistant) -> None:
+    """A reload that didn't take (no include yet, or it failed) is retried, though the file is the same."""
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {}) as loader:
+        assert await async_setup_component(ha, "automation", {})
+        assert await setup(ha, devices(door=DOOR_OPENS))
+        assert not loaded(ha, "door")
+        loader.side_effect = lambda *_args, **_kwargs: {"automation pururu": generated(ha)}
+        reloaded = capture(ha, "automation_reloaded")
+        await reload(ha, devices(door=DOOR_OPENS))
+    assert len(reloaded) == 1
+    assert loaded(ha, "door")
+    assert issue(ha) is None
+
+
+async def test_a_failed_reload_keeps_what_is_still_loaded_and_is_retried(
+        ha: HomeAssistant, automations: None, caplog: pytest.LogCaptureFixture) -> None:
+    """A dropped reaction HA still runs keeps its pururu ID until a reload drops it."""
+    assert await setup(ha, devices(door=DOOR_OPENS, night=NIGHT))
+    with patch("homeassistant.components.automation._async_process_config",
+               side_effect=HomeAssistantError("boom")):
+        await reload(ha, devices(night=NIGHT))
+    assert "The automations are not reloaded: boom" in caplog.text
+    assert loaded(ha, "door")
+    assert er.async_get(ha).async_get(automation("door")) is not None
+    entry = ha.config_entries.async_entries("pururu")[0]
+    assert "pururu_lights_reaction_door" in entry.data["automations"]
+    await reload(ha, devices(night=NIGHT))
+    assert not loaded(ha, "door")
+    assert er.async_get(ha).async_get(automation("door")) is None
+    assert entry.data["automations"] == ["pururu_lights_reaction_night"]
+
+
+async def test_a_failed_write_raises_no_include_issue(ha: HomeAssistant,
+                                                      automations: None) -> None:
+    """A reaction that never reached the file says nothing about the include."""
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    reactions = module("reactions")
+    with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
+        await reload(ha, devices(door=DOOR_OPENS, night=NIGHT))
+    assert issue(ha) is None
+
+
+async def test_a_failed_removal_keeps_the_automations_ids(ha: HomeAssistant,
+                                                          automations: None) -> None:
+    """The file still holds them: HA loads them again with their pururu IDs."""
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    entry = ha.config_entries.async_entries("pururu")[0]
+    reactions = module("reactions")
+    with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
+        await ha.config_entries.async_remove(entry.entry_id)
+        await ha.async_block_till_done()
+    assert er.async_get(ha).async_get(automation("door")) is not None

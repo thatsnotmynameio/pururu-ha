@@ -6,7 +6,7 @@ pururu/automations/reactions.yaml, whose folder configuration.yaml includes.
 It has no actions yet: it fires, and its trace shows when and why.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from datetime import timedelta
 import logging
 from pathlib import Path
@@ -120,12 +120,14 @@ def automation_id(device_key: str, reaction_key: str) -> str:
 
 
 def _period(value: timedelta) -> str:
-    """A time period as HA reads it: [-]HH:MM:SS, in whole seconds."""
-    seconds = int(value.total_seconds())
-    sign = "-" if seconds < 0 else ""
-    hours, rest = divmod(abs(seconds), 3600)
-    minutes, seconds = divmod(rest, 60)
-    return f"{sign}{hours:02}:{minutes:02}:{seconds:02}"
+    """A time period as HA reads it: [-]HH:MM:SS, and the fraction of a second if any."""
+    sign = "-" if value < timedelta(0) else ""
+    minutes, seconds = divmod(abs(value), timedelta(minutes=1))
+    hours, minutes = divmod(minutes, 60)
+    period = f"{sign}{hours:02}:{minutes:02}:{seconds.seconds:02}"
+    if seconds.microseconds:
+        period += f".{seconds.microseconds:06}"
+    return period
 
 
 def triggers(
@@ -190,12 +192,25 @@ def _write(path: Path, content: str) -> bool:
     return True
 
 
-def _free(hass: HomeAssistant, registry: er.EntityRegistry, unique_id: str) -> bool:
-    """Whether automation.<ID> is free, or already this automation's; the holder logged."""
-    if registry.async_get_entity_id(AUTOMATION, AUTOMATION, unique_id) is not None:
-        return True
+def _free(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    unique_id: str,
+    managed: Collection[str],
+) -> bool:
+    """Whether automation.<ID> is free, or already this automation's; the holder logged.
+
+    An automation with this ID is this one only if the entry manages it: else it
+    is someone's own, which keeps its ID and its actions.
+    """
     entity_id = f"{AUTOMATION}.{unique_id}"
-    if (registered := registry.async_get(entity_id)) is not None:
+    if (
+        same := registry.async_get_entity_id(AUTOMATION, AUTOMATION, unique_id)
+    ) is not None:
+        if unique_id in managed:
+            return True
+        holder = f"{same}, an automation with the same ID"
+    elif (registered := registry.async_get(entity_id)) is not None:
         holder = f"the {registered.platform} integration"
     elif (state := hass.states.get(entity_id)) is not None and not state.attributes.get(
         ATTR_RESTORED
@@ -232,36 +247,55 @@ async def _async_write(
         return None
 
 
-async def _async_reload(hass: HomeAssistant) -> None:
-    """Reload HA's automations, if HA has them; a failure is logged, never raised."""
+async def _async_reload(hass: HomeAssistant) -> bool:
+    """Reload HA's automations, if HA has them; whether it did. A failure is logged, never raised."""
     if AUTOMATION not in hass.config.components:
-        return
+        return False
     try:
         await hass.services.async_call(AUTOMATION, SERVICE_RELOAD, blocking=True)
     except HomeAssistantError as err:
         _LOGGER.error("The automations are not reloaded: %s", err)
+        return False
+    return True
+
+
+@callback
+def _running(hass: HomeAssistant) -> set[str]:
+    """The IDs of the automations HA runs.
+
+    One it doesn't run but has registered leaves a restored placeholder, whose
+    attributes carry its registered ID too: it doesn't count.
+    """
+    return {
+        str(state.attributes[ATTR_ID])
+        for state in hass.states.async_all(AUTOMATION)
+        if ATTR_ID in state.attributes and not state.attributes.get(ATTR_RESTORED)
+    }
+
+
+@callback
+def _missing(
+    hass: HomeAssistant, registry: er.EntityRegistry, ids: Iterable[str]
+) -> list[str]:
+    """The generated automations HA doesn't run; a disabled one never runs, and isn't missing."""
+    running = _running(hass)
+    missing = []
+    for unique_id in ids:
+        entity_id = registry.async_get_entity_id(AUTOMATION, AUTOMATION, unique_id)
+        registered = registry.async_get(entity_id) if entity_id is not None else None
+        if unique_id not in running and (
+            registered is None or registered.disabled_by is None
+        ):
+            missing.append(unique_id)
+    return missing
 
 
 @callback
 def _check_included(
     hass: HomeAssistant, registry: er.EntityRegistry, ids: Iterable[str]
 ) -> None:
-    """Raise the Repairs issue while a generated automation isn't loaded, else delete it.
-
-    A disabled one is never loaded: it says nothing about the include.
-    """
-    loaded = {
-        state.attributes.get(ATTR_ID) for state in hass.states.async_all(AUTOMATION)
-    }
-    missing = []
-    for unique_id in ids:
-        entity_id = registry.async_get_entity_id(AUTOMATION, AUTOMATION, unique_id)
-        registered = registry.async_get(entity_id) if entity_id is not None else None
-        if unique_id not in loaded and (
-            registered is None or registered.disabled_by is None
-        ):
-            missing.append(unique_id)
-    if not missing:
+    """Raise the Repairs issue while a generated automation isn't loaded, else delete it."""
+    if not _missing(hass, registry, ids):
         ir.async_delete_issue(hass, DOMAIN, ISSUE)
         return
     _LOGGER.warning(
@@ -282,63 +316,89 @@ def _check_included(
 
 async def _finish(
     hass: HomeAssistant,
-    registry: er.EntityRegistry,
+    entry: ConfigEntry,
     changed: bool,
-    stale: set[str],
     ids: list[str],
+    stale: set[str],
+    checked: list[str],
 ) -> None:
-    """Once HA has started: reload what changed, drop what isn't generated any more, check the include."""
-    if changed:
-        await _async_reload(hass)
-    _remove(registry, stale)
-    _check_included(hass, registry, ids)
+    """Once HA has started: apply the file, drop what HA no longer runs, check the include.
+
+    HA reloads when the file changed, and also when it doesn't run the file as
+    written (a reload that failed, the include added since): the reload is
+    retried. A dropped automation HA still runs keeps its entity ID, and stays
+    tracked, until a reload drops it.
+    """
+    registry = er.async_get(hass)
+    reloaded = False
+    if changed or _missing(hass, registry, checked) or stale & _running(hass):
+        reloaded = await _async_reload(hass)
+    running = stale & _running(hass)
+    _remove(registry, stale - running)
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_AUTOMATIONS: [*ids, *sorted(running)]}
+    )
+    if not reloaded:  # a reload is checked when its event comes
+        _check_included(hass, registry, checked)
 
 
 async def async_sync(
     hass: HomeAssistant, entry: ConfigEntry, automations: list[dict[str, Any]]
 ) -> list[str]:
-    """Generate the automations: the IDs generated.
+    """Generate the automations: the IDs the entry tracks.
 
     Each entity ID is registered first, so HA gives the automation the pururu
     one rather than one from its alias. At start, HA has already loaded the
-    file; it is reloaded only when it changed, once HA has started. A failed
-    write drops nothing stale: the returned IDs then also cover the previous
-    ones, so a later, successful write can still clean up their registry
-    entries; the include check always runs on this configuration's own IDs.
+    file; the rest waits for HA to have started, in a task the entry's unload
+    waits for, so a reload never overlaps the previous one. The tracked IDs are
+    the generated ones and the dropped ones still registered: their entries go
+    once HA no longer runs them. After a failed write, the file is the previous
+    one: only what it holds is checked for the include.
     """
     registry = er.async_get(hass)
-    kept = [each for each in automations if _free(hass, registry, each["id"])]
+    previous = entry.data.get(CONF_AUTOMATIONS, [])
+    kept = [each for each in automations if _free(hass, registry, each["id"], previous)]
     for each in kept:
         registry.async_get_or_create(
             AUTOMATION, AUTOMATION, each["id"], suggested_object_id=each["id"]
         )
     ids = [each["id"] for each in kept]
     written = await _async_write(hass, kept)
-    previous = entry.data.get(CONF_AUTOMATIONS, [])
-    if written is None:
-        stale: set[str] = set()
-        tracked = sorted(set(previous) | set(ids))
-    else:
-        stale = set(previous) - set(ids)
-        tracked = ids
-    changed = bool(written)
+    stale = {
+        unique_id
+        for unique_id in previous
+        if unique_id not in ids
+        and registry.async_get_entity_id(AUTOMATION, AUTOMATION, unique_id) is not None
+    }
+    checked = ids if written is not None else [i for i in ids if i in previous]
 
-    async def finish(_hass: HomeAssistant) -> None:
-        await _finish(hass, registry, changed, stale, ids)
+    @callback
+    def finish(_hass: HomeAssistant) -> None:
+        entry.async_create_task(
+            hass,
+            _finish(hass, entry, bool(written), ids, stale, checked),
+            "pururu reactions",
+            eager_start=False,
+        )
 
     entry.async_on_unload(async_at_started(hass, finish))
 
     @callback
     def reloaded(_event: Event) -> None:
-        _check_included(hass, registry, ids)
+        _check_included(hass, registry, checked)
 
     entry.async_on_unload(hass.bus.async_listen(EVENT_AUTOMATION_RELOADED, reloaded))
-    return tracked
+    return [*ids, *sorted(stale)]
 
 
 async def async_remove(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Generate nothing: an empty file, stays valid for the include."""
+    """Generate nothing: an empty file, still valid for the include.
+
+    An automation HA still runs (the file couldn't be written, or the reload
+    failed) keeps its entity ID.
+    """
     if await _async_write(hass, []) and hass.is_running:
         await _async_reload(hass)
-    _remove(er.async_get(hass), entry.data.get(CONF_AUTOMATIONS, []))
+    tracked = set(entry.data.get(CONF_AUTOMATIONS, []))
+    _remove(er.async_get(hass), tracked - _running(hass))
     ir.async_delete_issue(hass, DOMAIN, ISSUE)

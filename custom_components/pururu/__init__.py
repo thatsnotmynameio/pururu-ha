@@ -191,6 +191,25 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _reaction_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse two reactions whose automations would share an ID.
+
+    Device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b`
+    with the reaction `c` would both have pururu_lights_reaction_b_reaction_c.
+    """
+    owners: dict[str, str] = {}  # automation ID -> the device that has it
+    for key, device in config[CONF_DEVICES].items():
+        for reaction_key in device.get(CONF_REACTIONS, {}):
+            automation_id = reactions.automation_id(key, reaction_key)
+            if automation_id in owners:
+                raise vol.Invalid(
+                    f"device {key}: automation.{automation_id} is already a reaction "
+                    f"of device {owners[automation_id]}"
+                )
+            owners[automation_id] = key
+    return config
+
+
 def _reactions_resolved(config: dict[str, Any]) -> dict[str, Any]:
     """Refuse a reaction's `device` that isn't a device, or its `when` that isn't that device's."""
     devices = config[CONF_DEVICES]
@@ -247,6 +266,7 @@ CONFIG_SCHEMA = vol.Schema(
             places.floors_exist,
             _areas_exist,
             _entity_ids_distinct,
+            _reaction_ids_distinct,
             _reactions_resolved,
         )
     },

@@ -26,6 +26,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`.
 - A reaction with no source or two (`a reaction needs one source: when, entity, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `device` without `when`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`.
 - A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device laundry_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
+- Two reactions whose automations would share an ID: `device lights_reaction_b: automation.pururu_lights_reaction_b_reaction_c is already a reaction of device lights`. Rename a device key or a reaction key.
 - Two devices that would give an entity the same ID: `device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`. Rename a device key or a switch key.
 
 **Developer tools → YAML → Check configuration** shows the same error before you reload.
@@ -196,7 +197,11 @@ The reaction's `when` names a pururu entity that isn't created: its ID is taken,
 
 ### `automation.… is already taken by …; not generating it`
 
-Another automation already has the ID the reaction's automation would have. Rename or delete that one in **Settings → Entities**, then reload pururu.
+```
+automation.pururu_laundry_lights_reaction_door is already taken by automation.mine, an automation with the same ID; not generating it
+```
+
+Another automation already has the entity ID the reaction's automation would have, or one of your own automations has the same `id`. pururu never takes over an automation it didn't write. Rename or delete that one in **Settings → Entities** (or change its `id`), then reload pururu.
 
 ### `The automations are not written to pururu/automations/reactions.yaml: …`
 

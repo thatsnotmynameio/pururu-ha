@@ -140,8 +140,10 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 | Actions | none, in this version |
 
 - **Renaming** the automation's entity in the UI is kept.
-- **An ID already taken:** if another automation already has `automation.pururu_…`, pururu leaves it alone and logs it. It never suffixes one with `_2`.
+- **An ID already taken:** if another automation already has `automation.pururu_…`, or one of your own automations has the same `id`, pururu leaves it alone and logs it. It never suffixes one with `_2`, and never takes over an automation it didn't write.
+- **Two reactions with one ID:** device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b` with the reaction `c` would both be `automation.pururu_lights_reaction_b_reaction_c`. That's a configuration error: rename a device key or a reaction key.
+- **A reload that didn't take:** if reloading automations fails, or the include was missing, pururu reloads them again at its next reload, even when the file hasn't changed. An automation you dropped from the YAML that Home Assistant still runs keeps its ID until a reload drops it.
 - **A pururu entity renamed in the UI:** `when` follows it, because pururu writes the entity's current ID into the file at every reload.
 - **A pururu entity that isn't created** (its ID is taken, or the device's settings don't create it, as `appliance_runtime_month` without `statistics`): its reactions aren't generated, and the log says why.
 - **A reaction removed from the YAML:** its automation leaves the file, and its entity leaves Home Assistant.
-- **Removing pururu:** the file becomes an empty list, so its automations go. The line can stay until you remove it.
+- **Removing pururu:** the file becomes an empty list, so its automations go. The line can stay until you remove it. If the file can't be written, its automations keep running with their IDs: delete the file by hand.
