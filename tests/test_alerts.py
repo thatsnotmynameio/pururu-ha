@@ -274,6 +274,31 @@ async def test_a_plug_offline_at_start_turns_it_on(ha: HomeAssistant) -> None:
     assert state(ha, alert("offline")) == "on"
 
 
+@pytest.mark.parametrize("condition", ["unavailable", "unknown"])
+@pytest.mark.parametrize("gone", ["unavailable", "unknown"])
+async def test_unavailable_and_unknown_are_both_offline(
+        ha: HomeAssistant, condition: str, gone: str) -> None:
+    assert await setup(ha, devices(offline={**OFFLINE, "is": condition}))
+    await fake(ha, POWER, "10")
+    await fake(ha, POWER, gone)
+    assert state(ha, alert("offline")) == "on"
+
+
+async def test_passing_between_unavailable_and_unknown_keeps_counting(
+        ha: HomeAssistant, freezer: Any) -> None:
+    """A plug reconnecting shows unknown for a moment: still offline, for goes on."""
+    assert await setup(ha, devices(offline={**OFFLINE, "for": {"minutes": 10}}))
+    await fake(ha, POWER, "10")
+    await fake(ha, POWER, "unavailable")
+    await tick(ha, freezer, 480)
+    await fake(ha, POWER, "unknown")
+    await fake(ha, POWER, "unavailable")
+    await tick(ha, freezer, 119)
+    assert state(ha, alert("offline")) == "off"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("offline")) == "on"
+
+
 async def test_a_missing_entity_counts_as_unavailable(ha: HomeAssistant) -> None:
     offline = {"name": "Offline", "when": "appliance_power", "is": "unavailable"}
     assert await setup(ha, devices(offline=offline))

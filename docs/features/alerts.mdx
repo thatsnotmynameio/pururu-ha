@@ -71,7 +71,7 @@ An alert needs **either** `is` **or** `above`/`below`, not both.
 - **The condition holds**, for `is` when the watched state equals it, for `above`/`below` when the watched state is a number in the range. The alert turns on after `for`.
 - **The condition stops holding:** the alert turns off at once. If it stops before `for` passes, the count starts over the next time it holds.
 - **The watched entity has no reading** (`unknown`, `unavailable`, or not a number for `above`/`below`): the alert **keeps its state**, and a count in progress starts over when readings return. A washer's alert doesn't clear because its plug dropped off Wi-Fi for a minute.
-- **An alert about the reading itself**, `is: unavailable`, compares that state like any other, so it turns on for a plug gone offline. An entity that disappears counts as `unavailable`.
+- **An alert about the reading itself**, `is: unavailable` or `is: unknown`, holds while the entity has no reading: `unavailable`, `unknown`, or gone. The two mean the same, because a plug reconnecting shows `unknown` for a moment between `unavailable` and its first value, and that mustn't restart the count. So it turns on for a plug gone offline.
 - **After a restart or reload,** the alert comes back as it was, and follows the watched entity again once Home Assistant has started: entities pass through `unavailable` while it starts, and that raises no alert. A condition that holds starts its `for` over.
 
 ## Entity

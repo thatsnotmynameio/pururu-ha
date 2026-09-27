@@ -95,9 +95,10 @@ class Condition:
     def holds(self, state: State | None) -> bool | None:
         """Whether `state` is a problem; None when it is no reading.
 
-        A condition on unavailable or unknown compares those states, a missing
-        entity counting as unavailable. A state HA restored for an entity not
-        loaded yet (at start, during a reload) is no reading.
+        A condition on unavailable or unknown holds while the entity has no
+        reading, either state or missing: a plug reconnecting passes from one to
+        the other. A state HA restored for an entity not loaded yet (at start,
+        during a reload) is no reading, for every condition.
         """
         if state is not None and state.attributes.get(ATTR_RESTORED):
             return None
@@ -107,7 +108,9 @@ class Condition:
             return value == self.state
         if self.state is not None:
             current = STATE_UNAVAILABLE if state is None else state.state
-            if current in NO_READING and self.state not in NO_READING:
+            if self.state in NO_READING:
+                return current in NO_READING
+            if current in NO_READING:
                 return None
             return current == self.state
         if (value := reading(state)) is None:

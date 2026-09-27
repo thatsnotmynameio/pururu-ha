@@ -63,7 +63,7 @@ Because a switch's entity keys come from its block, `when: switch_pump` is valid
 ## Behaviour
 
 - **Holds:** for `is`, the watched state equals it. For `above`/`below`, the watched state is a number (`reading()`) inside the range.
-- **No reading:** the watched entity is missing, `unknown` or `unavailable`, or (for `above`/`below`) not a number. Then the alert keeps its state and cancels a pending `for`. Exception: with `is: unavailable` or `is: unknown`, a missing entity counts as `unavailable` and those states are compared like any other.
+- **No reading:** the watched entity is missing, `unknown` or `unavailable`, or (for `above`/`below`) not a number. Then the alert keeps its state and cancels a pending `for`. Exception: `is: unavailable` and `is: unknown` both mean "no reading" and hold while the entity is `unavailable`, `unknown` or missing (decided after the first implementation: a plug reconnecting passes through `unknown`, which would otherwise clear the alert and restart `for`).
 - **Holds, alert off:** it turns on after `for` (at once with no `for`). Stops holding before that: the pending `for` is cancelled.
 - **Doesn't hold:** the alert turns off at once, and a pending `for` is cancelled.
 - **Start and reload:** the alert restores its last state, then follows the watched entity once HA has started, and evaluates its current state. A condition already holding starts its `for` from now; with no reading, the restored state stays. A watched entity that isn't there yet, or whose state HA restored while it isn't loaded (`restored: true`), is no reading: at a start or reload they pass through `unavailable`, which must not raise an `is: unavailable` alert.
