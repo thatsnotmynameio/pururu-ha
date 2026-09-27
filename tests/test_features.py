@@ -51,6 +51,14 @@ def test_no_entity_key_repeats_its_namespace(features: dict[str, Any]) -> None:
         assert feature.namespace not in feature.entity_keys, name
 
 
+def test_refers_names_entity_keys_as_in_an_entity_id(features: dict[str, Any]) -> None:
+    """What a feature refers to is a qualified entity key, such as appliance_running: a slug."""
+    for name, feature in features.items():
+        if feature.refers is not None:
+            for key in feature.refers(feature.schema(dict(feature.example))):
+                assert cv.slug(key) == key, name
+
+
 def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> None:
     qualified = module("feature").qualified
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")

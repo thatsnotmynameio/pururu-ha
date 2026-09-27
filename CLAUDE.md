@@ -38,6 +38,7 @@ python3 release.py check                        # the manifest version must be s
 - **Features** (`feature.py`, `features/`):
   - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, a `namespace`, the `entity_keys` it can create (entity key → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
   - A feature consumes another feature's capability through `<capability>_from: <feature>`. `_build` passes it the current entity ID of the providing entity key.
+  - A feature can watch a particular entity of another feature named in its block (an alert's `when: appliance_power`): `Feature.refers` returns those qualified keys, `_device` checks they are another feature's, `_build` passes their current entity IDs in `inputs` by key, and `PururuEntity.follows` drops the entity when the watched one isn't created (or isn't built by the settings).
   - A `configured` feature (`switches`) takes its entity keys from its block's keys, named by the block's `name` (no translation). A feature standing for real entities of one domain is that domain's HA group entity with one member (`SwitchGroup`, as `Mirror` is a `SensorGroup`), one feature per domain.
   - `tests/test_features.py` is a contract test over every entry in `FEATURES`. It checks translations and icons for each entity key, that the example is valid, and more. A new feature gets checked there without changes to the test.
 - **Entity IDs are the identity:**

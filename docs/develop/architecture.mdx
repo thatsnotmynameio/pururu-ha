@@ -56,12 +56,15 @@ A device is a name plus one or more **features**. `FEATURES` in `features/__init
 | `provides` | capability → the entity key whose entity carries it |
 | `requires` | capabilities it takes through `<capability>_from` |
 | `configured` | A platform, when its entity keys are the keys of its block, named by the block's `name`; `None` otherwise |
+| `refers` | Given its block, the entity keys of other features of the device it names, in their namespace (`appliance_running`); `None` otherwise |
 
 The device schema (`_device` in `__init__.py`) is built from `FEATURES`. It requires at least one feature, and it checks that every `<capability>_from` names a feature of the same device that provides that capability.
 
 It doesn't compare entity keys between features. Each feature has its own `namespace`, and the entity keys it creates are in it (`appliance_power`, `switch_power`), so they can't meet. The contract test checks that namespaces are distinct slugs and that none is another's followed by `_`. Between devices, `_entity_ids_distinct` still refuses two that would give an entity one ID: `pool` with the switch `switch_pump` and `pool_switch` with the switch `pump`.
 
 When a feature requires a capability, `_build` looks up the providing entity key's **current** entity ID with a `Device` in the providing feature's namespace (`Device.current_entity_id`, which follows renames), and passes it to `build()` in `inputs`. The provider's unique ID is also added to the entity's sources, so if the provider isn't created, neither is this entity.
+
+A feature can also watch one particular entity of another feature, named in its block, as an alert's `when: appliance_power`. `refers` returns those keys. `_device` checks that each is an entity key another feature of the device can create, whatever its settings. `_build` passes each one's current entity ID in `inputs`, under that key. An entity lists what it watches in `follows`, so it isn't created when that entity isn't, including when the settings never build it (`_creatable`).
 
 [Writing a feature](/develop/writing-a-feature) walks through adding one.
 

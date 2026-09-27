@@ -27,6 +27,9 @@ class PururuEntity(Entity):
     _attr_should_poll = False
     # Entity keys of its own device it takes its value from: without them it isn't created
     sources: tuple[str, ...] = ()
+    # Entity keys of other features of its device, in their namespace, it reads:
+    # without them it isn't created either
+    follows: tuple[str, ...] = ()
 
     def _identify(
         self,

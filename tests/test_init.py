@@ -1,9 +1,11 @@
 """pururu: the configuration, devices, capabilities, taken IDs, reloads and the entry.
 
-Three made-up features stand in for real ones: `gauge` creates a sensor and a
-binary sensor and provides `activity` (its binary sensor); `echo` requires
-`activity` and shows the entity ID it gets; `tags` is configured: a sensor per
-key of its block, named by the block.
+Four made-up features stand in for real ones: `gauge` creates a sensor and a
+binary sensor, can create a `spare` sensor it never builds, and provides
+`activity` (its binary sensor); `echo` requires `activity` and shows the entity
+ID it gets; `tags` is configured: a sensor per key of its block, named by the
+block; `watch` refers to one entity key of the device (`of`) and shows its
+current entity ID.
 """
 
 from collections.abc import Iterator
@@ -31,6 +33,7 @@ from helpers import DOMAIN, device_of, held, module, reload, setup
 LEVEL = "sensor.pururu_demo_widget_gauge_level"
 ACTIVE = "binary_sensor.pururu_demo_widget_gauge_active"
 ECHO = "sensor.pururu_demo_widget_echo_echo"
+SEEN = "sensor.pururu_demo_widget_watch_seen"
 GAUGE = {"source": "sensor.demo_source"}
 WIDGET = {"name": "Widget", "gauge": GAUGE}
 PANEL = {"name": "Panel", "gauge": GAUGE}
@@ -67,11 +70,18 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             self._identify(device, Platform.SENSOR, entity_key, name)
             self._attr_native_value = entity_key
 
+    class Seen(entity.PururuEntity, SensorEntity):
+        def __init__(self, device: Any, of: str, watched: str) -> None:
+            self._identify(device, Platform.SENSOR, "seen")
+            self.follows = (of,)
+            self._attr_native_value = watched
+
     added = {
         "gauge": feature.Feature(
             schema=vol.Schema({vol.Required("source"): cv.entity_id}),
             namespace="gauge",
-            entity_keys={"level": Platform.SENSOR, "active": Platform.BINARY_SENSOR},
+            entity_keys={"level": Platform.SENSOR, "active": Platform.BINARY_SENSOR,
+                         "spare": Platform.SENSOR},
             build=lambda hass, device, config, inputs: [Level(device, config["source"]),
                                                         Active(device)],
             example=GAUGE,
@@ -94,6 +104,15 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
                                                         for key, tag in config.items()],
             example={"first": {"name": "First"}},
             configured=Platform.SENSOR,
+        ),
+        "watch": feature.Feature(
+            schema=vol.Schema({vol.Required("of"): cv.slug}),
+            namespace="watch",
+            entity_keys={"seen": Platform.SENSOR},
+            build=lambda hass, device, config, inputs: [Seen(device, config["of"],
+                                                             inputs[config["of"]])],
+            example={"of": "gauge_level"},
+            refers=lambda config: [config["of"]],
         ),
     }
     features.update(added)
@@ -169,6 +188,29 @@ async def test_a_configured_key_may_be_another_features_entity_key(ha: HomeAssis
                                                                "active": {"name": "Active"}}}})
     assert held(ha, "demo_widget") == {LEVEL, ACTIVE, "sensor.pururu_demo_widget_tags_level",
                                        "sensor.pururu_demo_widget_tags_active"}
+
+
+async def test_a_feature_gets_the_entity_key_it_refers_to(ha: HomeAssistant) -> None:
+    assert await setup(ha, {"demo_widget": {**WIDGET, "watch": {"of": "gauge_active"}}})
+    assert ha.states.get(SEEN).state == ACTIVE
+    assert held(ha, "demo_widget") == {LEVEL, ACTIVE, SEEN}
+
+
+async def test_it_can_refer_to_a_configured_entity_key(ha: HomeAssistant) -> None:
+    assert await setup(ha, {"demo_widget": {**WIDGET, "tags": TAGS, "watch": {"of": "tags_first"}}})
+    assert ha.states.get(SEEN).state == FIRST
+
+
+@pytest.mark.parametrize("of", [
+    pytest.param("gauge_nothing", id="unknown key"),
+    pytest.param("watch_seen", id="its own key"),
+    pytest.param("level", id="without its namespace"),
+    pytest.param("tags_first", id="a configured key the device doesn't have"),
+])
+async def test_a_reference_to_no_entity_key_of_another_feature_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, of: str) -> None:
+    assert not await setup(ha, {"demo_widget": {**WIDGET, "watch": {"of": of}}})
+    assert f"watch: {of} is not an entity key of another feature of this device" in caplog.text
 
 
 async def test_no_devices_creates_no_entry(ha: HomeAssistant) -> None:
@@ -286,6 +328,36 @@ async def test_what_follows_an_entity_not_created_is_not_created_either(
     assert held(ha, "demo_widget") == {LEVEL}
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(ECHO in message and ACTIVE in message for message in errors), errors
+
+
+async def test_what_refers_to_an_entity_not_created_is_not_created_either(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    er.async_get(ha).async_get_or_create(
+        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_gauge_level")
+    assert await setup(ha, {"demo_widget": {**WIDGET, "watch": {"of": "gauge_level"}}})
+    assert ha.states.get(SEEN) is None
+    assert held(ha, "demo_widget") == {ACTIVE}
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any(SEEN in message and LEVEL in message for message in errors), errors
+
+
+async def test_what_refers_to_an_entity_its_settings_dont_build_is_not_created(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """gauge_spare is a key gauge can create, so the reference is valid; it's never built."""
+    assert await setup(ha, {"demo_widget": {**WIDGET, "watch": {"of": "gauge_spare"}}})
+    assert ha.states.get(SEEN) is None
+    assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert (f"{SEEN} watches sensor.pururu_demo_widget_gauge_spare, which this device's "
+            "settings don't create (turn it on, or watch another entity); not creating it"
+            in errors), errors
+
+
+async def test_a_renamed_entity_reaches_what_refers_to_it(ha: HomeAssistant) -> None:
+    assert await setup(ha, {"demo_widget": {**WIDGET, "watch": {"of": "gauge_level"}}})
+    er.async_get(ha).async_update_entity(LEVEL, new_entity_id="sensor.kitchen_level")
+    await ha.async_block_till_done()
+    assert ha.states.get(SEEN).state == "sensor.kitchen_level"
 
 
 async def test_a_renamed_capability_reaches_the_feature_that_requires_it(ha: HomeAssistant) -> None:

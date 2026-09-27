@@ -43,7 +43,7 @@ from .const import (
     PLATFORMS,
 )
 from .entity import PururuEntity
-from .feature import Device
+from .feature import Device, qualified
 from .features import FEATURES
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,7 +52,11 @@ type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
 
 
 def _device(value: Any) -> dict[str, Any]:
-    """A device: a name, maybe an area, at least one feature, every <capability>_from resolved."""
+    """A device: a name, maybe an area, at least one feature, every reference resolved.
+
+    Every <capability>_from names a feature of this device that provides it, and
+    every entity key a feature refers to is another feature's.
+    """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
@@ -64,6 +68,13 @@ def _device(value: Any) -> dict[str, Any]:
         raise vol.Invalid(
             f"a device needs at least one feature ({', '.join(FEATURES)})"
         )
+    _capabilities_provided(device, names)
+    _references_resolved(device, names)
+    return device
+
+
+def _capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
+    """Refuse a <capability>_from that names no feature of the device providing it."""
     for name in names:
         for capability in FEATURES[name].requires:
             source = device[name][f"{capability}_from"]
@@ -72,17 +83,37 @@ def _device(value: Any) -> dict[str, Any]:
                     f"{name}: {capability}_from must name a feature of this device "
                     f"that provides {capability}"
                 )
-    return device
 
 
-def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str]]:
-    """(feature, entity key) of every entity the device's features can create."""
+def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
+    """Refuse an entity key a feature refers to that isn't another feature's."""
+    # Every entity key the device can create, in its namespace -> its feature
+    owners = {
+        qualified(FEATURES[name].namespace, entity_key): name
+        for name, entity_key, _ in _entity_keys(device)
+    }
+    for name in names:
+        if (refers := FEATURES[name].refers) is None:
+            continue
+        for key in refers(device[name]):
+            if owners.get(key, name) == name:
+                raise vol.Invalid(
+                    f"{name}: {key} is not an entity key of another feature "
+                    "of this device"
+                )
+
+
+def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
+    """(feature, entity key, platform) of every entity the device's features can create."""
     for name, feature in FEATURES.items():
         if name not in device:
             continue
-        yield from ((name, entity_key) for entity_key in feature.entity_keys)
-        if feature.configured is not None:
-            yield from ((name, entity_key) for entity_key in device[name])
+        yield from (
+            (name, entity_key, platform)
+            for entity_key, platform in feature.entity_keys.items()
+        )
+        if (configured := feature.configured) is not None:
+            yield from ((name, entity_key, configured) for entity_key in device[name])
 
 
 def _areas_exist(config: dict[str, Any]) -> dict[str, Any]:
@@ -102,7 +133,7 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     """
     owners: dict[str, str] = {}  # object ID -> the device that has it
     for key, device in config[CONF_DEVICES].items():
-        for name, entity_key in _entity_keys(device):
+        for name, entity_key, _ in _entity_keys(device):
             identity = Device(
                 key=key, name=device[CONF_NAME], namespace=FEATURES[name].namespace
             )
@@ -114,6 +145,24 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
                 )
             owners[object_id] = key
     return config
+
+
+def _referable(
+    key: str, config: dict[str, Any]
+) -> dict[str, tuple[Device, str, Platform]]:
+    """Every entity key the device's features can create, in its namespace.
+
+    Each maps to the device as its feature sees it, the entity key there and its
+    platform: enough for its current entity ID and its unique ID.
+    """
+    return {
+        qualified(FEATURES[name].namespace, entity_key): (
+            Device(key=key, name=config[CONF_NAME], namespace=FEATURES[name].namespace),
+            entity_key,
+            platform,
+        )
+        for name, entity_key, platform in _entity_keys(config)
+    }
 
 
 # The features are read when a configuration is validated, not at import
@@ -205,7 +254,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
     for key, config in devices.items():
-        for entity in _creatable(hass, registry, _build(hass, key, config)):
+        for entity in _creatable(hass, registry, *_build(hass, key, config)):
             built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
     entry.runtime_data = built
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -241,13 +290,17 @@ async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> N
 
 def _build(
     hass: HomeAssistant, key: str, config: dict[str, Any]
-) -> list[tuple[PururuEntity, set[str]]]:
+) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
     Each feature sees the device in its own namespace; what it takes through
-    <capability>_from is in the providing feature's.
+    <capability>_from, or refers to, is in the owning feature's. Also the
+    entity ID of each entity some entity watches (`follows`), by unique ID: the
+    settings may never build it, and then only this names it.
     """
+    referable = _referable(key, config)
     built: list[tuple[PururuEntity, set[str]]] = []
+    watched: dict[str, str] = {}
     for name, feature in FEATURES.items():
         if name not in config:
             continue
@@ -264,22 +317,48 @@ def _build(
                 hass, source.entity_keys[entity_key], entity_key
             )
             required.add(provider.object_id(entity_key))
-        built.extend(
-            (entity, {*map(device.object_id, entity.sources), *required})
-            for entity in feature.build(hass, device, config[name], inputs)
-        )
-    return built
+        if feature.refers is not None:
+            for reference in feature.refers(config[name]):
+                owner, entity_key, platform = referable[reference]
+                inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
+        for entity in feature.build(hass, device, config[name], inputs):
+            follows = set()
+            for reference in entity.follows:
+                owner, entity_key, platform = referable[reference]
+                follows.add(unique_id := owner.object_id(entity_key))
+                watched[unique_id] = owner.current_entity_id(hass, platform, entity_key)
+            built.append(
+                (entity, {*map(device.object_id, entity.sources), *required, *follows})
+            )
+    return built, watched
 
 
 def _creatable(
     hass: HomeAssistant,
     registry: er.EntityRegistry,
     built: list[tuple[PururuEntity, set[str]]],
+    watched: dict[str, str],
 ) -> list[PururuEntity]:
-    """The entities whose ID is free and whose sources are created too; the rest logged."""
+    """The entities whose ID is free and whose sources are created too; the rest logged.
+
+    A source the settings don't build (an entity key a feature can create, but
+    not with this device's settings) can only be watched: `watched` names it.
+    """
+    built_ids = {str(entity.unique_id) for entity, _ in built}
     missing: dict[str, str] = {}  # unique ID -> entity ID, of what isn't created
     kept: list[tuple[PururuEntity, set[str]]] = []
     for entity, sources in built:
+        if unbuilt := sorted(
+            watched.get(source, source) for source in sources if source not in built_ids
+        ):
+            _LOGGER.error(
+                "%s watches %s, which this device's settings don't create "
+                "(turn it on, or watch another entity); not creating it",
+                entity.entity_id,
+                ", ".join(unbuilt),
+            )
+            missing[str(entity.unique_id)] = entity.entity_id
+            continue
         if (holder := _holder(hass, registry, entity)) is None:
             kept.append((entity, sources))
             continue

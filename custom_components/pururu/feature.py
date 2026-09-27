@@ -1,6 +1,6 @@
 """What a device and a feature are: the contract every module in features/ fulfils."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 import math
 from typing import TYPE_CHECKING, Any
@@ -97,3 +97,7 @@ class Feature:
     # Its entity keys are the keys of its block, all on this platform, named by
     # their block's `name`; None: they are entity_keys, named by the translations
     configured: Platform | None = None
+    # Entity keys of other features of the device, in their namespace
+    # (appliance_running), that its validated block names: validated against the
+    # device, and build() gets their current entity IDs in `inputs`, by that key
+    refers: Callable[[Any], Iterable[str]] | None = None
