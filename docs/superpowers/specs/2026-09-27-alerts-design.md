@@ -55,7 +55,7 @@ pururu:
 
 Configuration errors added:
 
-- `alerts: <alert key>: when: <key> is not an entity key of another feature of this device`.
+- `alerts: <key> is not an entity key of another feature of this device`, where `<key>` is the `when` (the check lives in the core, for any feature that refers to entity keys).
 - The usual schema errors (a missing `name`, `is` with `above`, `above` not lower than `below`, an unknown `priority`).
 
 Because a switch's entity keys come from its block, `when: switch_pump` is valid only when the device has the switch `pump`. Every entity key a feature *can* create counts, as for `_entity_ids_distinct`: `when: appliance_runtime_month` is valid even without `statistics`, and the alert simply isn't created (its entity isn't).
@@ -91,6 +91,7 @@ A feature can now watch entities of **other features of the same device**, named
 - **Build (`_build`):** `inputs` also carries, for each key `refers` returns, the current entity ID of that key (`current_entity_id`, with the platform of the feature that owns it), keyed by the qualified key.
 - `PururuEntity.follows: tuple[str, ...] = ()`: qualified entity keys of other features of its device that the entity reads. `_build` adds their unique IDs to what the entity follows, so it isn't created when they aren't. (`sources` stays: entity keys of its own feature.)
 - A helper, shared by `_device` and `_build`, maps a device's qualified entity keys to their feature and platform.
+- `_creatable` counts an entity the device's settings don't build (`appliance_runtime_month` without `statistics`) as not created, so whatever follows it isn't created either, with the usual log line naming its unique ID. Today every source is always built, so nothing else changes.
 
 The alerts feature: `namespace="alert"`, `configured=Platform.BINARY_SENSOR`, `entity_keys={}`, `refers` as above, `features/alerts.py`, registered in `FEATURES`.
 
