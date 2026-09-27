@@ -244,7 +244,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
     for key, config in devices.items():
-        for entity in _creatable(hass, registry, _build(hass, key, config)):
+        for entity in _creatable(hass, registry, *_build(hass, key, config)):
             built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
     entry.runtime_data = built
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -280,14 +280,17 @@ async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> N
 
 def _build(
     hass: HomeAssistant, key: str, config: dict[str, Any]
-) -> list[tuple[PururuEntity, set[str]]]:
+) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
     Each feature sees the device in its own namespace; what it takes through
-    <capability>_from, or refers to, is in the owning feature's.
+    <capability>_from, or refers to, is in the owning feature's. Also the
+    entity ID of each entity some entity watches (`follows`), by unique ID: the
+    settings may never build it, and then only this names it.
     """
     referable = _referable(key, config)
     built: list[tuple[PururuEntity, set[str]]] = []
+    watched: dict[str, str] = {}
     for name, feature in FEATURES.items():
         if name not in config:
             continue
@@ -309,34 +312,43 @@ def _build(
                 owner, entity_key, platform = referable[reference]
                 inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
         for entity in feature.build(hass, device, config[name], inputs):
-            follows = {
-                referable[reference][0].object_id(referable[reference][1])
-                for reference in entity.follows
-            }
+            follows = set()
+            for reference in entity.follows:
+                owner, entity_key, platform = referable[reference]
+                follows.add(unique_id := owner.object_id(entity_key))
+                watched[unique_id] = owner.current_entity_id(hass, platform, entity_key)
             built.append(
                 (entity, {*map(device.object_id, entity.sources), *required, *follows})
             )
-    return built
+    return built, watched
 
 
 def _creatable(
     hass: HomeAssistant,
     registry: er.EntityRegistry,
     built: list[tuple[PururuEntity, set[str]]],
+    watched: dict[str, str],
 ) -> list[PururuEntity]:
-    """The entities whose ID is free and whose sources are created too; the rest logged."""
-    # unique ID -> entity ID, of what isn't created; what the settings don't
-    # build (an entity key a feature can create but this device's doesn't) has
-    # only its unique ID
+    """The entities whose ID is free and whose sources are created too; the rest logged.
+
+    A source the settings don't build (an entity key a feature can create, but
+    not with this device's settings) can only be watched: `watched` names it.
+    """
     built_ids = {str(entity.unique_id) for entity, _ in built}
-    missing: dict[str, str] = {
-        source: source
-        for _, sources in built
-        for source in sources
-        if source not in built_ids
-    }
+    missing: dict[str, str] = {}  # unique ID -> entity ID, of what isn't created
     kept: list[tuple[PururuEntity, set[str]]] = []
     for entity, sources in built:
+        if unbuilt := sorted(
+            watched.get(source, source) for source in sources if source not in built_ids
+        ):
+            _LOGGER.error(
+                "%s watches %s, which this device's settings don't create "
+                "(turn it on, or watch another entity); not creating it",
+                entity.entity_id,
+                ", ".join(unbuilt),
+            )
+            missing[str(entity.unique_id)] = entity.entity_id
+            continue
         if (holder := _holder(hass, registry, entity)) is None:
             kept.append((entity, sources))
             continue

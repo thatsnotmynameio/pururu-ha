@@ -44,7 +44,17 @@ Another integration's entity, or an entity without a unique ID, already has that
 sensor.pururu_laundry_washer_phase_current follows binary_sensor.pururu_laundry_washer_appliance_running, which is not created; not creating it
 ```
 
-This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. An [alert](/features/alerts) on an entity the device's settings don't create names its unique ID instead, as `pururu_laundry_washer_appliance_runtime_month`: turn that setting on, or point the alert at another entity.
+This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back.
+
+### `… watches …, which this device's settings don't create …`
+
+```
+binary_sensor.pururu_laundry_washer_alert_month watches sensor.pururu_laundry_washer_appliance_runtime_month, which this device's settings don't create (turn it on, or watch another entity); not creating it
+```
+
+An [alert](/features/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance_runtime_month` without `month` in `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is.
+
+**Fix:** turn on the setting that creates the entity, or point `when` at another entity, then reload pururu.
 
 ### `… is a pururu switch: name the real one; not creating …`
 

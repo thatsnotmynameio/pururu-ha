@@ -348,8 +348,9 @@ async def test_what_refers_to_an_entity_its_settings_dont_build_is_not_created(
     assert ha.states.get(SEEN) is None
     assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-    assert any(SEEN in message and "pururu_demo_widget_gauge_spare" in message
-               for message in errors), errors
+    assert (f"{SEEN} watches sensor.pururu_demo_widget_gauge_spare, which this device's "
+            "settings don't create (turn it on, or watch another entity); not creating it"
+            in errors), errors
 
 
 async def test_a_renamed_entity_reaches_what_refers_to_it(ha: HomeAssistant) -> None:

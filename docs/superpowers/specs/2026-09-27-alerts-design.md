@@ -91,7 +91,7 @@ A feature can now watch entities of **other features of the same device**, named
 - **Build (`_build`):** `inputs` also carries, for each key `refers` returns, the current entity ID of that key (`current_entity_id`, with the platform of the feature that owns it), keyed by the qualified key.
 - `PururuEntity.follows: tuple[str, ...] = ()`: qualified entity keys of other features of its device that the entity reads. `_build` adds their unique IDs to what the entity follows, so it isn't created when they aren't. (`sources` stays: entity keys of its own feature.)
 - A helper, shared by `_device` and `_build`, maps a device's qualified entity keys to their feature and platform.
-- `_creatable` counts an entity the device's settings don't build (`appliance_runtime_month` without `statistics`) as not created, so whatever follows it isn't created either, with the usual log line naming its unique ID. Today every source is always built, so nothing else changes.
+- `_creatable` counts an entity the device's settings don't build (`appliance_runtime_month` without `statistics`) as not created, so whatever follows it isn't created either. Its own log line says why and names the entity ID (`_build` passes the entity IDs of what entities watch): `<alert> watches <entity>, which this device's settings don't create (turn it on, or watch another entity); not creating it`. Today every source is always built, so nothing else changes.
 
 The alerts feature: `namespace="alert"`, `configured=Platform.BINARY_SENSOR`, `entity_keys={}`, `refers` as above, `features/alerts.py`, registered in `FEATURES`.
 
