@@ -15,6 +15,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A device with no feature.
 - `cycle_from` naming a feature that isn't on the same device.
 - A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
+- A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name`.
+- A switch whose key is already an entity key of another feature of the device: `switches: power is already an entity key of appliance`.
 
 **Developer tools → YAML → Check configuration** shows the same error before you reload.
 
@@ -47,6 +49,10 @@ This entity depends on one that couldn't be created, usually because of the erro
 - The `last_cycle_*` sensors are `unknown` until the first cycle **ends**.
 - `last_cycle_energy` is `unknown` for a cycle when the energy counter had no value at the start or end of the cycle, or when its unit isn't an energy unit.
 - A period sensor (`runtime_month`, `cycles_year`…) starts from its total's current value. If the total has no value yet, the period sensor waits for it.
+
+### A switch is `unavailable`
+
+A [switch](/features/switches) shows its real switch. It's `unavailable` when the real one is, or when it doesn't exist: check that `entity:` still names it, for example after renaming the real switch, and reload pururu.
 
 ### The cycle ends too early, or never starts
 

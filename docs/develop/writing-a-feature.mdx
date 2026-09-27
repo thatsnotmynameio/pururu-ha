@@ -160,7 +160,19 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 `phases.py` is the example to copy.
 
-## 5. What the contract test checks
+## 5. Entity keys from the configuration
+
+Some features create one entity per key the user writes, such as [`switches`](/features/switches). Their entity keys aren't known in the code, so they aren't in `entity_keys`, and they have no translation:
+
+- Set `configured` to the platform of those entities, and leave `entity_keys` empty.
+- The schema is a `vol.Schema({cv.slug: ...})` of its own, with a required `name`.
+- Each entity calls `self._identify(device, platform, entity_key, name)`: it's named by `name`, with no translation key.
+- It can't `provide` a capability: a capability points to a fixed entity key.
+- The device schema refuses a key that is an entity key of another feature of the device.
+
+For a feature that stands for real entities of one domain, build each entity on Home Assistant's group entity of that domain, with the real entity as its only member: `Switch` in `features/switches.py` is a `SwitchGroup` of one, as `Mirror` is a `SensorGroup` of one. The group already follows the real entity's state and passes every command on, with everything its domain offers. One feature per domain: a light gets `lights`, on a `LightGroup`, not a place in `switches`.
+
+## 6. What the contract test checks
 
 `tests/test_features.py` runs over every entry in `FEATURES`, so your feature is covered without changing the test:
 
@@ -170,12 +182,12 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 | `test_no_entity_key_in_two_features` | No entity key is shared |
 | `test_every_entity_key_is_named_and_has_an_icon` | A name in both languages and an `mdi:` icon for every entity key |
 | `test_example_is_valid_and_unknown_keys_are_refused` | `example` passes `schema`, and `example` plus an unknown key fails |
-| `test_every_platform_is_set_up` | Every entity key's platform is in `PLATFORMS` |
-| `test_capabilities_line_up` | `provides` points to real entity keys, every `requires` is provided by some feature, and the example has `<capability>_from` |
+| `test_every_platform_is_set_up` | Every entity key's platform, and a configured feature's platform, is in `PLATFORMS` |
+| `test_capabilities_line_up` | `provides` points to real entity keys and a configured feature provides nothing, every `requires` is provided by some feature, and the example has `<capability>_from` |
 
 The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_phases.py` do.
 
-## 6. Document it
+## 7. Document it
 
 - Add `docs/features/<feature>.mdx` with its settings (`<Property>`), its entities and its rules, following [`appliance`](/features/appliance).
 - Add the page to the `Features` group in `docs.json`.

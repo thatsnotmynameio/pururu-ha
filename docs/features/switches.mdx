@@ -1,0 +1,59 @@
+---
+title: switches
+description: Real switches inside a device. Each one shows its switch's state and passes on what is asked of it.
+---
+
+`switches` puts real switches in a device, such as a pool's pump and heater on two smart relays. Each one becomes a switch of the device: it shows the real switch's state, and turning it on or off turns the real one.
+
+```yaml
+pururu:
+  devices:
+    pool:
+      name: Piscina
+      area: piscina
+      switches:
+        pump: {entity: switch.pool_pump, name: Bomba}
+        heater: {entity: switch.pool_heater, name: Aquecedor}
+```
+
+This creates `switch.pururu_pool_pump`, shown as **Piscina Bomba**, and `switch.pururu_pool_heater`, shown as **Piscina Aquecedor**.
+
+## Settings
+
+`switches` is a map of **entity key → switch**, with at least one switch. The key is a slug, and it becomes the end of the entity ID: `pump` → `switch.pururu_pool_pump`.
+
+<Property name="entity" type="entity ID" required>
+  The real switch. It must be a `switch.*` entity, and not one of pururu's own switches.
+</Property>
+
+---
+
+<Property name="name" type="string" required>
+  The name shown after the device's name. It's the same in every language: unlike other features' entities, a switch's name isn't translated.
+</Property>
+
+A switch's key can't be an entity key of another feature of the same device. With `appliance`, `power` or `running` is a configuration error, and so is `runtime_month` even when you don't count runtime per month, so turning a statistic on later never breaks a switch.
+
+## Entity
+
+| The real switch | `switch.pururu_<key>_<entity key>` |
+|---|---|
+| `on` or `off` | the same |
+| `unknown` | `unknown` |
+| `unavailable`, or it doesn't exist | `unavailable` |
+
+- **Turning it on or off** turns the real switch on or off. The logbook names whoever did it: you, an automation or a voice assistant.
+- If the real switch reports an **assumed state**, the pururu switch does too, and the UI shows on and off buttons instead of a toggle.
+- Its attribute **`entity_id`** names the real switch, and its details show it.
+- It keeps no state of its own. After a restart, it shows the real switch again.
+
+## Only `switch.*`, for now
+
+A light, a fan or a cover exposed as a switch would only turn on and off: no brightness or colour, no speed, no position, and a voice assistant wouldn't treat it as a light. So each kind of entity gets a feature of its own, whose entity keeps everything its kind offers. `lights` comes next.
+
+## Good to know
+
+- **Two entities for one switch.** The real switch stays in its own device. If that device is in the same area, the area shows the switch twice, and an action on the whole area reaches both. Switching both is harmless, but a count of switches that are on counts two. `appliance`'s `power` already works this way.
+- **Renaming the real switch.** Update `entity:` in the YAML and reload. Until then, the pururu switch is `unavailable`.
+- **Renaming the pururu switch** in the UI works as for any entity. See [Renaming an entity ID](/concepts/entity-ids#renaming-an-entity-id).
+- **The same real switch in two devices** is fine: both follow it.

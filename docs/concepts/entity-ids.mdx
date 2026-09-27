@@ -11,7 +11,7 @@ Every entity pururu creates has the ID
 <platform>.pururu_<device key>_<entity key>
 ```
 
-- **platform**: `sensor` or `binary_sensor`.
+- **platform**: `sensor`, `binary_sensor` or `switch`.
 - **device key**: the device's key under `devices:`.
 - **entity key**: which of the device's entities it is. Each feature's page lists its entity keys. An entity key counted per period ends with that period, as in `runtime_month`.
 
@@ -22,6 +22,8 @@ The entity's **unique ID** is the same text without the platform: `pururu_laundr
 ## Names
 
 An entity's name comes from its entity key, in Home Assistant's language: English and Portuguese are translated. It's shown after the device's name, so `running` on **Máquina de lavar** is **Máquina de lavar Running**, or **Máquina de lavar Em funcionamento** in Portuguese. You can rename any entity in the UI as usual.
+
+A [switch](/features/switches)'s entity key is the key you gave it, so its name is the `name:` you wrote, the same in every language.
 
 ## Renaming an entity ID
 

@@ -62,10 +62,11 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 
 | File | Covers |
 |---|---|
-| `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices |
-| `test_features.py` | The [contract](/develop/writing-a-feature#5-what-the-contract-test-checks) over every feature in `FEATURES` |
+| `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices, configured entity keys |
+| `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every feature in `FEATURES` |
 | `test_appliance.py` | `running`, cycles, energy, runtime, meters, restores |
 | `test_phases.py` | Bands, `for`, `seen`, restores, translations |
+| `test_switches.py` | Following the real switch, passing commands on, refused blocks, taken IDs, renames, reloads |
 | `test_places.py` | Floors and areas: creation, adoption, deletion, refused names |
 | `test_dashboard.py` | The dashboard's content, refreshes, and what keeps it from being created |
 | `test_entity.py` | `reading()` |
