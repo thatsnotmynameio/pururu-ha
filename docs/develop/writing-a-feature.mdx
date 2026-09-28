@@ -185,6 +185,14 @@ For a feature that stands for real entities of one domain, build each entity on 
 
 The cycle code `appliance` and `modes` share (the last cycle's sensors, the totals, the meters, a cycle's energy) is in `features/cycle/`, and takes `item`.
 
+**Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Set `alerts` to a mapping of name → `Preset` (`feature.py`), as `features/appliance/alerts.py` does:
+
+- `watches`: the entity key, in the feature's namespace, it watches.
+- `kind`: a `Condition`, as a hand-written alert's `is`/`above`/`below`, or an `Elapsed`: a state of the watched entity and a milestone, either an entity key whose state is a datetime (`since_key`) or an attribute of the watched entity (`since_attribute`), with `or_since_created` to count from the alert's creation until there's one. A condition alert is an `Alert`; an elapsed one an `ElapsedAlert` (`features/elapsed.py`), which survives restarts.
+- `priority`, `hold` (the default `for`, or `None` when the user must give it) and `lasts` (how long it stays on after its milestone; it then takes `lasts`, not `for`).
+
+Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity key `alert_<name>`, so ID collisions, names and icons are checked as for any entity key. Add its name and icon under `<namespace>_alert_<name>`, and its default texts under `<namespace>_alert_<name>_message` and `_done_message` in the translations' `common` block. `features/presets.py` validates the settings and builds the enabled alerts; nothing else is needed.
+
 ## 6. What the contract test checks
 
 `tests/test_features.py` runs over every entry in `FEATURES`, so your feature is covered without changing the test:
@@ -204,6 +212,7 @@ The cycle code `appliance` and `modes` share (the last cycle's sensors, the tota
 | `test_what_a_feature_acts_on_it_refers_to` | Every key `acts` returns for the example is in what `refers` returns |
 | `test_per_item_goes_with_items` | `items` is set exactly when `per_item` is, and the example's items are slugs |
 | `test_every_per_item_name_has_its_placeholder` | Every suffix's name has the `{<namespace>}` placeholder, in both languages |
+| `test_ready_made_alerts_line_up` | Every ready-made alert's key is in `entity_keys`, it watches (and counts from) its own feature's entity keys, has both default texts in both languages, and its settings validate |
 
 The name, icon, platform and namespace checks above cover `per_item`'s suffixes too.
 

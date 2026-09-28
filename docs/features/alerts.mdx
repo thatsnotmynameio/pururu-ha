@@ -5,6 +5,8 @@ description: Problems on a device's own entities, each a binary sensor that is o
 
 `alerts` says when something is wrong with a device, such as a washer running for too long or a plug gone offline. Each alert watches **one** entity of the same device and becomes a binary sensor: **Problem** while its condition holds, **OK** otherwise.
 
+For the common cases, a feature may offer **ready-made alerts** you enable with one key: see the [appliance's](/features/appliance#ready-made-alerts).
+
 pururu **detects** the problem and, with `notify`, says what to tell. [Alert2](https://github.com/redstone99/hass-alert2) does the telling (phones, reminders, acknowledging): see [Getting notified](#getting-notified).
 
 ```yaml

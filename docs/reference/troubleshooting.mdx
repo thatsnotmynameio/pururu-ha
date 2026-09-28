@@ -21,6 +21,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - An alert whose `when` isn't an entity of another feature of the device: `alerts: appliance_nothing is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key, with its namespace (`appliance_power`, not `power`).
 - An alert with both `is` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
 - An alert's `notify` without `message` or `done_message`, with an empty one, or with another key.
+- A ready-made alert the feature doesn't offer (`nope is not a ready-made alert: offline, no_power, long_cycle, no_cycle, finished`), `long_cycle` or `no_cycle` without `for`, `lasts` on another alert than `finished` (`'lasts' is an invalid option`), or `for` on `finished`.
+- An alert whose `when` is a ready-made alert: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
 - A program step naming something that isn't an entity of another feature of the device: `programs: switch_pool_pump is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_pump`), not as an entity ID.
 - A program step whose entity doesn't take the action: `programs: appliance_power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
 - A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`.
@@ -71,7 +73,7 @@ An [alert](/features/alerts)'s `when` names an entity its feature can create, bu
 binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
 ```
 
-An alert with `notify` is delivered by [Alert2](/features/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told.
+An alert with `notify` is delivered by [Alert2](/features/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told. A [ready-made alert](/features/appliance#ready-made-alerts)'s own texts never log this: only a `notify` you wrote does.
 
 **Fix:** install Alert2 and add [the include](/features/alerts#getting-notified) to its `alert2:` block, or remove `notify` from the alert.
 

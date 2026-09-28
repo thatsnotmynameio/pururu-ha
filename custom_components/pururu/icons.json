@@ -4,7 +4,12 @@
   },
   "entity": {
     "binary_sensor": {
-      "appliance_running": {"default": "mdi:stop-circle-outline", "state": {"on": "mdi:play-circle-outline"}}
+      "appliance_running": {"default": "mdi:stop-circle-outline", "state": {"on": "mdi:play-circle-outline"}},
+      "appliance_alert_offline": {"default": "mdi:power-plug-off-outline"},
+      "appliance_alert_no_power": {"default": "mdi:flash-off-outline"},
+      "appliance_alert_long_cycle": {"default": "mdi:timer-alert-outline"},
+      "appliance_alert_no_cycle": {"default": "mdi:sleep"},
+      "appliance_alert_finished": {"default": "mdi:check-circle-outline"}
     },
     "sensor": {
       "appliance_power": {"default": "mdi:flash"},
