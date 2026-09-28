@@ -32,11 +32,16 @@ class CyclesTotal(PururuEntity, RestoreSensor):
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
     def __init__(
-        self, device: Device, *, source: str, item: Item | None = None
+        self,
+        device: Device,
+        *,
+        source: str,
+        item: Item | None = None,
+        entity_key: str = "cycles_total",
     ) -> None:
-        """Count the cycles (of `item`) that `source` sends."""
+        """Count the cycles (of `item`) that `source` sends, as `entity_key` (a door's openings)."""
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, "cycles_total", item=item)
+        self._identify(device, Platform.SENSOR, entity_key, item=item)
         self._signal = cycle_signal(device, item)
         self._cycles = 0
 
@@ -121,10 +126,11 @@ class RuntimeTotal(PururuEntity, RestoreSensor):
         *,
         source: str,
         item: Item | None = None,
+        entity_key: str = "runtime_total",
     ) -> None:
-        """Add up the time `watched`, the entity of `source`, is in `state`."""
+        """Add up the time `watched`, the entity of `source`, is in `state`, as `entity_key`."""
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, "runtime_total", item=item)
+        self._identify(device, Platform.SENSOR, entity_key, item=item)
         self._watched = watched
         self._state = state
         self._hours = 0.0

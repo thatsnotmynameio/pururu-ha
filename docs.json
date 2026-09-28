@@ -36,6 +36,8 @@
       "tab": "guide",
       "pages": [
         { "title": "appliance", "href": "/features/appliance" },
+        { "title": "door", "href": "/features/door" },
+        { "title": "window", "href": "/features/window" },
         { "title": "lights", "href": "/features/lights" },
         { "title": "phases", "href": "/features/phases" },
         { "title": "modes", "href": "/features/modes" },

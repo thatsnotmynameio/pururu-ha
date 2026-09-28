@@ -5,11 +5,14 @@ from .alerts import ALERTS
 from .appliance import APPLIANCE
 from .lights import LIGHTS
 from .modes import MODES
+from .opening import DOOR, WINDOW
 from .phases import PHASES
 from .switches import SWITCHES
 
 FEATURES: dict[str, Feature] = {
     "appliance": APPLIANCE,
+    "door": DOOR,
+    "window": WINDOW,
     "lights": LIGHTS,
     "phases": PHASES,
     "modes": MODES,
