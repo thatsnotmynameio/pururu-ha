@@ -26,6 +26,8 @@ from homeassistant.core import (
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.json import json_bytes
+from homeassistant.util.json import json_loads_object
 from homeassistant.util.ulid import ulid_now
 
 from .const import DOMAIN
@@ -104,7 +106,12 @@ def async_setup(
 def _data(
     hass: HomeAssistant, device: Watched, event_class: str, old: State, new: State
 ) -> dict[str, Any]:
-    """The event's data: the change, and every state of its device now."""
+    """The event's data, JSON's own: the change, and every state of its device now.
+
+    The attributes as HA's JSON reads them back: their keys may be enums and
+    their values datetimes (running's cycle_start), which a template (as a
+    rest_command's `{{ event | tojson }}`) renders as Python's repr.
+    """
     key = device.entities[new.entity_id]
     return {
         "event_id": ulid_now(),
@@ -117,7 +124,7 @@ def _data(
         "old": old.state,
         "new": new.state,
         "time": new.last_changed.isoformat(),
-        "attributes": dict(new.attributes),
+        "attributes": json_loads_object(json_bytes(new.attributes)),
         "states": {
             entity_key: state.state
             for entity_id, entity_key in device.entities.items()

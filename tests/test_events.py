@@ -1,10 +1,12 @@
 """pururu's events: each state change of an entity it created, fired on HA's bus."""
 
+import json
 import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.setup import async_setup_component
 import pytest
 
 from helpers import capture, fake, held, reload, settle, setup, tick
@@ -110,7 +112,12 @@ async def test_a_change(both: HomeAssistant, freezer: Any) -> None:
         "old": "off",
         "new": "on",
         "time": state.last_changed.isoformat(),
-        "attributes": dict(state.attributes),
+        # JSON's own: plain keys, the datetime as ISO text
+        "attributes": {
+            "cycle_start": state.attributes["cycle_start"].isoformat(),
+            "device_class": "running",
+            "friendly_name": "Demo washer Running",
+        },
     }
     assert set(states) == keys(both, KEY)
     assert states["appliance_running"] == "on"
@@ -172,6 +179,37 @@ async def test_every_event_has_its_own_id(both: HomeAssistant) -> None:
 ])
 async def test_the_schema_refuses(ha: HomeAssistant, events: Any) -> None:
     assert not await setup(ha, DEVICES, events=events)
+
+
+async def test_the_documented_recipe_posts_json(
+        both: HomeAssistant, freezer: Any, aioclient_mock: Any) -> None:
+    """docs/concepts/events.mdx's rest_command and automation post each event as a JSON object.
+
+    HA's attributes have enum keys, and running's cycle_start is a datetime:
+    unless the data is JSON's own, the template renders it as Python's repr.
+    """
+    url = "http://n8n.local/webhook/pururu"
+    aioclient_mock.post(url, text="ok")
+    assert await async_setup_component(both, "rest_command", {"rest_command": {"n8n_pururu": {
+        "url": url, "method": "post", "content_type": "application/json",
+        "payload": "{{ event | tojson }}"}}})
+    assert await async_setup_component(both, "automation", {"automation": [{
+        "alias": "pururu → n8n", "mode": "queued", "max": 1000,
+        "triggers": [{"trigger": "event", "event_type": list(TYPES)}],
+        "actions": [{"action": "rest_command.n8n_pururu",
+                     "data": {"event": "{{ trigger.event.data }}"}}],
+    }]})
+    captured = capture(both, *TYPES)
+    await start_cycle(both, freezer)
+    await both.async_block_till_done()
+    [event] = of(captured, "appliance_running")
+    assert "cycle_start" in event.data["attributes"]
+    posted = [json.loads(body) for _method, _url, body, *_ in aioclient_mock.mock_calls]
+    assert len(posted) == len(captured)
+    assert all(isinstance(body, dict) for body in posted), posted
+    assert [body["event_id"] for body in posted] == [event.data["event_id"] for event in captured]
+    [running] = [body for body in posted if body["key"] == "appliance_running"]
+    assert running == json.loads(json.dumps(dict(event.data)))
 
 
 # --- what isn't fired ----------------------------------------------------------------

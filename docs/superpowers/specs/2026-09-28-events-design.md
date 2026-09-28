@@ -39,7 +39,7 @@ automation:
 |---|---|
 | Events or states | States. Every fact pururu knows is some entity's state (a cycle's end is `last_cycle_end`, who opened a door `last_opened_by`, an alert its binary sensor), so a second, "domain" event would duplicate them. What a domain event would add, a fact in one piece, comes from the snapshot: `last_cycle_end` is written last, so when it changes the snapshot already holds that cycle's start, duration and energy. |
 | Who sends | HA. pururu fires bus events; a `rest_command` in the user's automation posts them. Rejected: pururu posting itself (`webhook.py`: an HTTP client, URL and secrets, a queue, failure logging, all things HA already has), and pururu generating that automation and `rest_command` (`rest_command` takes no `rest_command pururu:` key, so the user would hand pururu their whole `rest_command:` block, with secrets inside a generated file). The bus events also serve any other consumer (Node-RED, an automation, the event developer tool), and "filters, later" is a condition in the user's automation. |
-| Two classes | `pururu_state_changed` for entities with no `state_class` (facts: binary sensors, switches, lights, modes, timestamps, who opened), `pururu_reading` for those with one (series: power and energy mirrors, phases, totals, meters). HA's own line between what goes to long-term statistics and what doesn't, so no list of entity keys to maintain. `cycles_total` is a counter, so a reading; the cycle's end still comes as a change (`last_cycle_end`), `cycles_total` already updated in its snapshot. |
+| Two classes | `pururu_state_changed` for entities with no `state_class` (facts: binary sensors, switches, lights, modes, phases, timestamps, who opened), `pururu_reading` for those with one (series: power and energy mirrors, totals, meters). HA's own line between what goes to long-term statistics and what doesn't, so no list of entity keys to maintain. `cycles_total` is a counter, so a reading; the cycle's end still comes as a change (`last_cycle_end`), `cycles_total` already updated in its snapshot. |
 | Opt-in | Off by default: every bus event is recorded by the recorder, and readings change every few seconds. Each class is enabled on its own, and a class not enabled is never fired. |
 | `event_id` | A new ULID per change (`homeassistant.util.ulid.ulid_now`), made when the change happens: unique, ordered by time, for deduplication downstream. Not the state's `context.id`: one context covers several changes (a cycle's end writes four sensors in one). |
 | `event_name` | `<device>.<key>` (`washer.appliance_last_cycle_end`): stable across UI renames, one field to route on. |
@@ -83,7 +83,7 @@ Event types `pururu_state_changed` and `pururu_reading`, the same data:
 | `key` | The entity key in its namespace, as its unique ID after `pururu_<device>_` (and its translation key): `appliance_last_cycle_end`, `mode_heating_cycles_total`. |
 | `old`, `new` | The states, as HA's strings. |
 | `time` | The new state's `last_changed` (ISO 8601): when it changed, not when it was fired. |
-| `attributes` | The new state's attributes. |
+| `attributes` | The new state's attributes, as HA's JSON reads them back (plain keys, a datetime as ISO text): a template renders anything else as Python's repr, and the recipe would post a string. |
 | `states` | Every created entity of the device with a state, by `key`, as HA's strings, read when the event is fired. |
 
 The event is fired with the new state's `context`, so the logbook and traces link it to what caused the change.
