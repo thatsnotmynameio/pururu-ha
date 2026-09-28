@@ -154,11 +154,7 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
 
     @callback
     def _gate(self, state: State | None, old: State | None = None) -> None:
-        """The cycle on starts the armed mode; off ends the running one. Unknown does neither.
-
-        Off, the running mode ends when its value left its band, or when the
-        cycle ended (`old`'s cycle_end) if earlier, but never before it started.
-        """
+        """The cycle on starts the armed mode; off ends the running one. Unknown does neither."""
         if state is None:
             return
         now = dt_util.utcnow()
@@ -166,19 +162,27 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
             if self._start_armed(now):
                 self.async_write_ha_state()
         elif state.state == STATE_OFF and (running := self._running) is not None:
-            end = now if self._ending is None else self._ending[0]
-            if old is not None and isinstance(
-                cycle_end := old.attributes.get("cycle_end"), datetime
-            ):
-                end = min(end, cycle_end)
-            if self._start.since is not None:
-                end = max(end, self._start.since)
-            self._end(running, end)
+            self._end(running, self._ended_with_the_cycle(old, now))
             # Its band may hold still (a sensor other than the gate's plug): no
             # new reading will arm it again, so it's armed for the next cycle
             value = reading(self.hass.states.get(self._sensor))
             if value is not None and self._modes[running].contains(value):
                 self._armed = (running, now)
+
+    def _ended_with_the_cycle(self, old: State | None, now: datetime) -> datetime:
+        """The running mode's end, as the cycle turns off.
+
+        When its value left its band, or when the cycle ended (`old`'s
+        cycle_end) if earlier, but never before it started.
+        """
+        end = now if self._ending is None else self._ending[0]
+        if old is not None and isinstance(
+            cycle_end := old.attributes.get("cycle_end"), datetime
+        ):
+            end = min(end, cycle_end)
+        if self._start.since is not None:
+            end = max(end, self._start.since)
+        return end
 
     @callback
     def _take(self, state: State | None) -> None:
