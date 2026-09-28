@@ -211,15 +211,44 @@ async def test_a_finished_cycle_is_recorded(washer: HomeAssistant, freezer: Any)
     started = dt_util.utcnow()
     await tick(washer, freezer, 30 * 60)
     await kwh(washer, 100.62)
+    dropped = dt_util.utcnow()
     await end_cycle(washer, freezer)
     ended = dt_util.parse_datetime(value(washer, "last_cycle_end"))
     start = dt_util.parse_datetime(value(washer, "last_cycle_start"))
-    assert abs((ended - dt_util.utcnow()).total_seconds()) < 5
+    assert abs((ended - dropped).total_seconds()) < 5
     assert abs((start - started).total_seconds()) < 5
     assert float(value(washer, "last_cycle_duration")) == pytest.approx(
         (ended - start).total_seconds() / 60, abs=0.1)
     assert float(value(washer, "last_cycle_energy")) == pytest.approx(0.62)
     assert value(washer, "cycles_total") == "1"
+
+
+async def test_the_off_delay_is_left_out_of_the_cycle(washer: HomeAssistant,
+                                                     freezer: Any) -> None:
+    """A 30 min wash ends when the power goes down, not when off_delay confirms it."""
+    await start_cycle(washer, freezer)
+    started = dt_util.utcnow()
+    await tick(washer, freezer, 30 * 60)
+    dropped = dt_util.utcnow()
+    await end_cycle(washer, freezer)
+    assert dt_util.parse_datetime(value(washer, "last_cycle_start")) == started
+    assert dt_util.parse_datetime(value(washer, "last_cycle_end")) == dropped
+    assert float(value(washer, "last_cycle_duration")) == 30
+
+
+async def test_a_pause_shorter_than_off_delay_stays_in_the_cycle(washer: HomeAssistant,
+                                                                 freezer: Any) -> None:
+    """Down for 100 s, up again for 10 min: the cycle ends at the second drop, pause included."""
+    await start_cycle(washer, freezer)
+    await tick(washer, freezer, 10 * 60)
+    await watts(washer, IDLE_W)
+    await tick(washer, freezer, 100)
+    await watts(washer, 7)
+    await tick(washer, freezer, 10 * 60 - 100)
+    dropped = dt_util.utcnow()
+    await end_cycle(washer, freezer)
+    assert dt_util.parse_datetime(value(washer, "last_cycle_end")) == dropped
+    assert float(value(washer, "last_cycle_duration")) == 20
 
 
 async def test_before_the_first_cycle_everything_is_unknown(washer: HomeAssistant) -> None:
@@ -304,7 +333,7 @@ async def test_reload_mid_cycle_counts_one(washer: HomeAssistant, freezer: Any) 
 
 
 async def test_restart_mid_cycle_keeps_its_start(ha: HomeAssistant, freezer: Any) -> None:
-    """Saved 20 min into a wash; the plug reports idle after the restart: one cycle of ~22 min."""
+    """Saved 20 min into a wash; the plug reports idle after the restart: one cycle of 20 min."""
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     await restart(
         ha, DEVICES,
@@ -314,7 +343,7 @@ async def test_restart_mid_cycle_keeps_its_start(ha: HomeAssistant, freezer: Any
     )
     await kwh(ha, 100.4)
     await end_cycle(ha, freezer)
-    assert float(value(ha, "last_cycle_duration")) == pytest.approx(22, abs=0.2)
+    assert float(value(ha, "last_cycle_duration")) == pytest.approx(20, abs=0.2)
     assert float(value(ha, "last_cycle_energy")) == pytest.approx(0.4)
     assert value(ha, "cycles_total") == "6"
 
@@ -365,7 +394,7 @@ async def metered(ha: HomeAssistant, freezer: Any) -> HomeAssistant:
 
 
 async def wash(hass: HomeAssistant, freezer: Any, minutes: float) -> None:
-    """A cycle on for `minutes` plus its 2 min off delay."""
+    """A cycle of `minutes`, then its 2 min off delay, which isn't runtime."""
     await watts(hass, 120)
     await tick(hass, freezer, 65)
     await watts(hass, 7)
@@ -376,8 +405,24 @@ async def wash(hass: HomeAssistant, freezer: Any, minutes: float) -> None:
 async def test_runtime_adds_the_time_running(metered: HomeAssistant, freezer: Any) -> None:
     await wash(metered, freezer, 30)
     await wash(metered, freezer, 20)
-    assert float(value(metered, "runtime_total")) == pytest.approx((30 + 2 + 20 + 2) / 60,
-                                                                  abs=0.01)
+    assert float(value(metered, "runtime_total")) == pytest.approx((30 + 20) / 60, abs=0.01)
+
+
+async def test_runtime_stops_while_the_end_is_pending(metered: HomeAssistant,
+                                                      freezer: Any) -> None:
+    """A minute passes during off_delay: it isn't added; a pause cancelled by power is."""
+    await watts(metered, 120)
+    await tick(metered, freezer, 65)
+    await tick(metered, freezer, 10 * 60)
+    await watts(metered, IDLE_W)
+    before = float(value(metered, "runtime_total"))
+    await tick(metered, freezer, 110)
+    assert running(metered) == "on"
+    assert float(value(metered, "runtime_total")) == before
+    await watts(metered, 7)
+    await tick(metered, freezer, 60)
+    assert float(value(metered, "runtime_total")) == pytest.approx(before + 170 / 3600,
+                                                                   abs=0.001)
 
 
 async def test_runtime_grows_while_running(metered: HomeAssistant, freezer: Any) -> None:
@@ -500,6 +545,20 @@ async def test_cycle_start_is_shown_while_running(washer: HomeAssistant, freezer
     assert washer.states.get(RUNNING).attributes["cycle_start"] == started
     await end_cycle(washer, freezer)
     assert "cycle_start" not in washer.states.get(RUNNING).attributes
+
+
+async def test_cycle_end_is_shown_while_the_end_is_pending(washer: HomeAssistant,
+                                                          freezer: Any) -> None:
+    await start_cycle(washer, freezer)
+    assert "cycle_end" not in washer.states.get(RUNNING).attributes
+    dropped = dt_util.utcnow()
+    await watts(washer, IDLE_W)
+    assert washer.states.get(RUNNING).attributes["cycle_end"] == dropped
+    await tick(washer, freezer, 60)
+    await watts(washer, 7)
+    assert "cycle_end" not in washer.states.get(RUNNING).attributes
+    await end_cycle(washer, freezer)
+    assert "cycle_end" not in washer.states.get(RUNNING).attributes
 
 
 async def test_cycle_start_is_kept_across_a_restart(ha: HomeAssistant) -> None:
