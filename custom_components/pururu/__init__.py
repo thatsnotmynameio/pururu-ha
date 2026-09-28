@@ -402,28 +402,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     await generated.async_sync(
         hass, entry, reactions.KIND, _automations(hass, devices, created)
     )
-    await generated.async_sync(
-        hass, entry, programs.KIND, _scripts(hass, devices, created)
-    )
+    scripts, targets = _scripts(hass, devices, created)
+    await generated.async_sync(hass, entry, programs.KIND, scripts)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
+    # Whether a reload is already scheduled: a burst of disables reloads once
+    reloading = False
+
     @callback
     def changed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
-        """One of the entry's entities got a new ID, or was disabled: build again.
+        """One of the entry's entities got a new ID, or a program's target was disabled: build again.
 
-        A rename is followed. A disable drops what the entity acts on or watches
-        at once: HA itself reloads the entry once an entity is enabled again, but
-        not when one is disabled (config_entries.py's own handler explicitly
-        leaves that to the entity, which merely clears its own state).
+        A rename is followed. A program acting on an entity just disabled is
+        dropped (`_acted_on`), once for a burst of them: HA reloads the entry
+        itself once an entity is enabled again, but not when one is disabled
+        (config_entries.py leaves that to the entity, which merely clears its
+        own state). No other disable or enable concerns what is built here.
         """
+        nonlocal reloading
         data = event.data
-        if data["action"] != "update" or not (
-            "entity_id" in data["changes"] or "disabled_by" in data["changes"]
-        ):
+        if data["action"] != "update":
             return
         registered = registry.async_get(data["entity_id"])
-        if registered is not None and registered.config_entry_id == entry.entry_id:
+        if registered is None or registered.config_entry_id != entry.entry_id:
+            return
+        changes = data["changes"]
+        if "entity_id" in changes or (
+            "disabled_by" in changes
+            # The old value: the entity was enabled, and is now disabled
+            and changes["disabled_by"] is None
+            and registered.disabled
+            and registered.entity_id in targets
+            and not reloading
+        ):
+            reloading = True
             hass.config_entries.async_schedule_reload(entry.entry_id)
 
     entry.async_on_unload(
@@ -646,10 +659,14 @@ def _automations(
 
 def _scripts(
     hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
-) -> list[generated.Item]:
-    """A script per program of every device, in the device's area; one that can't act is logged."""
+) -> tuple[list[generated.Item], set[str]]:
+    """A script per program of every device, in the device's area; one that can't act is logged.
+
+    Also the entity IDs the generated scripts act on.
+    """
     registry = er.async_get(hass)
     scripts: list[generated.Item] = []
+    targets: set[str] = set()
     for key, config in devices.items():
         referable = _referable(key, config)
         for program_key, program in config.get(CONF_PROGRAMS, {}).items():
@@ -659,6 +676,7 @@ def _scripts(
             )
             if entity_ids is None:
                 continue
+            targets.update(entity_ids.values())
             scripts.append(
                 generated.Item(
                     unique_id=script_id,
@@ -668,7 +686,7 @@ def _scripts(
                     area=config.get(CONF_AREA),
                 )
             )
-    return scripts
+    return scripts, targets
 
 
 def _acted_on(
@@ -681,8 +699,10 @@ def _acted_on(
 ) -> dict[str, str] | None:
     """Each entity key the program acts on -> its current entity ID.
 
-    None, logged, when one isn't there to act on: not created, or disabled
-    (pururu reloads the entry once it is disabled, HA once it is enabled again).
+    None, logged, when one isn't there to act on: not created, or disabled.
+    The entry is reloaded when an entity a generated script acts on is disabled
+    (pururu's registry listener, `changed`), and when a disabled one is enabled
+    again (HA's own).
     """
     entity_ids: dict[str, str] = {}
     for _, key in programs.targets(program):

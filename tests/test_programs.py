@@ -7,12 +7,16 @@ from unittest.mock import patch
 
 from homeassistant.core import Context, Event, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from helpers import DOMAIN, capture, fake, generated, generated_scripts, held, reload, settle, setup, tick
+from helpers import DOMAIN, capture, device_of, fake, generated, generated_scripts, held, reload, settle, setup, tick
 
 KEY = "pool"
 REAL_PUMP = "switch.pool_pump"
@@ -337,6 +341,76 @@ async def test_it_comes_back_when_the_target_is_enabled(pool: HomeAssistant, fre
     calls = capture(pool, "call_service")
     await start(pool)
     assert reached(calls) == ["turn_on"]
+
+
+FILTER = "switch.pururu_pool_switch_filter"
+TWO_SWITCHES: dict[str, Any] = {**SWITCHES, "filter": {"entity": "switch.pool_filter", "name": "Filtro"}}
+
+
+async def two_switches(hass: HomeAssistant, *keys: str) -> None:
+    """The pool with a pump and a filter; its program turns on the switches of `keys`."""
+    await fake(hass, "switch.pool_filter", "off")
+    program = {"name": "Limpar", "sequence": [{"turn_on": f"switch_{key}"} for key in keys]}
+    assert await setup(hass, {KEY: {"name": "Piscina", "switches": TWO_SWITCHES,
+                                    "programs": {"clean": program}}})
+
+
+def counting_reloads(hass: HomeAssistant) -> Any:
+    """Count the entry's reloads, pururu's own and HA's."""
+    return patch.object(hass.config_entries, "async_reload",
+                        wraps=hass.config_entries.async_reload)
+
+
+async def test_disabling_an_entity_no_program_acts_on_reloads_nothing(
+        scripts: HomeAssistant, freezer: Any) -> None:
+    await two_switches(scripts, "pump")
+    with counting_reloads(scripts) as reloads:
+        await disable(scripts, FILTER)
+        await tick(scripts, freezer, 31)
+        await scripts.async_block_till_done()
+    assert reloads.call_count == 0
+    assert scripts.states.get(CLEAN) is not None
+
+
+async def test_enabling_a_target_again_reloads_once(
+        pool: HomeAssistant, freezer: Any) -> None:
+    """HA's own reload: pururu doesn't add one."""
+    await disable(pool, PUMP)
+    await tick(pool, freezer, 31)
+    await pool.async_block_till_done()
+    with counting_reloads(pool) as reloads:
+        await disable(pool, PUMP, disabled=False)
+        await tick(pool, freezer, 31)
+        await pool.async_block_till_done()
+    assert reloads.call_count == 1
+    assert pool.states.get(CLEAN) is not None
+
+
+async def test_disabling_several_targets_at_once_reloads_once(
+        scripts: HomeAssistant, freezer: Any) -> None:
+    await two_switches(scripts, "pump", "filter")
+    registry = er.async_get(scripts)
+    with counting_reloads(scripts) as reloads:
+        for entity_id in (PUMP, FILTER):
+            registry.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+        await tick(scripts, freezer, 31)
+        await scripts.async_block_till_done()
+    assert reloads.call_count == 1
+    assert scripts.states.get(CLEAN) is None
+
+
+async def test_disabling_the_device_reloads_once(scripts: HomeAssistant, freezer: Any) -> None:
+    """HA disables each of its entities in turn: one reload drops the program."""
+    await two_switches(scripts, "pump", "filter")
+    device = device_of(scripts, KEY)
+    assert device is not None
+    with counting_reloads(scripts) as reloads:
+        dr.async_get(scripts).async_update_device(device.id,
+                                                  disabled_by=dr.DeviceEntryDisabler.USER)
+        await tick(scripts, freezer, 31)
+        await scripts.async_block_till_done()
+    assert reloads.call_count == 1
+    assert scripts.states.get(CLEAN) is None
 
 
 # --- reloads, renames, taken IDs, upgrades ------------------------------------------------
