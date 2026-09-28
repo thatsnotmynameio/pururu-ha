@@ -287,6 +287,20 @@ async def test_finished_turns_off_when_a_new_cycle_starts(ha: HomeAssistant, fre
     assert state(ha, alert("finished")) == "off"
 
 
+async def test_finished_still_turns_off_at_lasts_without_a_reading(
+        ha: HomeAssistant, freezer: Any) -> None:
+    """Its end is a known time: losing running's reading mustn't keep it on."""
+    await idle(ha, freezer, {"finished": {"lasts": {"minutes": 30}}})
+    await start_cycle(ha, freezer)
+    await end_cycle(ha, freezer)
+    assert state(ha, alert("finished")) == "on"
+    await fake(ha, RUNNING, "unavailable")
+    await tick(ha, freezer, 1799)
+    assert state(ha, alert("finished")) == "on"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("finished")) == "off"
+
+
 async def test_a_plug_reconnecting_is_no_finished_cycle(ha: HomeAssistant, freezer: Any) -> None:
     await idle(ha, freezer, {"finished": None})
     ha.states.async_set(RUNNING, "unavailable")

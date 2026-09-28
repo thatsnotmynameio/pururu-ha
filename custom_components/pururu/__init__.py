@@ -87,6 +87,7 @@ def _device(value: Any) -> dict[str, Any]:
         )
     _capabilities_provided(device, names)
     _references_resolved(device, names)
+    _no_alert_watches_an_alert(device, names)
     _real_entities_distinct(device, names)
     _reactions_on_this_device(device)
     return device
@@ -138,17 +139,27 @@ def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
                     f"{name}: {key} is not an entity key of another feature "
                     "of this device"
                 )
-            owner = FEATURES[owners[key]]
-            if name == CONF_ALERTS and key in {
-                qualified(owner.namespace, alert) for alert in preset_keys(owner.alerts)
-            }:
-                raise vol.Invalid(
-                    f"{name}: {key} is an alert: an alert can't watch another"
-                )
         # Every key it acts on is one it refers to: its owner is known
         for action, key in feature.acts(device[name]) if feature.acts else ():
             if action not in FEATURES[owners[key]].actions:
                 raise vol.Invalid(f"{name}: {key} does not take {action}")
+
+
+def _no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None:
+    """Refuse a hand-written alert whose `when` is another feature's ready-made alert."""
+    alerts_feature = FEATURES[CONF_ALERTS]
+    if CONF_ALERTS not in names or alerts_feature.refers is None:
+        return
+    ready_made = {
+        qualified(FEATURES[name].namespace, alert)
+        for name in names
+        for alert in preset_keys(FEATURES[name].alerts)
+    }
+    for key in alerts_feature.refers(device[CONF_ALERTS]):
+        if key in ready_made:
+            raise vol.Invalid(
+                f"{CONF_ALERTS}: {key} is an alert: an alert can't watch another"
+            )
 
 
 def _reactions_on_this_device(device: dict[str, Any]) -> None:

@@ -81,6 +81,8 @@ class ElapsedAlert(ProblemAlert):
         # When this entity saw the watched one enter its state: newer than a
         # milestone not written yet (running goes off before last_cycle_end is)
         self._entered: datetime | None = None
+        # While on, when its window ends (lasts): a known time, reading or not
+        self._end: datetime | None = None
 
     @property
     @override
@@ -149,30 +151,44 @@ class ElapsedAlert(ProblemAlert):
     def _evaluate(self, _now: datetime | None = None) -> None:
         """Set the state for now and schedule the next change; without a reading, keep it."""
         self._cancel()
+        now = dt_util.utcnow()
         watched = self.hass.states.get(self._watched)
         if (
             watched is None
             or watched.state in NO_READING
             or watched.attributes.get(ATTR_RESTORED)
         ):
+            self._keep(now)
             return
         if watched.state != self._elapsed.state:
             self._entered = None
+            self._end = None
             self._set(on=False)
             return
         if (since := self._since(watched)) is None:
+            self._keep(now)
             return
-        now = dt_util.utcnow()
         start = since + self._hold
         end = start + self._lasts if self._lasts is not None else None
-        self._set(on=start <= now and (end is None or now < end))
+        on = start <= now and (end is None or now < end)
+        self._end = end if on else None
+        self._set(on=on)
         if now < start:
-            upcoming: datetime | None = start
+            self._schedule(start)
         elif end is not None and now < end:
-            upcoming = end
-        else:
-            upcoming = None
-        if upcoming is not None:
-            self._pending = async_track_point_in_utc_time(
-                self.hass, self._evaluate, upcoming
-            )
+            self._schedule(end)
+
+    @callback
+    def _keep(self, now: datetime) -> None:
+        """Without a reading, keep the state; but a window that ends still ends."""
+        if self._end is None:
+            return
+        if now < self._end:
+            self._schedule(self._end)
+            return
+        self._end = None
+        self._set(on=False)
+
+    @callback
+    def _schedule(self, when: datetime) -> None:
+        self._pending = async_track_point_in_utc_time(self.hass, self._evaluate, when)
