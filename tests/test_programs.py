@@ -14,6 +14,7 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -168,7 +169,9 @@ async def test_it_is_a_script_named_by_the_configuration(pool: HomeAssistant) ->
     entry = er.async_get(pool).async_get(CLEAN)
     assert entry is not None
     assert (entry.platform, entry.unique_id) == ("script", "pururu_pool_program_clean")
-    assert held(pool, KEY) == {PUMP}
+    # HA keeps a script from YAML out of any device; its statistics are the device's
+    assert CLEAN not in held(pool, KEY)
+    assert f"{STAT}cycles_total" in held(pool, KEY)
     assert pool.states.async_entity_ids("button") == []
 
 
@@ -574,3 +577,76 @@ async def test_the_old_button_is_removed(ha: HomeAssistant) -> None:
         suggested_object_id="pururu_pool_program_clean")
     assert await setup(ha, devices())
     assert er.async_get(ha).async_get("button.pururu_pool_program_clean") is None
+
+
+# --- statistics --------------------------------------------------------------------
+
+STAT = "sensor.pururu_pool_program_clean_"
+
+
+def value(hass: HomeAssistant, suffix: str) -> str:
+    state = hass.states.get(STAT + suffix)
+    assert state is not None, f"no {STAT}{suffix}"
+    return state.state
+
+
+async def test_a_run_is_a_cycle(pool: HomeAssistant, freezer: Any) -> None:
+    await start(pool)
+    started = dt_util.utcnow()
+    assert value(pool, "cycles_total") == "0"
+    await tick(pool, freezer, TWO_HOURS)
+    await pool.async_block_till_done()
+    assert value(pool, "cycles_total") == "1"
+    assert value(pool, "last_cycle_duration") == "120.0"
+    assert dt_util.parse_datetime(value(pool, "last_cycle_start")) == started
+    assert dt_util.parse_datetime(value(pool, "last_cycle_end")) == dt_util.utcnow()
+    assert float(value(pool, "runtime_total")) == pytest.approx(2, abs=0.01)
+
+
+async def test_its_statistics_are_named_by_the_program(pool: HomeAssistant) -> None:
+    state = pool.states.get(STAT + "cycles_total")
+    assert state is not None
+    assert state.attributes["friendly_name"] == "Piscina Limpar cycles"
+
+
+async def test_meters_are_asked_for(scripts: HomeAssistant) -> None:
+    program = {**CLEANING, "statistics": {"runtime": ["today"], "cycles": ["month", "year"]}}
+    assert await setup(scripts, devices(clean=program))
+    for suffix in ("runtime_today", "cycles_month", "cycles_year"):
+        assert scripts.states.get(STAT + suffix) is not None, suffix
+    assert scripts.states.get(STAT + "runtime_week") is None
+
+
+@pytest.mark.parametrize("statistics", [
+    {"runtime": ["today", "today"]}, {"runs": ["today"]}, {"cycles": ["daily"]}])
+async def test_invalid_statistics_are_refused(ha: HomeAssistant, statistics: dict[str, Any]) -> None:
+    assert not await setup(ha, devices(clean={**CLEANING, "statistics": statistics}))
+
+
+async def test_a_reload_mid_run_counts_it_once_from_its_start(pool: HomeAssistant,
+                                                              freezer: Any) -> None:
+    await start(pool)
+    started = dt_util.utcnow()
+    await tick(pool, freezer, 60)
+    await reload_while_running(pool, devices())
+    await tick(pool, freezer, TWO_HOURS - 60)
+    await pool.async_block_till_done()
+    assert value(pool, "cycles_total") == "1"
+    assert dt_util.parse_datetime(value(pool, "last_cycle_start")) == started
+
+
+async def test_a_held_program_keeps_its_statistics(pool: HomeAssistant, freezer: Any) -> None:
+    await start(pool)
+    await tick(pool, freezer, TWO_HOURS)
+    await pool.async_block_till_done()
+    await disable(pool, PUMP)
+    await tick(pool, freezer, 31)
+    await pool.async_block_till_done()
+    assert value(pool, "cycles_total") == "1"
+
+
+async def test_a_removed_program_takes_its_statistics(pool: HomeAssistant) -> None:
+    wash = {"name": "Lavar", "sequence": [{"turn_on": "switch_pump"}]}
+    await reload(pool, devices(wash=wash))
+    assert er.async_get(pool).async_get(STAT + "cycles_total") is None
+    assert er.async_get(pool).async_get("sensor.pururu_pool_program_wash_cycles_total") is not None

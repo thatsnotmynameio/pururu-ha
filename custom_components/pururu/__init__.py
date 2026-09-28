@@ -6,6 +6,7 @@ From the real entities and settings in a feature's block, the feature creates
 the device's entities. One config entry owns every floor, area, device and entity.
 """
 
+from collections import ChainMap
 from collections.abc import Collection, Iterator, Mapping
 from functools import partial
 import logging
@@ -52,14 +53,21 @@ from .const import (
     DOMAIN,
     PLATFORMS,
 )
+from .device_keys import DEVICE_KEYS
 from .entity import PururuEntity
-from .feature import Device, preset_keys, qualified
+from .feature import Device, Feature, preset_keys, qualified
 from .features import FEATURES, presets
 from .features.alerts import ProblemAlert
 
 _LOGGER = logging.getLogger(__name__)
 
 type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
+
+# Everything that builds entities of a device: its features, then the device keys
+# creating some (their statistics). Only FEATURES count as a device's feature. A
+# view, not a copy: it iterates FEATURES first (a ChainMap iterates its last map
+# first), and sees any feature added to it
+BUILDERS: ChainMap[str, Feature] = ChainMap(DEVICE_KEYS, FEATURES)
 
 
 def _device(value: Any) -> dict[str, Any]:
@@ -125,7 +133,7 @@ def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
     """Refuse a reference that isn't another feature's entity key."""
     # Every entity key the device can create, in its namespace -> its feature
     owners = {
-        qualified(FEATURES[name].namespace, entity_key): name
+        qualified(BUILDERS[name].namespace, entity_key): name
         for name, entity_key, _ in _entity_keys(device)
     }
     for name in names:
@@ -164,7 +172,7 @@ def _reactions_on_this_device(device: dict[str, Any]) -> None:
     its programs.
     """
     keys = {
-        qualified(FEATURES[name].namespace, entity_key)
+        qualified(BUILDERS[name].namespace, entity_key)
         for name, entity_key, _ in _entity_keys(device)
     }
     for key, reaction in device.get(CONF_REACTIONS, {}).items():
@@ -184,7 +192,7 @@ def _reactions_on_this_device(device: dict[str, Any]) -> None:
 def _programs_on_this_device(device: dict[str, Any]) -> None:
     """Refuse a step on what isn't a feature's entity key of the device taking its action."""
     owners = {
-        qualified(FEATURES[name].namespace, entity_key): name
+        qualified(BUILDERS[name].namespace, entity_key): name
         for name, entity_key, _ in _entity_keys(device)
     }
     for program in device.get(CONF_PROGRAMS, {}).values():
@@ -194,13 +202,13 @@ def _programs_on_this_device(device: dict[str, Any]) -> None:
                     f"programs: {key} is not an entity key of another feature "
                     "of this device"
                 )
-            if action not in FEATURES[owners[key]].actions:
+            if action not in BUILDERS[owners[key]].actions:
                 raise vol.Invalid(f"programs: {key} does not take {action}")
 
 
 def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
-    """(feature, entity key, platform) of every entity the device's features can create."""
-    for name, feature in FEATURES.items():
+    """(builder, entity key, platform) of every entity the device's features and device keys can create."""
+    for name, feature in BUILDERS.items():
         if name not in device:
             continue
         yield from (
@@ -236,7 +244,7 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     for key, device in config[CONF_DEVICES].items():
         for name, entity_key, _ in _entity_keys(device):
             identity = Device(
-                key=key, name=device[CONF_NAME], namespace=FEATURES[name].namespace
+                key=key, name=device[CONF_NAME], namespace=BUILDERS[name].namespace
             )
             object_id = identity.object_id(entity_key)
             if object_id in owners:
@@ -298,8 +306,8 @@ def _referable(
     platform: enough for its current entity ID and its unique ID.
     """
     return {
-        qualified(FEATURES[name].namespace, entity_key): (
-            Device(key=key, name=config[CONF_NAME], namespace=FEATURES[name].namespace),
+        qualified(BUILDERS[name].namespace, entity_key): (
+            Device(key=key, name=config[CONF_NAME], namespace=BUILDERS[name].namespace),
             entity_key,
             platform,
         )
@@ -327,8 +335,8 @@ CONFIG_SCHEMA = vol.Schema(
             ),
             places.floors_exist,
             _areas_exist,
-            _entity_ids_distinct,
             _generated_ids_distinct,
+            _entity_ids_distinct,
             _reactions_resolved,
         )
     },
@@ -526,7 +534,7 @@ def _build(
     referable = _referable(key, config)
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
-    for name, feature in FEATURES.items():
+    for name, feature in BUILDERS.items():
         if name not in config:
             continue
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)

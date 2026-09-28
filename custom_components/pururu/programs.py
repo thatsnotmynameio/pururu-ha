@@ -4,20 +4,34 @@ A program is a method of its device: something starts it, and it turns the
 device's own switches and lights on and off, with delays between. Its steps are
 pururu's, translated to HA's script syntax in pururu/scripts/programs.yaml,
 whose folder configuration.yaml includes (generated.py); HA runs it. No step
-can reach outside the device.
+can reach outside the device. Each run is a cycle: its statistics are sensors
+of its device (STATISTICS).
 """
 
 from collections.abc import Iterator, Mapping
-from typing import Any
+from typing import Any, override
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_NAME
-from homeassistant.core import split_entity_id
-from homeassistant.helpers import config_validation as cv
+from homeassistant.const import CONF_NAME, STATE_OFF, STATE_ON, Platform
+from homeassistant.core import (
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    callback,
+    split_entity_id,
+)
+from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import CONF_SCRIPTS, ENTITY_PREFIX
-from .feature import qualified
+from .entity import PururuEntity
+from .feature import Device, Feature, Item, qualified
+from .features.cycle import Cycle, cycle_signal, end_signal
+from .features.cycle.last import LAST_CYCLE, LastCycleValue
+from .features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
+from .features.cycle.totals import CyclesTotal, RuntimeTotal
 from .generated import Kind, period
 
 # The namespace of every program's script ID
@@ -53,11 +67,27 @@ def _step(value: Any) -> dict[str, Any]:
     return step
 
 
+# What a run records: the last cycle's values (a script uses no energy), and totals
+LAST_RUN = tuple(d for d in LAST_CYCLE if d.key != "last_cycle_energy")
+COUNTERS = ("runtime", "cycles")
+PER_PROGRAM: dict[str, Platform] = {
+    **{description.key: Platform.SENSOR for description in LAST_RUN},
+    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS},
+    **{
+        f"{counter}_{period}": Platform.SENSOR
+        for counter in COUNTERS
+        for period in PERIODS
+    },
+}
+
 PROGRAM = vol.Schema(
     {
         # A blank name would show the program as its device's name alone
         vol.Required(CONF_NAME): vol.All(cv.string, vol.Strip, vol.Length(min=1)),
         vol.Required("sequence"): vol.All([_step], vol.Length(min=1)),
+        vol.Optional("statistics", default={}): vol.Schema(
+            {vol.Optional(counter, default=[]): PERIOD_LIST for counter in COUNTERS}
+        ),
     }
 )
 # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
@@ -106,3 +136,89 @@ def script(
         "mode": "single",
         "sequence": [_translated(step, entity_ids) for step in program["sequence"]],
     }
+
+
+class Runs(CyclesTotal):
+    """A program's finished runs, all time; it sends each one: its script on, then off.
+
+    The run's start is the `on` state's: a pururu reload while it runs keeps it.
+    """
+
+    def __init__(self, device: Device, script: str, *, item: Item) -> None:
+        """Count the runs of `script`, the entity of `item`'s program."""
+        super().__init__(device, source="cycles_total", item=item)
+        # The script isn't pururu's: nothing of the device to wait for
+        self.sources = ()
+        self._script = script
+        # The end's own signal last, as a cycle's source sends them
+        self._signals = (cycle_signal(device, item), end_signal(device, item))
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Restore the count and count, then watch the script."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, self._script, self._changed)
+        )
+
+    @callback
+    def _changed(self, event: Event[EventStateChangedData]) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        if (
+            old is None
+            or new is None
+            or (old.state, new.state) != (STATE_ON, STATE_OFF)
+        ):
+            return
+        run = Cycle(start=old.last_changed, end=new.last_changed, energy_kwh=None)
+        for signal in self._signals:
+            async_dispatcher_send(self.hass, signal, run)
+
+
+def _items(config: Mapping[str, Any]) -> list[Item]:
+    return [Item(slug=key, name=program[CONF_NAME]) for key, program in config.items()]
+
+
+def build(
+    hass: HomeAssistant,
+    device: Device,
+    config: dict[str, Any],
+    inputs: Mapping[str, str],
+) -> list[PururuEntity]:
+    """Each program's runs as cycles: its last run, totals, the meters asked for."""
+    registry = er.async_get(hass)
+    entities: list[PururuEntity] = []
+    for item in _items(config):
+        unique_id = script_id(device.key, item.slug)
+        script = registry.async_get_entity_id(KIND.domain, KIND.domain, unique_id) or (
+            f"{KIND.domain}.{unique_id}"
+        )
+        counted = item.key("cycles_total")
+        entities.append(Runs(device, script, item=item))
+        entities.extend(
+            LastCycleValue(device, description, source=counted, item=item)
+            for description in LAST_RUN
+        )
+        entities.append(
+            RuntimeTotal(device, script, STATE_ON, source=counted, item=item)
+        )
+        for counter in COUNTERS:
+            total = f"{counter}_total"
+            source = device.current_entity_id(hass, Platform.SENSOR, item.key(total))
+            entities.extend(
+                Meter(device, f"{counter}_{period}", total, source, period, item=item)
+                for period in config[item.slug]["statistics"][counter]
+            )
+    return entities
+
+
+# Not a device's feature: its programs' statistics, built as a Feature's entities
+STATISTICS = Feature(
+    schema=SCHEMA,
+    entity_keys={},
+    build=build,
+    example={"clean": {"name": "Clean", "sequence": [{"delay": 1}]}},
+    namespace=NAMESPACE,
+    per_item=PER_PROGRAM,
+    items=_items,
+)
