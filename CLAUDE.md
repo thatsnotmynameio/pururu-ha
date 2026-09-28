@@ -69,8 +69,8 @@ python3 release.py check                        # the manifest version must be s
 - **`ha` fixture** (`tests/conftest.py`): it freezes time at a fixed Wednesday 10:00 and puts the repo's `custom_components` on HA's loader path.
 - **Loading integration modules:** use `helpers.module("<name>")` after the fixture, not a top-level import.
 - **Helpers in `tests/helpers.py`:**
-  - `setup` and `reload` take devices, plus `floors=` and `areas=`.
-  - `restart` restores saved state.
+  - `setup` and `reload` take devices, plus `floors=`, `areas=`, `events=` (`pururu: events:`) and `config=` (`pururu: config:`).
+  - `restart` restores saved state (a `(State, extra data)` per entity), plus `config=`.
   - `tick` and `fake` drive time and real-entity states.
   - `device_of` and `held` inspect the registries.
 

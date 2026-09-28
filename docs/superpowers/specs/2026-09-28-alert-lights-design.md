@@ -124,7 +124,7 @@ The manager follows every state change of each borrowed light:
 - **Else, the light is in `resolved`** (back from no reading, the bulb's own report after the 5 s, a wall switch): `turn_on` with `resolved`'s parameters again, its `for` running on.
 - **The light is free:** ignored, whoever changed it.
 
-A light's commands run one at a time, in the order given; a command still waiting when a newer one is given is dropped. A slow `turn_off` of a release can't land after the next alert's `turn_on` (PR review).
+A light's commands run one at a time, in the order given; a command still waiting when a newer one is given, or when someone takes the light back, is dropped, and a dropped `turn_off` announces no release. A slow `turn_off` of a release can't land after the next alert's `turn_on`, and a waiting green can't land on a light a person took back (PR review).
 
 A light without a reading is never called (HA would skip it and log a missing entity at every `repeat`): what it should show is sent once it's back. Resolved's `for` ending while it has no reading waits for it to be back to turn it off and release it (final review).
 

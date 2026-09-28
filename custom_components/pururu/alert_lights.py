@@ -186,6 +186,11 @@ class _Light:
         self.recent.append(context.id)
         return context
 
+    def supersede(self) -> int:
+        """Replace every command still waiting: the manager decided anew. Its number."""
+        self.given += 1
+        return self.given
+
     def stop_repeating(self) -> None:
         """Stop sending the priority again."""
         if self.repeating is not None:
@@ -373,6 +378,8 @@ class AlertLights:
         if turn_off:
             self._call(light, SERVICE_TURN_OFF, {}, context, then=released)
         else:
+            # Someone took it: no command still waiting may change it now
+            light.supersede()
             released()
 
     @callback
@@ -404,14 +411,14 @@ class AlertLights:
         A light without a reading can't take it: not called, it is put back
         once it's back (`_light_changed`).
         """
+        number = light.supersede()
         if self._offline(light):
             if then is not None:
                 then()
             return
-        light.given += 1
         self._entry.async_create_task(
             self._hass,
-            self._async_call(light, light.given, service, data, context, then),
+            self._async_call(light, number, service, data, context, then),
             f"pururu alert lights {service}",
         )
 
@@ -426,16 +433,17 @@ class AlertLights:
     ) -> None:
         """Run command `number` once the light's previous one returned, unless a newer one replaced it.
 
-        A failure is a warning: the next repeat or change tries again. The
-        light's integration is a third party that may raise anything: an
-        error it doesn't expect is its bug, logged with the traceback that
-        reports it. Either way `then` runs, so a release is still said.
+        A replaced command runs nothing, not even `then`: the newer decision
+        speaks for itself (its own release, or none). A failure is a warning:
+        the next repeat or change tries again. The light's integration is a
+        third party that may raise anything: an error it doesn't expect is its
+        bug, logged with the traceback that reports it. Either way `then` of a
+        command that ran runs, so a release is still said.
         """
         async with light.commands:
-            if number == light.given:
-                await self._async_service(
-                    light.entity.entity_id, service, data, context
-                )
+            if number != light.given:
+                return
+            await self._async_service(light.entity.entity_id, service, data, context)
         if then is not None:
             then()
 

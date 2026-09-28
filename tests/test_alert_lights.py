@@ -578,6 +578,56 @@ async def test_a_slow_turn_off_never_lands_after_the_next_alerts_turn_on(
     assert attributes(house, LED)["alert"] == "medium"
 
 
+def gated_turn_on(monkeypatch: pytest.MonkeyPatch, gate: asyncio.Event, done: list[str]) -> None:
+    """Hold every Light turn_on until `gate` is set; `done` records the ones that ran."""
+    lights = module("features.lights")
+    turn_on = lights.Light.async_turn_on
+
+    async def slow_on(self: Any, **kwargs: Any) -> None:
+        await gate.wait()
+        await turn_on(self, **kwargs)
+        done.append("on")
+
+    monkeypatch.setattr(lights.Light, "async_turn_on", slow_on)
+
+
+async def test_a_take_back_drops_a_command_still_waiting(
+        house: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The green waiting behind a slow orange never lands on a light a person took back."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    gate = asyncio.Event()
+    done: list[str] = []
+    gated_turn_on(monkeypatch, gate, done)
+    # Not turn(): it would wait for the turn_on held here
+    await fake(house, REAL["gate"], "on")
+    await fake(house, REAL["gate"], "off")
+    house.states.async_set(REAL_LED, "on", {**BULB, "hs_color": [240.0, 100.0]},
+                           context=Context(user_id="someone"))
+    await settle()
+    gate.set()
+    await house.async_block_till_done()
+    assert done == ["on"]
+    assert "alert" not in attributes(house, LED)
+
+
+async def test_a_dropped_turn_off_announces_no_release(
+        house: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Of two releases whose turn_offs queued behind a slow command, only the last speaks."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    gate = asyncio.Event()
+    gated_turn_on(monkeypatch, gate, [])
+    released = capture(house, "pururu_alert_lights_released")
+    await fake(house, REAL["gate"], "off")
+    await tick(house, freezer, 120)
+    await fake(house, REAL["gate"], "on")
+    await fake(house, REAL["gate"], "off")
+    await tick(house, freezer, 120)
+    gate.set()
+    await house.async_block_till_done()
+    assert [event.data for event in released] == [{"entity_id": LED}]
+
+
 async def test_an_integration_bug_turning_it_off_still_releases_the_light(
         house: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch) -> None:
