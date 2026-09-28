@@ -5,6 +5,7 @@ with one key, its defaults and texts ready.
 """
 
 from collections.abc import Callable, Mapping
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -17,6 +18,7 @@ from ..const import DOMAIN
 from ..entity import PururuEntity
 from ..feature import ALERTS_KEY, Condition, Device, Feature, Preset
 from .alerts import NOTIFY, PRIORITIES, Alert
+from .elapsed import ElapsedAlert
 
 
 def _settings(preset: Preset) -> vol.Schema:
@@ -131,4 +133,30 @@ def build(
                     sources=(preset.watches,),
                 )
             )
+            continue
+        kind = preset.kind
+        milestone = (
+            None
+            if kind.since_key is None
+            else device.current_entity_id(
+                hass, feature.entity_keys[kind.since_key], kind.since_key
+            )
+        )
+        entities.append(
+            ElapsedAlert(
+                device,
+                entity_key,
+                watched=watched,
+                milestone=milestone,
+                elapsed=kind,
+                hold=settings.get("for", preset.hold or timedelta(0)),
+                lasts=settings.get("lasts"),
+                priority=settings["priority"],
+                notify=notify,
+                sources=(
+                    preset.watches,
+                    *((kind.since_key,) if kind.since_key else ()),
+                ),
+            )
+        )
     return entities

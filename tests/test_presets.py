@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant, State
+from homeassistant.util import dt as dt_util
 import pytest
 import yaml
 
-from helpers import fake, held, restart, setup, tick
+from helpers import capture, fake, held, restart, setup, tick
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
@@ -168,3 +169,136 @@ async def test_it_is_an_alert2_alert(ha: HomeAssistant) -> None:
 async def test_a_ready_made_alert_comes_back_as_it_was(ha: HomeAssistant) -> None:
     await restart(ha, devices({"offline": None}), (State(alert("offline"), "on"), {}))
     assert state(ha, alert("offline")) == "on"
+
+
+# --- time since a milestone ---------------------------------------------------------------
+
+RUNNING = f"binary_sensor.pururu_{KEY}_appliance_running"
+LAST_END = f"sensor.pururu_{KEY}_appliance_last_cycle_end"
+
+
+async def start_cycle(ha: HomeAssistant, freezer: Any) -> None:
+    await fake(ha, POWER, "120")
+    await tick(ha, freezer, 65)
+    assert state(ha, RUNNING) == "on"
+
+
+async def end_cycle(ha: HomeAssistant, freezer: Any) -> None:
+    await fake(ha, POWER, "1")
+    await tick(ha, freezer, 125)
+    assert state(ha, RUNNING) == "off"
+
+
+async def idle(ha: HomeAssistant, freezer: Any, enabled: Any) -> None:
+    assert await setup(ha, devices(enabled))
+    await fake(ha, POWER, "1")
+    await tick(ha, freezer, 125)
+
+
+async def test_long_cycle_turns_on_after_for_and_off_when_the_cycle_ends(
+        ha: HomeAssistant, freezer: Any) -> None:
+    await idle(ha, freezer, {"long_cycle": {"for": {"hours": 1}}})
+    await start_cycle(ha, freezer)
+    await tick(ha, freezer, 3599)
+    assert state(ha, alert("long_cycle")) == "off"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("long_cycle")) == "on"
+    await end_cycle(ha, freezer)
+    assert state(ha, alert("long_cycle")) == "off"
+
+
+async def test_long_cycle_counts_the_time_before_a_restart(ha: HomeAssistant, freezer: Any) -> None:
+    since = dt_util.utcnow() - timedelta(minutes=50)
+    await restart(ha, devices({"long_cycle": {"for": {"hours": 1}}}),
+                  (State(RUNNING, "on"), {"since": since.isoformat(), "since_energy": None}))
+    await fake(ha, POWER, "120")
+    await tick(ha, freezer, 599)
+    assert state(ha, alert("long_cycle")) == "off"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("long_cycle")) == "on"
+
+
+async def test_no_cycle_counts_from_its_creation_without_a_cycle(
+        ha: HomeAssistant, freezer: Any) -> None:
+    await idle(ha, freezer, {"no_cycle": {"for": {"hours": 2}}})
+    await tick(ha, freezer, 2 * 3600 - 125 - 1)
+    assert state(ha, alert("no_cycle")) == "off"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("no_cycle")) == "on"
+    await start_cycle(ha, freezer)
+    assert state(ha, alert("no_cycle")) == "off"
+
+
+async def test_no_cycle_counts_from_the_last_cycles_end(ha: HomeAssistant, freezer: Any) -> None:
+    await idle(ha, freezer, {"no_cycle": {"for": {"hours": 2}}})
+    await start_cycle(ha, freezer)
+    await end_cycle(ha, freezer)
+    await tick(ha, freezer, 7199)
+    assert state(ha, alert("no_cycle")) == "off"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("no_cycle")) == "on"
+
+
+async def test_no_cycle_does_not_flicker_at_a_cycle_end(ha: HomeAssistant, freezer: Any) -> None:
+    """Running goes off before last_cycle_end is written: the old end must not turn it on."""
+    await idle(ha, freezer, {"no_cycle": {"for": {"hours": 1}}})
+    await tick(ha, freezer, 3600)
+    assert state(ha, alert("no_cycle")) == "on"
+    await start_cycle(ha, freezer)
+    changes = capture(ha, "state_changed")
+    await end_cycle(ha, freezer)
+    assert [e.data["new_state"].state for e in changes
+            if e.data["entity_id"] == alert("no_cycle")] == []
+
+
+async def test_no_cycle_counts_across_a_restart(ha: HomeAssistant, freezer: Any) -> None:
+    end = (dt_util.utcnow() - timedelta(minutes=50)).isoformat()
+    await restart(ha, devices({"no_cycle": {"for": {"hours": 1}}}),
+                  (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+                  (State(LAST_END, end),
+                   {"native_value": {"__type": "<class 'datetime.datetime'>", "isoformat": end},
+                    "native_unit_of_measurement": None}))
+    await fake(ha, POWER, "1")
+    await tick(ha, freezer, 599)
+    assert state(ha, alert("no_cycle")) == "off"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("no_cycle")) == "on"
+
+
+async def test_finished_turns_on_at_the_end_and_off_after_lasts(
+        ha: HomeAssistant, freezer: Any) -> None:
+    await idle(ha, freezer, {"finished": {"lasts": {"minutes": 30}}})
+    assert state(ha, alert("finished")) == "off"
+    await start_cycle(ha, freezer)
+    await end_cycle(ha, freezer)
+    assert state(ha, alert("finished")) == "on"
+    await tick(ha, freezer, 1799)
+    assert state(ha, alert("finished")) == "on"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("finished")) == "off"
+
+
+async def test_finished_turns_off_when_a_new_cycle_starts(ha: HomeAssistant, freezer: Any) -> None:
+    await idle(ha, freezer, {"finished": None})
+    await start_cycle(ha, freezer)
+    await end_cycle(ha, freezer)
+    await start_cycle(ha, freezer)
+    assert state(ha, alert("finished")) == "off"
+
+
+async def test_a_plug_reconnecting_is_no_finished_cycle(ha: HomeAssistant, freezer: Any) -> None:
+    await idle(ha, freezer, {"finished": None})
+    ha.states.async_set(RUNNING, "unavailable")
+    await fake(ha, RUNNING, "off")
+    assert state(ha, alert("finished")) == "off"
+
+
+async def test_time_alerts_watch_running_and_are_alert2_alerts(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices({"finished": None}))
+    found = ha.states.get(alert("finished"))
+    assert found.attributes["watches"] == RUNNING
+    assert found.attributes["priority"] == "low"
+    assert found.attributes["message"] == "The cycle finished."
+    path = Path(ha.config.path("pururu/alert2/alerts.yaml"))
+    [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert entry["name"] == "demo_washer_appliance_alert_finished"
