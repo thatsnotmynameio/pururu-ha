@@ -247,8 +247,9 @@ async def test_what_it_does_carries_the_callers_context(pool: HomeAssistant) -> 
 
 async def test_starting_it_while_it_runs_is_ignored(
         pool: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
-    """script.turn_on (blocking) waits for a state change before returning; a single-mode
-    script that refuses a second run never fires one, so this second call isn't blocking."""
+    """A blocking script.turn_on on an already-running single-mode script returns at its
+    next change (its next step, or its end), not at once: under frozen time that's two
+    hours away, so this second call is non-blocking instead."""
     calls = capture(pool, "call_service")
     await start(pool)
     await tick(pool, freezer, 60)
@@ -310,16 +311,17 @@ async def disable(hass: HomeAssistant, entity_id: str, disabled: bool = True) ->
 
 
 async def test_a_disabled_target_drops_the_program(
-        pool: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+        pool: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
     """A script that looks usable and does part of its job would mislead: it goes, logged.
 
-    Disabling alone doesn't reload the entry (HA's own config entry reload-on-disable
-    only fires when an entity is *re-enabled*: config_entries.py's disable handler
-    explicitly skips scheduling one while the entity stays disabled); a reload, like a
-    restart, is what picks this up.
+    HA's own config entry reload-on-disable only fires when an entity is
+    *re-enabled* (config_entries.py's disable handler explicitly skips scheduling
+    one while the entity stays disabled); pururu's own registry listener in
+    async_setup_entry schedules the reload here instead.
     """
     await disable(pool, PUMP)
-    await reload(pool, devices())
+    await tick(pool, freezer, 31)
+    await pool.async_block_till_done()
     assert generated_scripts(pool) == {}
     assert pool.states.get(CLEAN) is None
     assert er.async_get(pool).async_get(CLEAN) is None

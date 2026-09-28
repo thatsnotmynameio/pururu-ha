@@ -376,17 +376,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     dashboard.async_setup(hass, entry)
 
     @callback
-    def renamed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
-        """One of the entry's entities got a new ID: build again, following it."""
+    def changed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
+        """One of the entry's entities got a new ID, or was disabled: build again.
+
+        A rename is followed. A disable drops what the entity acts on or watches
+        at once: HA itself reloads the entry once an entity is enabled again, but
+        not when one is disabled (config_entries.py's own handler explicitly
+        leaves that to the entity, which merely clears its own state).
+        """
         data = event.data
-        if data["action"] != "update" or "entity_id" not in data["changes"]:
+        if data["action"] != "update" or not (
+            "entity_id" in data["changes"] or "disabled_by" in data["changes"]
+        ):
             return
         registered = registry.async_get(data["entity_id"])
         if registered is not None and registered.config_entry_id == entry.entry_id:
             hass.config_entries.async_schedule_reload(entry.entry_id)
 
     entry.async_on_unload(
-        hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, renamed)
+        hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, changed)
     )
     return True
 
@@ -636,8 +644,8 @@ def _acted_on(
 ) -> dict[str, str] | None:
     """Each entity key the program acts on -> its current entity ID.
 
-    None, logged, when one isn't there to act on: not created, or disabled (HA
-    reloads the entry once it is enabled again).
+    None, logged, when one isn't there to act on: not created, or disabled
+    (pururu reloads the entry once it is disabled, HA once it is enabled again).
     """
     entity_ids: dict[str, str] = {}
     for _, key in programs.targets(program):
