@@ -422,7 +422,7 @@ async def test_a_program_whose_target_is_not_created_is_not_generated(
 
 
 async def test_the_old_button_is_removed(ha: HomeAssistant) -> None:
-    """Up to 0.1.11 a program was button.pururu_<device>_program_<key>."""
+    """Up to 0.1.13 a program was button.pururu_<device>_program_<key>."""
     entry = MockConfigEntry(domain="pururu", source="import", data={})
     entry.add_to_hass(ha)
     er.async_get(ha).async_get_or_create(

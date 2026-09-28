@@ -21,7 +21,8 @@ flowchart TD
     P3 --> P4["4. put each device in its area"]
     P4 --> P5["5. remove stale entities and devices"]
     P5 --> P6["6. generated.py<br/>reactions' automations, programs' scripts"]
-    P6 --> P7["7. dashboard.async_setup"]
+    P6 --> P7["7. alert2_alerts.async_sync<br/>Alert2's alerts"]
+    P7 --> P8["8. dashboard.async_setup"]
 ```
 
 ### `async_setup`
@@ -35,12 +36,13 @@ flowchart TD
 It does all the work, in this order:
 
 1. **Floors and areas** (`places.async_sync`). They come first because devices are placed in them. The IDs it now manages are saved in `entry.data`, as `{"floors": [...], "areas": [...], "automations": [...], "scripts": [...]}`, where `automations` and `scripts` hold the IDs of the reactions' automations and the programs' scripts (step 6).
-2. **Build every device's entities.** For each device, each feature's `build()` returns entities. `_creatable` drops the ones whose ID is taken, and then everything that follows them (see [Entity IDs are the identity](#entity-ids-are-the-identity)).
+2. **Build every device's entities.** For each device, each feature's `build()` returns entities, and then its enabled ready-made alerts (`features/presets.py`: an `Alert` for a `Condition`, an `ElapsedAlert` for an `Elapsed`, their default texts read once per setup in HA's language). `_creatable` drops the ones whose ID is taken, and then everything that follows them (see [Entity IDs are the identity](#entity-ids-are-the-identity)).
 3. **Hand them to the platforms.** The entities go in `entry.runtime_data` (`dict[Platform, list[Entity]]`), and `sensor.py`, `binary_sensor.py`, `switch.py` and `light.py` only call `async_add_entities` with their list.
 4. **Place each device** in its configured `area`, if that area exists.
 5. **Remove what's stale**: every entity and device of the entry that this configuration didn't build.
 6. **Generate the reactions' automations and the programs' scripts** (`generated.py`, with a `Kind` per domain from `reactions.py` and `programs.py`): each is written to its file (`pururu/automations/reactions.yaml`, `pururu/scripts/programs.yaml`) when it changed, and `configuration.yaml` includes the folder (`!include_dir_merge_list`, `!include_dir_merge_named`, so a missing one loads as nothing). Entity IDs are registered first so they get the pururu pattern, a script is put in its device's area, HA reloads the domain once HA has started when the file changed or HA doesn't run what it holds (so a reload that didn't take is retried), in a task the entry's unload waits for, and a Repairs issue says when the include is missing, checked again on every state change of the domain. An ID the entry doesn't manage is the user's own and is never taken over; a dropped item keeps its registry entry until HA no longer runs it (a restored placeholder doesn't count). `reactions` and `programs` are device keys, not `Feature`s: they create no pururu entity.
-7. **Show the dashboard.** It comes last because it lists everything above.
+7. **Write Alert2's alerts** (`alert2_alerts.py`): each created alert with `notify`, hand-written or ready-made, taken from the created entities, becomes an Alert2 condition alert (`domain: pururu`, named after its object ID, conditions on its current entity ID, text with `{` wrapped in `{% raw %}`) in `pururu/alert2/alerts.yaml`, which the user's `alert2:` block includes as its `alerts` (`!include_dir_merge_list pururu/alert2`). Once HA has started, in an entry task, Alert2 is reloaded when the file changed or Alert2 doesn't run an alert it holds (a restored placeholder doesn't count, a disabled one isn't missing), and a Repairs issue says when the include is missing. Nothing is tracked in `entry.data`: Alert2 drops what its config no longer has. The file writer (the header, a rewrite only on change, a logged failure) is shared with the automations and scripts (`files.py`).
+8. **Show the dashboard.** It comes last because it lists everything above.
 
 Finally it listens for entity registry updates. When one of the entry's entities gets a new entity ID, it schedules a reload of the entry, so that everything that follows that entity picks up the new ID.
 

@@ -16,7 +16,17 @@
     "device": "Device",
     "id": "ID",
     "name": "Name",
-    "type": "Type"
+    "type": "Type",
+    "appliance_alert_offline_message": "The plug is offline.",
+    "appliance_alert_offline_done_message": "The plug is back.",
+    "appliance_alert_no_power_message": "There's no power.",
+    "appliance_alert_no_power_done_message": "Power is back.",
+    "appliance_alert_long_cycle_message": "The cycle is taking too long.",
+    "appliance_alert_long_cycle_done_message": "The cycle ended.",
+    "appliance_alert_no_cycle_message": "It hasn't run in a while.",
+    "appliance_alert_no_cycle_done_message": "It's running again.",
+    "appliance_alert_finished_message": "The cycle finished.",
+    "appliance_alert_finished_done_message": "Done."
   },
   "issues": {
     "automations_not_included": {
@@ -26,11 +36,20 @@
     "scripts_not_included": {
       "title": "The programs' scripts aren't loaded",
       "description": "pururu writes a script for each program to `{file}`, but Home Assistant hasn't loaded them. Add this line to `configuration.yaml`:\n\n`{include}`\n\nThen reload scripts in **Developer tools → YAML → Scripts**, or restart Home Assistant."
+    },
+    "alert2_not_included": {
+      "title": "Alert2 doesn't run pururu's alerts",
+      "description": "pururu writes an Alert2 alert for each alert with `notify` to `{file}`, but Alert2 hasn't loaded them. Add this line to the `alert2:` block of `configuration.yaml`, as its `alerts`:\n\n`{include}`\n\nThen reload Alert2 in **Developer tools → YAML → Alert2**, or restart Home Assistant. If Alert2's generator for pururu is still there, remove it."
     }
   },
   "entity": {
     "binary_sensor": {
-      "appliance_running": {"name": "Running"}
+      "appliance_running": {"name": "Running"},
+      "appliance_alert_offline": {"name": "Offline"},
+      "appliance_alert_no_power": {"name": "No power"},
+      "appliance_alert_long_cycle": {"name": "Long cycle"},
+      "appliance_alert_no_cycle": {"name": "No cycle"},
+      "appliance_alert_finished": {"name": "Finished"}
     },
     "sensor": {
       "appliance_power": {"name": "Power"},

@@ -16,7 +16,17 @@
     "device": "Dispositivo",
     "id": "ID",
     "name": "Nome",
-    "type": "Tipo"
+    "type": "Tipo",
+    "appliance_alert_offline_message": "A tomada está sem conexão.",
+    "appliance_alert_offline_done_message": "A tomada voltou.",
+    "appliance_alert_no_power_message": "Está sem energia.",
+    "appliance_alert_no_power_done_message": "A energia voltou.",
+    "appliance_alert_long_cycle_message": "O ciclo está demorando demais.",
+    "appliance_alert_long_cycle_done_message": "O ciclo terminou.",
+    "appliance_alert_no_cycle_message": "Não roda há um tempo.",
+    "appliance_alert_no_cycle_done_message": "Voltou a rodar.",
+    "appliance_alert_finished_message": "O ciclo terminou.",
+    "appliance_alert_finished_done_message": "Pronto."
   },
   "issues": {
     "automations_not_included": {
@@ -26,11 +36,20 @@
     "scripts_not_included": {
       "title": "Os scripts dos programas não estão carregados",
       "description": "O pururu escreve um script para cada programa em `{file}`, mas o Home Assistant não os carregou. Adicione esta linha ao `configuration.yaml`:\n\n`{include}`\n\nDepois recarregue os scripts em **Ferramentas de desenvolvedor → YAML → Scripts**, ou reinicie o Home Assistant."
+    },
+    "alert2_not_included": {
+      "title": "O Alert2 não roda os alertas do pururu",
+      "description": "O pururu escreve um alerta do Alert2 para cada alerta com `notify` em `{file}`, mas o Alert2 não os carregou. Adicione esta linha ao bloco `alert2:` do `configuration.yaml`, como os seus `alerts`:\n\n`{include}`\n\nDepois recarregue o Alert2 em **Ferramentas de desenvolvedor → YAML → Alert2**, ou reinicie o Home Assistant. Se o generator do Alert2 para o pururu ainda estiver lá, remova-o."
     }
   },
   "entity": {
     "binary_sensor": {
-      "appliance_running": {"name": "Em funcionamento"}
+      "appliance_running": {"name": "Em funcionamento"},
+      "appliance_alert_offline": {"name": "Sem conexão"},
+      "appliance_alert_no_power": {"name": "Sem energia"},
+      "appliance_alert_long_cycle": {"name": "Ciclo longo"},
+      "appliance_alert_no_cycle": {"name": "Sem ciclo"},
+      "appliance_alert_finished": {"name": "Terminou"}
     },
     "sensor": {
       "appliance_power": {"name": "Potência"},

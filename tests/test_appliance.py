@@ -486,3 +486,22 @@ async def test_two_devices_have_their_own_meters(ha: HomeAssistant, freezer: Any
     await tick(ha, freezer, 60)
     assert float(value(ha, "cycles_today")) == 1
     assert float(ha.states.get("sensor.pururu_demo_other_appliance_cycles_today").state) == 0
+
+
+# --- cycle_start -------------------------------------------------------------
+
+
+async def test_cycle_start_is_shown_while_running(washer: HomeAssistant, freezer: Any) -> None:
+    assert "cycle_start" not in washer.states.get(RUNNING).attributes
+    started = dt_util.utcnow() + timedelta(seconds=65)
+    await start_cycle(washer, freezer)
+    assert washer.states.get(RUNNING).attributes["cycle_start"] == started
+    await end_cycle(washer, freezer)
+    assert "cycle_start" not in washer.states.get(RUNNING).attributes
+
+
+async def test_cycle_start_is_kept_across_a_restart(ha: HomeAssistant) -> None:
+    since = dt_util.utcnow() - timedelta(minutes=20)
+    await restart(ha, DEVICES, (State(RUNNING, "on"),
+                                {"since": since.isoformat(), "since_energy": 100.0}))
+    assert ha.states.get(RUNNING).attributes["cycle_start"] == since

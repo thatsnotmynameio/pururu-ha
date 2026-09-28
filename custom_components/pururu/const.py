@@ -17,6 +17,8 @@ CONF_ALIASES: Final = "aliases"
 CONF_AREA: Final = "area"
 # A device's reactions: each one an automation pururu generates
 CONF_REACTIONS: Final = "reactions"
+# A device's alerts: the feature whose alerts with notify Alert2 delivers
+CONF_ALERTS: Final = "alerts"
 # The key of the entry's data holding the IDs of the automations it generated
 CONF_AUTOMATIONS: Final = "automations"
 # A device's programs: each one a script pururu generates

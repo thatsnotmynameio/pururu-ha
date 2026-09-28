@@ -7,13 +7,20 @@ the device's entities. One config entry owns every floor, area, device and entit
 """
 
 from collections.abc import Iterator
+from functools import partial
 import logging
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry, ConfigEntryState
-from homeassistant.const import ATTR_RESTORED, CONF_NAME, SERVICE_RELOAD, Platform
+from homeassistant.const import (
+    ATTR_FRIENDLY_NAME,
+    ATTR_RESTORED,
+    CONF_NAME,
+    SERVICE_RELOAD,
+    Platform,
+)
 from homeassistant.core import (
     Event,
     HomeAssistant,
@@ -32,8 +39,9 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import dashboard, generated, places, programs, reactions
+from . import alert2_alerts, dashboard, generated, places, programs, reactions
 from .const import (
+    CONF_ALERTS,
     CONF_AREA,
     CONF_AREAS,
     CONF_DEVICES,
@@ -45,8 +53,9 @@ from .const import (
     PLATFORMS,
 )
 from .entity import PururuEntity
-from .feature import Device, qualified
-from .features import FEATURES
+from .feature import Device, preset_keys, qualified
+from .features import FEATURES, presets
+from .features.alerts import ProblemAlert
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,7 +75,10 @@ def _device(value: Any) -> dict[str, Any]:
         vol.Optional(CONF_AREA): cv.slug,
         vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
         vol.Optional(CONF_PROGRAMS): programs.SCHEMA,
-        **{vol.Optional(name): feature.schema for name, feature in FEATURES.items()},
+        **{
+            vol.Optional(name): partial(presets.validate, feature)
+            for name, feature in FEATURES.items()
+        },
     }
     device: dict[str, Any] = vol.Schema(schema)(value)
     names = [name for name in FEATURES if name in device]
@@ -76,6 +88,7 @@ def _device(value: Any) -> dict[str, Any]:
         )
     _capabilities_provided(device, names)
     _references_resolved(device, names)
+    _no_alert_watches_an_alert(device, names)
     _real_entities_distinct(device, names)
     _reactions_on_this_device(device)
     _programs_on_this_device(device)
@@ -125,6 +138,23 @@ def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
                     f"{name}: {key} is not an entity key of another feature "
                     "of this device"
                 )
+
+
+def _no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None:
+    """Refuse a hand-written alert whose `when` is another feature's ready-made alert."""
+    alerts_feature = FEATURES[CONF_ALERTS]
+    if CONF_ALERTS not in names or alerts_feature.refers is None:
+        return
+    ready_made = {
+        qualified(FEATURES[name].namespace, alert)
+        for name in names
+        for alert in preset_keys(FEATURES[name].alerts)
+    }
+    for key in alerts_feature.refers(device[CONF_ALERTS]):
+        if key in ready_made:
+            raise vol.Invalid(
+                f"{CONF_ALERTS}: {key} is an alert: an alert can't watch another"
+            )
 
 
 def _reactions_on_this_device(device: dict[str, Any]) -> None:
@@ -345,8 +375,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     """Make floors and areas follow the configuration, then build every device.
 
     Floors and areas come first: devices will be placed in them. The reactions'
-    automations and the programs' scripts come after the entities: they watch
-    and act on the ones created. The dashboard comes last: it shows them all.
+    automations, the programs' scripts and Alert2's alerts come after the
+    entities: they watch and act on the ones created. The dashboard comes last:
+    it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -359,8 +390,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     registry = er.async_get(hass)
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
+    texts = await presets.async_texts(hass)
     for key, config in devices.items():
-        for entity in _creatable(hass, registry, *_build(hass, key, config)):
+        for entity in _creatable(hass, registry, *_build(hass, key, config, texts)):
             built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
     entry.runtime_data = built
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -373,6 +405,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     await generated.async_sync(
         hass, entry, programs.KIND, _scripts(hass, devices, created)
     )
+    await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
     @callback
@@ -405,14 +438,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
-    """Delete the floors and areas the entry managed, and its reactions' automations and programs' scripts."""
+    """Delete the floors and areas the entry managed, its reactions' automations, programs' scripts and Alert2 alerts."""
     places.async_remove(hass, entry.data)
     await generated.async_remove(hass, entry, reactions.KIND)
     await generated.async_remove(hass, entry, programs.KIND)
+    await alert2_alerts.async_remove(hass)
 
 
 def _build(
-    hass: HomeAssistant, key: str, config: dict[str, Any]
+    hass: HomeAssistant, key: str, config: dict[str, Any], texts: presets.Texts
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
@@ -444,7 +478,10 @@ def _build(
             for reference in feature.refers(config[name]):
                 owner, entity_key, platform = referable[reference]
                 inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
-        for entity in feature.build(hass, device, config[name], inputs):
+        for entity in (
+            *feature.build(hass, device, config[name], inputs),
+            *presets.build(hass, device, feature, config[name], texts),
+        ):
             follows = set()
             for reference in entity.follows:
                 owner, entity_key, platform = referable[reference]
@@ -669,3 +706,28 @@ def _acted_on(
             return None
         entity_ids[key] = entity_id
     return entity_ids
+
+
+def _alert2_alerts(
+    hass: HomeAssistant, built: dict[Platform, list[Entity]]
+) -> list[dict[str, Any]]:
+    """An Alert2 alert per created alert with notify, hand-written or ready-made.
+
+    Named as HA shows it: its device's name and its own, translated or not.
+    """
+    alerts: list[dict[str, Any]] = []
+    for entity in built[Platform.BINARY_SENSOR]:
+        if not isinstance(entity, ProblemAlert) or entity.notify is None:
+            continue
+        state = hass.states.get(entity.entity_id)
+        name = state.attributes.get(ATTR_FRIENDLY_NAME) if state else None
+        alerts.append(
+            alert2_alerts.alert(
+                str(entity.unique_id),
+                entity.entity_id,
+                str(name or entity.entity_id),
+                entity.priority,
+                entity.notify,
+            )
+        )
+    return alerts

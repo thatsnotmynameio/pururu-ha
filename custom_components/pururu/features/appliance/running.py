@@ -1,7 +1,7 @@
 """Whether the appliance runs: power above a threshold, with delays; the source of its cycles."""
 
 from datetime import datetime, timedelta
-from typing import override
+from typing import Any, override
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -58,6 +58,14 @@ class Running(PururuEntity, BinarySensorEntity, RestoreEntity):
     def extra_restore_state_data(self) -> CycleStart:
         """The running cycle's start."""
         return self._data
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """The running cycle's start, while there is one."""
+        if not self._attr_is_on or self._data.since is None:
+            return None
+        return {"cycle_start": self._data.since}
 
     @override
     async def async_added_to_hass(self) -> None:

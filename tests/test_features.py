@@ -150,3 +150,29 @@ def test_every_per_item_name_has_its_placeholder(features: dict[str, Any]) -> No
                 key = qualified(feature.namespace, suffix)
                 name = translations["entity"][platform][key]["name"]
                 assert f"{{{feature.namespace}}}" in name, key
+
+
+def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
+    """Every ready-made alert is an entity key, watches its own feature's, has both texts, validates."""
+    feature_module = module("feature")
+    en, pt = load("translations/en.json"), load("translations/pt-BR.json")
+    offering = [name for name, feature in features.items() if feature.alerts]
+    assert offering, "no feature offers ready-made alerts"
+    for name in offering:
+        feature = features[name]
+        assert feature_module.preset_keys(feature.alerts).items() <= feature.entity_keys.items(), name
+        settings = {}
+        for alert, preset in feature.alerts.items():
+            assert cv.slug(alert) == alert, name
+            assert preset.watches in feature.entity_keys, f"{name}: {alert}"
+            if isinstance(preset.kind, feature_module.Elapsed) and preset.kind.since_key:
+                assert preset.kind.since_key in feature.entity_keys, f"{name}: {alert}"
+            key = feature_module.qualified(feature.namespace, f"alert_{alert}")
+            for translations in (en, pt):
+                assert translations["common"][f"{key}_message"], key
+                assert translations["common"][f"{key}_done_message"], key
+            settings[alert] = {} if preset.hold is not None or preset.lasts else {"for": {"hours": 1}}
+        validate = module("features.presets").validate
+        validate(feature, {**feature.example, "alerts": settings})
+        with pytest.raises(vol.Invalid):
+            validate(feature, {**feature.example, "alerts": {"not_an_alert": None}})

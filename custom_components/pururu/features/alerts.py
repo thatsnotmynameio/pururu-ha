@@ -6,7 +6,6 @@ reading its attributes. pururu sends nothing.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
 from typing import Any, override
@@ -17,13 +16,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.const import (
-    ATTR_RESTORED,
-    STATE_ON,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-    Platform,
-)
+from homeassistant.const import STATE_ON, Platform
 from homeassistant.core import (
     CALLBACK_TYPE,
     Event,
@@ -37,16 +30,13 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 
-from ..entity import PururuEntity, reading
-from ..feature import TEXT, Device, Feature, finite_float, state_text
+from ..alert2_alerts import ALERT2
+from ..entity import PururuEntity
+from ..feature import TEXT, Condition, Device, Feature, finite_float, state_text
 
 _LOGGER = logging.getLogger(__name__)
 
-# Alert2 (HACS) delivers what an alert's notify says
-ALERT2 = "alert2"
 PRIORITIES = ("low", "medium", "high")
-# States that are no reading, unless the condition is about them
-NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
 
 def _state(value: Any) -> str | float:
@@ -90,79 +80,43 @@ ALERT = vol.All(
 SCHEMA = vol.All(vol.Schema({cv.slug: ALERT}), vol.Length(min=1))
 
 
-@dataclass(frozen=True, kw_only=True)
-class Condition:
-    """What makes the watched entity's state a problem: a state, a number, or a range."""
+class ProblemAlert(PururuEntity, BinarySensorEntity, RestoreEntity):
+    """On while something is wrong: what it watches, its priority, what to tell.
 
-    state: str | float | None
-    above: float | None
-    below: float | None
-
-    def holds(self, state: State | None) -> bool | None:
-        """Whether `state` is a problem; None when it is no reading.
-
-        A condition on unavailable or unknown holds while the entity has no
-        reading, either state or missing: a plug reconnecting passes from one to
-        the other. A state HA restored for an entity not loaded yet (at start,
-        during a reload) is no reading, for every condition.
-        """
-        if state is not None and state.attributes.get(ATTR_RESTORED):
-            return None
-        if isinstance(self.state, str):
-            return self._is(STATE_UNAVAILABLE if state is None else state.state)
-        if (value := reading(state)) is None:
-            return None
-        if self.state is not None:  # a number
-            return value == self.state
-        return (self.above is None or value > self.above) and (
-            self.below is None or value < self.below
-        )
-
-    def _is(self, current: str) -> bool | None:
-        """`is` a state: no reading for other states, unless it is about no reading."""
-        if self.state in NO_READING:
-            return current in NO_READING
-        if current in NO_READING:
-            return None
-        return current == self.state
-
-
-class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):
-    """On while its condition holds, after `for`; holds while the watched entity has no reading."""
+    Restores its state; follows what it watches once HA has started (entities
+    pass through unavailable while it starts).
+    """
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
 
     def __init__(
         self,
-        device: Device,
-        entity_key: str,
         *,
-        name: str,
-        when: str,
         watched: str,
-        condition: Condition,
-        hold: timedelta,
         priority: str,
         notify: Mapping[str, str] | None,
+        asks_alert2: bool = True,
     ) -> None:
-        """Watch `watched`, the device's `when`, for `condition` held for `hold`."""
-        self._identify(device, Platform.BINARY_SENSOR, entity_key, name)
-        self.follows = (when,)
+        """Watch `watched`; `notify` is what Alert2 tells.
+
+        `asks_alert2` False: its notify is a ready-made alert's own texts, not a
+        request of the user's, so no error without Alert2.
+        """
         self._watched = watched
-        self._condition = condition
-        self._hold = hold
+        self._asks_alert2 = asks_alert2 and notify is not None
+        self.priority = priority
+        self.notify = notify
         self._attr_is_on = False
         self._attr_extra_state_attributes = {
             "priority": priority,
             "watches": watched,
             **(notify or {}),
         }
-        self._notifies = notify is not None
         self._pending: CALLBACK_TYPE | None = None
 
     @override
     async def async_added_to_hass(self) -> None:
-        """Restore the state, then follow the watched entity once HA has started."""
+        """Restore the state, then follow what it watches once HA has started."""
         await super().async_added_to_hass()
         if (last := await self.async_get_last_state()) is not None:
             self._attr_is_on = last.state == STATE_ON
@@ -171,15 +125,65 @@ class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):
 
     @callback
     def _start(self, _hass: HomeAssistant) -> None:
-        """Follow the watched entity: while HA starts, entities pass through unavailable.
+        """Follow; also the time to know whether Alert2, which delivers `notify`, is set up.
 
-        Also the time to know whether Alert2, which delivers `notify`, is set up:
-        it may load after pururu.
+        Alert2 may load after pururu.
         """
-        if self._notifies and ALERT2 not in self.hass.config.components:
+        if self._asks_alert2 and ALERT2 not in self.hass.config.components:
             _LOGGER.error(
                 "%s has notify, but Alert2 isn't set up to deliver it", self.entity_id
             )
+        self._follow()
+
+    @callback
+    def _follow(self) -> None:
+        """Track what it watches and evaluate it now."""
+        raise NotImplementedError
+
+    @callback
+    def _cancel(self) -> None:
+        if self._pending is not None:
+            self._pending()
+            self._pending = None
+
+    @callback
+    def _set(self, *, on: bool) -> None:
+        if on != self._attr_is_on:
+            self._attr_is_on = on
+            self.async_write_ha_state()
+
+
+class Alert(ProblemAlert):
+    """On while its condition holds, after `for`; holds while the watched entity has no reading."""
+
+    def __init__(
+        self,
+        device: Device,
+        entity_key: str,
+        *,
+        name: str | None,
+        watched: str,
+        condition: Condition,
+        hold: timedelta,
+        priority: str,
+        notify: Mapping[str, str] | None,
+        follows: tuple[str, ...] = (),
+        sources: tuple[str, ...] = (),
+        asks_alert2: bool = True,
+    ) -> None:
+        """Watch `watched` for `condition` held for `hold`; `name` None: translated."""
+        super().__init__(
+            watched=watched, priority=priority, notify=notify, asks_alert2=asks_alert2
+        )
+        self._identify(device, Platform.BINARY_SENSOR, entity_key, name)
+        self.follows = follows
+        self.sources = sources
+        self._condition = condition
+        self._hold = hold
+
+    @override
+    @callback
+    def _follow(self) -> None:
         self.async_on_remove(
             async_track_state_change_event(self.hass, self._watched, self._changed)
         )
@@ -206,21 +210,9 @@ class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):
                 self._set(on=True)
 
     @callback
-    def _cancel(self) -> None:
-        if self._pending is not None:
-            self._pending()
-            self._pending = None
-
-    @callback
     def _turn_on(self, _now: datetime) -> None:
         self._pending = None
         self._set(on=True)
-
-    @callback
-    def _set(self, *, on: bool) -> None:
-        if on != self._attr_is_on:
-            self._attr_is_on = on
-            self.async_write_ha_state()
 
 
 def build(
@@ -235,7 +227,6 @@ def build(
             device,
             entity_key,
             name=alert["name"],
-            when=alert["when"],
             watched=inputs[alert["when"]],
             condition=Condition(
                 state=alert.get("is"),
@@ -245,6 +236,7 @@ def build(
             hold=alert["for"],
             priority=alert["priority"],
             notify=alert.get("notify"),
+            follows=(alert["when"],),
         )
         for entity_key, alert in config.items()
     ]

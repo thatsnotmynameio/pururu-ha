@@ -357,7 +357,7 @@ async def test_a_disabled_item_is_no_missing_include(ha: HomeAssistant, case: Ca
 
 
 def failing_write() -> Any:
-    return patch.object(module("generated"), "write_utf8_file_atomic",
+    return patch.object(module("files"), "write_utf8_file_atomic",
                         side_effect=WriteError("disk full"))
 
 
