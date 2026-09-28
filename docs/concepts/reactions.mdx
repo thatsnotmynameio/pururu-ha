@@ -29,6 +29,7 @@ pururu:
         dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
 
 automation pururu: !include_dir_merge_list pururu/automations
+script pururu: !include_dir_merge_named pururu/scripts   # the programs a reaction starts
 ```
 
 This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da lavanderia Lavadora terminou**, which blinks the ceiling light when the washer finishes, and one automation for each other reaction.
@@ -153,7 +154,7 @@ A reaction with `then` starts its program's script, but only if it isn't running
 | An entity the program acts on isn't created, or its script's ID is taken | Neither the program nor the reaction is generated, and the log says why |
 | An entity the program acts on is disabled | Both wait, and both come back as you left them once it's enabled again |
 | You disabled the program's script | The reaction still fires, and the `if` isn't taken |
-| You renamed the program's script | Followed at pururu's next reload |
+| You renamed the program's script | Followed: pururu reloads and rewrites the automation with its new ID |
 
 A reaction always runs its **own** device's program, even when it listens to another device (`device: laundry_washer`). Programs run one at a time for now: a program already running isn't started again, nor queued.
 

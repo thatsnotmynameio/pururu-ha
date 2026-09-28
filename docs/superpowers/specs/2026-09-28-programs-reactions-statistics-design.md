@@ -84,7 +84,7 @@ Names: the device's name, then the translation with the item's name as the place
 | The script turns `on`, then `off` | One cycle: `last_cycle_*` set, `cycles_total` + 1, the runtime counted |
 | pururu reloaded while the program runs | The tracker starts again; at `off`, the cycle's start is the `on` state's `last_changed`: counted once, with its real start |
 | HA restarted while the program runs | HA loses the running script (it's `off` after the restart, with no `on → off` seen): that run isn't counted. Its runtime until the restart is |
-| The script renamed in the UI | Followed at pururu's next reload, as reactions follow it |
+| The script renamed in the UI | Followed when pururu reloads: at once when a reaction starts it, else at the next reload |
 | The program not generated (dropped or held) | Its statistics stay, with their values and history, and count nothing until it's generated again |
 | The program removed from the YAML | Its statistics go, as any stale entity |
 | The reaction fires | `triggered_total` + 1, whether its program started or not |

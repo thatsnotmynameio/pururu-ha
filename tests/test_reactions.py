@@ -504,9 +504,31 @@ async def test_a_held_program_holds_its_reaction(ha: HomeAssistant, freezer: Any
 
 
 async def test_it_follows_the_script_renamed(ha: HomeAssistant, both: None) -> None:
+    """At once, as `when` follows a pururu entity: the old ID would never be off, and it would never start."""
     await fake(ha, REAL_PUMP, "off")
+    await fake(ha, DOOR, "off")
     assert await setup(ha, pool())
     er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
     await ha.async_block_till_done()
-    await reload(ha, pool())
     assert generated(ha)[0]["actions"] == module("reactions").actions("script.limpar_piscina")
+    started = capture(ha, "script_started")
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert len(started) == 1
+
+
+async def test_renaming_a_script_no_reaction_starts_reloads_nothing(ha: HomeAssistant) -> None:
+    config = pool(night={"name": "Noite", "at": "22:00"})
+    assert await setup(ha, config)
+    with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
+        er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+        await ha.async_block_till_done()
+    reloading.assert_not_called()
+
+
+async def test_a_reaction_on_another_device_starts_its_own_program(ha: HomeAssistant) -> None:
+    config = pool(power={"name": "Potência", "device": WASHER, "when": "appliance_power",
+                         "above": 10, "then": "clean"})
+    config[WASHER] = {"name": "Washer", "appliance": APPLIANCE}
+    assert await setup(ha, config)
+    assert generated(ha)[0]["actions"] == module("reactions").actions(CLEAN)

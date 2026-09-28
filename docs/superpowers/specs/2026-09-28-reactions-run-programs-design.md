@@ -67,7 +67,7 @@ Refused, with the device's other checks (`_reactions_on_this_device`): `then` na
           target: {entity_id: script.pururu_pool_program_clean}
 ```
 
-- The script's **current** entity ID, read from the registry by its unique ID (`script`, `script`, `pururu_pool_program_clean`): renamed in the UI, the reaction follows it at the next reload, as `when` follows a pururu entity. pururu reloads its entry on a rename of its own entities only; a script's rename is followed at the next reload of pururu.
+- The script's **current** entity ID, read from the registry by its unique ID (`script`, `script`, `pururu_pool_program_clean`): renamed in the UI, the reaction follows it at once, as `when` follows a pururu entity. The registry listener reloads the entry on the rename of a script some reaction starts: with the old ID, the `if` would never be true and the program would never start.
 - Without `then`, `actions: []`, as today.
 
 ## Behaviour
@@ -80,6 +80,7 @@ Refused, with the device's other checks (`_reactions_on_this_device`): `then` na
 | A target of the program isn't created | The program and its reactions with `then` aren't generated; both logged |
 | A target of the program is disabled | Both held; both back, as the user set them, once it's enabled again |
 | The script's ID is taken by someone else | The program isn't generated (as today) and its reactions with `then` aren't either, logged |
+| The script renamed in the UI | pururu reloads; the automation names its new ID |
 | The automation turned off in the UI | HA's own: it doesn't fire |
 | The script disabled in the UI | The reaction still fires; the `if` isn't taken |
 
@@ -101,7 +102,7 @@ The new log message: `automation.<id> runs script.<id>, which is not generated; 
 
 - `_reactions_on_this_device`: a `then` must be a key of the device's `programs`.
 - `async_setup_entry`: programs' scripts are synced **before** reactions' automations. `_automations(hass, devices, created, scripts, held_scripts)` takes the generated script IDs and the held ones, and returns the automations and its own held IDs: a reaction whose program is held is held; one whose program isn't generated or held is dropped, logged.
-- The registry listener doesn't change: it already reloads the entry when a program's target is disabled, and the reaction follows its program.
+- The registry listener already reloads the entry when a program's target is disabled, and the reaction follows its program. It also reloads it when a script a reaction starts is renamed.
 - The docstrings of `async_setup_entry` (the order) and `_automations`.
 
 ## Testing

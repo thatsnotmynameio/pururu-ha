@@ -96,7 +96,7 @@ A taken ID is logged as an error, and that entity isn't created. `_creatable` th
 A user may rename an entity ID in the UI. Two things keep pururu consistent:
 
 - `Device.current_entity_id` looks up the registry by unique ID. Every entity that reads another entity of the same device, such as `RuntimeTotal` reading `running` or a meter reading its total, is built with the current ID.
-- The registry listener reloads the entry when one of its entities is renamed.
+- The registry listener reloads the entry when one of its entities is renamed, or a program's script that a reaction starts.
 
 The same listener reloads the entry, once for a burst, when an entity a generated script acts on is disabled, so the program is held out of the file; no other disable or enable reloads it (Home Assistant itself reloads the entry when one of its entities is enabled again).
 

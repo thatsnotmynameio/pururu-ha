@@ -419,6 +419,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     await generated.async_sync(
         hass, entry, reactions.KIND, automations, held_automations
     )
+    # The scripts' IDs a reaction starts: renamed, its automation must follow
+    started = {
+        programs.script_id(key, reaction["then"])
+        for key, config in devices.items()
+        for reaction in config.get(CONF_REACTIONS, {}).values()
+        if "then" in reaction
+    }
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
@@ -427,9 +434,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
 
     @callback
     def changed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
-        """One of the entry's entities got a new ID, or a program's target was disabled: build again.
+        """One of the entry's entities or a started script got a new ID, or a program's target was disabled: build again.
 
-        A rename is followed. A program acting on an entity just disabled is
+        A rename is followed: of a pururu entity, or of a program's script a
+        reaction starts (it would check and start an ID that no longer is). A program acting on an entity just disabled is
         dropped (`_acted_on`), once for a burst of them: HA reloads the entry
         itself once an entity is enabled again, but not when one is disabled
         (config_entries.py leaves that to the entity, which merely clears its
@@ -440,9 +448,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         if data["action"] != "update":
             return
         registered = registry.async_get(data["entity_id"])
-        if registered is None or registered.config_entry_id != entry.entry_id:
+        if registered is None:
             return
         changes = data["changes"]
+        if (
+            "entity_id" in changes
+            and registered.platform == programs.KIND.domain
+            and registered.unique_id in started
+        ):
+            hass.config_entries.async_schedule_reload(entry.entry_id)
+            return
+        if registered.config_entry_id != entry.entry_id:
+            return
         if "entity_id" in changes or (
             "disabled_by" in changes
             # The old value: the entity was enabled, and is now disabled

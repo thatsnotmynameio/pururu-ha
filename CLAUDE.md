@@ -49,7 +49,7 @@ python3 release.py check                        # the manifest version must be s
 - **Entity IDs are the identity:**
   - Every entity is `<platform>.pururu_<device key>_<namespace>_<entity key>` (no exception, even for a key alike its namespace: a switch keyed `switch` is `switch.pururu_pool_switch_switch`; so a feature's fixed entity keys never repeat its namespace, as phases' `current`), and its unique ID is the part after the platform (`Device.object_id`). `_build` hands each feature a `Device` in its namespace, so features write local entity keys; the translation key is the key in its namespace (`appliance_running`).
   - An ID already held by another integration is logged as an error and not created. Anything that follows it (`sources`) is dropped too (`_creatable`); IDs are never suffixed with `_2`.
-  - A user rename in the UI is followed: `current_entity_id`, plus a registry listener that reloads the entry.
+  - A user rename in the UI is followed: `current_entity_id`, plus a registry listener that reloads the entry (also on the rename of a program's script a reaction starts).
 - **Floors and areas** (`places.py`):
   - HA's registries accept no ID, so a new floor or area is created named after its YAML key (the ID becomes the key), then renamed.
   - Anything with a configured ID is adopted and synced.
