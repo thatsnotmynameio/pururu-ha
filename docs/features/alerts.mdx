@@ -80,6 +80,12 @@ This creates `binary_sensor.pururu_laundry_washer_alert_long_cycle`, shown as **
   What to tell, for Alert2 to deliver: `message` when the alert fires and `done_message` when it's resolved. Both are required and can't be empty. Without `notify`, Alert2 leaves the alert alone. See [Getting notified](#getting-notified).
 </Property>
 
+---
+
+<Property name="lights" type="true | group" optional>
+  Lights that show the alert while it's on: `true` for the group `default`, or a group's name, from `config: alerts: lights: groups`. See [Alert lights](/concepts/alert-lights).
+</Property>
+
 An alert needs **either** `is` **or** `above`/`below`, not both.
 
 ## When an alert is on
@@ -96,7 +102,7 @@ An alert needs **either** `is` **or** `above`/`below`, not both.
 |---|---|
 | `binary_sensor.pururu_<key>_alert_<alert key>` | On while the problem lasts. Device class `problem`. |
 
-Its attributes are **`priority`** and **`watches`**, the entity it watches, and, with `notify`, **`message`** and **`done_message`**. It's in the device, so it's in the device's area.
+Its attributes are **`priority`** and **`watches`**, the entity it watches; with `notify`, **`message`** and **`done_message`**; with `lights`, **`lights`**, the name of the group it borrows. It's in the device, so it's in the device's area.
 
 ## Needs
 

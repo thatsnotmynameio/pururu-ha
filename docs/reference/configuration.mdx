@@ -5,6 +5,11 @@ description: Every key of the pururu block on one page.
 
 ```yaml title="configuration.yaml"
 pururu:
+  config:
+    alerts:
+      lights:
+        groups:
+          default: {sala: [teto]}
   floors:
     terreo:
       name: Térreo
@@ -49,6 +54,7 @@ pururu:
           is: "on"
           for: {hours: 3}
           priority: medium
+          lights: true
           notify: {message: A máquina está rodando há mais de 3h!, done_message: A máquina terminou.}
     pool:
       name: Piscina
@@ -82,7 +88,7 @@ alert2:                          # alerts with notify: see alerts
 
 ## General rules
 
-- `pururu:` has three optional keys: `floors`, `areas` and `devices`. Any other key is an error.
+- `pururu:` has four optional keys: `config`, `floors`, `areas` and `devices`. Any other key is an error.
 - Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a program, is a **slug**: lowercase letters, digits and `_`.
 - A feature's own `alerts` enables its ready-made alerts, one key each: see the [appliance's](/features/appliance#ready-made-alerts). The device's `alerts` is for alerts you write.
 - An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_pump`). See [alerts](/features/alerts#settings).
@@ -91,6 +97,14 @@ alert2:                          # alerts with notify: see alerts
 - In one device, a real entity is in one of `switches` and `lights` at most: `switches: switch.sonoff_abajur is already in lights`. Two devices can each use it their own way.
 - An unknown key anywhere is a configuration error. When the configuration is invalid, Home Assistant logs why, and a reload **changes nothing**.
 - The blocks can be split across [packages](/getting-started/install#packages).
+
+## config
+
+Settings of the whole house, not of a device.
+
+<Property name="alerts.lights" type="map" optional>
+  The alert lights: `groups` of lights that alerts borrow with `lights`, and what a light shows for each priority (`high`, `medium`, `low`) and once its alerts ended (`resolved`). See [Alert lights](/concepts/alert-lights#settings).
+</Property>
 
 ## floors
 

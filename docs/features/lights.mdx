@@ -60,6 +60,10 @@ switches: switch.sonoff_abajur is already in lights
 
 Two devices can each use it their own way: a light in `sala` and a switch in `varanda`.
 
+## Alert lights
+
+A light in a group of [alert lights](/concepts/alert-lights) shows alerts: while it does, its attributes **`alert`** (`high`, `medium`, `low` or `resolved`) and **`alerts`** say what for, and it keeps `alert` across restarts. Asked for an effect its bulb doesn't list, it passes on the rest without it.
+
 ## Good to know
 
 - **Replacing the bulb or the relay.** Point `entity:` at the new one and reload. `light.pururu_sala_light_teto` keeps its ID, name and area, so automations and dashboards keep working.
