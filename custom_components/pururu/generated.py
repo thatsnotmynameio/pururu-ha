@@ -243,7 +243,9 @@ def _check_included(
     if not _missing(hass, registry, kind, ids):
         ir.async_delete_issue(hass, DOMAIN, kind.issue)
         return
-    if ir.async_get(hass).async_get_issue(DOMAIN, kind.issue) is None:
+    if (
+        found := ir.async_get(hass).async_get_issue(DOMAIN, kind.issue)
+    ) is None or not found.active:
         _LOGGER.warning(
             'The %s of pururu\'s %s are not loaded: add "%s" to configuration.yaml',
             kind.plural,
@@ -331,7 +333,16 @@ async def async_sync(
 
     @callback
     def of_kind(data: EventStateChangedData) -> bool:
-        return split_entity_id(data["entity_id"])[0] == kind.domain
+        # Ignore a removal: for a registered item, HA sets a restored placeholder
+        # (ATTR_RESTORED) rather than clearing the state outright, so a reload
+        # that removes a changed item before re-adding it would otherwise raise
+        # the issue in between
+        new_state = data["new_state"]
+        return (
+            new_state is not None
+            and not new_state.attributes.get(ATTR_RESTORED)
+            and split_entity_id(data["entity_id"])[0] == kind.domain
+        )
 
     @callback
     def changed(_event: Event[EventStateChangedData]) -> None:

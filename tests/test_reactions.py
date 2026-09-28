@@ -410,6 +410,15 @@ async def test_a_changed_file_reloads_automations(ha: HomeAssistant, automations
     assert ha.states.get(automation("night")) is not None
 
 
+async def test_a_changed_reaction_raises_no_false_include_warning(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, automations: None) -> None:
+    """A reload removes and re-adds the changed automation: no issue in between."""
+    assert await setup(ha, devices(door=DOOR_OPENS))
+    await reload(ha, devices(door={**DOOR_OPENS, "to": "off"}))
+    assert not [r for r in caplog.records if "are not loaded: add" in r.getMessage()]
+    assert issue(ha) is None
+
+
 async def test_a_dropped_reaction_leaves_the_file_and_the_registry(
         ha: HomeAssistant, automations: None) -> None:
     assert await setup(ha, devices(door=DOOR_OPENS, night={"name": "Noite", "at": "22:00"}))
@@ -469,6 +478,36 @@ async def test_the_warning_is_logged_once_while_the_issue_is_open(
     ha.states.async_set("automation.mine", "off")
     await ha.async_block_till_done()
     assert issue(ha) is not None
+    warned = [r for r in caplog.records if "are not loaded: add" in r.getMessage()]
+    assert len(warned) == 1
+
+
+async def test_the_warning_is_logged_again_once_a_restored_issue_reopens(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """A restart restores a non-persistent issue as inactive: the warning must fire again."""
+    ir.async_get(ha).issues[("pururu", "automations_not_included")] = ir.IssueEntry(
+        active=False,
+        breaks_in_ha_version=None,
+        created=dt_util.utcnow(),
+        data=None,
+        dismissed_version=None,
+        domain="pururu",
+        is_fixable=None,
+        is_persistent=False,
+        issue_domain=None,
+        issue_id="automations_not_included",
+        learn_more_url=None,
+        severity=None,
+        translation_key=None,
+        translation_placeholders=None,
+    )
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {}):
+        assert await async_setup_component(ha, "automation", {})
+        assert await setup(ha, devices(door=DOOR_OPENS))
+    found = issue(ha)
+    assert found is not None
+    assert found.active
     warned = [r for r in caplog.records if "are not loaded: add" in r.getMessage()]
     assert len(warned) == 1
 
