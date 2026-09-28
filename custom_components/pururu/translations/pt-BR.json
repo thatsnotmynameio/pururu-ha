@@ -22,6 +22,10 @@
     "automations_not_included": {
       "title": "As automações das reações não estão carregadas",
       "description": "O pururu escreve uma automação para cada reação em `{file}`, mas o Home Assistant não as carregou. Adicione esta linha ao `configuration.yaml`:\n\n`{include}`\n\nDepois recarregue as automações em **Ferramentas de desenvolvedor → YAML → Automações**, ou reinicie o Home Assistant."
+    },
+    "scripts_not_included": {
+      "title": "Os scripts dos programas não estão carregados",
+      "description": "O pururu escreve um script para cada programa em `{file}`, mas o Home Assistant não os carregou. Adicione esta linha ao `configuration.yaml`:\n\n`{include}`\n\nDepois recarregue os scripts em **Ferramentas de desenvolvedor → YAML → Scripts**, ou reinicie o Home Assistant."
     }
   },
   "entity": {

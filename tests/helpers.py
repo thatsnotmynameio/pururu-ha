@@ -21,6 +21,8 @@ import yaml
 DOMAIN = "pururu"
 # The automations pururu generates, relative to the configuration folder
 AUTOMATIONS = "pururu/automations/reactions.yaml"
+# The scripts pururu generates, relative to the configuration folder
+SCRIPTS = "pururu/scripts/programs.yaml"
 # Loop turns settle() gives: far more than any chain of our callbacks needs
 SETTLE_TURNS = 100
 
@@ -44,6 +46,14 @@ def generated(hass: HomeAssistant) -> list[dict[str, Any]]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or []
 
 
+def generated_scripts(hass: HomeAssistant) -> dict[str, Any]:
+    """The scripts pururu wrote, as configuration.yaml's include reads them."""
+    path = Path(hass.config.path(SCRIPTS))
+    if not path.is_file():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
 async def setup(hass: HomeAssistant, devices: dict[str, Any], *,
                 floors: dict[str, Any] | None = None,
                 areas: dict[str, Any] | None = None) -> bool:
@@ -58,10 +68,11 @@ async def reload(hass: HomeAssistant, devices: dict[str, Any], *,
                  areas: dict[str, Any] | None = None) -> None:
     """pururu.reload, with a configuration.yaml holding this `pururu:` block."""
     config = _config(devices, floors, areas)
-    # configuration.yaml includes the generated file: automations reload from it
+    # configuration.yaml includes the generated files: automations and scripts reload from them
     with patch("homeassistant.config.load_yaml_config_file",
                side_effect=lambda *_args, **_kwargs: {**config,
-                                                      "automation pururu": generated(hass)}):
+                                                      "automation pururu": generated(hass),
+                                                      "script pururu": generated_scripts(hass)}):
         await hass.services.async_call(DOMAIN, "reload", blocking=True)
         await hass.async_block_till_done()
 

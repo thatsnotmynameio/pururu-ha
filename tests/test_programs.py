@@ -1,21 +1,23 @@
-"""Feature `programs`: a made-up pool's cleaning, turning its pump on for two hours."""
+"""Programs: a made-up pool's cleaning, turning its pump on for two hours, as an HA script."""
 
 import asyncio
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import patch
 
-from homeassistant.core import Context, Event, HomeAssistant, State
+from homeassistant.core import Context, Event, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.script import DATA_SCRIPTS
+from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.setup import async_setup_component
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from helpers import capture, fake, held, reload, restart, settle, setup, tick
+from helpers import DOMAIN, capture, fake, generated, generated_scripts, held, reload, settle, setup, tick
 
 KEY = "pool"
 REAL_PUMP = "switch.pool_pump"
 PUMP = "switch.pururu_pool_switch_pump"
-CLEAN = "button.pururu_pool_program_clean"
+CLEAN = "script.pururu_pool_program_clean"
 SWITCHES: dict[str, Any] = {"pump": {"entity": REAL_PUMP, "name": "Bomba"}}
 TWO_HOURS = 2 * 60 * 60
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
@@ -28,12 +30,6 @@ def devices(**programs: Any) -> dict[str, Any]:
     return {KEY: {"name": "Piscina", "switches": SWITCHES, "programs": programs or {"clean": CLEANING}}}
 
 
-def scripts(hass: HomeAssistant, name: str = "Piscina Limpar") -> list[Any]:
-    """HA's scripts named `name`: HA keeps each one until it is unloaded."""
-    return [data["instance"] for data in hass.data.get(DATA_SCRIPTS, {}).values()
-            if data["instance"].name == name]
-
-
 def reached(calls: list[Event], entity_id: str = REAL_PUMP) -> list[str]:
     """The services called on `entity_id`, in order."""
     found = []
@@ -44,17 +40,41 @@ def reached(calls: list[Event], entity_id: str = REAL_PUMP) -> list[str]:
     return found
 
 
-async def press(hass: HomeAssistant, entity_id: str = CLEAN, context: Context | None = None) -> None:
-    await hass.services.async_call("button", "press", {"entity_id": entity_id}, blocking=True,
+async def start(hass: HomeAssistant, entity_id: str = CLEAN, context: Context | None = None) -> None:
+    await hass.services.async_call("script", "turn_on", {"entity_id": entity_id}, blocking=True,
                                    context=context)
     await settle()
 
 
+async def reload_while_running(hass: HomeAssistant, devices: dict[str, Any]) -> None:
+    """Like helpers.reload, but settles instead of hass.async_block_till_done().
+
+    A running script is HA's own asyncio task (hass._tasks, not a background one): that
+    call waits for every such task, so it would wait for the whole two hours here.
+    """
+    config = {DOMAIN: {"devices": devices, "floors": {}, "areas": {}}}
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {**config,
+                                                      "automation pururu": generated(hass),
+                                                      "script pururu": generated_scripts(hass)}):
+        await hass.services.async_call(DOMAIN, "reload", blocking=True)
+        await settle()
+
+
 @pytest.fixture
-async def pool(ha: HomeAssistant) -> HomeAssistant:
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, devices())
-    return ha
+async def scripts(ha: HomeAssistant) -> AsyncIterator[HomeAssistant]:
+    """HA's scripts, from a configuration.yaml that includes pururu's file."""
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {"script pururu": generated_scripts(ha)}):
+        assert await async_setup_component(ha, "script", {"script pururu": generated_scripts(ha)})
+        yield ha
+
+
+@pytest.fixture
+async def pool(scripts: HomeAssistant) -> HomeAssistant:
+    await fake(scripts, REAL_PUMP, "off")
+    assert await setup(scripts, devices())
+    return scripts
 
 
 # --- schema and the device ---------------------------------------------------------
@@ -90,10 +110,10 @@ async def test_a_target_not_of_another_feature_is_refused(
     assert f"programs: {target} is not an entity key of another feature of this device" in caplog.text
 
 
-async def test_a_device_with_only_programs_is_refused(
+async def test_programs_alone_are_not_a_feature(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     assert not await setup(ha, {KEY: {"name": "Piscina", "programs": {"clean": CLEANING}}})
-    assert "programs: switch_pump is not an entity key of another feature of this device" in caplog.text
+    assert "a device needs at least one feature" in caplog.text
 
 
 async def test_an_action_the_target_does_not_take_is_refused(
@@ -104,21 +124,64 @@ async def test_an_action_the_target_does_not_take_is_refused(
     assert "programs: appliance_power does not take turn_on" in caplog.text
 
 
-async def test_it_is_a_button_named_by_the_configuration(pool: HomeAssistant) -> None:
-    assert held(pool, KEY) == {PUMP, CLEAN}
-    assert pool.states.get(CLEAN).attributes["friendly_name"] == "Piscina Limpar"
+async def test_two_programs_with_one_script_id_are_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """pool's b_program_c and pool_program_b's c would both be pururu_pool_program_b_program_c."""
+    config = devices(b_program_c=CLEANING)
+    config["pool_program_b"] = {
+        "name": "Outra", "switches": {"x": {"entity": "switch.demo_x", "name": "X"}},
+        "programs": {"c": {"name": "C", "sequence": [{"turn_on": "switch_x"}]}},
+    }
+    assert not await setup(ha, config)
+    assert ("device pool_program_b: script.pururu_pool_program_b_program_c is already "
+            "a program of device pool") in caplog.text
+
+
+# --- the generated script ------------------------------------------------------------
+
+
+async def test_the_file_holds_a_script_per_program(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices())
+    assert generated_scripts(ha) == {"pururu_pool_program_clean": {
+        "alias": "Piscina Limpar",
+        "description": "pururu: pool, clean",
+        "mode": "single",
+        "sequence": [
+            {"action": "switch.turn_on", "target": {"entity_id": PUMP}},
+            {"delay": "02:00:00"},
+            {"action": "switch.turn_off", "target": {"entity_id": PUMP}},
+        ],
+    }}
+    cv.SCRIPT_SCHEMA(generated_scripts(ha)["pururu_pool_program_clean"]["sequence"])
+
+
+async def test_it_is_a_script_named_by_the_configuration(pool: HomeAssistant) -> None:
+    state = pool.states.get(CLEAN)
+    assert state is not None
+    assert state.state == "off"
+    assert state.attributes["friendly_name"] == "Piscina Limpar"
     entry = er.async_get(pool).async_get(CLEAN)
     assert entry is not None
-    assert entry.unique_id == "pururu_pool_program_clean"
-    assert entry.translation_key is None
+    assert (entry.platform, entry.unique_id) == ("script", "pururu_pool_program_clean")
+    assert held(pool, KEY) == {PUMP}
+    assert pool.states.async_entity_ids("button") == []
+
+
+async def test_it_is_in_its_devices_area(scripts: HomeAssistant) -> None:
+    config = devices()
+    config[KEY]["area"] = "quintal"
+    assert await setup(scripts, config, areas={"quintal": {"name": "Quintal"}})
+    entry = er.async_get(scripts).async_get(CLEAN)
+    assert entry is not None
+    assert entry.area_id == "quintal"
 
 
 # --- running -------------------------------------------------------------------------
 
 
-async def test_pressing_runs_the_sequence(pool: HomeAssistant, freezer: Any) -> None:
+async def test_turning_it_on_runs_the_sequence(pool: HomeAssistant, freezer: Any) -> None:
     calls = capture(pool, "call_service")
-    await press(pool)
+    await start(pool)
     assert reached(calls) == ["turn_on"]
     await tick(pool, freezer, TWO_HOURS - 1)
     assert reached(calls) == ["turn_on"]
@@ -126,11 +189,11 @@ async def test_pressing_runs_the_sequence(pool: HomeAssistant, freezer: Any) -> 
     assert reached(calls) == ["turn_on", "turn_off"]
 
 
-async def test_toggle_flips_the_switch(ha: HomeAssistant) -> None:
-    await fake(ha, REAL_PUMP, "on")
-    assert await setup(ha, devices(flip={"name": "Inverter", "sequence": [{"toggle": "switch_pump"}]}))
-    calls = capture(ha, "call_service")
-    await press(ha, "button.pururu_pool_program_flip")
+async def test_toggle_flips_the_switch(scripts: HomeAssistant) -> None:
+    await fake(scripts, REAL_PUMP, "on")
+    assert await setup(scripts, devices(flip={"name": "Inverter", "sequence": [{"toggle": "switch_pump"}]}))
+    calls = capture(scripts, "call_service")
+    await start(scripts, "script.pururu_pool_program_flip")
     assert reached(calls) == ["turn_off"]
 
 
@@ -140,63 +203,97 @@ async def test_toggle_flips_the_switch(ha: HomeAssistant) -> None:
     pytest.param("switch.sonoff_teto", {}, id="a relay driving a lamp"),
 ])
 async def test_it_turns_a_light_on_and_off(
-        ha: HomeAssistant, freezer: Any, real: str, attributes: dict[str, Any]) -> None:
-    await fake(ha, real, "off", attributes)
+        scripts: HomeAssistant, freezer: Any, real: str, attributes: dict[str, Any]) -> None:
+    await fake(scripts, real, "off", attributes)
     evening = {"name": "Noite", "sequence": [
         {"turn_on": "light_teto"}, {"delay": {"minutes": 30}}, {"turn_off": "light_teto"}]}
-    assert await setup(ha, {"sala": {"name": "Sala",
-                                     "lights": {"teto": {"entity": real, "name": "Teto"}},
-                                     "programs": {"evening": evening}}})
-    calls = capture(ha, "call_service")
-    await press(ha, "button.pururu_sala_program_evening")
-    await tick(ha, freezer, 30 * 60)
+    assert await setup(scripts, {"sala": {"name": "Sala",
+                                          "lights": {"teto": {"entity": real, "name": "Teto"}},
+                                          "programs": {"evening": evening}}})
+    calls = capture(scripts, "call_service")
+    await start(scripts, "script.pururu_sala_program_evening")
+    await tick(scripts, freezer, 30 * 60)
     assert reached(calls, real) == ["turn_on", "turn_off"]
 
 
-async def test_a_press_returns_before_the_delay_ends(pool: HomeAssistant) -> None:
-    """As script.turn_on: an automation pressing it doesn't wait two hours."""
+async def test_it_returns_at_once_and_is_on_while_it_runs(pool: HomeAssistant) -> None:
+    """As before with the button: an automation starting it doesn't wait two hours."""
     async with asyncio.timeout(5):
-        await pool.services.async_call("button", "press", {"entity_id": CLEAN}, blocking=True)
-    assert pool.states.get(CLEAN).state not in ("unknown", "unavailable")
+        await pool.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+    assert pool.states.get(CLEAN).state == "on"
 
 
-async def test_what_it_does_carries_the_press_context(pool: HomeAssistant) -> None:
-    """The logbook names who pressed it."""
+async def test_turning_it_off_stops_it(pool: HomeAssistant, freezer: Any) -> None:
+    calls = capture(pool, "call_service")
+    await start(pool)
+    await tick(pool, freezer, 60)
+    await pool.services.async_call("script", "turn_off", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+    assert pool.states.get(CLEAN).state == "off"
+    await tick(pool, freezer, TWO_HOURS)
+    assert reached(calls) == ["turn_on"]
+
+
+async def test_what_it_does_carries_the_callers_context(pool: HomeAssistant) -> None:
+    """The logbook names who started it."""
     calls = capture(pool, "call_service")
     context = Context()
-    await press(pool, context=context)
+    await start(pool, context=context)
     real = [event for event in calls if reached([event]) == ["turn_on"]]
     assert real
     assert all(context.id in (event.context.id, event.context.parent_id) for event in real)
 
 
-async def test_a_press_while_running_is_ignored(
+async def test_starting_it_while_it_runs_is_ignored(
         pool: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """script.turn_on (blocking) waits for a state change before returning; a single-mode
+    script that refuses a second run never fires one, so this second call isn't blocking."""
     calls = capture(pool, "call_service")
-    await press(pool)
+    await start(pool)
     await tick(pool, freezer, 60)
-    await press(pool)
+    await pool.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=False)
+    await settle()
     assert "Piscina Limpar: Already running" in caplog.text
     await tick(pool, freezer, TWO_HOURS)
     assert reached(calls) == ["turn_on", "turn_off"]
 
 
-async def test_an_unavailable_switch_does_not_stop_it(ha: HomeAssistant, freezer: Any) -> None:
+async def test_an_unavailable_switch_does_not_stop_it(scripts: HomeAssistant, freezer: Any) -> None:
     """No real switch: the pururu switch is unavailable, HA skips it, the program goes on."""
-    assert await setup(ha, devices())
-    calls = capture(ha, "call_service")
-    await press(ha)
-    await tick(ha, freezer, TWO_HOURS)
+    assert await setup(scripts, devices())
+    calls = capture(scripts, "call_service")
+    await start(scripts)
+    await tick(scripts, freezer, TWO_HOURS)
     assert reached(calls, PUMP) == ["turn_on", "turn_off"]
 
 
 async def test_a_failing_step_stops_it_and_is_logged(
         pool: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """A step's failure raises inside the background task script.turn_on's domain service
+    starts and never awaits (it only waits for the run to start): retrieve its exception
+    ourselves, so HA's test harness doesn't also flag it as "never retrieved" at teardown."""
     calls = capture(pool, "call_service")
-    with patch("homeassistant.components.group.switch.SwitchGroup.async_turn_on",
-               side_effect=HomeAssistantError("the relay is stuck")):
-        await press(pool)
-    await tick(pool, freezer, TWO_HOURS)
+    created: list[asyncio.Task[Any]] = []
+    original = pool.async_create_task_internal
+
+    def capture_task(coro: Any, name: str | None = None, eager_start: bool = True) -> Any:
+        task = original(coro, name, eager_start)
+        if isinstance(task, asyncio.Task):
+            created.append(task)
+        return task
+
+    pool.async_create_task_internal = capture_task
+    try:
+        with patch("homeassistant.components.group.switch.SwitchGroup.async_turn_on",
+                   side_effect=HomeAssistantError("the relay is stuck")):
+            await start(pool)
+        await tick(pool, freezer, TWO_HOURS)
+    finally:
+        pool.async_create_task_internal = original
+    for task in created:
+        if task.done() and not task.cancelled():
+            task.exception()
     assert reached(calls, PUMP) == ["turn_on"]
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any("Piscina Limpar" in message and "the relay is stuck" in message
@@ -212,105 +309,122 @@ async def disable(hass: HomeAssistant, entity_id: str, disabled: bool = True) ->
     await hass.async_block_till_done()
 
 
-async def test_a_disabled_target_makes_it_unavailable(pool: HomeAssistant) -> None:
-    """A button that looks usable and does nothing would mislead: it says why not."""
-    await disable(pool, PUMP)
-    assert pool.states.get(CLEAN).state == "unavailable"
-    calls = capture(pool, "call_service")
-    await press(pool)
-    assert reached(calls, PUMP) == []
+async def test_a_disabled_target_drops_the_program(
+        pool: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """A script that looks usable and does part of its job would mislead: it goes, logged.
 
-
-async def test_a_target_disabled_before_a_reload_keeps_it_unavailable(pool: HomeAssistant) -> None:
+    Disabling alone doesn't reload the entry (HA's own config entry reload-on-disable
+    only fires when an entity is *re-enabled*: config_entries.py's disable handler
+    explicitly skips scheduling one while the entity stays disabled); a reload, like a
+    restart, is what picks this up.
+    """
     await disable(pool, PUMP)
     await reload(pool, devices())
-    assert pool.states.get(CLEAN).state == "unavailable"
+    assert generated_scripts(pool) == {}
+    assert pool.states.get(CLEAN) is None
+    assert er.async_get(pool).async_get(CLEAN) is None
+    assert f"{CLEAN} acts on {PUMP}, which is disabled; not generating it" in caplog.text
 
 
 async def test_it_comes_back_when_the_target_is_enabled(pool: HomeAssistant, freezer: Any) -> None:
     await disable(pool, PUMP)
+    await tick(pool, freezer, 31)
     await disable(pool, PUMP, disabled=False)
-    assert pool.states.get(CLEAN).state != "unavailable"
-    await tick(pool, freezer, 31)  # HA reloads the entry, which creates the pump again
+    await tick(pool, freezer, 31)
     await pool.async_block_till_done()
     calls = capture(pool, "call_service")
-    await press(pool)
+    await start(pool)
     assert reached(calls) == ["turn_on"]
 
 
-# --- reloads, renames, taken IDs and restarts --------------------------------------------
+# --- reloads, renames, taken IDs, upgrades ------------------------------------------------
 
 
-async def test_a_reload_stops_a_running_program(pool: HomeAssistant, freezer: Any) -> None:
-    """What it did stays: the pump stays on."""
+async def test_a_reload_keeps_an_unchanged_program_running(pool: HomeAssistant, freezer: Any) -> None:
     calls = capture(pool, "call_service")
-    await press(pool)
-    await reload(pool, devices())
-    await tick(pool, freezer, TWO_HOURS)
-    assert reached(calls) == ["turn_on"]
-
-
-async def test_after_a_reload_it_runs_again(pool: HomeAssistant, freezer: Any) -> None:
-    await reload(pool, devices())
-    calls = capture(pool, "call_service")
-    await press(pool)
+    await start(pool)
+    await reload_while_running(pool, devices())
     await tick(pool, freezer, TWO_HOURS)
     assert reached(calls) == ["turn_on", "turn_off"]
 
 
+async def test_a_reload_that_changes_the_program_stops_it(pool: HomeAssistant, freezer: Any) -> None:
+    """HA loads the new script: what the old one did stays, the pump stays on."""
+    longer = {**CLEANING, "sequence": [
+        {"turn_on": "switch_pump"}, {"delay": {"hours": 3}}, {"turn_off": "switch_pump"}]}
+    calls = capture(pool, "call_service")
+    await start(pool)
+    await reload_while_running(pool, devices(clean=longer))
+    await tick(pool, freezer, TWO_HOURS)
+    assert reached(calls) == ["turn_on"]
+    assert pool.states.get(CLEAN).state == "off"
+
+
 async def test_a_reload_that_drops_it_removes_it(pool: HomeAssistant) -> None:
     await reload(pool, {KEY: {"name": "Piscina", "switches": SWITCHES}})
+    assert generated_scripts(pool) == {}
+    assert pool.states.get(CLEAN) is None
     assert er.async_get(pool).async_get(CLEAN) is None
-    assert held(pool, KEY) == {PUMP}
-    assert scripts(pool) == []
-
-
-async def test_a_reload_leaves_one_script_per_program(pool: HomeAssistant) -> None:
-    await reload(pool, devices())
-    await reload(pool, devices())
-    assert len(scripts(pool)) == 1
+    assert pool.config_entries.async_entries("pururu")[0].data["scripts"] == []
 
 
 async def test_it_follows_its_target_renamed(pool: HomeAssistant) -> None:
     er.async_get(pool).async_update_entity(PUMP, new_entity_id="switch.piscina_bomba")
     await pool.async_block_till_done()
     calls = capture(pool, "call_service")
-    await press(pool)
+    await start(pool)
     assert reached(calls, "switch.piscina_bomba") == ["turn_on"]
     assert reached(calls) == ["turn_on"]
 
 
-async def test_renamed_it_still_runs(pool: HomeAssistant) -> None:
-    er.async_get(pool).async_update_entity(CLEAN, new_entity_id="button.limpar_piscina")
+async def test_renamed_it_still_runs_and_stays_renamed(pool: HomeAssistant) -> None:
+    er.async_get(pool).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
     await pool.async_block_till_done()
     calls = capture(pool, "call_service")
-    await press(pool, "button.limpar_piscina")
+    await start(pool, "script.limpar_piscina")
     assert reached(calls) == ["turn_on"]
+    await reload_while_running(pool, devices())
+    renamed = er.async_get(pool).async_get("script.limpar_piscina")
+    assert renamed is not None
+    assert renamed.unique_id == "pururu_pool_program_clean"
+    assert pool.states.get(CLEAN) is None
 
 
-async def test_an_id_already_taken_is_an_error(
+async def test_an_id_taken_by_another_integration_is_not_generated(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
-        "button", "template", "someone_else", suggested_object_id="pururu_pool_program_clean")
+        "script", "template", "someone_else", suggested_object_id="pururu_pool_program_clean")
     assert await setup(ha, devices())
-    assert held(ha, KEY) == {PUMP}
-    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-    assert any(CLEAN in message and "template" in message for message in errors), errors
+    assert generated_scripts(ha) == {}
+    assert (f"{CLEAN} is already taken by the template integration; "
+            "not generating it") in caplog.text
 
 
-async def test_a_program_whose_target_is_not_created_is_not_created(
+async def test_a_script_of_ones_own_with_the_same_id_is_not_adopted(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    er.async_get(ha).async_get_or_create(
+        "script", "script", "pururu_pool_program_clean", suggested_object_id="mine")
+    assert await setup(ha, devices())
+    assert generated_scripts(ha) == {}
+    assert (f"{CLEAN} is already taken by script.mine, a script with the same ID; "
+            "not generating it") in caplog.text
+
+
+async def test_a_program_whose_target_is_not_created_is_not_generated(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
         "switch", "template", "someone_else", suggested_object_id="pururu_pool_switch_pump")
     assert await setup(ha, devices())
-    assert ha.states.get(CLEAN) is None
-    assert f"{CLEAN} follows {PUMP}, which is not created; not creating it" in caplog.text
-    assert scripts(ha) == []
+    assert generated_scripts(ha) == {}
+    assert f"{CLEAN} follows {PUMP}, which is not created; not generating it" in caplog.text
 
 
-async def test_after_a_restart_it_shows_its_last_press(ha: HomeAssistant) -> None:
-    """A running program is lost, as HA's scripts; the time of the last press stays."""
-    pressed = "2026-09-16T09:00:00+00:00"
-    await fake(ha, REAL_PUMP, "off")
-    await restart(ha, devices(), (State(CLEAN, pressed), {}))
-    assert ha.states.get(CLEAN).state == pressed
+async def test_the_old_button_is_removed(ha: HomeAssistant) -> None:
+    """Up to 0.1.11 a program was button.pururu_<device>_program_<key>."""
+    entry = MockConfigEntry(domain="pururu", source="import", data={})
+    entry.add_to_hass(ha)
+    er.async_get(ha).async_get_or_create(
+        "button", "pururu", "pururu_pool_program_clean", config_entry=entry,
+        suggested_object_id="pururu_pool_program_clean")
+    assert await setup(ha, devices())
+    assert er.async_get(ha).async_get("button.pururu_pool_program_clean") is None

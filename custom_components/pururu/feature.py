@@ -143,11 +143,8 @@ class Feature:
     # device, and build() gets their current entity IDs in `inputs`, by that key
     refers: Callable[[Any], Iterable[str]] | None = None
     # Services its entities take, on their own platform (turn_on → switch.turn_on
-    # for a switch): a program can call them
+    # for a switch): a program's step can call them (programs.py)
     actions: tuple[str, ...] = ()
-    # (action, entity key in its namespace) of every entity its validated block
-    # acts on: each entity key is in refers too, and its feature must take the action
-    acts: Callable[[Any], Iterable[tuple[str, str]]] | None = None
     # Entity keys repeated for every item of its block: suffix -> platform. An
     # item's entity key is <slug>_<suffix>, named by the suffix's translation
     # with the item's name as the placeholder named after the namespace ({mode})
