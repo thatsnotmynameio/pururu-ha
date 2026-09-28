@@ -58,6 +58,16 @@ sensor.pururu_laundry_washer_phase_current follows binary_sensor.pururu_laundry_
 
 This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. A [program](/concepts/programs) acting on a switch that isn't created isn't created either.
 
+### `automation.… runs script.…, which is not generated; not generating it`
+
+```
+automation.pururu_pool_reaction_morning runs script.pururu_pool_program_clean, which is not generated; not generating it
+```
+
+A [reaction](/concepts/reactions#starting-a-program)'s `then` names a program whose script isn't generated: an entity it acts on isn't created or is disabled, or its ID is taken. The line logged just before says which. The reaction's automation isn't generated either, since it would start a missing script. When the program is only waiting for a disabled entity, the reaction waits with it and comes back as you left it.
+
+**Fix:** fix the program, and the reaction comes back with it.
+
 ### `… watches …, which this device's settings don't create …`
 
 ```
