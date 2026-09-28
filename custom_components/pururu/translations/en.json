@@ -92,6 +92,16 @@
       "window_open_time_week": {"name": "Time open this week"},
       "window_open_time_month": {"name": "Time open this month"},
       "window_open_time_year": {"name": "Time open this year"},
+      "door_last_opened_by": {"name": "Last opened by"},
+      "door_last_opened_via": {"name": "Last opened via"},
+      "door_last_direction": {"name": "Last direction"},
+      "door_last_denied": {"name": "Last denied"},
+      "door_last_ring": {"name": "Last ring"},
+      "window_last_opened_by": {"name": "Last opened by"},
+      "window_last_opened_via": {"name": "Last opened via"},
+      "window_last_direction": {"name": "Last direction"},
+      "window_last_denied": {"name": "Last denied"},
+      "window_last_ring": {"name": "Last ring"},
       "phase_current": {
         "name": "Phase",
         "state": {

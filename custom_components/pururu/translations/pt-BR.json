@@ -92,6 +92,16 @@
       "window_open_time_week": {"name": "Tempo aberta na semana"},
       "window_open_time_month": {"name": "Tempo aberta no mês"},
       "window_open_time_year": {"name": "Tempo aberta no ano"},
+      "door_last_opened_by": {"name": "Última abertura por"},
+      "door_last_opened_via": {"name": "Última abertura via"},
+      "door_last_direction": {"name": "Sentido da última abertura"},
+      "door_last_denied": {"name": "Última tentativa negada"},
+      "door_last_ring": {"name": "Último toque"},
+      "window_last_opened_by": {"name": "Última abertura por"},
+      "window_last_opened_via": {"name": "Última abertura via"},
+      "window_last_direction": {"name": "Sentido da última abertura"},
+      "window_last_denied": {"name": "Última tentativa negada"},
+      "window_last_ring": {"name": "Último toque"},
       "phase_current": {
         "name": "Fase",
         "state": {

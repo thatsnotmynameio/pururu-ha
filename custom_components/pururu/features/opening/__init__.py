@@ -1,11 +1,12 @@
 """A door or a window: its contact opens and closes it, and each opening is a cycle.
 
 `door` and `window` are one feature under two namespaces: they differ only in
-their `open`'s device class and their texts. The contact is required; what
-describes the openings (events.py) is optional.
+their `open`'s device class and their texts. The contact is required; events
+(events.py), optional, describe the openings.
 """
 
 from collections.abc import Mapping
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -15,6 +16,7 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import STATE_ON, Platform, UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 
 from ...entity import PururuEntity
 from ...feature import Build, Device, Feature
@@ -22,6 +24,7 @@ from .. import standing
 from ..cycle.last import LastCycleDescription, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, RuntimeTotal
+from . import events
 from .open import Open
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +38,9 @@ SCHEMA = vol.Schema(
         vol.Optional("statistics", default={}): vol.Schema(
             {vol.Optional(counter, default=[]): PERIOD_LIST for counter in COUNTERS}
         ),
+        # How far from an opening's start an opening event may be, before or after
+        vol.Optional("match", default=timedelta(seconds=5)): cv.positive_time_period,
+        vol.Optional("events"): vol.All([events.SCHEMA], vol.Length(min=1)),
     }
 )
 
@@ -72,6 +78,7 @@ ENTITY_KEYS: dict[str, Platform] = {
         for counter in COUNTERS
         for period in PERIODS
     },
+    **events.ENTITY_KEYS,
 }
 
 
@@ -100,8 +107,15 @@ def _builder(device_class: BinarySensorDeviceClass) -> Build:
                 watched,
             )
             real = None
+        sources = [events.Source.of(block) for block in config.get("events", [])]
         entities: list[PururuEntity] = [
-            Open(device, device_class, contact=real),
+            Open(
+                device,
+                device_class,
+                contact=real,
+                events=[source for source in sources if source.means(events.OPENING)],
+                match=config["match"],
+            ),
             *(
                 LastCycleValue(device, description, source="open")
                 for description in LAST_OPENING
@@ -118,6 +132,7 @@ def _builder(device_class: BinarySensorDeviceClass) -> Build:
                 Meter(device, f"{counter}_{period}", total, source, period)
                 for period in config["statistics"][counter]
             )
+        entities.extend(events.entities(device, sources))
         return entities
 
     return build

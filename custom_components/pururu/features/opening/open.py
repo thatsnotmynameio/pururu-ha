@@ -1,6 +1,12 @@
-"""Whether the door is open: its contact, held while the contact has no state; the source of its openings."""
+"""Whether the door is open: its contact, held while the contact has no state; the source of its openings.
 
-from datetime import datetime
+It also matches opening events to openings, by time: an event `match` apart
+from an opening's start at most describes it, whichever comes first.
+"""
+
+from collections.abc import Mapping, Sequence
+from datetime import datetime, timedelta
+from functools import partial
 from typing import override
 
 from homeassistant.components.binary_sensor import (
@@ -24,6 +30,7 @@ from homeassistant.util import dt as dt_util
 from ...entity import PururuEntity
 from ...feature import Device
 from ..cycle import Cycle, CycleStart, cycle_signal, end_signal
+from .events import OPENING, Fired, Source, described_signal
 
 
 class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
@@ -35,17 +42,26 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
         device_class: BinarySensorDeviceClass,
         *,
         contact: str | None,
+        events: Sequence[Source] = (),
+        match: timedelta = timedelta(0),
     ) -> None:
-        """Follow `contact`; None: stand for nothing, unavailable."""
+        """Follow `contact` (None: stand for nothing, unavailable); `events` describe openings."""
         self._identify(device, Platform.BINARY_SENSOR, "open")
         self._attr_device_class = device_class
         self._attr_available = contact is not None
         self._attr_is_on = False
         self._contact = contact
+        self._events = events
+        self._match = match
         self._signals = (cycle_signal(device), end_signal(device))
+        self._described_signal = described_signal(device)
         self._data = CycleStart()
         # False until HA has started: every entity of the door listens by then
         self._following = False
+        # The last opening's start, whether an event described it, an event waiting
+        self._opened: datetime | None = None
+        self._described = False
+        self._pending: Fired | None = None
 
     @property
     @override
@@ -65,6 +81,7 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
             self._attr_is_on = last.state == STATE_ON
         if (extra := await self.async_get_last_extra_data()) is not None:
             self._data = CycleStart.from_dict(extra.as_dict())
+        self._opened = self._data.since
         if self._contact is None:
             return
         self.async_on_remove(
@@ -72,6 +89,12 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
                 self.hass, self._contact, self._contact_changed
             )
         )
+        for source in self._events:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, source.entity, partial(self._event, source)
+                )
+            )
         self.async_on_remove(async_at_started(self.hass, self._started))
 
     @callback
@@ -109,4 +132,31 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
 
     @callback
     def _opening_starts(self, now: datetime) -> None:
-        """An opening starts at `now`: nothing describes it yet."""
+        """A new opening: an event waiting close enough describes it; else nothing does yet."""
+        self._opened = now
+        self._described = False
+        pending, self._pending = self._pending, None
+        if pending is not None and abs(now - pending.time) <= self._match:
+            self._describe(pending.fields)
+        else:
+            async_dispatcher_send(self.hass, self._described_signal, {})
+
+    @callback
+    def _event(self, source: Source, event: Event[EventStateChangedData]) -> None:
+        """An opening event describes the last opening near its start; else it waits for the next."""
+        if not self._following or (fired := source.fired(event, OPENING)) is None:
+            return
+        if (
+            self._opened is not None
+            and not self._described
+            and abs(fired.time - self._opened) <= self._match
+        ):
+            self._describe(fired.fields)
+        else:
+            self._pending = fired
+
+    @callback
+    def _describe(self, fields: Mapping[str, str | None]) -> None:
+        """The first event near the opening wins: later ones don't describe it."""
+        self._described = True
+        async_dispatcher_send(self.hass, self._described_signal, fields)

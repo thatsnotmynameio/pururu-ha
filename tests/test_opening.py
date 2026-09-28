@@ -321,3 +321,265 @@ async def test_the_openings_are_a_cycle_for_phases(ha: HomeAssistant, kind: str)
     assert ha.states.get(phase).state == "aberta"
     await contact(ha, "off")
     assert ha.states.get(phase).state == "parada"
+
+
+# --- events -------------------------------------------------------------------------
+
+ACCESS = "event.clausura_frente_access"
+DOORBELL = "event.clausura_frente_doorbell"
+ACCESS_TYPES = {"access_granted": "opening", "access_denied": "denied"}
+ACCESS_FIELDS = {"who": "actor", "how": "authentication", "direction": "direction"}
+EVENTS = [
+    {"entity": ACCESS, "types": ACCESS_TYPES, "fields": ACCESS_FIELDS},
+    {"entity": DOORBELL, "types": {"ring": "ring"}},
+]
+# What UniFi Access sent on 2026-09-27
+ENTRY = {"actor": "Matheus Guilarducci", "authentication": "PIN_CODE", "direction": "entry",
+         "result": "ACCESS"}
+EXIT = {"actor": "N/A", "authentication": "REX", "direction": "exit", "result": "ACCESS"}
+FIELD_KEYS = ("last_opened_by", "last_opened_via", "last_direction")
+
+
+async def access(hass: HomeAssistant, event_type: str = "access_granted", *,
+                 at: str | None = None, **attributes: Any) -> None:
+    """An access event: its state is the event's time, now unless `at`."""
+    time = at or dt_util.utcnow().isoformat(timespec="milliseconds")
+    await fake(hass, ACCESS, time, {"event_types": ["access_granted", "access_denied"],
+                                    "event_type": event_type, **attributes})
+
+
+async def ring(hass: HomeAssistant) -> None:
+    await fake(hass, DOORBELL, dt_util.utcnow().isoformat(timespec="milliseconds"),
+               {"event_types": ["ring"], "event_type": "ring", "device_class": "doorbell"})
+
+
+def fields(hass: HomeAssistant, kind: str) -> tuple[str, str, str]:
+    return tuple(value(hass, kind, entity_key) for entity_key in FIELD_KEYS)  # type: ignore[return-value]
+
+
+@pytest.fixture
+async def enclosure(ha: HomeAssistant, kind: str) -> HomeAssistant:
+    """The front enclosure door with its access and doorbell events; the last access is old."""
+    await contact(ha, "off")
+    await access(ha, at="2026-09-15T10:00:00.000+00:00", **ENTRY)
+    assert await setup(ha, devices(kind, events=EVENTS))
+    return ha
+
+
+@pytest.mark.parametrize("block", [
+    pytest.param({"events": []}, id="no event"),
+    pytest.param({"events": [{"entity": "sensor.x", "types": ACCESS_TYPES}]}, id="not an event"),
+    pytest.param({"events": [{"entity": ACCESS, "types": {}}]}, id="no type"),
+    pytest.param({"events": [{"entity": ACCESS, "types": {"access_granted": "opened"}}]},
+                 id="unknown meaning"),
+    pytest.param({"events": [{"entity": ACCESS, "types": ACCESS_TYPES,
+                              "fields": {"user": "actor"}}]}, id="unknown field"),
+    pytest.param({"events": [{"entity": ACCESS, "types": ACCESS_TYPES,
+                              "fields": {"who": " "}}]}, id="blank attribute"),
+    pytest.param({"events": [{"entity": ACCESS, "types": ACCESS_TYPES, "extra": 1}]},
+                 id="unknown key"),
+    pytest.param({"events": [{"types": ACCESS_TYPES}]}, id="no entity"),
+    pytest.param({"match": "soon"}, id="match not a period"),
+])
+async def test_invalid_events_are_refused(ha: HomeAssistant, kind: str,
+                                          block: dict[str, Any]) -> None:
+    assert not await setup(ha, devices(kind, **block))
+
+
+async def test_entry_by_pin_describes_the_opening(enclosure: HomeAssistant, kind: str,
+                                                  freezer: Any) -> None:
+    """2026-09-27 22:22:46: the contact opens, the access event comes 0.9 s later."""
+    await contact(enclosure, "on")
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+    await tick(enclosure, freezer, 0.9)
+    await access(enclosure, **ENTRY)
+    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    await tick(enclosure, freezer, 6)
+    await contact(enclosure, "off")
+    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+
+
+async def test_an_event_before_the_contact_describes_it(enclosure: HomeAssistant, kind: str,
+                                                        freezer: Any) -> None:
+    await access(enclosure, **EXIT)
+    await tick(enclosure, freezer, 1)
+    await contact(enclosure, "on")
+    assert fields(enclosure, kind) == ("N/A", "REX", "exit")
+
+
+@pytest.mark.parametrize("event_first", [True, False])
+async def test_an_event_outside_match_is_dropped(enclosure: HomeAssistant, kind: str,
+                                                 freezer: Any, event_first: bool) -> None:
+    if event_first:
+        await access(enclosure, **EXIT)
+        await tick(enclosure, freezer, 6)
+        await contact(enclosure, "on")
+    else:
+        await contact(enclosure, "on")
+        await tick(enclosure, freezer, 6)
+        await access(enclosure, **EXIT)
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+
+
+async def test_match_can_be_set(ha: HomeAssistant, kind: str, freezer: Any) -> None:
+    await contact(ha, "off")
+    assert await setup(ha, devices(kind, events=EVENTS, match={"seconds": 10}))
+    await contact(ha, "on")
+    await tick(ha, freezer, 8)
+    await access(ha, **ENTRY)
+    assert fields(ha, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+
+
+async def test_the_first_event_wins(enclosure: HomeAssistant, kind: str, freezer: Any) -> None:
+    await contact(enclosure, "on")
+    await access(enclosure, **ENTRY)
+    await tick(enclosure, freezer, 1)
+    await access(enclosure, **EXIT)
+    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+
+
+async def test_a_short_opening_closed_before_its_event(enclosure: HomeAssistant, kind: str,
+                                                       freezer: Any) -> None:
+    await opening(enclosure, freezer, 0.5)
+    await tick(enclosure, freezer, 0.5)
+    await access(enclosure, **ENTRY)
+    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+
+
+async def test_an_opening_without_event_forgets_the_last(enclosure: HomeAssistant, kind: str,
+                                                         freezer: Any) -> None:
+    """Leaving by the front door, from inside: no event, so not the last entry's PIN again."""
+    await contact(enclosure, "on")
+    await access(enclosure, **ENTRY)
+    await tick(enclosure, freezer, 6)
+    await contact(enclosure, "off")
+    await tick(enclosure, freezer, 600)
+    await contact(enclosure, "on")
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+
+
+async def test_a_quick_reopening_without_event_is_unknown(enclosure: HomeAssistant, kind: str,
+                                                          freezer: Any) -> None:
+    await contact(enclosure, "on")
+    await access(enclosure, **ENTRY)
+    await tick(enclosure, freezer, 2)
+    await contact(enclosure, "off")
+    await tick(enclosure, freezer, 1)
+    await contact(enclosure, "on")
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+
+
+async def test_an_event_type_not_in_types_is_ignored(enclosure: HomeAssistant, kind: str) -> None:
+    await contact(enclosure, "on")
+    await access(enclosure, "access_unknown", **ENTRY)
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+    assert value(enclosure, kind, "last_denied") == "unknown"
+
+
+async def test_a_missing_attribute_is_unknown(enclosure: HomeAssistant, kind: str) -> None:
+    await contact(enclosure, "on")
+    await access(enclosure, actor="Matheus Guilarducci")
+    assert fields(enclosure, kind) == ("Matheus Guilarducci", "unknown", "unknown")
+
+
+async def test_a_field_that_is_not_text_is_text(enclosure: HomeAssistant, kind: str) -> None:
+    await contact(enclosure, "on")
+    await access(enclosure, **{**ENTRY, "actor": 42})
+    assert value(enclosure, kind, "last_opened_by") == "42"
+
+
+async def test_a_state_that_is_not_a_time_is_ignored(enclosure: HomeAssistant, kind: str) -> None:
+    await contact(enclosure, "on")
+    await access(enclosure, at="garbage", **ENTRY)
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+
+
+async def test_the_same_state_again_is_no_new_event(enclosure: HomeAssistant, kind: str,
+                                                    freezer: Any) -> None:
+    """Attributes changing under the same state (the same time) are no new event."""
+    at = dt_util.utcnow().isoformat(timespec="milliseconds")
+    await access(enclosure, at=at, **ENTRY)
+    await tick(enclosure, freezer, 600)
+    await contact(enclosure, "on")
+    await access(enclosure, at=at, **EXIT)
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+
+
+async def test_a_restart_replaying_an_old_event_describes_nothing(ha: HomeAssistant, kind: str,
+                                                                  freezer: Any) -> None:
+    """After a restart the event entity comes back with its last, old, time."""
+    old = (dt_util.utcnow() - timedelta(hours=1)).isoformat(timespec="milliseconds")
+    ha.states.async_set(CONTACT, "off")
+    await restart(ha, devices(kind, events=EVENTS))
+    await fake(ha, ACCESS, "unavailable")
+    await access(ha, at=old, **ENTRY)
+    await tick(ha, freezer, 1)
+    await contact(ha, "on")
+    assert fields(ha, kind) == ("unknown", "unknown", "unknown")
+
+
+async def test_denied_records_its_time_and_fields(enclosure: HomeAssistant, kind: str) -> None:
+    await access(enclosure, "access_denied", actor="Estranho", authentication="NFC",
+                 direction="entry", result="BLOCKED")
+    assert seconds_from(enclosure, kind, "last_denied") < 1
+    attributes = enclosure.states.get(entity(kind, "last_denied")).attributes
+    assert (attributes["who"], attributes["how"], attributes["direction"]) == (
+        "Estranho", "NFC", "entry")
+    assert opened(enclosure, kind) == "off"
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+
+
+async def test_denied_keeps_its_latest(ha: HomeAssistant, kind: str) -> None:
+    """A replayed older denial, after a restart, doesn't replace the restored one."""
+    last = dt_util.utcnow().replace(microsecond=0) - timedelta(minutes=5)
+    await restart(ha, devices(kind, events=EVENTS),
+                  (State(entity(kind, "last_denied"), last.isoformat(), {"who": "Estranho"}),
+                   {"native_value": {"__type": "<class 'datetime.datetime'>",
+                                     "isoformat": last.isoformat()},
+                    "native_unit_of_measurement": None}))
+    assert dt_util.parse_datetime(value(ha, kind, "last_denied")) == last
+    assert ha.states.get(entity(kind, "last_denied")).attributes["who"] == "Estranho"
+    await fake(ha, ACCESS, "unavailable")
+    await access(ha, "access_denied", at=(last - timedelta(minutes=1)).isoformat(),
+                 actor="Outro")
+    assert dt_util.parse_datetime(value(ha, kind, "last_denied")) == last
+    assert ha.states.get(entity(kind, "last_denied")).attributes["who"] == "Estranho"
+
+
+async def test_a_ring_is_recorded(enclosure: HomeAssistant, kind: str) -> None:
+    await ring(enclosure)
+    assert seconds_from(enclosure, kind, "last_ring") < 1
+    assert "who" not in enclosure.states.get(entity(kind, "last_ring")).attributes
+
+
+async def test_a_ring_never_describes_an_opening(enclosure: HomeAssistant, kind: str) -> None:
+    await contact(enclosure, "on")
+    await ring(enclosure)
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+    assert value(enclosure, kind, "last_ring") != "unknown"
+
+
+async def test_only_what_the_events_give_is_created(ha: HomeAssistant, kind: str) -> None:
+    await contact(ha, "off")
+    assert await setup(ha, devices(kind, events=[EVENTS[1]]))
+    assert ha.states.get(entity(kind, "last_ring")) is not None
+    for entity_key in (*FIELD_KEYS, "last_denied"):
+        assert ha.states.get(entity(kind, entity_key)) is None, entity_key
+
+
+async def test_without_events_nothing_of_theirs_is_created(door: HomeAssistant,
+                                                           kind: str) -> None:
+    for entity_key in (*FIELD_KEYS, "last_denied", "last_ring"):
+        assert door.states.get(entity(kind, entity_key)) is None, entity_key
+
+
+async def test_the_fields_restore(ha: HomeAssistant, kind: str) -> None:
+    await restart(ha, devices(kind, events=EVENTS),
+                  (State(entity(kind, "last_opened_by"), "Matheus Guilarducci"),
+                   {"native_value": "Matheus Guilarducci", "native_unit_of_measurement": None}))
+    assert value(ha, kind, "last_opened_by") == "Matheus Guilarducci"
+
+
+async def test_the_fields_have_names(enclosure: HomeAssistant, kind: str) -> None:
+    state = enclosure.states.get(entity(kind, "last_opened_by"))
+    assert state.attributes["friendly_name"] == f"{NAME} Last opened by"
