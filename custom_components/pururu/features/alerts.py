@@ -37,13 +37,12 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 
+from ..alert2_alerts import ALERT2
 from ..entity import PururuEntity, reading
 from ..feature import TEXT, Device, Feature, finite_float, state_text
 
 _LOGGER = logging.getLogger(__name__)
 
-# Alert2 (HACS) delivers what an alert's notify says
-ALERT2 = "alert2"
 PRIORITIES = ("low", "medium", "high")
 # States that are no reading, unless the condition is about them
 NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
