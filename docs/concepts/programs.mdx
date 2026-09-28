@@ -76,7 +76,7 @@ A program is a method of its device. It acts only on its device's entities, and 
 
 - **Starting it:** `script.turn_on`, or **Run** in the UI. It returns at once: an automation starting it doesn't wait for it to end.
 - **While it runs**, its state is `on`, and `script.turn_off` stops it. What it already did stays: if the pump was on, it stays on.
-- **Started while it runs**, it's ignored, and the log says `Piscina Limpar: Already running`. An automation that waits for `script.turn_on` to finish stays on that action until the already-running program's next step or its end — in this example, up to its two-hour `delay`. This is Home Assistant's behaviour for any single-mode script, not something pururu changes.
+- **Started while it runs**, it's ignored, and the log says `Piscina Limpar: Already running`. That `script.turn_on` doesn't return at once: an automation calling it stays on that action until the running program's next step or its end — in this example, up to its two-hour `delay`. This is Home Assistant's behaviour for any single-mode script, not something pururu changes.
 - **Its traces**, in the script's menu, show each step it ran.
 - **A step that fails**, such as a real switch reporting an error, stops it, and the log and the trace say why. A switch that's `unavailable` doesn't stop it: that step does nothing and the program goes on.
 - **A reload** of pururu stops a running program only if you changed that program: Home Assistant then loads its new script.

@@ -130,7 +130,7 @@ You renamed a pururu switch or light in the UI to the entity its own `entity:` n
 Piscina Limpar: Already running
 ```
 
-A [program](/concepts/programs) was started while it was still running, for example during its `delay`. The start is ignored; the running program goes on. An automation that waits for `script.turn_on` to finish stays on that action until the running program's next step or its end, up to its longest `delay` — Home Assistant's behaviour for any single-mode script.
+A [program](/concepts/programs) was started while it was still running, for example during its `delay`. The start is ignored; the running program goes on. `script.turn_on` returns at once when it starts the program, but not when it's ignored: an automation calling it then stays on that action until the running program's next step or its end, up to its longest `delay` — Home Assistant's behaviour for any single-mode script.
 
 ### An entity stays `unknown`
 
