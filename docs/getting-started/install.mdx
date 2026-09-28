@@ -61,6 +61,8 @@ Then **restart Home Assistant** once. A restart is needed the first time because
 
 <Info>
   Using [reactions](/concepts/reactions)? Also add `automation pururu: !include_dir_merge_list pururu/automations` to `configuration.yaml`, once. pururu writes the reactions' automations to that folder.
+
+  Using [programs](/concepts/programs)? Also add `script pururu: !include_dir_merge_named pururu/scripts`: pururu writes the programs' scripts to that folder.
 </Info>
 
 ## 3. Reload after every change

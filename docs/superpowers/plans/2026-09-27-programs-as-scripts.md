@@ -39,10 +39,10 @@
 - Create `custom_components/pururu/generated.py`: `Kind`, `Item`, `period`, `async_sync`, `async_remove` and their private helpers, for any domain.
 - Modify `custom_components/pururu/reactions.py`: keeps schema, checks, `automation_id`, `triggers`, `automation`; gains `KIND`.
 - Create `custom_components/pururu/programs.py`: schema, `targets`, `script_id`, `script`, `KIND`.
-- Delete `custom_components/pururu/features/programs.py`, `custom_components/pururu/button.py`.
+- Delete `custom_components/pururu/concepts/programs.py`, `custom_components/pururu/button.py`.
 - Modify `custom_components/pururu/__init__.py`, `const.py`, `feature.py`, `features/__init__.py`, `translations/en.json`, `translations/pt-BR.json`, `manifest.json`, `sonar-project.properties`.
 - Tests: create `tests/test_generated.py`; rewrite `tests/test_programs.py`; trim `tests/test_reactions.py`; modify `tests/helpers.py`, `tests/test_features.py`, `tests/test_places.py`.
-- Docs: move `docs/features/programs.mdx` to `docs/concepts/programs.mdx`; update `docs.json`, `CLAUDE.md` and the pages listed in Task 4.
+- Docs: move `docs/concepts/programs.mdx` to `docs/concepts/programs.mdx`; update `docs.json`, `CLAUDE.md` and the pages listed in Task 4.
 
 ---
 
@@ -585,7 +585,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `custom_components/pururu/programs.py`
-- Delete: `custom_components/pururu/features/programs.py`, `custom_components/pururu/button.py`
+- Delete: `custom_components/pururu/concepts/programs.py`, `custom_components/pururu/button.py`
 - Modify: `custom_components/pururu/const.py`, `custom_components/pururu/features/__init__.py`, `custom_components/pururu/feature.py:144-150`, `custom_components/pururu/__init__.py`, `custom_components/pururu/translations/en.json`, `custom_components/pururu/translations/pt-BR.json`, `sonar-project.properties`
 - Test: `tests/test_programs.py` (rewritten), `tests/helpers.py`, `tests/test_features.py`, `tests/test_places.py`
 
@@ -1155,7 +1155,7 @@ def script(
     }
 ```
 
-Delete `custom_components/pururu/features/programs.py` and `custom_components/pururu/button.py` (`git rm`). In `features/__init__.py`, remove `from .programs import PROGRAMS` and the `"programs": PROGRAMS,` line.
+Delete `custom_components/pururu/concepts/programs.py` and `custom_components/pururu/button.py` (`git rm`). In `features/__init__.py`, remove `from .programs import PROGRAMS` and the `"programs": PROGRAMS,` line.
 
 - [ ] **Step 6: `feature.py`**
 
@@ -1822,12 +1822,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 4: docs, CLAUDE.md, release
 
 **Files:**
-- Move: `docs/features/programs.mdx` → `docs/concepts/programs.mdx` (`git mv`)
+- Move: `docs/concepts/programs.mdx` → `docs/concepts/programs.mdx` (`git mv`)
 - Modify: `docs.json`, `docs/index.mdx`, `docs/concepts/devices-and-features.mdx`, `docs/concepts/entity-ids.mdx`, `docs/getting-started/install.mdx`, `docs/reference/configuration.mdx`, `docs/reference/troubleshooting.mdx`, `docs/develop/architecture.mdx`, `docs/develop/writing-a-feature.mdx`, `CLAUDE.md`, `custom_components/pururu/manifest.json`
 
 - [ ] **Step 1: Move and rewrite the programs page**
 
-`git mv docs/features/programs.mdx docs/concepts/programs.mdx`, then write it as:
+`git mv docs/concepts/programs.mdx docs/concepts/programs.mdx`, then write it as:
 
 ````mdx
 ---
@@ -1925,8 +1925,8 @@ Programs were buttons, `button.pururu_<key>_program_<program key>`, pressed with
 
 - [ ] **Step 2: Links and sidebar**
 
-- `docs.json`: remove `{ "title": "programs", "href": "/features/programs" }` from Features (and the comma before it); in Concepts, after Reactions add `{ "title": "Programs", "href": "/concepts/programs" },`.
-- Replace every `/features/programs` with `/concepts/programs` under `docs/`: `grep -rl "/features/programs" docs | xargs sed -i 's#/features/programs#/concepts/programs#g'`.
+- `docs.json`: remove `{ "title": "programs", "href": "/concepts/programs" }` from Features (and the comma before it); in Concepts, after Reactions add `{ "title": "Programs", "href": "/concepts/programs" },`.
+- Replace every `/concepts/programs` with `/concepts/programs` under `docs/`: `grep -rl "/concepts/programs" docs | xargs sed -i 's#/concepts/programs#/concepts/programs#g'`.
 
 - [ ] **Step 3: The pages that describe programs or the include**
 

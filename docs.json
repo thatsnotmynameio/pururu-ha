@@ -27,6 +27,7 @@
         { "title": "Entity IDs", "href": "/concepts/entity-ids" },
         { "title": "Floors and areas", "href": "/concepts/floors-and-areas" },
         { "title": "Reactions", "href": "/concepts/reactions" },
+        { "title": "Programs", "href": "/concepts/programs" },
         { "title": "Dashboard", "href": "/concepts/dashboard" }
       ]
     },
@@ -39,8 +40,7 @@
         { "title": "phases", "href": "/features/phases" },
         { "title": "modes", "href": "/features/modes" },
         { "title": "switches", "href": "/features/switches" },
-        { "title": "alerts", "href": "/features/alerts" },
-        { "title": "programs", "href": "/features/programs" }
+        { "title": "alerts", "href": "/features/alerts" }
       ]
     },
     {

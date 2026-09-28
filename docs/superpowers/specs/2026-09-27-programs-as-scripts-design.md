@@ -139,7 +139,7 @@ Next to `reactions.py`. Keeps `SCHEMA`, `_step`, `_targets`, `_translated`, and 
 
 ## Docs
 
-- `docs/features/programs.mdx` moves to `docs/concepts/programs.mdx`, next to reactions (it's no longer a feature), and `docs.json` follows. Rewritten for the script: the include line, the behaviour table, and a note that the button became a script (`button.press` → `script.turn_on`).
+- `docs/concepts/programs.mdx` moves to `docs/concepts/programs.mdx`, next to reactions (it's no longer a feature), and `docs.json` follows. Rewritten for the script: the include line, the behaviour table, and a note that the button became a script (`button.press` → `script.turn_on`).
 - Getting started: the second include line.
 - `docs/concepts/entity-ids.mdx`: `script.pururu_<device>_program_<key>` instead of the `button`.
 - Troubleshooting: the new Repairs issue and the two log messages.

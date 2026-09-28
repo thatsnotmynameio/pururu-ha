@@ -4,7 +4,7 @@ Version: the one after the last release merged (0.1.9 if nothing else merges fir
 
 ## Goal
 
-A device **listens** to events and **reacts** to them. This spec is the listening half: a device declares **reactions**, each with one source (an entity of the device, an entity of another pururu device, a real entity, a time of day, the sun), and pururu turns each reaction into a real **Home Assistant automation**. The automation fires on the source, shows up in HA's automation list with its traces and on/off toggle, and has **no actions yet**. What a reaction does (`then:`) is a later spec; it will become the automation's `actions`, and the natural first action is running one of the device's own [programs](../../features/programs.mdx) (`button.press` on `button.pururu_<device>_program_<key>`), which programs' spec already defers to "pururu's own triggers and automations".
+A device **listens** to events and **reacts** to them. This spec is the listening half: a device declares **reactions**, each with one source (an entity of the device, an entity of another pururu device, a real entity, a time of day, the sun), and pururu turns each reaction into a real **Home Assistant automation**. The automation fires on the source, shows up in HA's automation list with its traces and on/off toggle, and has **no actions yet**. What a reaction does (`then:`) is a later spec; it will become the automation's `actions`, and the natural first action is running one of the device's own [programs](../../concepts/programs.mdx) (`button.press` on `button.pururu_<device>_program_<key>`), which programs' spec already defers to "pururu's own triggers and automations".
 
 ```yaml
 pururu:
