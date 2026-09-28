@@ -187,6 +187,16 @@ async def test_an_item_of_ones_own_with_the_same_id_is_not_adopted(
             "with the same ID; not generating it") in caplog.text
 
 
+async def test_an_id_held_by_an_entity_without_a_unique_id_is_not_generated(
+        ha: HomeAssistant, case: Case, caplog: pytest.LogCaptureFixture) -> None:
+    """A state with no registry entry (a template, a group): pururu never adopts it."""
+    ha.states.async_set(case.entity_id("door"), "on")
+    assert await setup(ha, case.devices("door"))
+    assert ids(ha, case) == []
+    assert (f"{case.entity_id('door')} is already taken by an entity without a unique ID; "
+            "not generating it") in caplog.text
+
+
 async def test_an_unchanged_file_is_neither_rewritten_nor_reloaded(
         ha: HomeAssistant, case: Case, included: None) -> None:
     assert await setup(ha, case.devices("door"))
