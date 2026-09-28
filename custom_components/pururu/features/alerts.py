@@ -90,10 +90,20 @@ class ProblemAlert(PururuEntity, BinarySensorEntity, RestoreEntity):
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
 
     def __init__(
-        self, *, watched: str, priority: str, notify: Mapping[str, str] | None
+        self,
+        *,
+        watched: str,
+        priority: str,
+        notify: Mapping[str, str] | None,
+        asks_alert2: bool = True,
     ) -> None:
-        """Watch `watched`; `notify` is what Alert2 tells."""
+        """Watch `watched`; `notify` is what Alert2 tells.
+
+        `asks_alert2` False: its notify is a ready-made alert's own texts, not a
+        request of the user's, so no error without Alert2.
+        """
         self._watched = watched
+        self._asks_alert2 = asks_alert2 and notify is not None
         self.priority = priority
         self.notify = notify
         self._attr_is_on = False
@@ -119,7 +129,7 @@ class ProblemAlert(PururuEntity, BinarySensorEntity, RestoreEntity):
 
         Alert2 may load after pururu.
         """
-        if self.notify is not None and ALERT2 not in self.hass.config.components:
+        if self._asks_alert2 and ALERT2 not in self.hass.config.components:
             _LOGGER.error(
                 "%s has notify, but Alert2 isn't set up to deliver it", self.entity_id
             )
@@ -159,9 +169,12 @@ class Alert(ProblemAlert):
         notify: Mapping[str, str] | None,
         follows: tuple[str, ...] = (),
         sources: tuple[str, ...] = (),
+        asks_alert2: bool = True,
     ) -> None:
         """Watch `watched` for `condition` held for `hold`; `name` None: translated."""
-        super().__init__(watched=watched, priority=priority, notify=notify)
+        super().__init__(
+            watched=watched, priority=priority, notify=notify, asks_alert2=asks_alert2
+        )
         self._identify(device, Platform.BINARY_SENSOR, entity_key, name)
         self.follows = follows
         self.sources = sources

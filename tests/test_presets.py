@@ -10,7 +10,7 @@ from homeassistant.util import dt as dt_util
 import pytest
 import yaml
 
-from helpers import capture, fake, held, module, restart, setup, tick
+from helpers import capture, fake, held, module, reload, restart, setup, tick
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
@@ -303,6 +303,38 @@ async def test_time_alerts_watch_running_and_are_alert2_alerts(ha: HomeAssistant
     path = Path(ha.config.path("pururu/alert2/alerts.yaml"))
     [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert entry["name"] == "demo_washer_appliance_alert_finished"
+
+
+async def test_no_cycle_does_not_flicker_at_a_reload(ha: HomeAssistant, freezer: Any) -> None:
+    """At a reload last_cycle_end is re-added after the alerts: no reading, not "no cycle ever"."""
+    config = devices({"no_cycle": {"for": {"hours": 1}}})
+    await idle(ha, freezer, {"no_cycle": {"for": {"hours": 1}}})
+    await tick(ha, freezer, 7200)
+    await start_cycle(ha, freezer)
+    await end_cycle(ha, freezer)
+    await tick(ha, freezer, 600)
+    assert state(ha, alert("no_cycle")) == "off"
+    changes = capture(ha, "state_changed")
+    await reload(ha, config)
+    assert "on" not in [e.data["new_state"].state for e in changes
+                        if e.data["entity_id"] == alert("no_cycle") and e.data["new_state"]]
+
+
+NOTIFY_ERROR = "has notify, but Alert2 isn't set up to deliver it"
+
+
+async def test_default_texts_without_alert2_are_no_error(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """A ready-made alert may be enabled for a reaction alone: its own texts ask for nothing."""
+    assert await setup(ha, devices({"offline": None}))
+    assert NOTIFY_ERROR not in caplog.text
+
+
+async def test_a_notify_of_ones_own_without_alert2_is_an_error(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    notify = {"message": "m", "done_message": "d"}
+    assert await setup(ha, devices({"offline": {"notify": notify}}))
+    assert f"{alert('offline')} {NOTIFY_ERROR}" in caplog.text
 
 
 # --- the docs ----------------------------------------------------------------------------

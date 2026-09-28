@@ -145,6 +145,7 @@ appliance:
 | `finished` | a cycle ends | a new cycle starts, or `lasts` passes | `lasts` 1 h, `low` |
 
 - Each one takes `for` (`finished`: `lasts` instead), `priority` and [`notify`](/features/alerts#settings), which replaces its texts. Anything else is a configuration error.
+- Without Alert2, they still work as binary sensors, for a [reaction](/concepts/reactions) or your own automations, and their own texts log nothing.
 - `offline:` alone, with nothing after it, enables it with every default.
 - `no_power` is for an appliance that always draws something, such as a fridge. A washer between cycles reads 0 W, so it would be on almost always.
 - `long_cycle` counts from the cycle's start, and `no_cycle` and `finished` from the last cycle's end, so a restart in between starts nothing over. Until a first cycle ends, `no_cycle` counts from when you enabled it.

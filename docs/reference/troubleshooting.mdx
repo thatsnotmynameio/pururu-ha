@@ -73,7 +73,7 @@ An [alert](/features/alerts)'s `when` names an entity its feature can create, bu
 binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
 ```
 
-An alert with `notify` is delivered by [Alert2](/features/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told.
+An alert with `notify` is delivered by [Alert2](/features/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told. A [ready-made alert](/features/appliance#ready-made-alerts)'s own texts never log this: only a `notify` you wrote does.
 
 **Fix:** install Alert2 and add [the include](/features/alerts#getting-notified) to its `alert2:` block, or remove `notify` from the alert.
 

@@ -131,6 +131,7 @@ def build(
                     priority=settings["priority"],
                     notify=notify,
                     sources=(preset.watches,),
+                    asks_alert2="notify" in settings,
                 )
             )
             continue
@@ -157,6 +158,7 @@ def build(
                     preset.watches,
                     *((kind.since_key,) if kind.since_key else ()),
                 ),
+                asks_alert2="notify" in settings,
             )
         )
     return entities

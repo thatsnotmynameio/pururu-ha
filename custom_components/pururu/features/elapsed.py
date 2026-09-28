@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Self, override
 
-from homeassistant.const import ATTR_RESTORED, Platform
+from homeassistant.const import ATTR_RESTORED, STATE_UNKNOWN, Platform
 from homeassistant.core import Event, EventStateChangedData, State, callback
 from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
@@ -65,9 +65,12 @@ class ElapsedAlert(ProblemAlert):
         priority: str,
         notify: Mapping[str, str] | None,
         sources: tuple[str, ...],
+        asks_alert2: bool = True,
     ) -> None:
         """`milestone`: the entity whose state is the milestone; None: the watched one's attribute."""
-        super().__init__(watched=watched, priority=priority, notify=notify)
+        super().__init__(
+            watched=watched, priority=priority, notify=notify, asks_alert2=asks_alert2
+        )
         self._identify(device, Platform.BINARY_SENSOR, entity_key)
         self.sources = sources
         self._milestone = milestone
@@ -120,16 +123,25 @@ class ElapsedAlert(ProblemAlert):
         self._evaluate()
 
     def _since(self, watched: State) -> datetime | None:
-        """The milestone: the newest of what the entities say and what this one saw."""
+        """The milestone: the newest of what the entities say and what this one saw.
+
+        None, keeping the state, while the milestone's entity has no reading: at
+        a reload it comes back after the alerts. Only `unknown`, no cycle ever
+        ended, counts from the alert's creation.
+        """
         if self._milestone is None:
             said = _datetime(
                 watched.attributes.get(self._elapsed.since_attribute or "")
             )
         else:
             state = self.hass.states.get(self._milestone)
-            said = _datetime(state.state) if state is not None else None
-        if said is None and self._elapsed.or_since_created:
-            said = self._created.at
+            if state is None or state.attributes.get(ATTR_RESTORED):
+                return None
+            said = _datetime(state.state)
+            if said is None and state.state == STATE_UNKNOWN:
+                said = self._created.at if self._elapsed.or_since_created else None
+            elif said is None:
+                return None
         known = [each for each in (said, self._entered) if each is not None]
         return max(known) if known else None
 
