@@ -102,7 +102,11 @@ class Elapsed:
     since_key: str | None = None
     # ...or an attribute of the watched entity (cycle_start); exactly one of the two
     since_attribute: str | None = None
+    # With no milestone yet, count from the alert's creation (no_cycle)
+    or_since_created: bool = False
 ```
+
+The milestone is also never older than the moment the alert saw the watched entity enter `state` (a real change, not from `unavailable`/`unknown` or a restored state): running goes `off` a moment before `last_cycle_end` is written, and the previous end must not turn `no_cycle` on for that moment.
 
 The appliance's catalogue is `PRESETS` in `features/appliance/alerts.py`, and `APPLIANCE` gets `alerts=PRESETS`.
 
