@@ -1,9 +1,9 @@
 ---
 title: appliance
-description: An appliance on a power-measuring plug. It tells when the appliance runs, records its cycles and counts runtime and cycles per period.
+description: An appliance on a power-measuring plug. It tells when the appliance runs, records its cycles, counts runtime and cycles per period, and measures the energy it uses while idle.
 ---
 
-`appliance` turns a smart plug that measures power into an appliance that knows when it's running. Each run is a **cycle**. pururu records each cycle's start, end, duration and energy, and it counts runtime and cycles over time.
+`appliance` turns a smart plug that measures power into an appliance that knows when it's running. Each run is a **cycle**. pururu records each cycle's start, end, duration and energy, and it counts runtime and cycles over time. With an energy counter, it also measures what the appliance uses **between** cycles, on standby.
 
 ```yaml
 pururu:
@@ -20,6 +20,7 @@ pururu:
         statistics:
           runtime: [today, week, month, year]
           cycles: [today, week, month, year]
+          idle_energy: [today, month]
 ```
 
 ## Settings
@@ -31,7 +32,7 @@ pururu:
 ---
 
 <Property name="energy" type="entity ID" optional>
-  The plug's **lifetime** energy counter, the one that only goes up. Any energy unit works (Wh, kWh, MWh…); a counter with no unit is read as kWh. Without it, the device has no `energy_total` and no `last_cycle_energy`.
+  The plug's **lifetime** energy counter, the one that only goes up. Any energy unit works (Wh, kWh, MWh…); a counter with no unit is read as kWh. Without it, the device has no `energy_total`, no `last_cycle_energy` and no `idle_energy_total`.
 </Property>
 
 ---
@@ -62,6 +63,12 @@ pururu:
 
 <Property name="statistics.cycles" type="list of periods" optional>
   For each period, a sensor with the cycles finished in the current period. The periods are the same as for `runtime`.
+</Property>
+
+---
+
+<Property name="statistics.idle_energy" type="list of periods" optional>
+  For each period, a sensor with the kWh used while idle in the current period. The periods are the same as for `runtime`. It needs `energy`.
 </Property>
 
 A **time period** can be written as `{minutes: 1}` (with any of `days`, `hours`, `minutes`, `seconds`), as `"00:01:30"`, or as a number of seconds (`90`). Picking the threshold and delays for your appliance is covered in [Your first device](/getting-started/first-device#picking-the-numbers).
@@ -103,8 +110,10 @@ stateDiagram-v2
 | `sensor.pururu_<key>_appliance_last_cycle_energy` | kWh | Energy the last cycle used. *With `energy`.* |
 | `sensor.pururu_<key>_appliance_cycles_total` | cycles | Cycles finished, all time |
 | `sensor.pururu_<key>_appliance_runtime_total` | h | Hours run, all time |
+| `sensor.pururu_<key>_appliance_idle_energy_total` | kWh | Energy used while not running, all time. *With `energy`.* |
 | `sensor.pururu_<key>_appliance_runtime_<period>` | h | Hours run this period, one per `statistics.runtime` entry |
 | `sensor.pururu_<key>_appliance_cycles_<period>` | cycles | Cycles finished this period, one per `statistics.cycles` entry |
+| `sensor.pururu_<key>_appliance_idle_energy_<period>` | kWh | Energy used while idle this period, one per `statistics.idle_energy` entry |
 
 ### Last cycle
 
@@ -117,9 +126,17 @@ stateDiagram-v2
 - `cycles_total` and `runtime_total` count from when the device was created and survive restarts. They're `total_increasing`, so Home Assistant keeps long-term statistics for them.
 - `runtime_total` is brought up to date **every minute** while running. A restart or reload during a cycle can lose up to a minute of it, and time while Home Assistant is down isn't counted.
 
+### Idle energy
+
+- `idle_energy_total` adds up how much the energy counter grows while `running` is **off**: the appliance's standby. It's `total_increasing`, in **kWh** whatever the counter's unit, and it survives restarts.
+- It splits the counter with the cycles at the same instants `running` turns on and off, so the energy of every cycle plus `idle_energy_total` is what the counter grew. The `on_delay` before a cycle counts as idle; the `off_delay` at its end belongs to the cycle.
+- A counter without a value doesn't stop it: the next reading adds what it grew since the last one. If a cycle starts while the counter has no value, what it grew since the last reading is lost.
+- A counter going down (the plug re-paired) adds nothing, and it counts on from the lower reading.
+- After a restart or reload it counts from the counter's **next** reading. The reading already there may be from before Home Assistant was down, and a cycle that ran meanwhile would count as idle. So what the counter grew while Home Assistant was down isn't counted, and neither is its first step after a reload.
+
 ### Per period
 
-- `runtime_<period>` and `cycles_<period>` measure how much their total grew in the current period. They use Home Assistant's own `utility_meter`, and they live inside the device.
+- `runtime_<period>`, `cycles_<period>` and `idle_energy_<period>` measure how much their total grew in the current period. They use Home Assistant's own `utility_meter`, and they live inside the device.
 - They reset in Home Assistant's time zone: `today` at midnight, `week` on Monday, `month` on the 1st and `year` on 1 January.
 
 ## Ready-made alerts

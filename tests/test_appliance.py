@@ -69,6 +69,8 @@ async def end_cycle(hass: HomeAssistant, freezer: Any) -> None:
 @pytest.mark.parametrize("block", [
     pytest.param({**APPLIANCE, "statistics": {"cycles": ["today", "today"]}}, id="repeated period"),
     pytest.param({**APPLIANCE, "statistics": {"cycles": ["daily"]}}, id="unknown period"),
+    pytest.param({key: value for key, value in APPLIANCE.items() if key != "energy"}
+                 | {"statistics": {"idle_energy": ["today"]}}, id="idle_energy without energy"),
     pytest.param({**APPLIANCE, "running": {"threshold": 4, "on_delay": {"minutes": 1}}},
                  id="no off_delay"),
     pytest.param({"running": APPLIANCE["running"]}, id="no power"),
@@ -505,3 +507,138 @@ async def test_cycle_start_is_kept_across_a_restart(ha: HomeAssistant) -> None:
     await restart(ha, DEVICES, (State(RUNNING, "on"),
                                 {"since": since.isoformat(), "since_energy": 100.0}))
     assert ha.states.get(RUNNING).attributes["cycle_start"] == since
+
+
+# --- idle energy ---------------------------------------------------------------
+
+IDLE = {**APPLIANCE, "statistics": {"idle_energy": ["today", "month"]}}
+
+
+@pytest.fixture
+async def idle(ha: HomeAssistant, freezer: Any) -> HomeAssistant:
+    """The demo washer counting its idle energy, idle, its counter at 100 kWh."""
+    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": IDLE}})
+    await kwh(ha, 100.0)
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    assert running(ha) == "off"
+    return ha
+
+
+def idle_kwh(hass: HomeAssistant) -> float:
+    return float(value(hass, "idle_energy_total"))
+
+
+async def test_idle_energy_adds_what_the_counter_grows_while_idle(idle: HomeAssistant) -> None:
+    assert idle_kwh(idle) == 0
+    await kwh(idle, 100.01)
+    await kwh(idle, 100.025)
+    assert idle_kwh(idle) == pytest.approx(0.025)
+    state = idle.states.get(sensor("idle_energy_total"))
+    assert state.attributes["unit_of_measurement"] == "kWh"
+    assert state.attributes["device_class"] == "energy"
+    assert state.attributes["state_class"] == "total_increasing"
+
+
+async def test_idle_energy_leaves_the_cycles_out(idle: HomeAssistant, freezer: Any) -> None:
+    """The cycle's energy and the idle energy add up to the counter's growth, no overlap."""
+    await kwh(idle, 100.01)
+    await watts(idle, 120)
+    await kwh(idle, 100.02)  # the on_delay: still idle
+    await tick(idle, freezer, 65)
+    assert running(idle) == "on"
+    await kwh(idle, 100.5)
+    await kwh(idle, 100.8)
+    await watts(idle, IDLE_W)
+    await kwh(idle, 100.81)  # the off_delay: still the cycle
+    await tick(idle, freezer, 125)
+    assert running(idle) == "off"
+    await kwh(idle, 100.83)
+    assert idle_kwh(idle) == pytest.approx(0.02 + 0.02)
+    assert float(value(idle, "last_cycle_energy")) == pytest.approx(0.79)
+
+
+async def test_idle_energy_is_in_kwh_whatever_the_counter_unit(idle: HomeAssistant) -> None:
+    await fake(idle, ENERGY, "100000", {"unit_of_measurement": "Wh"})
+    await fake(idle, ENERGY, "100040", {"unit_of_measurement": "Wh"})
+    assert idle_kwh(idle) == pytest.approx(0.04)
+
+
+async def test_idle_energy_carries_over_a_counter_without_value(idle: HomeAssistant) -> None:
+    await kwh(idle, "unavailable")
+    await kwh(idle, 100.03)
+    assert idle_kwh(idle) == pytest.approx(0.03)
+
+
+async def test_idle_energy_starts_from_the_first_reading(ha: HomeAssistant,
+                                                         freezer: Any) -> None:
+    """Idle before the counter has a value: counting starts from its first reading."""
+    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": IDLE}})
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    await kwh(ha, 100.0)
+    await kwh(ha, 100.01)
+    assert idle_kwh(ha) == pytest.approx(0.01)
+
+
+async def test_idle_energy_is_never_negative(idle: HomeAssistant) -> None:
+    """A counter going down (the plug re-paired) adds nothing and counts on from there."""
+    await kwh(idle, 100.01)
+    await kwh(idle, 0.2)
+    await kwh(idle, 0.21)
+    assert idle_kwh(idle) == pytest.approx(0.02)
+
+
+async def test_idle_energy_unknown_when_a_cycle_starts_is_lost(idle: HomeAssistant,
+                                                               freezer: Any) -> None:
+    await kwh(idle, "unavailable")
+    await start_cycle(idle, freezer)
+    await kwh(idle, 100.5)
+    await end_cycle(idle, freezer)
+    await kwh(idle, 100.52)
+    assert idle_kwh(idle) == pytest.approx(0.02)
+
+
+async def test_idle_energy_restores_without_the_time_ha_was_down(ha: HomeAssistant) -> None:
+    """The counter's reading at the start may be from before the restart: count from the next."""
+    await kwh(ha, 100.4)
+    await restart(ha, {KEY: {"name": "Demo washer", "appliance": IDLE}},
+                  (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+                  (State(sensor("idle_energy_total"), "1.5"),
+                   {"native_value": 1.5, "native_unit_of_measurement": "kWh"}))
+    assert idle_kwh(ha) == 1.5
+    await kwh(ha, 100.9)  # the plug's first fresh reading: a cycle may have run meanwhile
+    assert idle_kwh(ha) == 1.5
+    await kwh(ha, 100.91)
+    assert idle_kwh(ha) == pytest.approx(1.51)
+
+
+async def test_idle_energy_after_a_reload_counts_from_the_next_reading(
+        idle: HomeAssistant) -> None:
+    await kwh(idle, 100.01)
+    await reload(idle, {KEY: {"name": "Demo washer", "appliance": IDLE}})
+    await kwh(idle, 100.02)
+    assert idle_kwh(idle) == pytest.approx(0.01)
+    await kwh(idle, 100.03)
+    assert idle_kwh(idle) == pytest.approx(0.02)
+
+
+async def test_idle_energy_meters(idle: HomeAssistant, freezer: Any) -> None:
+    await kwh(idle, 100.02)
+    await tick(idle, freezer, 60)
+    assert float(value(idle, "idle_energy_today")) == pytest.approx(0.02)
+    assert float(value(idle, "idle_energy_month")) == pytest.approx(0.02)
+    assert idle.states.get(sensor("idle_energy_week")) is None
+
+
+async def test_idle_energy_names(idle: HomeAssistant) -> None:
+    assert (idle.states.get(sensor("idle_energy_total")).attributes["friendly_name"]
+            == "Demo washer Idle energy")
+    assert (idle.states.get(sensor("idle_energy_today")).attributes["friendly_name"]
+            == "Demo washer Idle energy today")
+
+
+async def test_without_energy_there_is_no_idle_energy(ha: HomeAssistant) -> None:
+    block = {key: value for key, value in APPLIANCE.items() if key != "energy"}
+    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
+    assert ha.states.get(sensor("idle_energy_total")) is None

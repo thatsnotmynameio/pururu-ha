@@ -1,4 +1,4 @@
-"""Totals over all time of the cycles a source sends: their count, their hours, their energy."""
+"""Totals over all time of the cycles a source sends: their count, their hours, their energy, and between them."""
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -9,7 +9,13 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import Platform, UnitOfEnergy, UnitOfTime
+from homeassistant.const import (
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    Platform,
+    UnitOfEnergy,
+    UnitOfTime,
+)
 from homeassistant.core import Event, EventStateChangedData, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import (
@@ -21,6 +27,7 @@ from homeassistant.util import dt as dt_util
 from ...entity import PururuEntity
 from ...feature import Device, Item
 from . import Cycle, cycle_signal
+from .energy import kwh_now, kwh_used
 
 # How often the hours of a running cycle are brought up to date
 UPDATE_EVERY = timedelta(minutes=1)
@@ -181,3 +188,80 @@ class RuntimeTotal(PururuEntity, RestoreSensor):
         if self._counted_until is not None:
             self._add_until(now)
             self.async_write_ha_state()
+
+
+class IdleEnergyTotal(PururuEntity, RestoreSensor):
+    """kWh the counter grew while `watched` is `state` (between cycles), all time.
+
+    The cycles' energy and this add up to the counter's growth: both read the counter
+    at the instant `watched` leaves or enters `state`. Added (a restart, a reload) or
+    `watched` coming back from no state, it counts from the counter's next reading: the
+    reading already there may be from before HA was down, and a cycle that ran meanwhile
+    would count as idle.
+    """
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 3
+
+    def __init__(
+        self, device: Device, watched: str, state: str, counter: str, *, source: str
+    ) -> None:
+        """Add up what `counter` grows while `watched`, the entity of `source`, is `state`."""
+        self.sources = (source,)
+        self._identify(device, Platform.SENSOR, "idle_energy_total")
+        self._watched = watched
+        self._state = state
+        self._counter = counter
+        self._kwh = 0.0
+        # The counter's last reading while idle, in kWh; None while not idle or unread
+        self._counted_from: float | None = None
+
+    @property
+    @override
+    def native_value(self) -> float:
+        """The kWh, to the mWh, as EnergyTotal."""
+        return round(self._kwh, 6)
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Restore the kWh, then add while idle, from the counter's next reading."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and isinstance(last.native_value, int | float | Decimal):
+            self._kwh = float(last.native_value)
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self._watched, self._watched_changed
+            )
+        )
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self._counter, self._counter_changed
+            )
+        )
+
+    def _add_until(self, now: float | None) -> None:
+        if (used := kwh_used(self._counted_from, now)) is not None:
+            self._kwh += used
+            self.async_write_ha_state()
+
+    @callback
+    def _watched_changed(self, event: Event[EventStateChangedData]) -> None:
+        now = kwh_now(self.hass, self._counter)
+        self._add_until(now)
+        old, new = event.data["old_state"], event.data["new_state"]
+        # A cycle's end reads the counter live; from no state, wait for its next reading
+        ended = old is not None and old.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+        idle = new is not None and new.state == self._state
+        self._counted_from = now if idle and ended else None
+
+    @callback
+    def _counter_changed(self, event: Event[EventStateChangedData]) -> None:
+        if not self.hass.states.is_state(self._watched, self._state):
+            return
+        if (now := kwh_now(self.hass, self._counter)) is None:
+            return  # no reading: count on from the last one
+        self._add_until(now)
+        self._counted_from = now  # after a restart, the first reading only starts it
