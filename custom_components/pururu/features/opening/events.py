@@ -62,6 +62,19 @@ def _text(value: Any) -> str | None:
     return None if value is None else str(value)
 
 
+def _time(state: str) -> datetime | None:
+    """An event entity's state as its event's time; None unless a time with its zone.
+
+    A time without a zone can't be compared with an opening's, and a string
+    shaped as a time can still be out of range.
+    """
+    try:
+        time = dt_util.parse_datetime(state)
+    except ValueError:
+        return None
+    return None if time is None or time.tzinfo is None else time
+
+
 def described_signal(device: Device) -> SignalType[Mapping[str, str | None]]:
     """The fields of the last opening, sent when it starts ({}) and when an event describes it."""
     return SignalType(device.object_id("described"))
@@ -98,12 +111,12 @@ class Source:
         """The event of `meaning` a change of the entity says, or None.
 
         The same state again (attributes only), unknown, unavailable, or
-        anything not a time is no new event.
+        anything not a time with its zone is no new event.
         """
         old, new = event.data["old_state"], event.data["new_state"]
         if new is None or (old is not None and old.state == new.state):
             return None
-        time = dt_util.parse_datetime(new.state)
+        time = _time(new.state)
         event_type = str(new.attributes.get("event_type"))
         if time is None or self.types.get(event_type) != meaning:
             return None

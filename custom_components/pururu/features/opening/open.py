@@ -143,17 +143,18 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
 
     @callback
     def _event(self, source: Source, event: Event[EventStateChangedData]) -> None:
-        """An opening event describes the last opening near its start; else it waits for the next."""
+        """An opening event near the last opening's start is that opening's; else it waits for the next.
+
+        Near an opening already described, it is still that opening's (a second
+        source for it): it describes no other.
+        """
         if not self._following or (fired := source.fired(event, OPENING)) is None:
             return
-        if (
-            self._opened is not None
-            and not self._described
-            and abs(fired.time - self._opened) <= self._match
-        ):
-            self._describe(fired.fields)
-        else:
-            self._pending = fired
+        if self._opened is not None and abs(fired.time - self._opened) <= self._match:
+            if not self._described:
+                self._describe(fired.fields)
+            return
+        self._pending = fired
 
     @callback
     def _describe(self, fields: Mapping[str, str | None]) -> None:

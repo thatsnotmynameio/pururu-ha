@@ -583,3 +583,48 @@ async def test_the_fields_restore(ha: HomeAssistant, kind: str) -> None:
 async def test_the_fields_have_names(enclosure: HomeAssistant, kind: str) -> None:
     state = enclosure.states.get(entity(kind, "last_opened_by"))
     assert state.attributes["friendly_name"] == f"{NAME} Last opened by"
+
+
+async def test_a_second_event_of_a_described_opening_describes_no_other(
+        enclosure: HomeAssistant, kind: str, freezer: Any) -> None:
+    """Two events for one opening (a lock and a keypad): the later one is that opening's too."""
+    await contact(enclosure, "on")
+    await access(enclosure, **ENTRY)
+    await tick(enclosure, freezer, 0.5)
+    await access(enclosure, **EXIT)
+    await tick(enclosure, freezer, 1)
+    await contact(enclosure, "off")
+    await tick(enclosure, freezer, 1)
+    await contact(enclosure, "on")
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+
+
+NOT_AWARE_TIMES = [
+    pytest.param("2026-09-16T10:00:00", id="no time zone"),
+    pytest.param("2026-09-16", id="a date"),
+    pytest.param("2026-13-45 10:00:00", id="out of range"),
+]
+
+
+@pytest.mark.parametrize("at", NOT_AWARE_TIMES)
+async def test_a_time_without_zone_describes_nothing(enclosure: HomeAssistant, kind: str,
+                                                     caplog: pytest.LogCaptureFixture,
+                                                     at: str) -> None:
+    await contact(enclosure, "on")
+    await access(enclosure, at=at, **ENTRY)
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+    assert not [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+
+
+@pytest.mark.parametrize("at", NOT_AWARE_TIMES)
+async def test_a_time_without_zone_leaves_denied_working(enclosure: HomeAssistant, kind: str,
+                                                         freezer: Any,
+                                                         caplog: pytest.LogCaptureFixture,
+                                                         at: str) -> None:
+    await access(enclosure, "access_denied", at=at, actor="Estranho")
+    assert value(enclosure, kind, "last_denied") == "unknown"
+    await tick(enclosure, freezer, 1)
+    await access(enclosure, "access_denied", actor="Outro")
+    assert seconds_from(enclosure, kind, "last_denied") < 1
+    assert enclosure.states.get(entity(kind, "last_denied")).attributes["who"] == "Outro"
+    assert not [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]

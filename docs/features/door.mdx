@@ -72,9 +72,9 @@ This creates `binary_sensor.pururu_porta_clausura_frente_door_open`, shown as **
 
 An `opening` event describes the opening whose start is at most `match` from the event's time, whichever comes first. Access controllers usually report the event a second or so after the door opens.
 
-- The **first** event near an opening wins. Later ones don't change it.
+- The **first** event near an opening wins. Later ones near it don't change it, and don't describe another opening either: two sources for one door (a lock and a keypad) both describe the same opening.
 - An opening with **no** event near it has `unknown` fields. They never keep an earlier opening's values: leaving by the handle, from inside, doesn't show the last entry's PIN again.
-- An event's time is the event entity's state (the time of its last event), not the moment pururu sees it. The same state again, `unavailable`, `unknown`, or a state that isn't a time is not a new event. So a restart, which brings the event entity back with its last, old, time, describes nothing.
+- An event's time is the event entity's state (the time of its last event), not the moment pururu sees it. The same state again, `unavailable`, `unknown`, or a state that isn't a time with its time zone is not a new event. So a restart, which brings the event entity back with its last, old, time, describes nothing.
 - A field's value is the attribute as text, as the integration writes it (`PIN_CODE`, `entry`): pururu doesn't translate it. An attribute the event doesn't have leaves its field `unknown`.
 
 ## Entities
