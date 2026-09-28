@@ -78,13 +78,14 @@ It is also the alert's attribute `lights` (the group's name), next to `priority`
 
 Checked with the device's other checks (`CONFIG_SCHEMA`), each a `vol.Invalid` naming where:
 
-- `lights: true` without a `default` group: `alerts: long_cycle: there is no default group in config.alerts.lights.groups`.
-- `lights: <group>` naming no group: `alerts: long_cycle: outside is not a group of config.alerts.lights.groups`.
-- In a group, a device that isn't under `devices:`, or a key that isn't in that device's `lights:`: `config.alerts.lights.groups: outside: pool has no light led`.
+- `lights: true` without a `default` group: `device laundry_washer: alerts: long_cycle: there is no default group in config.alerts.lights.groups` (a ready-made alert: `device laundry_washer: appliance: alerts: offline: …`).
+- `lights: <group>` naming no group: `device laundry_washer: alerts: long_cycle: outside is not a group of config.alerts.lights.groups`.
+- In a group, a device that isn't under `devices:`: `config.alerts.lights.groups: outside: device pool is not in devices`; a key that isn't in that device's `lights:`: `config.alerts.lights.groups: outside: device pool has no light led`.
+- A `color_name` HA doesn't know: `reed is not a colour name Home Assistant knows` (every call would fail).
 
 ### Resolved at setup
 
-- A light of a group that isn't created (its ID is taken), or that the user disabled, is left out of the group; the log says so for one not created. The rest of the group goes on.
+- A light of a group that isn't created (its ID is taken), or that the user disabled, is left out of the group; one not created is a warning: `light.pururu_pool_light_led is not created: the alert lights group outside goes without it`. The rest of the group goes on.
 - An alert that isn't created (what it watches isn't) drives nothing.
 - Lights and alerts are followed by their current entity IDs (`Device.current_entity_id`); a rename reloads the entry, as for any pururu entity.
 
@@ -115,8 +116,10 @@ Alerts that don't use a light never hold it: with one of its alerts on and an al
 
 The manager follows every state change of each borrowed light:
 
-- **The change carries a context of the manager's:** its own call caused it; ignored.
+- **The change carries a context of the manager's:** its own call caused it; ignored. The manager keeps its last few contexts per light, so a late report of an earlier call is still its own.
+- **The light has no reading now** (`unavailable`, `unknown`): nobody took it; ignored.
 - **Else, the light has a level:** `turn_on` with the current priority's parameters.
+- **Else, the light is in `resolved` and comes back from no reading:** `turn_on` with `resolved`'s parameters again, its `for` running on.
 - **Else, the light is in `resolved`:** someone took it back on purpose; `for` cancelled, free, `pururu_alert_lights_released`, no `turn_off`.
 - **The light is free:** ignored, whoever changed it.
 
@@ -139,7 +142,7 @@ The manager sets them and writes the light's state. `alert` is restored (below).
 
 - `light.turn_on` / `light.turn_off` on the pururu light, `blocking=True`, with the manager's new `Context`, so the logbook names pururu's alert lights.
 - The pururu `Light` drops an `effect` its `effect_list` doesn't have before forwarding (HA's service only drops `effect` for a light without the effect feature).
-- A call that fails (`HomeAssistantError`: the light unavailable, Zigbee2MQTT refusing) is a warning with the light and the error; the manager goes on, and the next `repeat` or change tries again. Never raised, never a failed setup.
+- A call that fails (`HomeAssistantError`: the light unavailable, Zigbee2MQTT refusing) is a warning, `The alert lights couldn't call light.turn_on on light.pururu_pool_light_led: <error>`; the manager goes on, and the next `repeat` or change tries again. Never raised, never a failed setup.
 
 ## Start, reload and removal
 
