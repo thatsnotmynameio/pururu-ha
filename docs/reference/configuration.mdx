@@ -10,6 +10,7 @@ pururu:
       lights:
         groups:
           default: {sala: [teto]}
+  events: [state_changed, reading]   # see events
   floors:
     terreo:
       name: Térreo
@@ -88,7 +89,7 @@ alert2:                          # alerts with notify: see alerts
 
 ## General rules
 
-- `pururu:` has four optional keys: `config`, `floors`, `areas` and `devices`. Any other key is an error.
+- `pururu:` has five optional keys: `config`, `floors`, `areas`, `devices` and `events`. Any other key is an error.
 - Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a program, is a **slug**: lowercase letters, digits and `_`.
 - A feature's own `alerts` enables its ready-made alerts, one key each: see the [appliance's](/features/appliance#ready-made-alerts). The device's `alerts` is for alerts you write.
 - An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_pump`). See [alerts](/features/alerts#settings).
@@ -157,6 +158,10 @@ A map of **area ID → area**. See [Floors and areas](/concepts/floors-and-areas
 <Property name="aliases" type="list of strings" optional>
   Other names for the area. A single string is allowed too.
 </Property>
+
+## events
+
+A list of the classes of [events](/concepts/events) to fire, each once: `state_changed`, `reading`. Leave it out and pururu fires none.
 
 ## devices
 

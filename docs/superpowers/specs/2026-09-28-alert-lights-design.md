@@ -1,6 +1,6 @@
 # Alert lights — design
 
-Version: 0.1.19. Brings the alert lights of ha-config's `alertmanager` package (`pkg_alertmanager_lights`, the colour-lights channel and `light.pkg_home_lights_alert`) into pururu, driven by pururu's own alerts.
+Version: 0.1.20 (planned as 0.1.19; the events took it first). Brings the alert lights of ha-config's `alertmanager` package (`pkg_alertmanager_lights`, the colour-lights channel and `light.pkg_home_lights_alert`) into pururu, driven by pururu's own alerts.
 
 ## Goal
 

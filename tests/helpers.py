@@ -33,9 +33,12 @@ def module(name: str) -> ModuleType:
 
 
 def _config(devices: dict[str, Any], floors: dict[str, Any] | None,
-            areas: dict[str, Any] | None, config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """A configuration.yaml with this `pururu:` block; `config` is its config: block."""
+            areas: dict[str, Any] | None, events: Any = None,
+            config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A configuration.yaml with this `pururu:` block (`events` and `config` left out when None)."""
     block: dict[str, Any] = {"devices": devices, "floors": floors or {}, "areas": areas or {}}
+    if events is not None:
+        block["events"] = events
     if config is not None:
         block["config"] = config
     return {DOMAIN: block}
@@ -60,9 +63,11 @@ def generated_scripts(hass: HomeAssistant) -> dict[str, Any]:
 async def setup(hass: HomeAssistant, devices: dict[str, Any], *,
                 floors: dict[str, Any] | None = None,
                 areas: dict[str, Any] | None = None,
+                events: Any = None,
                 config: dict[str, Any] | None = None) -> bool:
     """Set pururu up from `pururu:`; False when HA refuses the configuration."""
-    ok = await async_setup_component(hass, DOMAIN, _config(devices, floors, areas, config))
+    ok = await async_setup_component(hass, DOMAIN,
+                                     _config(devices, floors, areas, events, config))
     await hass.async_block_till_done()
     return ok
 
@@ -70,9 +75,10 @@ async def setup(hass: HomeAssistant, devices: dict[str, Any], *,
 async def reload(hass: HomeAssistant, devices: dict[str, Any], *,
                  floors: dict[str, Any] | None = None,
                  areas: dict[str, Any] | None = None,
+                 events: Any = None,
                  config: dict[str, Any] | None = None) -> None:
     """pururu.reload, with a configuration.yaml holding this `pururu:` block."""
-    yaml_config = _config(devices, floors, areas, config)
+    yaml_config = _config(devices, floors, areas, events, config)
     # configuration.yaml includes the generated files: automations and scripts reload from them
     with patch("homeassistant.config.load_yaml_config_file",
                side_effect=lambda *_args, **_kwargs: {**yaml_config,
