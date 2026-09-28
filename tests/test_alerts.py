@@ -1,16 +1,10 @@
 """Feature `alerts`: problems on a made-up washer's own entities (its appliance and a switch)."""
 
-import ast
-from collections.abc import Iterable, Iterator
-from pathlib import Path
-import re
 from typing import Any
 
 from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.template import Template
 import pytest
-import yaml
 
 from helpers import capture, fake, held, reload, restart, settle, setup, tick
 
@@ -158,7 +152,7 @@ async def test_notify_texts_are_attributes(ha: HomeAssistant) -> None:
 
 
 async def test_without_notify_there_are_no_texts(ha: HomeAssistant) -> None:
-    """Alert2's generator picks the alerts that have a message attribute."""
+    """Only an alert with notify carries what to tell."""
     assert await setup(ha, devices(overload=OVERLOAD))
     attributes = ha.states.get(alert("overload")).attributes
     assert "message" not in attributes
@@ -212,69 +206,6 @@ async def test_the_alert2_error_is_logged_once_per_setup(
     caplog.clear()
     await reload(ha, config)
     assert notify_errors(caplog) == [f"{alert('overload')} {NOTIFY_ERROR}"]
-
-
-# --- the Alert2 generator of the docs ---------------------------------------------------
-
-ALERTS_PAGE = Path(__file__).resolve().parents[1] / "docs/features/alerts.mdx"
-
-
-def documented_generator() -> dict[str, Any]:
-    """The Alert2 generator on the alerts page, as a reader would copy it."""
-    block = re.search(r"```yaml\n(alert2:\n.*?)```", ALERTS_PAGE.read_text(), re.DOTALL)
-    assert block is not None, "no Alert2 block on the alerts page"
-    generator: dict[str, Any] = yaml.safe_load(block[1])["alert2"]["alerts"][0]
-    return generator
-
-
-def entity_regex(states: Iterable[State], find: str) -> Iterator[dict[str, Any]]:
-    """Alert2's entity_regex filter (config.py), as it runs in its generators."""
-    regex = re.compile(find)
-    for state in states:
-        if match := regex.match(state.entity_id):
-            yield {"genEntityId": state.entity_id, "genGroups": list(match.groups())}
-
-
-def generated(hass: HomeAssistant, generator: str) -> list[dict[str, Any]]:
-    template = Template(generator, hass)
-    template._env.filters["entity_regex"] = entity_regex  # Alert2 adds it to its own
-    return list(ast.literal_eval(template.async_render(parse_result=False)))
-
-
-def rendered(hass: HomeAssistant, field: str, variables: dict[str, Any]) -> str:
-    return str(Template(field, hass).async_render(variables, parse_result=False))
-
-
-async def test_the_documented_generator_picks_the_alerts_with_notify(ha: HomeAssistant) -> None:
-    await fake(ha, REAL_PUMP, "on")
-    assert await setup(ha, devices(pump_on={**PUMP_ON, "priority": "high", "notify": NOTIFY},
-                                   overload=OVERLOAD))
-    generator = documented_generator()
-    [element] = generated(ha, generator["generator"])
-    assert element["genEntityId"] == alert("pump_on")
-    assert generator["domain"] == "pururu"
-    assert rendered(ha, generator["name"], element) == "demo_washer_alert_pump_on"
-    assert rendered(ha, generator["friendly_name"], element) == "Demo washer Pump on"
-    assert rendered(ha, generator["priority"], element) == "high"
-    assert rendered(ha, generator["message"], element) == "Overload!"
-    assert rendered(ha, generator["done_message"], element) == "Back to normal."
-    assert rendered(ha, generator["condition_on"], element) == "True"
-    assert rendered(ha, generator["condition_off"], element) == "False"
-    await fake(ha, REAL_PUMP, "off")
-    assert rendered(ha, generator["condition_on"], element) == "False"
-    assert rendered(ha, generator["condition_off"], element) == "True"
-
-
-async def test_the_documented_generator_leaves_an_unavailable_alert_as_it_is(
-        ha: HomeAssistant) -> None:
-    """During a pururu reload the alert is briefly unavailable: neither on nor off."""
-    await fake(ha, REAL_PUMP, "on")
-    assert await setup(ha, devices(pump_on={**PUMP_ON, "notify": NOTIFY}))
-    generator = documented_generator()
-    [element] = generated(ha, generator["generator"])
-    ha.states.async_set(alert("pump_on"), "unavailable")
-    assert rendered(ha, generator["condition_on"], element) == "False"
-    assert rendered(ha, generator["condition_off"], element) == "False"
 
 
 # --- is ------------------------------------------------------------------------------

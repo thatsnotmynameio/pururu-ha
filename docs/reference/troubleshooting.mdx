@@ -73,7 +73,29 @@ binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn'
 
 An alert with `notify` is delivered by [Alert2](/features/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told.
 
-**Fix:** install Alert2 and add pururu's generator, or remove `notify` from the alert.
+**Fix:** install Alert2 and add [the include](/features/alerts#getting-notified) to its `alert2:` block, or remove `notify` from the alert.
+
+### Alert2 doesn't run pururu's alerts
+
+**Settings → Repairs** shows it, and the log says:
+
+```
+Alert2 doesn't run pururu's alerts: add "alerts: !include_dir_merge_list pururu/alert2" to the alert2: block of configuration.yaml
+```
+
+**Fix:** add that line as the `alerts` of your `alert2:` block, then reload Alert2 in **Developer tools → YAML → Alert2**. See [Getting notified](/features/alerts#getting-notified).
+
+### `Duplicate declaration of alert for domain=pururu …`
+
+Alert2 reports it when its old pururu `generator` is still in its `alerts` next to the include. **Fix:** remove the generator. See [Coming from the generator](/features/alerts#coming-from-the-generator).
+
+### `Alert2 is not reloaded: …`
+
+pururu couldn't reload Alert2. The alerts keep working as binary sensors; Alert2 keeps what it had. pururu tries again at its next reload.
+
+### `The Alert2 alerts are not written to pururu/alert2/alerts.yaml: …`
+
+pururu couldn't write the file, usually because of permissions on the configuration folder. Alert2 keeps the last written alerts.
 
 ### `… is a pururu switch (or light): name the real one; not creating …`
 
