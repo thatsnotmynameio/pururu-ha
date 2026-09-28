@@ -93,7 +93,7 @@ The event is fired with the new state's `context`, so the logbook and traces lin
 For each enabled class, a state change of an entity **the entry created** (in `entry.runtime_data`; one not created, its ID held by another integration, isn't pururu's), classed by whether its new state has a `state_class` attribute (a capability attribute: present even while unavailable). Not fired, as no real change:
 
 - the entity appearing or going (old or new state `None`), as at every reload;
-- the old state being the restored placeholder (`restored: true`) that HA shows at start-up until pururu loads: without this, every restart would say `last_cycle_end` changed, with no cycle;
+- the old or the new state being HA's restored placeholder (`unavailable`, `restored: true`): HA writes one when an entity is unloaded (a reload) and shows it at start-up until the entity loads. Without this, every reload would say each entity went `unavailable` and back, and `last_cycle_end` changed with no cycle;
 - a change of attributes alone (same state string).
 
 `unavailable` and `unknown` are fired: they are real states.
