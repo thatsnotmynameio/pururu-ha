@@ -69,6 +69,7 @@ from .entity import PururuEntity
 from .feature import ALERTS_KEY, Device, Feature, preset_keys, qualified
 from .features import FEATURES, presets
 from .features.alerts import ProblemAlert
+from .features.lights import Borrowable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -483,7 +484,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     Floors and areas come first: devices will be placed in them. The reactions'
     automations, the programs' scripts and Alert2's alerts come after the
     entities: they watch and act on the ones created. The programs' scripts come
-    before the reactions' automations: a reaction starts one. The dashboard comes last:
+    before the reactions' automations: a reaction starts one. The alert lights start
+    after them: their alerts and lights are created. The dashboard comes last:
     it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
@@ -521,6 +523,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     )
     watched = _watched_items(devices)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
+    lights_settings = alert_lights.settings(configured)
+    alert_lights.async_setup(
+        hass,
+        entry,
+        lights_settings,
+        alert_lights.light_ids(lights_settings, devices),
+        [
+            entity
+            for entity in built[Platform.BINARY_SENSOR]
+            if isinstance(entity, ProblemAlert)
+        ],
+        [entity for entity in built[Platform.LIGHT] if isinstance(entity, Borrowable)],
+    )
     dashboard.async_setup(hass, entry)
 
     # Whether a reload is already scheduled: a burst of disables reloads once

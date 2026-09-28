@@ -6,7 +6,7 @@ from typing import Any
 from homeassistant.core import Event, HomeAssistant
 import pytest
 
-from helpers import fake, module, setup
+from helpers import capture, fake, module, setup, tick
 
 HOUSE = "casa"
 REAL_LED = "light.led_piscina"
@@ -241,3 +241,177 @@ async def test_a_ready_made_alerts_group_is_an_attribute(house: HomeAssistant) -
     assert await setup(house, {**devices(), "lavadora": washer}, config=CONFIG)
     offline = "binary_sensor.pururu_lavadora_appliance_alert_offline"
     assert attributes(house, offline)["lights"] == "default"
+
+
+# --- lending the lights -------------------------------------------------------------------
+
+
+async def test_an_alert_with_lights_borrows_its_group(house: HomeAssistant) -> None:
+    events = capture(house, "call_service")
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    assert calls(events, LED) == []
+    await turn(house, "gate", "on")
+    assert calls(events, LED) == [("turn_on", ORANGE)]
+    assert attributes(house, LED)["alert"] == "medium"
+    assert attributes(house, LED)["alerts"] == [alert("gate")]
+    assert calls(events, RELAY) == []
+
+
+async def test_an_alert_without_lights_borrows_nothing(house: HomeAssistant) -> None:
+    events = capture(house, "call_service")
+    assert await setup(house, devices(gate=raised("gate", "high", None)), config=CONFIG)
+    await turn(house, "gate", "on")
+    assert calls(events, LED) == []
+    assert "alert" not in attributes(house, LED)
+
+
+async def test_the_priority_is_sent_again_every_15_seconds(
+        house: HomeAssistant, freezer: Any) -> None:
+    """breathe is a one-shot effect."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    await tick(house, freezer, 14)
+    assert calls(events, LED) == []
+    await tick(house, freezer, 1)
+    assert calls(events, LED) == [("turn_on", ORANGE)]
+    await tick(house, freezer, 15)
+    assert calls(events, LED) == [("turn_on", ORANGE)] * 2
+
+
+async def test_the_highest_priority_wins_and_gives_way(house: HomeAssistant) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium"),
+                                      smoke=raised("smoke", "high")), config=CONFIG)
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    await turn(house, "smoke", "on")
+    assert calls(events, LED) == [("turn_on", RED)]
+    assert attributes(house, LED)["alerts"] == [alert("gate"), alert("smoke")]
+    await turn(house, "smoke", "off")
+    assert calls(events, LED) == [("turn_on", RED), ("turn_on", ORANGE)]
+    assert attributes(house, LED)["alert"] == "medium"
+    assert attributes(house, LED)["alerts"] == [alert("gate")]
+
+
+async def test_low_is_blue(house: HomeAssistant) -> None:
+    events = capture(house, "call_service")
+    assert await setup(house, devices(leak=raised("leak", "low")), config=CONFIG)
+    await turn(house, "leak", "on")
+    assert calls(events, LED) == [("turn_on", BLUE)]
+
+
+async def test_another_alert_of_the_same_priority_only_joins(house: HomeAssistant) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium"),
+                                      mail=raised("mail", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    await turn(house, "mail", "on")
+    assert calls(events, LED) == []
+    assert attributes(house, LED)["alerts"] == [alert("gate"), alert("mail")]
+    await turn(house, "gate", "off")
+    assert calls(events, LED) == []
+    assert attributes(house, LED)["alerts"] == [alert("mail")]
+
+
+async def test_the_last_alert_ending_shows_resolved_then_hands_the_light_back(
+        house: HomeAssistant, freezer: Any) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    released = capture(house, "pururu_alert_lights_released")
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    await turn(house, "gate", "off")
+    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert attributes(house, LED)["alert"] == "resolved"
+    assert attributes(house, LED)["alerts"] == []
+    await tick(house, freezer, 119)
+    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert released == []
+    await tick(house, freezer, 1)
+    assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LED}]
+    assert "alert" not in attributes(house, LED)
+
+
+async def test_an_alert_during_resolved_takes_the_light_again(
+        house: HomeAssistant, freezer: Any) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    released = capture(house, "pururu_alert_lights_released")
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    await tick(house, freezer, 60)
+    events = capture(house, "call_service")
+    await turn(house, "gate", "on")
+    assert calls(events, LED) == [("turn_on", ORANGE)]
+    await tick(house, freezer, 61)
+    assert "turn_off" not in [service for service, _ in calls(events, LED)]
+    assert released == []
+    assert attributes(house, LED)["alert"] == "medium"
+
+
+async def test_an_alert_of_another_group_does_not_hold_the_light(
+        house: HomeAssistant, freezer: Any) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium"),
+                                      mail=raised("mail", "low", "porch")), config=CONFIG)
+    released = capture(house, "pururu_alert_lights_released")
+    await turn(house, "gate", "on")
+    await turn(house, "mail", "on")
+    events = capture(house, "call_service")
+    await turn(house, "gate", "off")
+    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert calls(events, RELAY) == []
+    await tick(house, freezer, 120)
+    assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LED}]
+    assert attributes(house, RELAY)["alert"] == "low"
+
+
+async def test_a_light_in_two_groups_shows_the_highest_of_both(house: HomeAssistant) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium"),
+                                      smoke=raised("smoke", "high", "both")), config=CONFIG)
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    await turn(house, "smoke", "on")
+    assert calls(events, LED) == [("turn_on", RED)]
+    assert calls(events, RELAY) == [("turn_on", RED)]
+    await turn(house, "smoke", "off")
+    assert calls(events, LED) == [("turn_on", RED), ("turn_on", ORANGE)]
+    assert calls(events, RELAY) == [("turn_on", RED), ("turn_on", GREEN)]
+    await turn(house, "gate", "off")
+    assert calls(events, LED)[-1] == ("turn_on", GREEN)
+
+
+async def test_a_priority_without_repeat_is_sent_once(house: HomeAssistant, freezer: Any) -> None:
+    config = {"alerts": {"lights": {"groups": GROUPS,
+                                    "high": {"turn_on": {"color_name": "purple"}}}}}
+    assert await setup(house, devices(smoke=raised("smoke", "high")), config=config)
+    events = capture(house, "call_service")
+    await turn(house, "smoke", "on")
+    await tick(house, freezer, 60)
+    assert calls(events, LED) == [("turn_on", {"color_name": "purple"})]
+
+
+async def test_a_relay_only_turns_on_and_off(house: HomeAssistant, freezer: Any) -> None:
+    """HA drops the colour, brightness and effect a relay can't take."""
+    assert await setup(house, devices(mail=raised("mail", "low", "porch")), config=CONFIG)
+    events = capture(house, "call_service")
+    await turn(house, "mail", "on")
+    await turn(house, "mail", "off")
+    await tick(house, freezer, 120)
+    assert calls(events, RELAY) == [("turn_on", BLUE), ("turn_on", GREEN), ("turn_off", {})]
+    relay = [(event.data["service"],
+              {k: v for k, v in event.data["service_data"].items() if k != "entity_id"})
+             for event in events
+             if event.data["domain"] == "switch"
+             and event.data["service_data"].get("entity_id") == [REAL_RELAY]]
+    assert relay == [("turn_on", {}), ("turn_on", {}), ("turn_off", {})]
+
+
+async def test_a_ready_made_alert_borrows_its_group(house: HomeAssistant) -> None:
+    """offline (medium) is on at once: its plug has no reading."""
+    washer = {"name": "Lavadora", "appliance": {
+        **APPLIANCE, "alerts": {"offline": {"for": {"seconds": 0}, "lights": True}}}}
+    events = capture(house, "call_service")
+    assert await setup(house, {**devices(), "lavadora": washer}, config=CONFIG)
+    assert calls(events, LED) == [("turn_on", ORANGE)]
+    assert attributes(house, LED)["alerts"] == [
+        "binary_sensor.pururu_lavadora_appliance_alert_offline"]
