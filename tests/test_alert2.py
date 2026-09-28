@@ -8,6 +8,7 @@ from unittest.mock import patch
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers.template import Template
 from homeassistant.util.file import WriteError
 from homeassistant.util.yaml import load_yaml_dict
 import pytest
@@ -81,6 +82,22 @@ async def test_text_with_a_brace_is_not_a_template(ha: HomeAssistant) -> None:
     assert entry["message"] == "{% raw %}{{ 1 + 1 }} W{% endraw %}"
     assert entry["friendly_name"] == "{% raw %}Demo washer {x}{% endraw %}"
     assert entry["done_message"] == "ok"
+
+
+@pytest.mark.parametrize("text", [
+    pytest.param("{{ 1 + 1 }} W", id="expression"),
+    pytest.param("a {% endraw %} b", id="endraw"),
+    pytest.param("{%- endraw -%}{% if x %}", id="endraw trimmed and a tag"),
+    pytest.param("{# not a comment #}", id="comment"),
+])
+async def test_alert2_renders_the_text_as_written(ha: HomeAssistant, text: str) -> None:
+    """Even text that would end a raw block renders to itself."""
+    notify = {"message": text, "done_message": text}
+    assert await setup(ha, devices(overload={**OVERLOAD, "name": text, "notify": notify}))
+    [entry] = written(ha)
+    for field, expected in (("message", text), ("done_message", text),
+                            ("friendly_name", f"Demo washer {text}")):
+        assert Template(entry[field], ha).async_render(parse_result=False) == expected, field
 
 
 async def test_the_conditions_follow_a_renamed_alert(ha: HomeAssistant) -> None:
@@ -235,7 +252,8 @@ async def test_a_failed_reload_is_logged_raises_no_issue_and_is_retried(
     alert2 = FakeAlert2(ha)
     alert2.fails = HomeAssistantError("boom")
     assert await setup(ha, devices(**WITH_NOTIFY))
-    assert "Alert2 is not reloaded: boom" in caplog.text
+    [logged] = [r for r in caplog.records if r.getMessage() == "Alert2 is not reloaded: boom"]
+    assert logged.exc_info is None, "an expected failure: the message says it all"
     assert issue(ha) is None
     alert2.fails = None
     await reload(ha, devices(**WITH_NOTIFY))
@@ -287,11 +305,30 @@ async def test_any_error_of_alert2s_reload_is_logged(
     assert issue(ha) is not None
     alert2.fails = NameError("repot")
     await reload(ha, devices(other={**OVERLOAD, "notify": NOTIFY}))
-    assert "Alert2 is not reloaded: repot" in caplog.text
+    [logged] = [r for r in caplog.records if r.getMessage() == "Alert2 is not reloaded"]
+    assert logged.exc_info is not None, "a bug of Alert2's: the traceback helps report it"
+    assert isinstance(logged.exc_info[1], NameError)
     entry = ha.config_entries.async_entries("pururu")[0]
     await ha.config_entries.async_remove(entry.entry_id)
     await ha.async_block_till_done()
     assert issue(ha) is None
+
+
+async def test_a_failed_reload_at_removal_is_retried_when_pururu_comes_back(
+        ha: HomeAssistant, alert2: FakeAlert2) -> None:
+    """The empty file is then unchanged: only the pending reload drops the old alerts."""
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    alert2.fails = HomeAssistantError("boom")
+    entry = ha.config_entries.async_entries("pururu")[0]
+    await ha.config_entries.async_remove(entry.entry_id)
+    await ha.async_block_till_done()
+    assert written(ha) == []
+    assert ha.states.get(ALERT2) is not None
+    alert2.fails = None
+    await reload(ha, devices(overload=OVERLOAD))
+    assert written(ha) == []
+    assert alert2.reloads == 2
+    assert ha.states.get(ALERT2) is None
 
 
 # --- the docs ----------------------------------------------------------------------------

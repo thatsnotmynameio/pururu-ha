@@ -12,6 +12,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_RESTORED, SERVICE_RELOAD
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util.hass_dict import HassKey
@@ -37,8 +38,16 @@ DATA_PENDING: HassKey[bool] = HassKey(f"{DOMAIN}_alert2_pending")
 
 
 def _text(text: str) -> str:
-    """`text` as Alert2 shows it: every template delimiter starts with {."""
-    return f"{{% raw %}}{text}{{% endraw %}}" if "{" in text else text
+    """`text` as Alert2 shows it: every template delimiter starts with {.
+
+    In a raw block, as Alert2's own jinja2Escape does: each {% in the text
+    (an {% endraw %} would end the block) leaves it, is written as a string,
+    and opens it again.
+    """
+    if "{" not in text:
+        return text
+    escaped = text.replace("{%", '{% endraw %}{{ "{%" }}{% raw %}')
+    return f"{{% raw %}}{escaped}{{% endraw %}}"
 
 
 def alert(
@@ -94,12 +103,16 @@ def _missing(hass: HomeAssistant, names: Iterable[str]) -> list[str]:
 async def _async_reload(hass: HomeAssistant) -> bool:
     """Reload Alert2; whether it did. A failure is logged, never raised.
 
-    Alert2 is a third party whose reload handler may raise anything.
+    Alert2 is a third party whose reload handler may raise anything: an error
+    it doesn't expect is its bug, logged with the traceback that reports it.
     """
     try:
         await hass.services.async_call(ALERT2, SERVICE_RELOAD, blocking=True)
-    except Exception as err:  # noqa: BLE001 - whatever Alert2 raises, the setup goes on
+    except HomeAssistantError as err:
         _LOGGER.error("Alert2 is not reloaded: %s", err)
+        return False
+    except Exception:
+        _LOGGER.exception("Alert2 is not reloaded")
         return False
     hass.data.pop(DATA_PENDING, None)
     return True
@@ -144,6 +157,12 @@ async def _finish(hass: HomeAssistant, names: list[str]) -> None:
     _check_included(hass, names)
 
 
+@callback
+def _pending(hass: HomeAssistant) -> None:
+    """Alert2 must reload the file just written: until it does, the next setup reloads it."""
+    hass.data[DATA_PENDING] = True
+
+
 async def async_sync(
     hass: HomeAssistant, entry: ConfigEntry, alerts: list[dict[str, Any]]
 ) -> None:
@@ -158,7 +177,7 @@ async def async_sync(
     if written is None:
         return
     if written:
-        hass.data[DATA_PENDING] = True
+        _pending(hass)
     names = [each["name"] for each in alerts]
 
     @callback
@@ -171,11 +190,14 @@ async def async_sync(
 
 
 async def async_remove(hass: HomeAssistant) -> None:
-    """Write no alerts: an empty file, still valid for the include; Alert2 drops them."""
+    """Write no alerts: an empty file, still valid for the include; Alert2 drops them.
+
+    A reload that fails stays pending: pururu set up again reloads Alert2,
+    though the empty file is then unchanged.
+    """
     ir.async_delete_issue(hass, DOMAIN, ISSUE)
-    if (
-        await files.async_write(hass, FILE, WHAT, [])
-        and hass.is_running
-        and ALERT2 in hass.config.components
-    ):
+    if not await files.async_write(hass, FILE, WHAT, []):
+        return
+    _pending(hass)
+    if hass.is_running and ALERT2 in hass.config.components:
         await _async_reload(hass)

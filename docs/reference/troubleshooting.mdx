@@ -89,9 +89,12 @@ Alert2 doesn't run pururu's alerts: add "alerts: !include_dir_merge_list pururu/
 
 Alert2 reports it when its old pururu `generator` is still in its `alerts` next to the include. **Fix:** remove the generator. See [Coming from the generator](/features/alerts#coming-from-the-generator).
 
-### `Alert2 is not reloaded: …`
+### `Alert2 is not reloaded…`
 
-pururu couldn't reload Alert2. The alerts keep working as binary sensors; Alert2 keeps what it had. pururu tries again at its next reload.
+pururu couldn't reload Alert2. The alerts keep working as binary sensors; Alert2 keeps what it had. pururu tries again the next time it's set up (its reload, or a restart).
+
+- **With a reason** (`Alert2 is not reloaded: …`): Alert2 refused, or isn't there anymore. The reason says why.
+- **With a traceback** (`Alert2 is not reloaded` alone): Alert2 failed on its own. Reload Alert2 in **Developer tools → YAML → Alert2** to see whether it happens again, and report the traceback to [Alert2](https://github.com/redstone99/hass-alert2/issues).
 
 ### `The Alert2 alerts are not written to pururu/alert2/alerts.yaml: …`
 
