@@ -636,13 +636,40 @@ async def test_a_reload_mid_run_counts_it_once_from_its_start(pool: HomeAssistan
 
 
 async def test_a_held_program_keeps_its_statistics(pool: HomeAssistant, freezer: Any) -> None:
+    """Held, its script leaves the file, not its statistics; back, it counts on from them."""
     await start(pool)
     await tick(pool, freezer, TWO_HOURS)
     await pool.async_block_till_done()
     await disable(pool, PUMP)
     await tick(pool, freezer, 31)
     await pool.async_block_till_done()
+    assert generated_scripts(pool) == {}
+    assert er.async_get(pool).async_get(STAT + "cycles_total") is not None
     assert value(pool, "cycles_total") == "1"
+    await disable(pool, PUMP, disabled=False)
+    await tick(pool, freezer, 31)
+    await pool.async_block_till_done()
+    assert "pururu_pool_program_clean" in generated_scripts(pool)
+    await start(pool)
+    await tick(pool, freezer, TWO_HOURS)
+    await pool.async_block_till_done()
+    assert value(pool, "cycles_total") == "2"
+
+
+async def test_a_program_or_reaction_keyed_alerts_is_no_ready_made_alert(
+        scripts: HomeAssistant) -> None:
+    """`alerts` is a slug like any other: not the ready-made alerts a feature's block enables."""
+    config = devices(alerts=CLEANING)
+    config[KEY]["reactions"] = {"alerts": {"name": "A", "at": "22:00"}}
+    assert await setup(scripts, config)
+    assert value_of(scripts, "sensor.pururu_pool_program_alerts_cycles_total") == "0"
+    assert value_of(scripts, "sensor.pururu_pool_reaction_alerts_triggered_total") == "0"
+
+
+def value_of(hass: HomeAssistant, entity_id: str) -> str:
+    state = hass.states.get(entity_id)
+    assert state is not None, f"no {entity_id}"
+    return state.state
 
 
 async def test_a_removed_program_takes_its_statistics(pool: HomeAssistant) -> None:

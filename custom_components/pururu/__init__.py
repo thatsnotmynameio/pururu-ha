@@ -569,10 +569,14 @@ def _build(
             for reference in feature.refers(config[name]):
                 owner, entity_key, platform = referable[reference]
                 inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
-        for entity in (
-            *feature.build(hass, device, config[name], inputs),
-            *presets.build(hass, device, feature, config[name], texts),
-        ):
+        # Only a feature offering ready-made alerts has them: a program or a
+        # reaction may be keyed `alerts`
+        ready_made = (
+            presets.build(hass, device, feature, config[name], texts)
+            if feature.alerts
+            else []
+        )
+        for entity in (*feature.build(hass, device, config[name], inputs), *ready_made):
             follows = set()
             for reference in entity.follows:
                 owner, entity_key, platform = referable[reference]

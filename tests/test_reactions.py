@@ -634,3 +634,16 @@ async def test_the_count_follows_its_automation_renamed(ha: HomeAssistant, both:
     await fake(ha, DOOR, "on")
     await settle()
     assert count(ha) == "1"
+
+
+async def test_a_run_its_reaction_started_is_counted_at_its_end(
+        ha: HomeAssistant, freezer: Any, both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    await fake(ha, DOOR, "on")
+    await settle()
+    await tick(ha, freezer, 2 * 60 * 60)
+    await ha.async_block_till_done()
+    assert count(ha, "sensor.pururu_pool_program_clean_cycles_total") == "1"
+    assert count(ha) == "1"
