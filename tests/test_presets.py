@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from pathlib import Path
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant, State
@@ -9,7 +10,7 @@ from homeassistant.util import dt as dt_util
 import pytest
 import yaml
 
-from helpers import capture, fake, held, restart, setup, tick
+from helpers import capture, fake, held, module, restart, setup, tick
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
@@ -302,3 +303,16 @@ async def test_time_alerts_watch_running_and_are_alert2_alerts(ha: HomeAssistant
     path = Path(ha.config.path("pururu/alert2/alerts.yaml"))
     [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert entry["name"] == "demo_washer_appliance_alert_finished"
+
+
+# --- the docs ----------------------------------------------------------------------------
+
+APPLIANCE_PAGE = Path(__file__).resolve().parents[1] / "docs/features/appliance.mdx"
+
+
+def test_the_appliance_page_lists_every_ready_made_alert(ha: HomeAssistant) -> None:
+    page = APPLIANCE_PAGE.read_text(encoding="utf-8")
+    section = re.search(r"## Ready-made alerts\n(.*?)\n## ", page, re.DOTALL)
+    assert section is not None, "no Ready-made alerts section"
+    for name in module("features").FEATURES["appliance"].alerts:
+        assert f"`{name}`" in section[1], name
