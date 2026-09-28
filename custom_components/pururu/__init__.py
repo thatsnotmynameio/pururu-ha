@@ -297,18 +297,28 @@ def _reactions_resolved(config: dict[str, Any]) -> dict[str, Any]:
     devices = config[CONF_DEVICES]
     for key, device in devices.items():
         for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
-            if (other := reaction.get("device")) is None:
-                continue
-            where = f"device {key}: reactions: {reaction_key}"
-            if other not in devices:
-                raise vol.Invalid(f"{where}: device {other} is not in devices")
-            if other == key and reaction["when"] in _own_statistics(reaction_key):
-                raise vol.Invalid(f"{where}: {reaction['when']} is its own statistic")
-            if reaction["when"] not in _referable(other, devices[other]):
-                raise vol.Invalid(
-                    f"{where}: {reaction['when']} is not an entity key of device {other}"
-                )
+            if "device" in reaction:
+                _reaction_resolved(devices, key, reaction_key, reaction)
     return config
+
+
+def _reaction_resolved(
+    devices: dict[str, Any], key: str, reaction_key: str, reaction: dict[str, Any]
+) -> None:
+    """Refuse this reaction's `device` that isn't a device, or `when` it can't watch there.
+
+    Naming its own device, it can't watch its own statistics either.
+    """
+    other = reaction["device"]
+    where = f"device {key}: reactions: {reaction_key}"
+    if other not in devices:
+        raise vol.Invalid(f"{where}: device {other} is not in devices")
+    if other == key and reaction["when"] in _own_statistics(reaction_key):
+        raise vol.Invalid(f"{where}: {reaction['when']} is its own statistic")
+    if reaction["when"] not in _referable(other, devices[other]):
+        raise vol.Invalid(
+            f"{where}: {reaction['when']} is not an entity key of device {other}"
+        )
 
 
 def _referable(
