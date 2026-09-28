@@ -11,6 +11,7 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 import pytest
+import voluptuous as vol
 
 from helpers import fake, generated, module, setup, tick
 
@@ -217,6 +218,22 @@ def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
         "triggers": translated(ha, DOOR_OPENS, DOOR),
         "actions": [],
     }
+
+
+def test_then_starts_its_program_unless_it_runs(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({**DOOR_OPENS, "then": "clean"})
+    script = "script.pururu_lights_program_clean"
+    assert reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, script)["actions"] == [{
+        "if": [{"condition": "state", "entity_id": script, "state": "off"}],
+        "then": [{"action": "script.turn_on", "target": {"entity_id": script}}],
+    }]
+
+
+@pytest.mark.parametrize("then", [["clean"], "script.pururu_lights_program_clean"])
+def test_then_is_a_slug(ha: HomeAssistant, then: Any) -> None:
+    with pytest.raises(vol.Invalid):
+        module("reactions").REACTION({**DOOR_OPENS, "then": then})
 
 
 # --- generation --------------------------------------------------------------------------

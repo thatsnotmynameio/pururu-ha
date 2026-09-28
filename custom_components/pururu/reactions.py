@@ -3,7 +3,8 @@
 A reaction is one source (an entity of a device, a real entity, a time of day,
 the sun) and, for an entity, a condition. Each becomes an automation in
 pururu/automations/reactions.yaml, whose folder configuration.yaml includes
-(generated.py). It has no actions yet: it fires, and its trace shows when and why.
+(generated.py). It starts one of its device's programs (then), or does nothing:
+it fires, and its trace shows when and why.
 """
 
 from collections.abc import Mapping
@@ -11,7 +12,7 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_NAME, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import CONF_NAME, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import config_validation as cv
 
 from .const import CONF_AUTOMATIONS, ENTITY_PREFIX
@@ -82,6 +83,8 @@ REACTION = vol.All(
             vol.Optional("at"): cv.time,
             vol.Optional("sun"): vol.In(("sunrise", "sunset")),
             vol.Optional("offset"): cv.time_period,
+            # A program of this device, started when the reaction fires
+            vol.Optional("then"): cv.slug,
         }
     ),
     _consistent,
@@ -128,18 +131,35 @@ def triggers(
     return [trigger]
 
 
+def actions(script: str | None) -> list[dict[str, Any]]:
+    """Start the program's script unless it runs; nothing without one.
+
+    The check is an action, not a condition: HA counts a trigger only once its
+    conditions pass, and a trigger skipped because the program runs still is one.
+    """
+    if script is None:
+        return []
+    return [
+        {
+            "if": [{"condition": "state", "entity_id": script, "state": STATE_OFF}],
+            "then": [{"action": "script.turn_on", "target": {"entity_id": script}}],
+        }
+    ]
+
+
 def automation(
     device_key: str,
     device_name: str,
     reaction_key: str,
     reaction: Mapping[str, Any],
     entity_id: str | None,
+    script: str | None = None,
 ) -> dict[str, Any]:
-    """The automation of a reaction: no actions yet."""
+    """The automation of a reaction; `script` is the current entity ID of its program's."""
     return {
         "id": automation_id(device_key, reaction_key),
         "alias": f"{device_name} {reaction[CONF_NAME]}",
         "description": f"pururu: {device_key}, {reaction_key}",
         "triggers": triggers(reaction, entity_id),
-        "actions": [],
+        "actions": actions(script),
     }
