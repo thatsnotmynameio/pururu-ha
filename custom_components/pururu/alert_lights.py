@@ -220,7 +220,11 @@ class AlertLights:
                     state is not None and state.state == STATE_ON
                 )
         for light in self._lights:
-            self._update(light)
+            if self._level(light) is None and light.entity.restored_alert is not None:
+                # Borrowed before the restart or reload, and none of its alerts is on now
+                self._resolve(light)
+            else:
+                self._update(light)
         self._entry.async_on_unload(self._stop)
         self._entry.async_on_unload(
             async_track_state_change_event(
@@ -415,12 +419,25 @@ def async_setup(
 ) -> None:
     """Lend the created lights to the created alerts with lights, once HA has started.
 
-    `groups`: each group's lights, by unique ID. A disabled light is left out:
-    HA never added it.
+    `groups`: each group's lights, by unique ID. A light of a group that isn't
+    created is logged and left out; a disabled one is left out, as HA never
+    added it. A light the alert lights had before a restart or reload is
+    handed back even when it is in no group now.
     """
     registry = er.async_get(hass)
+    built = list(lights)
+    created = {str(light.unique_id) for light in built}
+    for group, members in groups.items():
+        for unique_id in members:
+            if unique_id not in created:
+                _LOGGER.warning(
+                    "%s.%s is not created: the alert lights group %s goes without it",
+                    Platform.LIGHT,
+                    unique_id,
+                    group,
+                )
     enabled = {
-        str(light.unique_id): light for light in lights if _enabled(registry, light)
+        str(light.unique_id): light for light in built if _enabled(registry, light)
     }
     borrowed: dict[str, _Light] = {}
     for alert in alerts:
@@ -429,6 +446,9 @@ def async_setup(
         for unique_id in groups[alert.lights]:
             if (entity := enabled.get(unique_id)) is not None:
                 borrowed.setdefault(unique_id, _Light(entity)).alerts.append(alert)
+    for unique_id, entity in enabled.items():
+        if unique_id not in borrowed and entity.restored_alert is not None:
+            borrowed[unique_id] = _Light(entity)
     manager = AlertLights(hass, entry, settings, list(borrowed.values()))
 
     @callback
