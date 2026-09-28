@@ -244,6 +244,27 @@ async def test_the_cycle_ending_ends_the_mode_at_its_end(ha: HomeAssistant,
     assert float(value(ha, "gelar_runtime_total")) == pytest.approx(600 / 3600, abs=0.0005)
 
 
+async def test_a_mode_ending_during_the_appliances_off_delay_ends_when_the_power_went_down(
+        ha: HomeAssistant, freezer: Any) -> None:
+    """Another sensor leaves gelar's band 10 s after the plug went down: gelar ends with the plug."""
+    assert await setup(ha, with_modes(sensor="sensor.demo_other"))
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    await fake(ha, "sensor.demo_other", "120")
+    await watts(ha, 120)
+    await tick(ha, freezer, 35)
+    await tick(ha, freezer, 600)
+    dropped = dt_util.utcnow()
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 10)
+    await fake(ha, "sensor.demo_other", "1")
+    await tick(ha, freezer, 35)
+    assert running(ha) == "on"
+    assert mode(ha) == "idle"
+    assert dt_util.parse_datetime(value(ha, "gelar_last_cycle_end")) == dropped
+    assert float(value(ha, "gelar_runtime_total")) == pytest.approx(600 / 3600, abs=0.0005)
+
+
 async def test_restart_during_a_modes_off_delay_keeps_when_it_left(ha: HomeAssistant,
                                                                   freezer: Any) -> None:
     now = dt_util.utcnow()

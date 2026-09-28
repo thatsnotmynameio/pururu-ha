@@ -276,7 +276,8 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         if self._ending is None or self._running is None:
             return
         self._ending = None
-        self._end(self._running, self._start.until or dt_util.utcnow())
+        cycle = self.hass.states.get(self._cycle)
+        self._end(self._running, self._end_so_far(cycle) or dt_util.utcnow())
 
     @callback
     def _start_armed(self, now: datetime, after: datetime | None = None) -> bool:
