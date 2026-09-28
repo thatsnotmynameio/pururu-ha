@@ -61,15 +61,17 @@ One condition alert per alert **with `notify`**, in device then alert order:
 - **`name`** is the alert's object ID without the `pururu_` prefix: `alert2.pururu_<device>_alert_<key>`, as with the generator, whatever the keys contain.
 - **The conditions** use the binary sensor's **current** entity ID: a rename in the UI reloads the entry (as today), which rewrites the file. `condition_on`/`condition_off` rather than one `condition`, as the generator did: the Alert2 alert keeps its state while the pururu one is briefly `unavailable` (a pururu reload).
 - **`friendly_name`** is the alert's name as HA shows it, `<device name> <alert name>`.
-- **Text stays text.** Alert2 renders `friendly_name`, `message` and `done_message` as templates; the user wrote plain text, so one containing `{` or `%` is wrapped in `{% raw %}…{% endraw %}`. The generator's output was never rendered twice either.
+- **Text stays text.** Alert2 renders `friendly_name`, `message` and `done_message` as templates; the user wrote plain text, so one containing `{` (every Jinja delimiter starts with it) is wrapped in `{% raw %}…{% endraw %}`. The generator's output was never rendered twice either.
 - **Only alerts that are created.** An alert not created (its ID taken, its `when` not built, `_creatable`) isn't written: its condition would name nothing.
 - Only alerts with `notify`: without it, Alert2 leaves the alert alone, as today.
 
 The binary sensor is unchanged, still the source of truth, still working without Alert2. Its attributes `priority`, `watches`, `message`, `done_message` stay: the `alert:` integration and automations can use them.
 
-## Applying it (`alert2.py`, alongside `reactions.py`)
+## Applying it (`alert2_alerts.py`, alongside `reactions.py`)
 
-Mirrors the reactions' flow, with what they share moved out of `reactions.py` rather than copied (`_write`, the atomic write that compares bytes; the failed-write-is-`None` contract; the entry task at start):
+Not `alert2.py`: a module named after another integration's domain reads as a platform of it.
+
+Mirrors the reactions' flow, with what they share moved out of `reactions.py` rather than copied (`_write`, the atomic write that compares bytes, and the failed-write-is-`None` contract, go to `files.py`):
 
 1. `async_setup_entry`, after the reactions: build the list from the created alerts, write it. A failed write is logged, never raised; the previous file stays.
 2. Once HA has started, in an entry task the unload waits for: **reload Alert2** (`alert2.reload`, blocking) when the file changed, or when an alert the file holds isn't running in Alert2. A reload that failed is retried at the next pururu reload, since the alert still isn't running then.
