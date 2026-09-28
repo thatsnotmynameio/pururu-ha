@@ -172,6 +172,21 @@ async def _async_write(
     return await files.async_write(hass, kind.file, f"The {kind.plural}", content)
 
 
+async def _async_ids_in_file(hass: HomeAssistant, kind: Kind) -> set[str]:
+    """The IDs of the items the file on disk holds: after a failed write, what HA will load.
+
+    None of them when it is missing or can't be read.
+    """
+    content = await files.async_read(hass, kind.file)
+    if kind.merge == "list" and isinstance(content, list):
+        return {
+            item["id"] for item in content if isinstance(item, dict) and "id" in item
+        }
+    if kind.merge == "named" and isinstance(content, dict):
+        return set(content)
+    return set()
+
+
 async def _async_reload(hass: HomeAssistant, kind: Kind) -> bool:
     """Reload HA's domain, if HA has it; whether it did. A failure is logged, never raised."""
     if kind.domain not in hass.config.components:
@@ -362,7 +377,7 @@ async def async_sync(
     """Generate the items, keep in the entry the IDs it tracks, return those generated.
 
     The IDs generated are the items' whose IDs are free (`_free`) and that are
-    in the file: after a failed write, only those the previous file held.
+    in the file: after a failed write, only those the file on disk still holds.
 
     `held` are the IDs of items not generated for now (a program whose target is
     disabled): out of the file, and so out of HA, but not dropped. Their
@@ -398,7 +413,8 @@ async def async_sync(
     # Only what the entry already tracks and has a registry entry: nothing else to keep
     kept_held = sorted(registered.intersection(held))
     stale = registered.difference(held)
-    checked = ids if written is not None else [i for i in ids if i in previous]
+    in_file = ids if written is not None else await _async_ids_in_file(hass, kind)
+    checked = [i for i in ids if i in in_file]
     hass.config_entries.async_update_entry(
         entry,
         data={**entry.data, kind.data_key: [*ids, *kept_held, *sorted(stale)]},

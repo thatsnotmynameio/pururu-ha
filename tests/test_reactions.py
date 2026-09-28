@@ -551,8 +551,12 @@ async def test_a_script_not_written_drops_its_reaction(
     before = pool(night=night)
     del before[POOL]["programs"]
     assert await setup(ha, before)
+    after = pool(night=night, clean={**DOOR_OPENS, "then": "clean"})
     with patch.object(files, "write_utf8_file_atomic", side_effect=only_automations):
-        await reload(ha, pool(night=night, clean={**DOOR_OPENS, "then": "clean"}))
-    assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
+        await reload(ha, after)
+        assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
+        # Failing again: the script, tracked since, still isn't in the file
+        await reload(ha, after)
+        assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
     assert ("automation.pururu_pool_reaction_clean runs script.pururu_pool_program_clean, "
             "which is not generated; not generating it") in caplog.text

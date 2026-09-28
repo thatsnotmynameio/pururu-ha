@@ -510,6 +510,25 @@ async def test_a_failed_write_raises_no_include_issue(ha: HomeAssistant, case: C
     assert issue(ha, case) is None
 
 
+@pytest.mark.parametrize("content", [
+    pytest.param("# Máquina\n".encode("latin-1"), id="another encoding"),
+    pytest.param(b"- just text\n- id: x\n", id="list items without an id"),
+    pytest.param(b"just text\n", id="neither list nor mapping"),
+])
+async def test_after_a_failed_write_a_file_it_cannot_read_holds_nothing(
+        ha: HomeAssistant, case: Case, content: bytes) -> None:
+    """What HA will load is what the file holds: nothing of pururu's, so nothing is generated."""
+    generated = module("generated")
+    path = Path(ha.config.path(case.file))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    entry = MockConfigEntry(domain="pururu", source="import", data={})
+    entry.add_to_hass(ha)
+    items = [generated.Item(unique_id=case.unique_id("door"), config={"alias": "door"})]
+    with failing_write():
+        assert await generated.async_sync(ha, entry, module(case.source).KIND, items) == []
+
+
 async def test_a_failed_removal_keeps_the_items_ids(ha: HomeAssistant, case: Case,
                                                     included: None) -> None:
     """The file still holds them: HA loads them again with their pururu IDs."""
