@@ -6,7 +6,7 @@ From the real entities and settings in a feature's block, the feature creates
 the device's entities. One config entry owns every floor, area, device and entity.
 """
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator, Mapping
 from functools import partial
 import logging
 from typing import Any, Literal
@@ -158,12 +158,21 @@ def _no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None
 
 
 def _reactions_on_this_device(device: dict[str, Any]) -> None:
-    """Refuse a reaction's `when` without `device` that isn't an entity key of the device."""
+    """Refuse a reaction's `when` or `then` that isn't the device's own.
+
+    `when` without `device` names an entity key of the device, and `then` one of
+    its programs.
+    """
     keys = {
         qualified(FEATURES[name].namespace, entity_key)
         for name, entity_key, _ in _entity_keys(device)
     }
     for key, reaction in device.get(CONF_REACTIONS, {}).items():
+        then = reaction.get("then")
+        if then is not None and then not in device.get(CONF_PROGRAMS, {}):
+            raise vol.Invalid(
+                f"reactions: {key}: {then} is not a program of this device"
+            )
         if "device" in reaction or (when := reaction.get("when")) is None:
             continue
         if when not in keys:
@@ -376,7 +385,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
 
     Floors and areas come first: devices will be placed in them. The reactions'
     automations, the programs' scripts and Alert2's alerts come after the
-    entities: they watch and act on the ones created. The dashboard comes last:
+    entities: they watch and act on the ones created. The programs' scripts come
+    before the reactions' automations: a reaction starts one. The dashboard comes last:
     it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
@@ -399,11 +409,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
     created = {str(entity.unique_id) for each in built.values() for entity in each}
-    await generated.async_sync(
-        hass, entry, reactions.KIND, _automations(hass, devices, created)
-    )
     scripts, held, targets = _scripts(hass, devices, created)
-    await generated.async_sync(hass, entry, programs.KIND, scripts, held)
+    generated_scripts = await generated.async_sync(
+        hass, entry, programs.KIND, scripts, held
+    )
+    automations, held_automations = _automations(
+        hass, devices, created, generated_scripts, held
+    )
+    await generated.async_sync(
+        hass, entry, reactions.KIND, automations, held_automations
+    )
+    started = _started_scripts(devices)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
@@ -412,37 +428,76 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
 
     @callback
     def changed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
-        """One of the entry's entities got a new ID, or a program's target was disabled: build again.
+        """One of the entry's entities or a started script got a new ID, or a program's target was disabled: build again.
 
-        A rename is followed. A program acting on an entity just disabled is
-        dropped (`_acted_on`), once for a burst of them: HA reloads the entry
-        itself once an entity is enabled again, but not when one is disabled
-        (config_entries.py leaves that to the entity, which merely clears its
-        own state). No other disable or enable concerns what is built here.
+        A rename is followed: of a pururu entity, or of a program's script a
+        reaction starts (it would check and start an ID that no longer is). A
+        program acting on an entity just disabled is dropped (`_acted_on`), once
+        for a burst of them: HA reloads the entry itself once an entity is
+        enabled again, but not when one is disabled (config_entries.py leaves
+        that to the entity, which merely clears its own state). No other
+        disable or enable concerns what is built here (`_rebuild_for`).
         """
         nonlocal reloading
         data = event.data
         if data["action"] != "update":
             return
         registered = registry.async_get(data["entity_id"])
-        if registered is None or registered.config_entry_id != entry.entry_id:
+        if registered is None:
             return
-        changes = data["changes"]
-        if "entity_id" in changes or (
-            "disabled_by" in changes
-            # The old value: the entity was enabled, and is now disabled
-            and changes["disabled_by"] is None
-            and registered.disabled
-            and registered.entity_id in targets
-            and not reloading
-        ):
-            reloading = True
-            hass.config_entries.async_schedule_reload(entry.entry_id)
+        why = _rebuild_for(
+            entry.entry_id, registered, data["changes"], started, targets
+        )
+        if why is None or (why == "disabled" and reloading):
+            return
+        reloading = True
+        hass.config_entries.async_schedule_reload(entry.entry_id)
 
     entry.async_on_unload(
         hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, changed)
     )
     return True
+
+
+def _started_scripts(devices: dict[str, dict[str, Any]]) -> set[str]:
+    """The IDs of the programs' scripts a reaction starts: renamed, its automation must follow."""
+    return {
+        programs.script_id(key, reaction["then"])
+        for key, config in devices.items()
+        for reaction in config.get(CONF_REACTIONS, {}).values()
+        if "then" in reaction
+    }
+
+
+def _rebuild_for(
+    entry_id: str,
+    registered: er.RegistryEntry,
+    changes: Mapping[str, Any],
+    started: set[str],
+    targets: set[str],
+) -> Literal["renamed", "disabled"] | None:
+    """Why this registry update needs the entry built again, if it does.
+
+    Renamed: one of the entry's entities, or a script a reaction starts.
+    Disabled: an entity a generated script acts on, just now (the old value
+    of `disabled_by` is None).
+    """
+    ours = registered.config_entry_id == entry_id
+    if "entity_id" in changes:
+        started_script = (
+            registered.platform == programs.KIND.domain
+            and registered.unique_id in started
+        )
+        return "renamed" if ours or started_script else None
+    if (
+        ours
+        and "disabled_by" in changes
+        and changes["disabled_by"] is None
+        and registered.disabled
+        and registered.entity_id in targets
+    ):
+        return "disabled"
+    return None
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bool:
@@ -625,36 +680,103 @@ def _remove_stale(
 
 
 def _automations(
-    hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
-) -> list[generated.Item]:
-    """An automation per reaction of every device; one watching an entity not created is logged."""
+    hass: HomeAssistant,
+    devices: dict[str, dict[str, Any]],
+    created: set[str],
+    scripts: Collection[str],
+    held_scripts: Collection[str],
+) -> tuple[list[generated.Item], set[str]]:
+    """An automation per reaction of every device; one that can't work is logged.
+
+    One watching an entity not created, or starting a program whose script
+    isn't generated, isn't generated. Also the IDs of those held with their
+    program.
+    """
+    registry = er.async_get(hass)
     automations: list[generated.Item] = []
+    held: set[str] = set()
     for key, config in devices.items():
         for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
-            entity_id = reaction.get("entity")
-            if (when := reaction.get("when")) is not None:
-                owner_key = reaction.get("device", key)
-                owner, entity_key, platform = _referable(owner_key, devices[owner_key])[
-                    when
-                ]
-                if owner.object_id(entity_key) not in created:
-                    _LOGGER.error(
-                        "automation.%s follows %s, which is not created; "
-                        "not generating it",
-                        reactions.automation_id(key, reaction_key),
-                        owner.entity_id(platform, entity_key),
-                    )
-                    continue
-                entity_id = owner.current_entity_id(hass, platform, entity_key)
+            automation_id = reactions.automation_id(key, reaction_key)
+            watched, entity_id = _watched(
+                hass, devices, key, automation_id, reaction, created
+            )
+            if not watched:
+                continue
+            startable, script = _started(
+                registry, key, automation_id, reaction, scripts
+            )
+            if not startable:
+                if programs.script_id(key, reaction["then"]) in held_scripts:
+                    held.add(automation_id)
+                continue
             automations.append(
                 generated.Item(
-                    unique_id=reactions.automation_id(key, reaction_key),
+                    unique_id=automation_id,
                     config=reactions.automation(
-                        key, config[CONF_NAME], reaction_key, reaction, entity_id
+                        key,
+                        config[CONF_NAME],
+                        reaction_key,
+                        reaction,
+                        entity_id,
+                        script,
                     ),
                 )
             )
-    return automations
+    return automations, held
+
+
+def _watched(
+    hass: HomeAssistant,
+    devices: dict[str, dict[str, Any]],
+    key: str,
+    automation_id: str,
+    reaction: dict[str, Any],
+    created: set[str],
+) -> tuple[bool, str | None]:
+    """Whether the reaction can watch what it names, and the entity ID it watches.
+
+    A pururu entity not created can't be, logged; `at` and `sun` watch none.
+    """
+    if (when := reaction.get("when")) is None:
+        return True, reaction.get("entity")
+    owner_key = reaction.get("device", key)
+    owner, entity_key, platform = _referable(owner_key, devices[owner_key])[when]
+    if owner.object_id(entity_key) not in created:
+        _LOGGER.error(
+            "automation.%s follows %s, which is not created; not generating it",
+            automation_id,
+            owner.entity_id(platform, entity_key),
+        )
+        return False, None
+    return True, owner.current_entity_id(hass, platform, entity_key)
+
+
+def _started(
+    registry: er.EntityRegistry,
+    key: str,
+    automation_id: str,
+    reaction: dict[str, Any],
+    scripts: Collection[str],
+) -> tuple[bool, str | None]:
+    """Whether the reaction can start its program, and its script's current entity ID.
+
+    A script not generated can't be started, logged; without `then`, none is.
+    """
+    if (then := reaction.get("then")) is None:
+        return True, None
+    script_id = programs.script_id(key, then)
+    if script_id not in scripts:
+        _LOGGER.error(
+            "automation.%s runs script.%s, which is not generated; not generating it",
+            automation_id,
+            script_id,
+        )
+        return False, None
+    # Registered by the scripts' sync
+    return True, registry.async_get_entity_id(
+        programs.KIND.domain, programs.KIND.domain, script_id
+    )
 
 
 def _scripts(

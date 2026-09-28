@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util.file import write_utf8_file_atomic
-from homeassistant.util.yaml import dump
+from homeassistant.util.yaml import dump, parse_yaml
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,4 +48,20 @@ async def async_write(
         )
     except (OSError, HomeAssistantError) as err:
         _LOGGER.error("%s are not written to %s: %s", what, file, err)
+        return None
+
+
+def _read(path: Path) -> Any:
+    return parse_yaml(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+async def async_read(hass: HomeAssistant, file: str) -> Any:
+    """What `file` holds, parsed; None when it is missing or unreadable.
+
+    `file` is relative to the configuration folder: after a failed write, what
+    HA will load is what it still holds.
+    """
+    try:
+        return await hass.async_add_executor_job(_read, Path(hass.config.path(file)))
+    except OSError, UnicodeDecodeError, HomeAssistantError:
         return None

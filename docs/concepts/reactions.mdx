@@ -1,13 +1,9 @@
 ---
 title: Reactions
-description: How a device behaves. Each reaction listens to one thing and becomes a Home Assistant automation.
+description: How a device behaves. Each reaction listens to one thing, can start one of the device's programs, and becomes a Home Assistant automation.
 ---
 
-A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
-
-<Info>
-  In this version a reaction **fires and does nothing yet**. Its automation has no actions. Use its trace to check that it fires when you expect. What a reaction does comes in a later version.
-</Info>
+A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. When it fires, it can start one of the device's [programs](/concepts/programs): the reaction decides **when**, the program **what**. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
 
 ```yaml title="configuration.yaml"
 pururu:
@@ -21,17 +17,22 @@ pururu:
       name: Luzes da lavanderia
       lights:
         teto: {entity: light.lavanderia_teto, name: Teto}
+      programs:
+        blink:
+          name: Piscar
+          sequence: [{turn_on: light_teto}, {delay: 2}, {turn_off: light_teto}]
       reactions:
         teto_on:     {name: Teto acendeu, when: light_teto, to: "on"}
-        washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off"}
+        washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off", then: blink}
         door:        {name: Porta abriu, entity: binary_sensor.porta_lavanderia, to: "on", for: {minutes: 5}}
         night:       {name: Noite, at: "22:00"}
         dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
 
 automation pururu: !include_dir_merge_list pururu/automations
+script pururu: !include_dir_merge_named pururu/scripts   # the programs a reaction starts
 ```
 
-This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da lavanderia Lavadora terminou**, and one automation for each other reaction.
+This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da lavanderia Lavadora terminou**, which blinks the ceiling light when the washer finishes, and one automation for each other reaction.
 
 ## The include
 
@@ -121,6 +122,42 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
   Before (negative) or after the sun event: `{minutes: -30}` is half an hour before sunset. Only with `sun`.
 </Property>
 
+### What it does
+
+<Property name="then" type="program key" optional>
+  A key of **this device's** [`programs`](/concepts/programs): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a script's entity ID or a list is a configuration error: `reactions: morning: clean is not a program of this device`.
+</Property>
+
+## Starting a program
+
+A reaction with `then` starts its program's script, but only if it isn't running:
+
+```yaml title="pururu/automations/reactions.yaml"
+- id: pururu_laundry_lights_reaction_washer_done
+  alias: Luzes da lavanderia Lavadora terminou
+  triggers: [...]
+  actions:
+    - if:
+        - condition: state
+          entity_id: script.pururu_laundry_lights_program_blink
+          state: "off"
+      then:
+        - action: script.turn_on
+          target: {entity_id: script.pururu_laundry_lights_program_blink}
+```
+
+| When | What happens |
+|---|---|
+| The reaction fires, the program isn't running | The program starts, and the automation's run ends at once |
+| The reaction fires while the program runs | Nothing: the trace shows the `if` not taken. The reaction still counts as triggered |
+| The program was started elsewhere (the UI, a voice assistant, another reaction) | The same script: the `if` sees it running |
+| An entity the program acts on isn't created, or its script's ID is taken | Neither the program nor the reaction is generated, and the log says why |
+| An entity the program acts on is disabled | Both wait, and both come back as you left them once it's enabled again |
+| You disabled the program's script | The reaction still fires, and the `if` isn't taken |
+| You renamed the program's script | Followed: pururu reloads and rewrites the automation with its new ID |
+
+A reaction always runs its **own** device's program, even when it listens to another device (`device: laundry_washer`). Programs run one at a time for now: a program already running isn't started again, nor queued.
+
 ## When a reaction fires
 
 The automation follows Home Assistant's own triggers, so it behaves exactly like an automation you'd write yourself:
@@ -137,7 +174,7 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 | Entity ID | `automation.pururu_<device key>_reaction_<reaction key>` |
 | Name | `<device name> <reaction name>` |
 | ID | `pururu_<device key>_reaction_<reaction key>`: its traces are under this ID |
-| Actions | none, in this version |
+| Actions | starts the program named by `then` with `script.turn_on`, unless it's running; none without `then` |
 
 - **Renaming** the automation's entity in the UI is kept.
 - **An ID already taken:** if another automation already has `automation.pururu_…`, or one of your own automations has the same `id`, pururu leaves it alone and logs it. It never suffixes one with `_2`, and never takes over an automation it didn't write.

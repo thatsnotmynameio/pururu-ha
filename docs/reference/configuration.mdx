@@ -61,6 +61,8 @@ pururu:
             - turn_on: switch_pump
             - delay: {hours: 2}
             - turn_off: switch_pump
+      reactions:
+        morning: {name: Manhã, at: "08:00", then: clean}
     sala:
       name: Sala
       lights:
@@ -158,7 +160,7 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 ---
 
 <Property name="reactions" type="map" optional>
-  A map of **reaction key → reaction**, each one a Home Assistant automation. It isn't a feature. See [Reactions](/concepts/reactions#settings).
+  A map of **reaction key → reaction**, each one a Home Assistant automation. It isn't a feature. A reaction's `then` names one of the device's `programs`, started when it fires. See [Reactions](/concepts/reactions#settings).
 </Property>
 
 ---

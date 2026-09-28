@@ -10,9 +10,11 @@ from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
+from homeassistant.util.file import WriteError
 import pytest
+import voluptuous as vol
 
-from helpers import fake, generated, module, setup, tick
+from helpers import capture, fake, generated, generated_scripts, module, reload, settle, setup, tick
 
 WASHER = "washer"
 LIGHTS = "lights"
@@ -142,6 +144,45 @@ async def test_two_reactions_with_one_automation_id_are_refused(
             "a reaction of device lights") in caplog.text
 
 
+CLEAN_PROGRAM = {"name": "Limpar", "sequence": [{"turn_on": "light_teto"}]}
+
+
+def with_program(**reactions: dict[str, Any]) -> dict[str, Any]:
+    config = devices(**reactions)
+    config[LIGHTS]["programs"] = {"clean": CLEAN_PROGRAM}
+    return config
+
+
+@pytest.mark.parametrize("reaction", [
+    pytest.param({**DOOR_OPENS, "then": "clean"}, id="real entity"),
+    pytest.param({**OVERLOAD, "then": "clean"}, id="another device's entity, its own program"),
+])
+async def test_then_a_program_of_the_device_is_accepted(ha: HomeAssistant,
+                                                        reaction: dict[str, Any]) -> None:
+    assert await setup(ha, with_program(it=reaction))
+
+
+@pytest.mark.parametrize("config", [
+    pytest.param(with_program(it={**DOOR_OPENS, "then": "wash"}), id="no such program"),
+    pytest.param(with_program(it={**DOOR_OPENS, "then": ""}), id="empty"),
+    pytest.param(devices(it={**DOOR_OPENS, "then": "clean"}), id="the device has no programs"),
+])
+async def test_then_not_a_program_of_the_device_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, config: dict[str, Any]) -> None:
+    then = config[LIGHTS]["reactions"]["it"]["then"]
+    assert not await setup(ha, config)
+    assert f"reactions: it: {then} is not a program of this device" in caplog.text
+
+
+async def test_then_another_devices_program_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The washer's program isn't the lights': a reaction runs its own device's."""
+    config = devices(it={**OVERLOAD, "then": "clean"})
+    config[WASHER]["programs"] = {"clean": {"name": "X", "sequence": [{"delay": 1}]}}
+    assert not await setup(ha, config)
+    assert "reactions: it: clean is not a program of this device" in caplog.text
+
+
 # --- translation ----------------------------------------------------------------------
 
 
@@ -217,6 +258,23 @@ def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
         "triggers": translated(ha, DOOR_OPENS, DOOR),
         "actions": [],
     }
+
+
+def test_then_starts_its_program_unless_it_runs(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({**DOOR_OPENS, "then": "clean"})
+    script = "script.pururu_lights_program_clean"
+    assert reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, script)["actions"] == [{
+        "if": [{"condition": "state", "entity_id": script, "state": "off"}],
+        "then": [{"action": "script.turn_on", "target": {"entity_id": script}}],
+    }]
+
+
+@pytest.mark.parametrize("then", [["clean"], "script.pururu_lights_program_clean"])
+def test_then_is_a_slug(ha: HomeAssistant, then: Any) -> None:
+    reaction = module("reactions").REACTION
+    with pytest.raises(vol.Invalid):
+        reaction({**DOOR_OPENS, "then": then})
 
 
 # --- generation --------------------------------------------------------------------------
@@ -337,3 +395,168 @@ async def test_the_sun_fires_at_its_offset(ha: HomeAssistant, freezer: Any,
     assert not fired(ha, "dusk")
     await tick(ha, freezer, 1)
     assert fired(ha, "dusk")
+
+
+# --- then: its program ------------------------------------------------------------------
+
+POOL = "pool"
+REAL_PUMP = "switch.pool_pump"
+PUMP = "switch.pururu_pool_switch_pump"
+CLEAN = "script.pururu_pool_program_clean"
+CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
+    {"turn_on": "switch_pump"}, {"delay": {"hours": 2}}, {"turn_off": "switch_pump"}]}
+
+
+def pool(**reactions: dict[str, Any]) -> dict[str, Any]:
+    """The pool: its pump, its cleaning, and reactions to the door; `clean` also a reaction key."""
+    return {POOL: {"name": "Piscina",
+                   "switches": {"pump": {"entity": REAL_PUMP, "name": "Bomba"}},
+                   "programs": {"clean": CLEANING},
+                   "reactions": reactions or {"clean": {**DOOR_OPENS, "then": "clean"}}}}
+
+
+@pytest.fixture
+async def both(ha: HomeAssistant) -> AsyncIterator[None]:
+    """HA's automations and scripts, from a configuration.yaml that includes pururu's files."""
+    def included(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"automation pururu": generated(ha), "script pururu": generated_scripts(ha)}
+
+    with patch("homeassistant.config.load_yaml_config_file", side_effect=included):
+        assert await async_setup_component(ha, "script", {"script pururu": generated_scripts(ha)})
+        assert await async_setup_component(ha, "automation",
+                                           {"automation pururu": generated(ha)})
+        yield
+
+
+def script_state(ha: HomeAssistant, entity_id: str = CLEAN) -> str:
+    state = ha.states.get(entity_id)
+    assert state is not None, f"no {entity_id}"
+    return state.state
+
+
+async def test_the_automation_starts_the_programs_script(ha: HomeAssistant) -> None:
+    assert await setup(ha, pool())
+    assert generated(ha)[0]["actions"] == module("reactions").actions(CLEAN)
+
+
+async def test_the_reaction_starts_its_program(ha: HomeAssistant, both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    calls = capture(ha, "call_service")
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert script_state(ha) == "on"
+    assert [e.data["service"] for e in calls
+            if REAL_PUMP in cv.ensure_list(e.data["service_data"].get("entity_id"))] == ["turn_on"]
+
+
+async def test_a_trigger_while_the_program_runs_does_nothing(ha: HomeAssistant,
+                                                             both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    triggered = capture(ha, "automation_triggered")
+    started = capture(ha, "script_started")
+    await fake(ha, DOOR, "on")
+    await fake(ha, DOOR, "off")
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert len(triggered) == 2
+    assert len(started) == 1
+    assert script_state(ha) == "on"
+
+
+async def test_a_program_not_generated_drops_its_reaction(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    er.async_get(ha).async_get_or_create(
+        "script", "template", "someone_else", suggested_object_id="pururu_pool_program_clean")
+    night = {"name": "Noite", "at": "22:00"}
+    assert await setup(ha, pool(clean={**DOOR_OPENS, "then": "clean"}, night=night))
+    assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
+    assert ("automation.pururu_pool_reaction_clean runs script.pururu_pool_program_clean, "
+            "which is not generated; not generating it") in caplog.text
+
+
+async def disable(hass: HomeAssistant, entity_id: str, disabled: bool = True) -> None:
+    er.async_get(hass).async_update_entity(
+        entity_id, disabled_by=er.RegistryEntryDisabler.USER if disabled else None)
+    await hass.async_block_till_done()
+
+
+async def test_a_held_program_holds_its_reaction(ha: HomeAssistant, freezer: Any,
+                                                 both: None) -> None:
+    """The pump disabled: the program and its reaction are held, the reaction's rename kept."""
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    registry = er.async_get(ha)
+    registry.async_update_entity("automation.pururu_pool_reaction_clean",
+                                 new_entity_id="automation.porta_limpa")
+    await ha.async_block_till_done()
+    await disable(ha, PUMP)
+    await tick(ha, freezer, 31)
+    await ha.async_block_till_done()
+    assert generated(ha) == []
+    assert registry.async_get("automation.porta_limpa") is not None
+    await disable(ha, PUMP, disabled=False)
+    await tick(ha, freezer, 31)
+    await ha.async_block_till_done()
+    assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_clean"]
+    assert registry.async_get("automation.porta_limpa") is not None
+
+
+async def test_it_follows_the_script_renamed(ha: HomeAssistant, both: None) -> None:
+    """At once, as `when` follows a pururu entity: the old ID would never be off, and it would never start."""
+    await fake(ha, REAL_PUMP, "off")
+    await fake(ha, DOOR, "off")
+    assert await setup(ha, pool())
+    er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+    await ha.async_block_till_done()
+    assert generated(ha)[0]["actions"] == module("reactions").actions("script.limpar_piscina")
+    started = capture(ha, "script_started")
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert len(started) == 1
+
+
+async def test_renaming_a_script_no_reaction_starts_reloads_nothing(ha: HomeAssistant) -> None:
+    config = pool(night={"name": "Noite", "at": "22:00"})
+    assert await setup(ha, config)
+    with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
+        er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+        await ha.async_block_till_done()
+    reloading.assert_not_called()
+
+
+async def test_a_reaction_on_another_device_starts_its_own_program(ha: HomeAssistant) -> None:
+    config = pool(power={"name": "Potência", "device": WASHER, "when": "appliance_power",
+                         "above": 10, "then": "clean"})
+    config[WASHER] = {"name": "Washer", "appliance": APPLIANCE}
+    assert await setup(ha, config)
+    assert generated(ha)[0]["actions"] == module("reactions").actions(CLEAN)
+
+
+async def test_a_script_not_written_drops_its_reaction(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The scripts' file can't be written: the new program isn't in HA, so its reaction isn't generated."""
+    files = module("files")
+    real = files.write_utf8_file_atomic
+
+    def only_automations(path: str, content: str) -> None:
+        if path.endswith("programs.yaml"):
+            raise WriteError("disk full")
+        real(path, content)
+
+    night = {"name": "Noite", "at": "22:00"}
+    before = pool(night=night)
+    del before[POOL]["programs"]
+    assert await setup(ha, before)
+    after = pool(night=night, clean={**DOOR_OPENS, "then": "clean"})
+    with patch.object(files, "write_utf8_file_atomic", side_effect=only_automations):
+        await reload(ha, after)
+        assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
+        # Failing again: the script, tracked since, still isn't in the file
+        await reload(ha, after)
+        assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
+    assert ("automation.pururu_pool_reaction_clean runs script.pururu_pool_program_clean, "
+            "which is not generated; not generating it") in caplog.text
