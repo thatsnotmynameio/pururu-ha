@@ -33,9 +33,12 @@ def module(name: str) -> ModuleType:
 
 
 def _config(devices: dict[str, Any], floors: dict[str, Any] | None,
-            areas: dict[str, Any] | None) -> dict[str, Any]:
-    """A configuration.yaml with this `pururu:` block."""
-    return {DOMAIN: {"devices": devices, "floors": floors or {}, "areas": areas or {}}}
+            areas: dict[str, Any] | None, events: Any = None) -> dict[str, Any]:
+    """A configuration.yaml with this `pururu:` block (`events` left out when None)."""
+    block: dict[str, Any] = {"devices": devices, "floors": floors or {}, "areas": areas or {}}
+    if events is not None:
+        block["events"] = events
+    return {DOMAIN: block}
 
 
 def generated(hass: HomeAssistant) -> list[dict[str, Any]]:
@@ -56,18 +59,20 @@ def generated_scripts(hass: HomeAssistant) -> dict[str, Any]:
 
 async def setup(hass: HomeAssistant, devices: dict[str, Any], *,
                 floors: dict[str, Any] | None = None,
-                areas: dict[str, Any] | None = None) -> bool:
+                areas: dict[str, Any] | None = None,
+                events: Any = None) -> bool:
     """Set pururu up from `pururu:`; False when HA refuses the configuration."""
-    ok = await async_setup_component(hass, DOMAIN, _config(devices, floors, areas))
+    ok = await async_setup_component(hass, DOMAIN, _config(devices, floors, areas, events))
     await hass.async_block_till_done()
     return ok
 
 
 async def reload(hass: HomeAssistant, devices: dict[str, Any], *,
                  floors: dict[str, Any] | None = None,
-                 areas: dict[str, Any] | None = None) -> None:
+                 areas: dict[str, Any] | None = None,
+                 events: Any = None) -> None:
     """pururu.reload, with a configuration.yaml holding this `pururu:` block."""
-    config = _config(devices, floors, areas)
+    config = _config(devices, floors, areas, events)
     # configuration.yaml includes the generated files: automations and scripts reload from them
     with patch("homeassistant.config.load_yaml_config_file",
                side_effect=lambda *_args, **_kwargs: {**config,

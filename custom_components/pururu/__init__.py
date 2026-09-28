@@ -40,7 +40,7 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import alert2_alerts, dashboard, generated, places, programs, reactions
+from . import alert2_alerts, dashboard, events, generated, places, programs, reactions
 from .const import (
     CONF_ALERTS,
     CONF_AREA,
@@ -51,6 +51,7 @@ from .const import (
     CONF_REACTIONS,
     DATA_CONFIG,
     DOMAIN,
+    ENTITY_PREFIX,
     PLATFORMS,
 )
 from .device_keys import DEVICE_KEYS
@@ -355,6 +356,7 @@ CONFIG_SCHEMA = vol.Schema(
                         {cv.slug: places.AREA_SCHEMA}
                     ),
                     vol.Optional(CONF_DEVICES, default={}): {cv.slug: _device},
+                    vol.Optional(events.CONF_EVENTS, default=[]): events.SCHEMA,
                 }
             ),
             places.floors_exist,
@@ -419,7 +421,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     automations, the programs' scripts and Alert2's alerts come after the
     entities: they watch and act on the ones created. The programs' scripts come
     before the reactions' automations: a reaction starts one. The dashboard comes last:
-    it shows them all.
+    it shows them all. The events are set up once the entities are added: they
+    fire their changes.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -432,6 +435,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     registry = er.async_get(hass)
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
+    # Each device's created entities: an entity's key comes from the device that built it
+    created_by: dict[str, list[Entity]] = {key: [] for key in devices}
     texts = await presets.async_texts(hass)
     owned = _owned(hass, entry, devices)
     for key, config in devices.items():
@@ -439,8 +444,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
             hass, registry, *_build(hass, key, config, texts, owned)
         ):
             built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
+            created_by[key].append(entity)
     entry.runtime_data = built
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Once added, each entity has its current ID, renamed in the UI or not
+    events.async_setup(
+        hass,
+        entry,
+        configured.get(events.CONF_EVENTS, []),
+        _event_devices(devices, created_by),
+    )
     _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
     created = {str(entity.unique_id) for each in built.values() for entity in each}
@@ -570,6 +583,25 @@ async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> N
     await generated.async_remove(hass, entry, reactions.KIND)
     await generated.async_remove(hass, entry, programs.KIND)
     await alert2_alerts.async_remove(hass)
+
+
+def _event_devices(
+    devices: dict[str, dict[str, Any]], created_by: Mapping[str, list[Entity]]
+) -> list[events.Watched]:
+    """Each device with its created entities: current entity ID → key, its unique ID after pururu_<device>_."""
+    return [
+        events.Watched(
+            key=key,
+            name=devices[key][CONF_NAME],
+            entities={
+                entity.entity_id: str(entity.unique_id).removeprefix(
+                    f"{ENTITY_PREFIX}_{key}_"
+                )
+                for entity in created
+            },
+        )
+        for key, created in created_by.items()
+    ]
 
 
 def _build(

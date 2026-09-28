@@ -1,0 +1,121 @@
+---
+title: Events
+description: pururu fires an event on Home Assistant's bus for every change of its entities, so an automation can send it anywhere, such as an n8n webhook.
+---
+
+Everything pururu knows ends up in the state of one of its entities: a cycle's end is `last_cycle_end`, who opened a door is `last_opened_by`, an alert is its binary sensor. With `events`, pururu also **fires an event on Home Assistant's bus** each time one of those states changes, with the change and a snapshot of the whole device. pururu sends nothing over the network itself: an automation of yours takes the event from the bus and posts it, for example to an **n8n** webhook.
+
+```yaml title="configuration.yaml"
+pururu:
+  events: [state_changed, reading]
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      appliance:
+        power: sensor.washer_plug_power
+        energy: sensor.washer_plug_energy
+        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+```
+
+## Two classes
+
+| Class | Event type | Which changes |
+|---|---|---|
+| `state_changed` | `pururu_state_changed` | Entities **without** a `state_class`: facts such as `running`, a mode, a phase, an alert, a door, `last_opened_by`, the last cycle's values, switches, lights. |
+| `reading` | `pururu_reading` | Entities **with** a `state_class`: series such as the power and energy mirrors, totals and per-period meters. They can change every few seconds. |
+
+`events` lists the classes to fire, each once. Leave it out (the default) and pururu fires nothing. A class you don't list is never fired. **Developer tools → YAML → Pururu** applies a change.
+
+A change is fired when the state itself changes. pururu doesn't fire:
+
+- an entity appearing or going, as at every reload;
+- Home Assistant's placeholder (`unavailable` with `restored: true`), written while an entity unloads or hasn't loaded yet;
+- a change of attributes alone.
+
+`unavailable` and `unknown` are fired: they are real states. An entity pururu didn't create, because another integration holds its ID, isn't pururu's and is never fired.
+
+## The data
+
+```json
+{
+  "event_id": "01J8Z3K4QW6N5V2XK0M7T9R8YB",
+  "event_name": "laundry_washer.appliance_last_cycle_end",
+  "event_class": "state_changed",
+  "entity_id": "sensor.pururu_laundry_washer_appliance_last_cycle_end",
+  "device": "laundry_washer",
+  "device_name": "Máquina de lavar",
+  "key": "appliance_last_cycle_end",
+  "old": "2026-09-27T20:10:00+00:00",
+  "new": "2026-09-28T09:52:00+00:00",
+  "time": "2026-09-28T09:52:00.123456+00:00",
+  "attributes": {"device_class": "timestamp", "friendly_name": "Máquina de lavar Fim do último ciclo"},
+  "states": {
+    "appliance_running": "off",
+    "appliance_last_cycle_start": "2026-09-28T09:00:00+00:00",
+    "appliance_last_cycle_duration": "52.0",
+    "appliance_last_cycle_energy": "0.42",
+    "appliance_last_cycle_end": "2026-09-28T09:52:00+00:00",
+    "appliance_cycles_total": "12"
+  }
+}
+```
+
+| Field | What |
+|---|---|
+| `event_id` | A new ID per event (a ULID: unique, sorted by time). Use it to drop duplicates. |
+| `event_name` | `<device>.<key>`. It doesn't change when you rename the entity in the UI. |
+| `event_class` | `state_changed` or `reading`, since a webhook gets the data without the event type. |
+| `entity_id` | The entity's current ID. |
+| `device`, `device_name` | The device's key and its `name`. |
+| `key` | The entity key, as it ends the entity ID pururu creates: `appliance_running`, `mode_heating_cycles_total`. It stays the same when you rename the entity. |
+| `old`, `new` | The states, as Home Assistant's text. |
+| `time` | When the state changed. |
+| `attributes` | The new state's attributes, as JSON: a time is ISO text. |
+| `states` | Every entity of the device that has a state (a disabled one has none), by `key`, when the event was fired. |
+
+A finished cycle comes in one event: `last_cycle_end` is written last, so when it changes, `states` already holds that cycle's start, duration, energy and count.
+
+## Sending them to a webhook
+
+A `rest_command` posts the data, and an automation calls it for each event:
+
+```yaml title="configuration.yaml"
+rest_command:
+  n8n_pururu:
+    url: !secret n8n_pururu_url
+    method: post
+    headers:
+      X-Pururu-Token: !secret n8n_pururu_token
+    content_type: application/json
+    payload: "{{ event | tojson }}"
+
+automation:
+  - alias: pururu → n8n
+    mode: queued        # one at a time, in order
+    max: 1000
+    triggers:
+      - trigger: event
+        event_type: [pururu_state_changed, pururu_reading]
+    actions:
+      - action: rest_command.n8n_pururu
+        data:
+          event: "{{ trigger.event.data }}"
+```
+
+To send only some events, add a condition to the automation, such as `{{ trigger.event.data.device == 'laundry_washer' }}`. To send each class to its own webhook, write two automations.
+
+In **n8n**, a **Webhook** node receives them (method `POST`; Authentication **Header Auth** with the header name `X-Pururu-Token` and the same token). A **Switch** node on `event_class` or `event_name` routes them. For a finished cycle, match `event_name` ending in `.appliance_last_cycle_end` and read the values from `states`.
+
+## The recorder
+
+Home Assistant's recorder saves every event on the bus, and readings can change every few seconds. Their values are already saved as the entities' states, so leave the events out of the database:
+
+```yaml title="configuration.yaml"
+recorder:
+  exclude:
+    event_types:
+      - pururu_reading
+      - pururu_state_changed
+```
+
+The automation still gets them: the recorder's `exclude` only stops them being saved.
