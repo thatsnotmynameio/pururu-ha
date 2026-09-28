@@ -69,7 +69,7 @@ The rest of the device is still created. To fix it, free the ID (rename or delet
 
 At every start and reload, pururu deletes the entities and devices that the YAML no longer creates. For example:
 
-- If you remove `energy`, then `energy_total` and `last_cycle_energy` go away.
+- If you remove `energy`, then `energy_total`, `last_cycle_energy` and `idle_energy_total` go away.
 - If you remove `month` from `statistics.cycles`, then `cycles_month` goes away.
 - If you remove a device, the device and all its entities go away.
 

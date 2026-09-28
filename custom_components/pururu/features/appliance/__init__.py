@@ -1,4 +1,4 @@
-"""An appliance on a power-measuring plug: when it runs, its cycles and their statistics.
+"""An appliance on a power-measuring plug: when it runs, its cycles, their statistics and the energy between them.
 
 The configuration names the plug's entities and the threshold and delays measured
 on that appliance.
@@ -9,7 +9,7 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.const import STATE_ON, Platform
+from homeassistant.const import STATE_OFF, STATE_ON, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
@@ -17,25 +17,37 @@ from ...entity import PururuEntity
 from ...feature import Device, Feature, finite_float, preset_keys
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
-from ..cycle.totals import CyclesTotal, RuntimeTotal
+from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal
 from .alerts import PRESETS
 from .mirrors import Mirror
 from .running import Running
 
-SCHEMA = vol.Schema(
-    {
-        vol.Required("power"): cv.entity_id,
-        vol.Optional("energy"): cv.entity_id,
-        vol.Required("running"): {
-            vol.Required("threshold"): finite_float,
-            vol.Required("on_delay"): cv.positive_time_period,
-            vol.Required("off_delay"): cv.positive_time_period,
-        },
-        vol.Optional("statistics", default={}): {
-            vol.Optional("runtime", default=[]): PERIOD_LIST,
-            vol.Optional("cycles", default=[]): PERIOD_LIST,
-        },
-    }
+# The totals measured per period, each with its statistics key
+COUNTERS = ("runtime", "cycles", "idle_energy")
+
+
+def _energy_counted(config: dict[str, Any]) -> dict[str, Any]:
+    if config["statistics"]["idle_energy"] and "energy" not in config:
+        raise vol.Invalid("statistics.idle_energy needs energy")
+    return config
+
+
+SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required("power"): cv.entity_id,
+            vol.Optional("energy"): cv.entity_id,
+            vol.Required("running"): {
+                vol.Required("threshold"): finite_float,
+                vol.Required("on_delay"): cv.positive_time_period,
+                vol.Required("off_delay"): cv.positive_time_period,
+            },
+            vol.Optional("statistics", default={}): {
+                vol.Optional(counter, default=[]): PERIOD_LIST for counter in COUNTERS
+            },
+        }
+    ),
+    _energy_counted,
 )
 
 ENTITY_KEYS: dict[str, Platform] = {
@@ -48,9 +60,10 @@ ENTITY_KEYS: dict[str, Platform] = {
     "last_cycle_energy": Platform.SENSOR,
     "cycles_total": Platform.SENSOR,
     "runtime_total": Platform.SENSOR,
+    "idle_energy_total": Platform.SENSOR,
     **{
         f"{counter}_{period}": Platform.SENSOR
-        for counter in ("runtime", "cycles")
+        for counter in COUNTERS
         for period in PERIODS
     },
 }
@@ -65,6 +78,7 @@ def build(
     """The appliance's entities; those following another one take its current ID."""
     energy: str | None = config.get("energy")
     settings = config["running"]
+    running = device.current_entity_id(hass, Platform.BINARY_SENSOR, "running")
     entities: list[PururuEntity] = [
         Mirror(hass, device, "power", config["power"]),
         Running(
@@ -81,16 +95,14 @@ def build(
             if energy is not None or description.key != "last_cycle_energy"
         ),
         CyclesTotal(device, source="running"),
-        RuntimeTotal(
-            device,
-            device.current_entity_id(hass, Platform.BINARY_SENSOR, "running"),
-            STATE_ON,
-            source="running",
-        ),
+        RuntimeTotal(device, running, STATE_ON, source="running"),
     ]
     if energy is not None:
         entities.append(Mirror(hass, device, "energy_total", energy))
-    for counter in ("runtime", "cycles"):
+        entities.append(
+            IdleEnergyTotal(device, running, STATE_OFF, energy, source="running")
+        )
+    for counter in COUNTERS:
         total = f"{counter}_total"
         source = device.current_entity_id(hass, Platform.SENSOR, total)
         entities.extend(
