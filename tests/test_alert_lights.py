@@ -544,6 +544,26 @@ async def test_a_failing_call_is_a_warning_and_the_repeat_tries_again(
     assert calls(events, LED) == [("turn_on", ORANGE)] * 2
 
 
+async def test_an_integration_bug_turning_it_off_still_releases_the_light(
+        house: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """An error that isn't Home Assistant's is logged, and the light is still said free."""
+    async def crash(self: Any, **kwargs: Any) -> None:
+        raise RuntimeError("the integration's bug")
+
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    monkeypatch.setattr(module("features.lights").Light, "async_turn_off", crash)
+    released = capture(house, "pururu_alert_lights_released")
+    await tick(house, freezer, 120)
+    await house.async_block_till_done()
+    assert [event.data for event in released] == [{"entity_id": LED}]
+    assert ("The alert lights couldn't call light.turn_off on light.pururu_pool_light_led"
+            in caplog.text)
+    assert "the integration's bug" in caplog.text
+
+
 # --- start, restart, reload -------------------------------------------------------------
 
 

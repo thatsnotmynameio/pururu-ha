@@ -174,7 +174,7 @@ A light of an [alert lights](/concepts/alert-lights) group isn't created, usuall
 
 ### `The alert lights couldn't call light.… on …: …`
 
-Turning a borrowed light on or off failed: its integration refused the call. An `unavailable` light isn't called at all. The alert lights go on: the next `repeat`, or the next change of the light or its alerts, tries again.
+Turning a borrowed light on or off failed: its integration refused the call. Followed by a traceback instead of a reason, the light's integration hit a bug of its own: report it there. An `unavailable` light isn't called at all. Either way, a light handed back is still announced (`pururu_alert_lights_released`), and the alert lights go on: the next `repeat`, or the next change of the light or its alerts, tries again.
 
 ### The cycle ends too early, or never starts
 

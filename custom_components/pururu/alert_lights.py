@@ -415,7 +415,12 @@ class AlertLights:
         context: Context,
         then: Callable[[], None] | None,
     ) -> None:
-        """A failure is a warning: the next repeat or change tries again."""
+        """A failure is a warning: the next repeat or change tries again.
+
+        The light's integration is a third party that may raise anything: an
+        error it doesn't expect is its bug, logged with the traceback that
+        reports it. Either way `then` runs, so a release is still said.
+        """
         try:
             await self._hass.services.async_call(
                 Platform.LIGHT,
@@ -430,6 +435,10 @@ class AlertLights:
                 service,
                 entity_id,
                 err,
+            )
+        except Exception:
+            _LOGGER.exception(
+                "The alert lights couldn't call light.%s on %s", service, entity_id
             )
         if then is not None:
             then()
