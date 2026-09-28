@@ -127,7 +127,7 @@ For each program:
 
 ## Documentation
 
-- `docs/features/programs.mdx` (new) and its sidebar entry in `docs.json`: the YAML, its settings (`<Property>`), the steps, the entity and what a press does, `single`, reload and restart, the boundary (only its own device, no triggers, no templates).
+- `docs/concepts/programs.mdx` (new) and its sidebar entry in `docs.json`: the YAML, its settings (`<Property>`), the steps, the entity and what a press does, `single`, reload and restart, the boundary (only its own device, no triggers, no templates).
 - `docs/index.mdx`, "What pururu doesn't do": it still never acts on its own; a program runs its steps when someone presses it, and nothing else.
 - `docs/concepts/devices-and-features.mdx`: `programs` in the features table, and `actions`.
 - `docs/concepts/entity-ids.mdx`: platform `button`, namespace `program`.

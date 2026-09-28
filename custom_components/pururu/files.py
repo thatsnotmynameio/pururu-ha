@@ -30,12 +30,16 @@ def _write(path: Path, content: str) -> bool:
 
 
 async def async_write(
-    hass: HomeAssistant, file: str, what: str, items: list[dict[str, Any]]
+    hass: HomeAssistant,
+    file: str,
+    what: str,
+    items: list[dict[str, Any]] | dict[str, dict[str, Any]],
 ) -> bool | None:
     """Write `items` to `file` if it changed; whether it did, or None on failure.
 
-    `file` is relative to the configuration folder; `what` names the items in
-    the log. A failure is logged, never raised: the caller must tell
+    `items` is a list, or a mapping (as an include merging named items reads
+    it). `file` is relative to the configuration folder; `what` names the items
+    in the log. A failure is logged, never raised: the caller must tell
     "unchanged" (False) from "failed" (None).
     """
     try:

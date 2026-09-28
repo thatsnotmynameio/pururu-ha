@@ -7,7 +7,6 @@ from .lights import LIGHTS
 from .modes import MODES
 from .opening import DOOR, WINDOW
 from .phases import PHASES
-from .programs import PROGRAMS
 from .switches import SWITCHES
 
 FEATURES: dict[str, Feature] = {
@@ -19,5 +18,4 @@ FEATURES: dict[str, Feature] = {
     "modes": MODES,
     "switches": SWITCHES,
     "alerts": ALERTS,
-    "programs": PROGRAMS,
 }

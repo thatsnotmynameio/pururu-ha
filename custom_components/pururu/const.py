@@ -21,11 +21,14 @@ CONF_REACTIONS: Final = "reactions"
 CONF_ALERTS: Final = "alerts"
 # The key of the entry's data holding the IDs of the automations it generated
 CONF_AUTOMATIONS: Final = "automations"
+# A device's programs: each one a script pururu generates
+CONF_PROGRAMS: Final = "programs"
+# The key of the entry's data holding the IDs of the scripts it generated
+CONF_SCRIPTS: Final = "scripts"
 # Every entity ID is <platform>.pururu_<device key>_<namespace>_<entity key>
 ENTITY_PREFIX: Final = "pururu"
 PLATFORMS: Final = [
     Platform.BINARY_SENSOR,
-    Platform.BUTTON,
     Platform.LIGHT,
     Platform.SENSOR,
     Platform.SWITCH,

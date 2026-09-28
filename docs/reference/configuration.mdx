@@ -71,6 +71,7 @@ pururu:
         night: {name: Noite, at: "22:00"}
 
 automation pururu: !include_dir_merge_list pururu/automations
+script pururu: !include_dir_merge_named pururu/scripts
 
 alert2:                          # alerts with notify: see alerts
   alerts: !include_dir_merge_list pururu/alert2
@@ -82,7 +83,7 @@ alert2:                          # alerts with notify: see alerts
 - Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a program, is a **slug**: lowercase letters, digits and `_`.
 - A feature's own `alerts` enables its ready-made alerts, one key each: see the [appliance's](/features/appliance#ready-made-alerts). The device's `alerts` is for alerts you write.
 - An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_pump`). See [alerts](/features/alerts#settings).
-- A program's steps name entity keys of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/features/programs#steps).
+- A program's steps name entity keys of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/concepts/programs#steps).
 - No two devices give an entity the same ID. Device `pool` with the switch `switch_pump` and device `pool_switch` with the switch `pump` would both have `switch.pururu_pool_switch_switch_pump`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `pool` with the switch `appliance_energy_total` is refused next to a device `pool_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
 - In one device, a real entity is in one of `switches` and `lights` at most: `switches: switch.sonoff_abajur is already in lights`. Two devices can each use it their own way.
 - An unknown key anywhere is a configuration error. When the configuration is invalid, Home Assistant logs why, and a reload **changes nothing**.
@@ -162,6 +163,12 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 
 ---
 
+<Property name="programs" type="map" optional>
+  A map of **program key → program**, each one a Home Assistant script. It isn't a feature. See [Programs](/concepts/programs#settings).
+</Property>
+
+---
+
 <Property name="<feature>" type="map" required>
   At least one feature, under its own key:
 
@@ -173,7 +180,6 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
   - [`modes`](/features/modes#settings): the kind of each cycle.
   - [`switches`](/features/switches#settings): real switches inside the device.
   - [`alerts`](/features/alerts#settings): problems on the device's own entities.
-  - [`programs`](/features/programs#settings): sequences of actions on the device's own entities.
 </Property>
 
 ## Actions

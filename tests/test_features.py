@@ -117,7 +117,7 @@ def test_capabilities_line_up(features: dict[str, Any]) -> None:
 
 
 async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, features: dict[str, Any]) -> None:
-    """A program calls <platform>.<action> on the entity: the platform must have that service."""
+    """A program's step calls <platform>.<action> on the entity: the platform must have that service."""
     for name, feature in features.items():
         if not feature.actions:
             continue
@@ -130,16 +130,6 @@ async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, feat
 @pytest.mark.parametrize("name", ["switches", "lights"])
 def test_it_takes_turn_on_turn_off_and_toggle(features: dict[str, Any], name: str) -> None:
     assert features[name].actions == ("turn_on", "turn_off", "toggle")
-
-
-def test_what_a_feature_acts_on_it_refers_to(features: dict[str, Any]) -> None:
-    """acts' entity keys go through refers: validated, resolved in inputs, followed."""
-    for name, feature in features.items():
-        if feature.acts is None:
-            continue
-        assert feature.refers is not None, f"{name} acts on entities it doesn't refer to"
-        block = feature.schema(dict(feature.example))
-        assert {key for _, key in feature.acts(block)} <= set(feature.refers(block)), name
 
 
 def test_per_item_goes_with_items(features: dict[str, Any]) -> None:

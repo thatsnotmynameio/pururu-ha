@@ -9,7 +9,7 @@ the device's entities. One config entry owns every floor, area, device and entit
 from collections.abc import Iterator
 from functools import partial
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import voluptuous as vol
 
@@ -39,14 +39,14 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import alert2_alerts, dashboard, places, reactions
+from . import alert2_alerts, dashboard, generated, places, programs, reactions
 from .const import (
     CONF_ALERTS,
     CONF_AREA,
     CONF_AREAS,
-    CONF_AUTOMATIONS,
     CONF_DEVICES,
     CONF_FLOORS,
+    CONF_PROGRAMS,
     CONF_REACTIONS,
     DATA_CONFIG,
     DOMAIN,
@@ -66,14 +66,15 @@ def _device(value: Any) -> dict[str, Any]:
     """A device: a name, maybe an area, at least one feature, every reference resolved.
 
     Every <capability>_from names a feature of this device that provides it,
-    every entity key a feature refers to is another feature's, that feature
-    takes every action done to it, and a real entity is in one configured
-    feature of the device at most.
+    every entity key a feature refers to is another feature's, a program's step
+    acts on another feature's entity key that takes the action, and a real
+    entity is in one configured feature of the device at most.
     """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
         vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
+        vol.Optional(CONF_PROGRAMS): programs.SCHEMA,
         **{
             vol.Optional(name): partial(presets.validate, feature)
             for name, feature in FEATURES.items()
@@ -90,6 +91,7 @@ def _device(value: Any) -> dict[str, Any]:
     _no_alert_watches_an_alert(device, names)
     _real_entities_distinct(device, names)
     _reactions_on_this_device(device)
+    _programs_on_this_device(device)
     return device
 
 
@@ -120,10 +122,7 @@ def _real_entities_distinct(device: dict[str, Any], names: list[str]) -> None:
 
 
 def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
-    """Refuse a reference that isn't another feature's entity key.
-
-    Refuse too an action done to one that its feature doesn't take.
-    """
+    """Refuse a reference that isn't another feature's entity key."""
     # Every entity key the device can create, in its namespace -> its feature
     owners = {
         qualified(FEATURES[name].namespace, entity_key): name
@@ -139,10 +138,6 @@ def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
                     f"{name}: {key} is not an entity key of another feature "
                     "of this device"
                 )
-        # Every key it acts on is one it refers to: its owner is known
-        for action, key in feature.acts(device[name]) if feature.acts else ():
-            if action not in FEATURES[owners[key]].actions:
-                raise vol.Invalid(f"{name}: {key} does not take {action}")
 
 
 def _no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None:
@@ -175,6 +170,23 @@ def _reactions_on_this_device(device: dict[str, Any]) -> None:
             raise vol.Invalid(
                 f"reactions: {key}: {when} is not an entity key of this device"
             )
+
+
+def _programs_on_this_device(device: dict[str, Any]) -> None:
+    """Refuse a step on what isn't a feature's entity key of the device taking its action."""
+    owners = {
+        qualified(FEATURES[name].namespace, entity_key): name
+        for name, entity_key, _ in _entity_keys(device)
+    }
+    for program in device.get(CONF_PROGRAMS, {}).values():
+        for action, key in programs.targets(program):
+            if key not in owners:
+                raise vol.Invalid(
+                    f"programs: {key} is not an entity key of another feature "
+                    "of this device"
+                )
+            if action not in FEATURES[owners[key]].actions:
+                raise vol.Invalid(f"programs: {key} does not take {action}")
 
 
 def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
@@ -227,22 +239,27 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def _reaction_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
-    """Refuse two reactions whose automations would share an ID.
+def _generated_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse two reactions, or two programs, whose automations or scripts would share an ID.
 
     Device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b`
     with the reaction `c` would both have pururu_lights_reaction_b_reaction_c.
     """
-    owners: dict[str, str] = {}  # automation ID -> the device that has it
-    for key, device in config[CONF_DEVICES].items():
-        for reaction_key in device.get(CONF_REACTIONS, {}):
-            automation_id = reactions.automation_id(key, reaction_key)
-            if automation_id in owners:
-                raise vol.Invalid(
-                    f"device {key}: automation.{automation_id} is already a reaction "
-                    f"of device {owners[automation_id]}"
-                )
-            owners[automation_id] = key
+    blocks = (
+        (CONF_REACTIONS, reactions.KIND, reactions.automation_id, "reaction"),
+        (CONF_PROGRAMS, programs.KIND, programs.script_id, "program"),
+    )
+    for block, kind, id_of, what in blocks:
+        owners: dict[str, str] = {}  # ID -> the device that has it
+        for key, device in config[CONF_DEVICES].items():
+            for item_key in device.get(block, {}):
+                unique_id = id_of(key, item_key)
+                if unique_id in owners:
+                    raise vol.Invalid(
+                        f"device {key}: {kind.domain}.{unique_id} is already a {what} "
+                        f"of device {owners[unique_id]}"
+                    )
+                owners[unique_id] = key
     return config
 
 
@@ -302,7 +319,7 @@ CONFIG_SCHEMA = vol.Schema(
             places.floors_exist,
             _areas_exist,
             _entity_ids_distinct,
-            _reaction_ids_distinct,
+            _generated_ids_distinct,
             _reactions_resolved,
         )
     },
@@ -358,9 +375,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     """Make floors and areas follow the configuration, then build every device.
 
     Floors and areas come first: devices will be placed in them. The reactions'
-    automations and Alert2's alerts come after the entities: they watch the
-    ones created. The
-    dashboard comes last: it shows them all.
+    automations, the programs' scripts and Alert2's alerts come after the
+    entities: they watch and act on the ones created. The dashboard comes last:
+    it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -382,27 +399,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
     created = {str(entity.unique_id) for each in built.values() for entity in each}
-    generated = await reactions.async_sync(
-        hass, entry, _automations(hass, devices, created)
+    await generated.async_sync(
+        hass, entry, reactions.KIND, _automations(hass, devices, created)
     )
-    hass.config_entries.async_update_entry(
-        entry, data={**entry.data, CONF_AUTOMATIONS: generated}
-    )
+    scripts, held, targets = _scripts(hass, devices, created)
+    await generated.async_sync(hass, entry, programs.KIND, scripts, held)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
+    # Whether a reload is already scheduled: a burst of disables reloads once
+    reloading = False
+
     @callback
-    def renamed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
-        """One of the entry's entities got a new ID: build again, following it."""
+    def changed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
+        """One of the entry's entities got a new ID, or a program's target was disabled: build again.
+
+        A rename is followed. A program acting on an entity just disabled is
+        dropped (`_acted_on`), once for a burst of them: HA reloads the entry
+        itself once an entity is enabled again, but not when one is disabled
+        (config_entries.py leaves that to the entity, which merely clears its
+        own state). No other disable or enable concerns what is built here.
+        """
+        nonlocal reloading
         data = event.data
-        if data["action"] != "update" or "entity_id" not in data["changes"]:
+        if data["action"] != "update":
             return
         registered = registry.async_get(data["entity_id"])
-        if registered is not None and registered.config_entry_id == entry.entry_id:
+        if registered is None or registered.config_entry_id != entry.entry_id:
+            return
+        changes = data["changes"]
+        if "entity_id" in changes or (
+            "disabled_by" in changes
+            # The old value: the entity was enabled, and is now disabled
+            and changes["disabled_by"] is None
+            and registered.disabled
+            and registered.entity_id in targets
+            and not reloading
+        ):
+            reloading = True
             hass.config_entries.async_schedule_reload(entry.entry_id)
 
     entry.async_on_unload(
-        hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, renamed)
+        hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, changed)
     )
     return True
 
@@ -413,9 +451,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
-    """Delete the floors and areas the entry managed, its reactions' automations and its Alert2 alerts."""
+    """Delete the floors and areas the entry managed, its reactions' automations, programs' scripts and Alert2 alerts."""
     places.async_remove(hass, entry.data)
-    await reactions.async_remove(hass, entry)
+    await generated.async_remove(hass, entry, reactions.KIND)
+    await generated.async_remove(hass, entry, programs.KIND)
     await alert2_alerts.async_remove(hass)
 
 
@@ -587,9 +626,9 @@ def _remove_stale(
 
 def _automations(
     hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
-) -> list[dict[str, Any]]:
+) -> list[generated.Item]:
     """An automation per reaction of every device; one watching an entity not created is logged."""
-    automations: list[dict[str, Any]] = []
+    automations: list[generated.Item] = []
     for key, config in devices.items():
         for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
             entity_id = reaction.get("entity")
@@ -608,11 +647,94 @@ def _automations(
                     continue
                 entity_id = owner.current_entity_id(hass, platform, entity_key)
             automations.append(
-                reactions.automation(
-                    key, config[CONF_NAME], reaction_key, reaction, entity_id
+                generated.Item(
+                    unique_id=reactions.automation_id(key, reaction_key),
+                    config=reactions.automation(
+                        key, config[CONF_NAME], reaction_key, reaction, entity_id
+                    ),
                 )
             )
     return automations
+
+
+def _scripts(
+    hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
+) -> tuple[list[generated.Item], set[str], set[str]]:
+    """A script per program of every device, in the device's area; one that can't act is logged.
+
+    Also the IDs of the scripts held while an entity they act on is disabled
+    (their registry entries stay, as the user set them), and the entity IDs the
+    generated scripts act on.
+    """
+    registry = er.async_get(hass)
+    scripts: list[generated.Item] = []
+    held: set[str] = set()
+    targets: set[str] = set()
+    for key, config in devices.items():
+        referable = _referable(key, config)
+        for program_key, program in config.get(CONF_PROGRAMS, {}).items():
+            script_id = programs.script_id(key, program_key)
+            entity_ids = _acted_on(
+                hass, registry, referable, script_id, program, created
+            )
+            if entity_ids == "held":
+                held.add(script_id)
+                continue
+            if entity_ids is None:
+                continue
+            targets.update(entity_ids.values())
+            scripts.append(
+                generated.Item(
+                    unique_id=script_id,
+                    config=programs.script(
+                        key, config[CONF_NAME], program_key, program, entity_ids
+                    ),
+                    area=config.get(CONF_AREA),
+                )
+            )
+    return scripts, held, targets
+
+
+def _acted_on(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    referable: dict[str, tuple[Device, str, Platform]],
+    script_id: str,
+    program: dict[str, Any],
+    created: set[str],
+) -> dict[str, str] | Literal["held"] | None:
+    """Each entity key the program acts on -> its current entity ID.
+
+    None, logged, when one isn't created: the program is dropped. "held",
+    logged, when all are created but one is disabled: the program is held, to
+    come back as the user set it once the entity is enabled again. The entry is
+    reloaded when an entity a generated script acts on is disabled (pururu's
+    registry listener, `changed`), and when a disabled one is enabled again
+    (HA's own).
+    """
+    entity_ids: dict[str, str] = {}
+    for _, key in programs.targets(program):
+        owner, entity_key, platform = referable[key]
+        entity_id = owner.current_entity_id(hass, platform, entity_key)
+        if owner.object_id(entity_key) not in created:
+            _LOGGER.error(
+                "script.%s follows %s, which is not created; not generating it",
+                script_id,
+                entity_id,
+            )
+            return None
+        entity_ids[key] = entity_id
+    for entity_id in entity_ids.values():
+        if (registered := registry.async_get(entity_id)) is not None and (
+            registered.disabled
+        ):
+            _LOGGER.error(
+                "script.%s acts on %s, which is disabled; not generating it",
+                script_id,
+                entity_id,
+            )
+            return "held"
+    return entity_ids
 
 
 def _alert2_alerts(

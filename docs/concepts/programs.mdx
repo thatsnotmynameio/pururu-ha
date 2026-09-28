@@ -1,0 +1,91 @@
+---
+title: Programs
+description: Sequences of actions on a device's own entities, each one a Home Assistant script.
+---
+
+`programs` gives a device things it knows how to do, such as a pool's cleaning: turn the pump on, wait two hours, turn it off. pururu writes each program as a Home Assistant **script**, and Home Assistant runs it. Its steps act on that device's own entities only.
+
+```yaml
+pururu:
+  devices:
+    pool:
+      name: Piscina
+      switches:
+        pump: {entity: switch.pool_pump, name: Bomba}
+      programs:
+        clean:
+          name: Limpar
+          sequence:
+            - turn_on: switch_pump
+            - delay: {hours: 2}
+            - turn_off: switch_pump
+```
+
+This writes `script.pururu_pool_program_clean`, shown as **Piscina Limpar**, to `pururu/scripts/programs.yaml`.
+
+## The include
+
+Home Assistant reads scripts only from its configuration. Add this line to `configuration.yaml`, once, then restart Home Assistant:
+
+```yaml
+script pururu: !include_dir_merge_named pururu/scripts
+```
+
+Until it's there, **Settings → Repairs** says so. pururu rewrites the file on every reload: don't edit it.
+
+## Settings
+
+`programs` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after the namespace `program`: `clean` → `script.pururu_pool_program_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
+
+<Property name="name" type="string" required>
+  The name shown after the device's name. It can't be empty, and it's the same in every language.
+</Property>
+
+---
+
+<Property name="sequence" type="list of steps" required>
+  The steps, run in order. At least one.
+</Property>
+
+## Steps
+
+Each step has exactly one key:
+
+| Step | What it does |
+|---|---|
+| `turn_on: <entity key>` | Turns that entity of the device on |
+| `turn_off: <entity key>` | Turns it off |
+| `toggle: <entity key>` | Turns it on if it's off, off if it's on |
+| `delay: <time period>` | Waits, such as `{hours: 2}`, `"00:30:00"` or `90` (seconds) |
+
+An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_pump` for `switch.pururu_pool_switch_pump`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps.
+
+Anything else is a configuration error: an entity ID (`switch.pool_pump`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
+
+## Only its own device
+
+A program is a method of its device. It acts only on its device's entities, and it never starts by itself:
+
+- **No other device, no real entity.** To act on a real switch or light, add it to the device under [`switches`](/features/switches) or [`lights`](/features/lights).
+- **No templates, no events, no other actions.** Its steps are the four above.
+- **No triggers.** Something outside starts it: you, an automation, a voice assistant.
+
+## The script
+
+`script.pururu_<key>_program_<program key>`, in the device's area. Home Assistant keeps a script from YAML out of any device, so it isn't on the device's page.
+
+- **Starting it:** `script.turn_on`, or **Run** in the UI. It returns at once: an automation starting it doesn't wait for it to end.
+- **While it runs**, its state is `on`, and `script.turn_off` stops it. What it already did stays: if the pump was on, it stays on.
+- **Started while it runs**, it's ignored, and the log says `Piscina Limpar: Already running`. That `script.turn_on` doesn't return at once: an automation calling it stays on that action until the running program's next step or its end — in this example, up to its two-hour `delay`. This is Home Assistant's behaviour for any single-mode script, not something pururu changes.
+- **Its traces**, in the script's menu, show each step it ran.
+- **A step that fails**, such as a real switch reporting an error, stops it, and the log and the trace say why. A switch that's `unavailable` doesn't stop it: that step does nothing and the program goes on.
+- **A reload** of pururu stops a running program only if you changed that program: Home Assistant then loads its new script.
+- **A restart** of Home Assistant loses a running program, as any script.
+- **Renaming it** in the UI is kept.
+- **An entity it acts on that you disable** in the UI takes the program out of Home Assistant at once: pururu reloads the entry, and the log says why. Meanwhile the script shows as `unavailable`, and an automation starting it does nothing (the log says the script is missing). It comes back when you enable the entity again, since Home Assistant reloads the entry then, with what you set on it: disabled, renamed or moved to another area, it stays so.
+- If an entity it acts on isn't created, the program isn't either, and the log says so. See [Troubleshooting](/reference/troubleshooting).
+- **Renaming an entity it acts on** in the UI is followed: the file is rewritten with the new ID.
+
+## From 0.1.14 and before
+
+Programs were buttons, `button.pururu_<key>_program_<program key>`, pressed with `button.press`. The first start of 0.1.15 removes them. Change what pressed one to `script.turn_on` on its script, and add the include above.

@@ -164,7 +164,7 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 **On one entity of another feature, named in the configuration:** set `refers` to a function that returns, from the validated block, the entity keys it names, in their namespace (`appliance_power`). The device schema checks each is another feature's entity key, and `build()` receives its current ID in `inputs[<key>]`. Set `follows` on each entity to the keys it reads. [`alerts`](/features/alerts) (`features/alerts.py`) is the example.
 
-**Acting on another feature's entities:** set `acts` to return, from the validated block, (action, entity key) pairs, each key also in `refers`. The device schema checks the owning feature has the action in its `actions`. A feature whose entities can be acted on declares `actions`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `("turn_on", "turn_off", "toggle")`. [`programs`](/features/programs) (`features/programs.py`) is the example.
+**Being acted on:** a feature whose entities a [program](/concepts/programs) can act on declares `actions`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `("turn_on", "turn_off", "toggle")`.
 
 ## 5. Entity keys from the configuration
 
@@ -209,7 +209,7 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 | `test_capabilities_line_up` | `provides` points to real entity keys and a configured feature provides nothing, every `requires` is provided by some feature, and the example has `<capability>_from` |
 | `test_refers_names_entity_keys_as_in_an_entity_id` | What `refers` returns for the example is a slug, as an entity key in its namespace |
 | `test_every_action_is_a_service_of_its_platform` | A feature with `actions` is configured, and its platform has a service for each action |
-| `test_what_a_feature_acts_on_it_refers_to` | Every key `acts` returns for the example is in what `refers` returns |
+| `test_it_takes_turn_on_turn_off_and_toggle` | `switches` and `lights` have exactly `("turn_on", "turn_off", "toggle")` |
 | `test_per_item_goes_with_items` | `items` is set exactly when `per_item` is, and the example's items are slugs |
 | `test_every_per_item_name_has_its_placeholder` | Every suffix's name has the `{<namespace>}` placeholder, in both languages |
 | `test_ready_made_alerts_line_up` | Every ready-made alert's key is in `entity_keys`, it watches (and counts from) its own feature's entity keys, has both default texts in both languages, and its settings validate |

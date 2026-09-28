@@ -56,7 +56,7 @@ Another integration's entity, or an entity without a unique ID, already has that
 sensor.pururu_laundry_washer_phase_current follows binary_sensor.pururu_laundry_washer_appliance_running, which is not created; not creating it
 ```
 
-This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. A [program](/features/programs) acting on a switch that isn't created isn't created either.
+This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. A [program](/concepts/programs) acting on a switch that isn't created isn't created either.
 
 ### `… watches …, which this device's settings don't create …`
 
@@ -141,7 +141,7 @@ A door's or window's `contact:` names one of pururu's own binary sensors that yo
 Piscina Limpar: Already running
 ```
 
-A [program](/features/programs) was pressed while it was still running, for example during its `delay`. The press is ignored; the running program goes on.
+A [program](/concepts/programs) was started while it was still running, for example during its `delay`. The start is ignored; the running program goes on. `script.turn_on` returns at once when it starts the program, but not when it's ignored: an automation calling it then stays on that action until the running program's next step or its end, up to its longest `delay` — Home Assistant's behaviour for any single-mode script.
 
 ### An entity stays `unknown`
 
@@ -245,6 +245,42 @@ Another automation already has the entity ID the reaction's automation would hav
 ### `The automations are not written to pururu/automations/reactions.yaml: …`
 
 pururu couldn't write the file, usually because of permissions on the configuration folder. The devices keep working; the reactions keep their last written automations.
+
+## Programs
+
+### The programs' scripts aren't loaded
+
+**Settings → Repairs** shows it, and the log says:
+
+```
+The scripts of pururu's programs are not loaded: add "script pururu: !include_dir_merge_named pururu/scripts" to configuration.yaml
+```
+
+**Fix:** add that line to `configuration.yaml`, then reload scripts in **Developer tools → YAML → Scripts**. See [The include](/concepts/programs#the-include).
+
+### `script.… follows …, which is not created; not generating it`
+
+```
+script.pururu_pool_program_clean follows switch.pururu_pool_switch_pump, which is not created; not generating it
+```
+
+An entity the program acts on isn't created, usually because its ID is taken. Fix that entity, then reload pururu.
+
+### `script.… acts on …, which is disabled; not generating it`
+
+```
+script.pururu_pool_program_clean acts on switch.pururu_pool_switch_pump, which is disabled; not generating it
+```
+
+You disabled an entity the program acts on. Until you enable it again, the script is `unavailable` and starting it does nothing. Enable it again and the program comes back, with what you set on its script (disabled, entity ID, area).
+
+### `script.… is already taken by …; not generating it`
+
+```
+script.pururu_pool_program_clean is already taken by script.mine, a script with the same ID; not generating it
+```
+
+A script of your own, or of another integration, has the program's ID. pururu never takes it over: rename or remove the other script, or give the program another key.
 
 ## Still stuck?
 
