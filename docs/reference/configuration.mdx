@@ -68,6 +68,9 @@ pururu:
         night: {name: Noite, at: "22:00"}
 
 automation pururu: !include_dir_merge_list pururu/automations
+
+alert2:                          # alerts with notify: see alerts
+  alerts: !include_dir_merge_list pururu/alert2
 ```
 
 ## General rules

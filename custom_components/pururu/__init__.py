@@ -32,8 +32,9 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import dashboard, places, reactions
+from . import alert2_alerts, dashboard, places, reactions
 from .const import (
+    CONF_ALERTS,
     CONF_AREA,
     CONF_AREAS,
     CONF_AUTOMATIONS,
@@ -328,7 +329,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     """Make floors and areas follow the configuration, then build every device.
 
     Floors and areas come first: devices will be placed in them. The reactions'
-    automations come after the entities: they watch the ones created. The
+    automations and Alert2's alerts come after the entities: they watch the
+    ones created. The
     dashboard comes last: it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
@@ -356,6 +358,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     hass.config_entries.async_update_entry(
         entry, data={**entry.data, CONF_AUTOMATIONS: generated}
     )
+    await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, devices, created))
     dashboard.async_setup(hass, entry)
 
     @callback
@@ -380,9 +383,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
-    """Delete the floors and areas the entry managed, and its reactions' automations."""
+    """Delete the floors and areas the entry managed, its reactions' automations and its Alert2 alerts."""
     places.async_remove(hass, entry.data)
     await reactions.async_remove(hass, entry)
+    await alert2_alerts.async_remove(hass)
 
 
 def _build(
@@ -576,3 +580,28 @@ def _automations(
                 )
             )
     return automations
+
+
+def _alert2_alerts(
+    hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
+) -> list[dict[str, Any]]:
+    """An Alert2 alert per created alert with notify; one not created would watch nothing."""
+    alerts: list[dict[str, Any]] = []
+    for key, config in devices.items():
+        device = Device(
+            key=key, name=config[CONF_NAME], namespace=FEATURES[CONF_ALERTS].namespace
+        )
+        for alert_key, alert in config.get(CONF_ALERTS, {}).items():
+            object_id = device.object_id(alert_key)
+            if "notify" not in alert or object_id not in created:
+                continue
+            alerts.append(
+                alert2_alerts.alert(
+                    object_id,
+                    device.current_entity_id(hass, Platform.BINARY_SENSOR, alert_key),
+                    f"{config[CONF_NAME]} {alert[CONF_NAME]}",
+                    alert["priority"],
+                    alert["notify"],
+                )
+            )
+    return alerts

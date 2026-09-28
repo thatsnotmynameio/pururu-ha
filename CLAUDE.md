@@ -35,7 +35,8 @@ python3 release.py check                        # the manifest version must be s
     4. Put each device in its `area:` (a key of `areas:`).
     5. Remove stale entities and devices.
     6. Generate the reactions' automations (`reactions.py`): `pururu/automations/reactions.yaml`, whose folder `configuration.yaml` includes (`automation pururu: !include_dir_merge_list pururu/automations`, as a missing folder loads as `[]` while a missing file stops HA's configuration), entity IDs pre-registered (an ID the entry doesn't manage is the user's, never taken over), automations reloaded when it changed or HA doesn't run it (retried at the next reload), in an entry task, a Repairs issue while it isn't included. A dropped automation's registry entry goes once HA no longer runs it: a restored placeholder state still carries the `id` attribute, so it doesn't count as running. `reactions` is a device key, not a `Feature`.
-    7. Show the dashboard (`dashboard.py`).
+    7. Write Alert2's alerts (`alert2_alerts.py`): `pururu/alert2/alerts.yaml`, one condition alert per created alert with `notify`, which the user's `alert2:` block includes as its `alerts` (`!include_dir_merge_list pururu/alert2`); Alert2 reloaded when it changed or doesn't run an alert of it, in an entry task, a Repairs issue while it isn't included. The writer is shared with reactions (`files.py`).
+    8. Show the dashboard (`dashboard.py`).
 - **Features** (`feature.py`, `features/`):
   - A device is a name plus one or more features. `FEATURES` in `features/__init__.py` maps each config key to a `Feature`. A `Feature` has a `schema`, a `namespace`, the `entity_keys` it can create (entity key → platform), `build()`, an `example` block, and the capabilities it `provides` and `requires`.
   - A feature consumes another feature's capability through `<capability>_from: <feature>`. `_build` passes it the current entity ID of the providing entity key.
