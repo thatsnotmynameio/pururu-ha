@@ -1,13 +1,15 @@
 """Whether the door is open: its contact, held while the contact has no state; the source of its openings.
 
 It also matches opening events to openings, by time: an event `match` apart
-from an opening's start at most describes it, whichever comes first.
+from an opening's start at most describes it, whichever comes first, unless
+it is nearer the opening before.
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
-from typing import override
+from typing import Any, Self, override
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -31,6 +33,29 @@ from ...entity import PururuEntity
 from ...feature import Device
 from ..cycle import Cycle, CycleStart, cycle_signal, end_signal
 from .events import OPENING, Fired, Source, described_signal
+
+
+@dataclass
+class OpeningStart(CycleStart):
+    """The current opening's start, and whether an event described it already."""
+
+    described: bool = False
+
+    @override
+    def as_dict(self) -> dict[str, Any]:
+        """What .storage keeps."""
+        return {**super().as_dict(), "described": self.described}
+
+    @classmethod
+    @override
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Read back what as_dict saved; without `described` (saved before it), not described."""
+        start = CycleStart.from_dict(data)
+        return cls(
+            since=start.since,
+            since_energy=start.since_energy,
+            described=data.get("described") is True,
+        )
 
 
 class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
@@ -58,16 +83,18 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
         self._data = CycleStart()
         # False until HA has started: every entity of the door listens by then
         self._following = False
-        # The last opening's start, whether an event described it, an event waiting
+        # The last opening's start, whether an event described it, the start of
+        # the opening before, and an event waiting for the next opening
         self._opened: datetime | None = None
         self._described = False
+        self._before: datetime | None = None
         self._pending: Fired | None = None
 
     @property
     @override
-    def extra_restore_state_data(self) -> CycleStart:
-        """The current opening's start."""
-        return self._data
+    def extra_restore_state_data(self) -> OpeningStart:
+        """The current opening's start, and whether an event described it."""
+        return OpeningStart(since=self._data.since, described=self._described)
 
     @override
     async def async_added_to_hass(self) -> None:
@@ -80,7 +107,9 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
         if (last := await self.async_get_last_state()) is not None:
             self._attr_is_on = last.state == STATE_ON
         if (extra := await self.async_get_last_extra_data()) is not None:
-            self._data = CycleStart.from_dict(extra.as_dict())
+            restored = OpeningStart.from_dict(extra.as_dict())
+            self._data = CycleStart(since=restored.since)
+            self._described = restored.described
         self._opened = self._data.since
         if self._contact is None:
             return
@@ -133,7 +162,7 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
     @callback
     def _opening_starts(self, now: datetime) -> None:
         """A new opening: an event waiting close enough describes it; else nothing does yet."""
-        self._opened = now
+        self._before, self._opened = self._opened, now
         self._described = False
         pending, self._pending = self._pending, None
         if pending is not None and abs(now - pending.time) <= self._match:
@@ -145,16 +174,23 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
     def _event(self, source: Source, event: Event[EventStateChangedData]) -> None:
         """An opening event near the last opening's start is that opening's; else it waits for the next.
 
-        Near an opening already described, it is still that opening's (a second
-        source for it): it describes no other.
+        Nearer the opening before, it is that one's, come late: it describes no
+        other. Near an opening already described, it is still that opening's (a
+        second source for it). Waiting, the first event near the next opening
+        stays; a later one takes its place only once it is `match` apart.
         """
         if not self._following or (fired := source.fired(event, OPENING)) is None:
             return
-        if self._opened is not None and abs(fired.time - self._opened) <= self._match:
-            if not self._described:
-                self._describe(fired.fields)
-            return
-        self._pending = fired
+        if self._opened is not None:
+            since = abs(fired.time - self._opened)
+            if self._before is not None and abs(fired.time - self._before) < since:
+                return
+            if since <= self._match:
+                if not self._described:
+                    self._describe(fired.fields)
+                return
+        if self._pending is None or fired.time - self._pending.time > self._match:
+            self._pending = fired
 
     @callback
     def _describe(self, fields: Mapping[str, str | None]) -> None:

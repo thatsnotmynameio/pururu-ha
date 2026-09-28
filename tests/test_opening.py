@@ -628,3 +628,54 @@ async def test_a_time_without_zone_leaves_denied_working(enclosure: HomeAssistan
     assert seconds_from(enclosure, kind, "last_denied") < 1
     assert enclosure.states.get(entity(kind, "last_denied")).attributes["who"] == "Outro"
     assert not [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+
+
+async def test_the_first_of_two_waiting_events_wins(enclosure: HomeAssistant, kind: str,
+                                                    freezer: Any) -> None:
+    await access(enclosure, **EXIT)
+    await tick(enclosure, freezer, 1)
+    await access(enclosure, **ENTRY)
+    await tick(enclosure, freezer, 1)
+    await contact(enclosure, "on")
+    assert fields(enclosure, kind) == ("N/A", "REX", "exit")
+
+
+async def test_a_late_event_of_the_previous_opening_describes_no_reopening(
+        enclosure: HomeAssistant, kind: str, freezer: Any) -> None:
+    """Closed and opened again at once; the first opening's event, 0.9 s after it, comes late."""
+    first = dt_util.utcnow()
+    await opening(enclosure, freezer, 1)
+    await tick(enclosure, freezer, 1)
+    await contact(enclosure, "on")
+    await access(enclosure, at=(first + timedelta(seconds=0.9)).isoformat(timespec="milliseconds"),
+                 **ENTRY)
+    assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
+
+
+async def test_a_reload_keeps_the_opening_described(enclosure: HomeAssistant, kind: str,
+                                                    freezer: Any) -> None:
+    await contact(enclosure, "on")
+    await access(enclosure, **ENTRY)
+    await tick(enclosure, freezer, 1)
+    await reload(enclosure, devices(kind, events=EVENTS))
+    await tick(enclosure, freezer, 0.5)
+    await access(enclosure, **EXIT)
+    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+
+
+async def test_an_event_after_a_reload_still_describes_the_opening(
+        enclosure: HomeAssistant, kind: str, freezer: Any) -> None:
+    await contact(enclosure, "on")
+    await reload(enclosure, devices(kind, events=EVENTS))
+    await tick(enclosure, freezer, 0.9)
+    await access(enclosure, **ENTRY)
+    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+
+
+async def test_an_opening_saved_before_described_is_restored_undescribed(
+        ha: HomeAssistant, kind: str, freezer: Any) -> None:
+    """.storage from before `described` was kept: the opening takes its event."""
+    ha.states.async_set(CONTACT, "on")
+    await restart(ha, devices(kind, events=EVENTS), saved_open(kind, 1))
+    await access(ha, **ENTRY)
+    assert fields(ha, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
