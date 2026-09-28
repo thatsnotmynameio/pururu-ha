@@ -361,7 +361,8 @@ async def async_sync(
 ) -> list[str]:
     """Generate the items, keep in the entry the IDs it tracks, return those generated.
 
-    The IDs generated are the items' whose IDs are free (`_free`).
+    The IDs generated are the items' whose IDs are free (`_free`) and that are
+    in the file: after a failed write, only those the previous file held.
 
     `held` are the IDs of items not generated for now (a program whose target is
     disabled): out of the file, and so out of HA, but not dropped. Their
@@ -421,7 +422,7 @@ async def async_sync(
         entry.async_on_unload(checker.cancel)
 
     entry.async_on_unload(async_at_started(hass, finish))
-    return ids
+    return checked
 
 
 async def async_remove(hass: HomeAssistant, entry: ConfigEntry, kind: Kind) -> None:

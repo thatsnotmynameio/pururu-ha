@@ -10,6 +10,7 @@ from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
+from homeassistant.util.file import WriteError
 import pytest
 import voluptuous as vol
 
@@ -271,8 +272,9 @@ def test_then_starts_its_program_unless_it_runs(ha: HomeAssistant) -> None:
 
 @pytest.mark.parametrize("then", [["clean"], "script.pururu_lights_program_clean"])
 def test_then_is_a_slug(ha: HomeAssistant, then: Any) -> None:
+    reaction = module("reactions").REACTION
     with pytest.raises(vol.Invalid):
-        module("reactions").REACTION({**DOOR_OPENS, "then": then})
+        reaction({**DOOR_OPENS, "then": then})
 
 
 # --- generation --------------------------------------------------------------------------
@@ -532,3 +534,25 @@ async def test_a_reaction_on_another_device_starts_its_own_program(ha: HomeAssis
     config[WASHER] = {"name": "Washer", "appliance": APPLIANCE}
     assert await setup(ha, config)
     assert generated(ha)[0]["actions"] == module("reactions").actions(CLEAN)
+
+
+async def test_a_script_not_written_drops_its_reaction(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The scripts' file can't be written: the new program isn't in HA, so its reaction isn't generated."""
+    files = module("files")
+    real = files.write_utf8_file_atomic
+
+    def only_automations(path: str, content: str) -> None:
+        if path.endswith("programs.yaml"):
+            raise WriteError("disk full")
+        real(path, content)
+
+    night = {"name": "Noite", "at": "22:00"}
+    before = pool(night=night)
+    del before[POOL]["programs"]
+    assert await setup(ha, before)
+    with patch.object(files, "write_utf8_file_atomic", side_effect=only_automations):
+        await reload(ha, pool(night=night, clean={**DOOR_OPENS, "then": "clean"}))
+    assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
+    assert ("automation.pururu_pool_reaction_clean runs script.pururu_pool_program_clean, "
+            "which is not generated; not generating it") in caplog.text
