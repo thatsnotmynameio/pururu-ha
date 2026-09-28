@@ -14,7 +14,13 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry, ConfigEntryState
-from homeassistant.const import ATTR_RESTORED, CONF_NAME, SERVICE_RELOAD, Platform
+from homeassistant.const import (
+    ATTR_FRIENDLY_NAME,
+    ATTR_RESTORED,
+    CONF_NAME,
+    SERVICE_RELOAD,
+    Platform,
+)
 from homeassistant.core import (
     Event,
     HomeAssistant,
@@ -49,6 +55,7 @@ from .const import (
 from .entity import PururuEntity
 from .feature import Device, preset_keys, qualified
 from .features import FEATURES, presets
+from .features.alerts import ProblemAlert
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -355,8 +362,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     registry = er.async_get(hass)
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
+    texts = await presets.async_texts(hass)
     for key, config in devices.items():
-        for entity in _creatable(hass, registry, *_build(hass, key, config)):
+        for entity in _creatable(hass, registry, *_build(hass, key, config, texts)):
             built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
     entry.runtime_data = built
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -369,7 +377,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     hass.config_entries.async_update_entry(
         entry, data={**entry.data, CONF_AUTOMATIONS: generated}
     )
-    await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, devices, created))
+    await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
     @callback
@@ -401,7 +409,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> N
 
 
 def _build(
-    hass: HomeAssistant, key: str, config: dict[str, Any]
+    hass: HomeAssistant, key: str, config: dict[str, Any], texts: presets.Texts
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
@@ -433,7 +441,10 @@ def _build(
             for reference in feature.refers(config[name]):
                 owner, entity_key, platform = referable[reference]
                 inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
-        for entity in feature.build(hass, device, config[name], inputs):
+        for entity in (
+            *feature.build(hass, device, config[name], inputs),
+            *presets.build(hass, device, feature, config[name], texts),
+        ):
             follows = set()
             for reference in entity.follows:
                 owner, entity_key, platform = referable[reference]
@@ -594,25 +605,25 @@ def _automations(
 
 
 def _alert2_alerts(
-    hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
+    hass: HomeAssistant, built: dict[Platform, list[Entity]]
 ) -> list[dict[str, Any]]:
-    """An Alert2 alert per created alert with notify; one not created would watch nothing."""
+    """An Alert2 alert per created alert with notify, hand-written or ready-made.
+
+    Named as HA shows it: its device's name and its own, translated or not.
+    """
     alerts: list[dict[str, Any]] = []
-    for key, config in devices.items():
-        device = Device(
-            key=key, name=config[CONF_NAME], namespace=FEATURES[CONF_ALERTS].namespace
-        )
-        for alert_key, alert in config.get(CONF_ALERTS, {}).items():
-            object_id = device.object_id(alert_key)
-            if "notify" not in alert or object_id not in created:
-                continue
-            alerts.append(
-                alert2_alerts.alert(
-                    object_id,
-                    device.current_entity_id(hass, Platform.BINARY_SENSOR, alert_key),
-                    f"{config[CONF_NAME]} {alert[CONF_NAME]}",
-                    alert["priority"],
-                    alert["notify"],
-                )
+    for entity in built[Platform.BINARY_SENSOR]:
+        if not isinstance(entity, ProblemAlert) or entity.notify is None:
+            continue
+        state = hass.states.get(entity.entity_id)
+        name = state.attributes.get(ATTR_FRIENDLY_NAME) if state else None
+        alerts.append(
+            alert2_alerts.alert(
+                str(entity.unique_id),
+                entity.entity_id,
+                str(name or entity.entity_id),
+                entity.priority,
+                entity.notify,
             )
+        )
     return alerts
