@@ -458,6 +458,21 @@ async def test_without_the_include_an_issue_says_what_to_add(
             "to configuration.yaml") in caplog.text
 
 
+async def test_the_warning_is_logged_once_while_the_issue_is_open(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The include is checked at every automation's state change: the log says it once."""
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {}):
+        assert await async_setup_component(ha, "automation", {})
+        assert await setup(ha, devices(door=DOOR_OPENS))
+    ha.states.async_set("automation.mine", "on")
+    ha.states.async_set("automation.mine", "off")
+    await ha.async_block_till_done()
+    assert issue(ha) is not None
+    warned = [r for r in caplog.records if "are not loaded: add" in r.getMessage()]
+    assert len(warned) == 1
+
+
 async def test_the_issue_goes_once_the_include_is_there(ha: HomeAssistant) -> None:
     with patch("homeassistant.config.load_yaml_config_file",
                side_effect=lambda *_args, **_kwargs: {}) as loader:
@@ -494,8 +509,8 @@ async def test_a_disabled_automation_is_no_missing_include(ha: HomeAssistant,
 
 async def test_a_failed_write_is_logged_and_the_setup_goes_on(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    reactions = module("reactions")
-    with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
+    generated = module("generated")
+    with patch.object(generated, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
         assert await setup(ha, devices(door=DOOR_OPENS))
     assert "The automations are not written to pururu/automations/reactions.yaml: disk full" in caplog.text
     assert ha.states.get("light.pururu_lights_light_teto") is not None
@@ -520,8 +535,8 @@ async def test_a_failed_write_drops_nothing_stale(
         ha: HomeAssistant, automations: None) -> None:
     """A dropped reaction whose write failed keeps its registry entry and its entry data."""
     assert await setup(ha, devices(door=DOOR_OPENS, night={"name": "Noite", "at": "22:00"}))
-    reactions = module("reactions")
-    with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
+    generated = module("generated")
+    with patch.object(generated, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
         await reload(ha, devices(night={"name": "Noite", "at": "22:00"}))
     assert er.async_get(ha).async_get(automation("door")) is not None
     entry = ha.config_entries.async_entries("pururu")[0]
@@ -617,8 +632,8 @@ async def test_a_failed_write_raises_no_include_issue(ha: HomeAssistant,
                                                       automations: None) -> None:
     """A reaction that never reached the file says nothing about the include."""
     assert await setup(ha, devices(door=DOOR_OPENS))
-    reactions = module("reactions")
-    with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
+    generated = module("generated")
+    with patch.object(generated, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
         await reload(ha, devices(door=DOOR_OPENS, night=NIGHT))
     assert issue(ha) is None
 
@@ -628,8 +643,8 @@ async def test_a_failed_removal_keeps_the_automations_ids(ha: HomeAssistant,
     """The file still holds them: HA loads them again with their pururu IDs."""
     assert await setup(ha, devices(door=DOOR_OPENS))
     entry = ha.config_entries.async_entries("pururu")[0]
-    reactions = module("reactions")
-    with patch.object(reactions, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
+    generated = module("generated")
+    with patch.object(generated, "write_utf8_file_atomic", side_effect=WriteError("disk full")):
         await ha.config_entries.async_remove(entry.entry_id)
         await ha.async_block_till_done()
     assert er.async_get(ha).async_get(automation("door")) is not None

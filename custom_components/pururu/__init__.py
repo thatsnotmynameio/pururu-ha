@@ -32,11 +32,10 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import dashboard, places, reactions
+from . import dashboard, generated, places, reactions
 from .const import (
     CONF_AREA,
     CONF_AREAS,
-    CONF_AUTOMATIONS,
     CONF_DEVICES,
     CONF_FLOORS,
     CONF_REACTIONS,
@@ -350,11 +349,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
     created = {str(entity.unique_id) for each in built.values() for entity in each}
-    generated = await reactions.async_sync(
-        hass, entry, _automations(hass, devices, created)
-    )
-    hass.config_entries.async_update_entry(
-        entry, data={**entry.data, CONF_AUTOMATIONS: generated}
+    await generated.async_sync(
+        hass, entry, reactions.KIND, _automations(hass, devices, created)
     )
     dashboard.async_setup(hass, entry)
 
@@ -382,7 +378,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
     """Delete the floors and areas the entry managed, and its reactions' automations."""
     places.async_remove(hass, entry.data)
-    await reactions.async_remove(hass, entry)
+    await generated.async_remove(hass, entry, reactions.KIND)
 
 
 def _build(
@@ -550,9 +546,9 @@ def _remove_stale(
 
 def _automations(
     hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
-) -> list[dict[str, Any]]:
+) -> list[generated.Item]:
     """An automation per reaction of every device; one watching an entity not created is logged."""
-    automations: list[dict[str, Any]] = []
+    automations: list[generated.Item] = []
     for key, config in devices.items():
         for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
             entity_id = reaction.get("entity")
@@ -571,8 +567,11 @@ def _automations(
                     continue
                 entity_id = owner.current_entity_id(hass, platform, entity_key)
             automations.append(
-                reactions.automation(
-                    key, config[CONF_NAME], reaction_key, reaction, entity_id
+                generated.Item(
+                    unique_id=reactions.automation_id(key, reaction_key),
+                    config=reactions.automation(
+                        key, config[CONF_NAME], reaction_key, reaction, entity_id
+                    ),
                 )
             )
     return automations
