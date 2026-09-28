@@ -82,7 +82,7 @@ A program is a method of its device. It acts only on its device's entities, and 
 - **A reload** of pururu stops a running program only if you changed that program: Home Assistant then loads its new script.
 - **A restart** of Home Assistant loses a running program, as any script.
 - **Renaming it** in the UI is kept.
-- **An entity it acts on that you disable** in the UI drops the program at once: pururu reloads the entry, and the log says why. It comes back when you enable the entity again, since Home Assistant reloads the entry then. Meanwhile, an automation starting it fails.
+- **An entity it acts on that you disable** in the UI takes the program out of Home Assistant at once: pururu reloads the entry, and the log says why. Meanwhile the script shows as `unavailable`, and an automation starting it does nothing (the log says the script is missing). It comes back when you enable the entity again, since Home Assistant reloads the entry then, with what you set on it: disabled, renamed or moved to another area, it stays so.
 - If an entity it acts on isn't created, the program isn't either, and the log says so. See [Troubleshooting](/reference/troubleshooting).
 - **Renaming an entity it acts on** in the UI is followed: the file is rewritten with the new ID.
 

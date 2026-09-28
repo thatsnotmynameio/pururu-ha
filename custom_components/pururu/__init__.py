@@ -9,7 +9,7 @@ the device's entities. One config entry owns every floor, area, device and entit
 from collections.abc import Iterator
 from functools import partial
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import voluptuous as vol
 
@@ -402,8 +402,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     await generated.async_sync(
         hass, entry, reactions.KIND, _automations(hass, devices, created)
     )
-    scripts, targets = _scripts(hass, devices, created)
-    await generated.async_sync(hass, entry, programs.KIND, scripts)
+    scripts, held, targets = _scripts(hass, devices, created)
+    await generated.async_sync(hass, entry, programs.KIND, scripts, held)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
@@ -659,13 +659,16 @@ def _automations(
 
 def _scripts(
     hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
-) -> tuple[list[generated.Item], set[str]]:
+) -> tuple[list[generated.Item], set[str], set[str]]:
     """A script per program of every device, in the device's area; one that can't act is logged.
 
-    Also the entity IDs the generated scripts act on.
+    Also the IDs of the scripts held while an entity they act on is disabled
+    (their registry entries stay, as the user set them), and the entity IDs the
+    generated scripts act on.
     """
     registry = er.async_get(hass)
     scripts: list[generated.Item] = []
+    held: set[str] = set()
     targets: set[str] = set()
     for key, config in devices.items():
         referable = _referable(key, config)
@@ -674,6 +677,9 @@ def _scripts(
             entity_ids = _acted_on(
                 hass, registry, referable, script_id, program, created
             )
+            if entity_ids == "held":
+                held.add(script_id)
+                continue
             if entity_ids is None:
                 continue
             targets.update(entity_ids.values())
@@ -686,7 +692,7 @@ def _scripts(
                     area=config.get(CONF_AREA),
                 )
             )
-    return scripts, targets
+    return scripts, held, targets
 
 
 def _acted_on(
@@ -696,13 +702,15 @@ def _acted_on(
     script_id: str,
     program: dict[str, Any],
     created: set[str],
-) -> dict[str, str] | None:
+) -> dict[str, str] | Literal["held"] | None:
     """Each entity key the program acts on -> its current entity ID.
 
-    None, logged, when one isn't there to act on: not created, or disabled.
-    The entry is reloaded when an entity a generated script acts on is disabled
-    (pururu's registry listener, `changed`), and when a disabled one is enabled
-    again (HA's own).
+    None, logged, when one isn't created: the program is dropped. "held",
+    logged, when all are created but one is disabled: the program is held, to
+    come back as the user set it once the entity is enabled again. The entry is
+    reloaded when an entity a generated script acts on is disabled (pururu's
+    registry listener, `changed`), and when a disabled one is enabled again
+    (HA's own).
     """
     entity_ids: dict[str, str] = {}
     for _, key in programs.targets(program):
@@ -715,6 +723,8 @@ def _acted_on(
                 entity_id,
             )
             return None
+        entity_ids[key] = entity_id
+    for entity_id in entity_ids.values():
         if (registered := registry.async_get(entity_id)) is not None and (
             registered.disabled
         ):
@@ -723,8 +733,7 @@ def _acted_on(
                 script_id,
                 entity_id,
             )
-            return None
-        entity_ids[key] = entity_id
+            return "held"
     return entity_ids
 
 

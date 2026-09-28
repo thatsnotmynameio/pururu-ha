@@ -11,6 +11,7 @@ from homeassistant.helpers import (
     config_validation as cv,
     device_registry as dr,
     entity_registry as er,
+    issue_registry as ir,
 )
 from homeassistant.setup import async_setup_component
 import pytest
@@ -308,6 +309,14 @@ async def test_a_failing_step_stops_it_and_is_logged(
 # --- a disabled target -----------------------------------------------------------------
 
 
+def assert_held_out(hass: HomeAssistant, entity_id: str) -> None:
+    """Out of HA's scripts, its registry entry kept: HA shows the placeholder of an entity not provided."""
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == "unavailable"
+    assert state.attributes.get("restored") is True
+
+
 async def disable(hass: HomeAssistant, entity_id: str, disabled: bool = True) -> None:
     er.async_get(hass).async_update_entity(
         entity_id, disabled_by=er.RegistryEntryDisabler.USER if disabled else None)
@@ -327,8 +336,7 @@ async def test_a_disabled_target_drops_the_program(
     await tick(pool, freezer, 31)
     await pool.async_block_till_done()
     assert generated_scripts(pool) == {}
-    assert pool.states.get(CLEAN) is None
-    assert er.async_get(pool).async_get(CLEAN) is None
+    assert_held_out(pool, CLEAN)
     assert f"{CLEAN} acts on {PUMP}, which is disabled; not generating it" in caplog.text
 
 
@@ -341,6 +349,68 @@ async def test_it_comes_back_when_the_target_is_enabled(pool: HomeAssistant, fre
     calls = capture(pool, "call_service")
     await start(pool)
     assert reached(calls) == ["turn_on"]
+
+
+async def set_target(hass: HomeAssistant, freezer: Any, disabled: bool) -> None:
+    await disable(hass, PUMP, disabled)
+    await tick(hass, freezer, 31)
+    await hass.async_block_till_done()
+
+
+async def test_a_program_the_user_disabled_stays_disabled_once_its_target_is_back(
+        pool: HomeAssistant, freezer: Any) -> None:
+    """Held while its target is disabled, not dropped: its registry entry stays as the user set it.
+
+    Not left to HA's restore of a deleted entry's settings on re-creation: that
+    one lasts 30 days for an entry without a config entry, and then is purged.
+    """
+    registry = er.async_get(pool)
+    before = registry.async_get(CLEAN)
+    assert before is not None
+    registry.async_update_entity(CLEAN, disabled_by=er.RegistryEntryDisabler.USER)
+    await tick(pool, freezer, 31)
+    await pool.async_block_till_done()
+    await set_target(pool, freezer, disabled=True)
+    held_entry = registry.async_get(CLEAN)
+    assert held_entry is not None
+    assert held_entry.id == before.id
+    assert held_entry.disabled_by is er.RegistryEntryDisabler.USER
+    await set_target(pool, freezer, disabled=False)
+    after = registry.async_get(CLEAN)
+    assert after is not None
+    assert after.id == before.id
+    assert after.disabled_by is er.RegistryEntryDisabler.USER
+    assert pool.states.get(CLEAN) is None
+    assert "pururu_pool_program_clean" in generated_scripts(pool)
+
+
+async def test_a_program_renamed_keeps_its_entity_id_once_its_target_is_back(
+        pool: HomeAssistant, freezer: Any) -> None:
+    registry = er.async_get(pool)
+    registry.async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+    await pool.async_block_till_done()
+    await set_target(pool, freezer, disabled=True)
+    assert_held_out(pool, "script.limpar_piscina")
+    assert registry.async_get_entity_id(
+        "script", "script", "pururu_pool_program_clean") == "script.limpar_piscina"
+    await set_target(pool, freezer, disabled=False)
+    assert pool.states.get(CLEAN) is None
+    calls = capture(pool, "call_service")
+    await start(pool, "script.limpar_piscina")
+    assert reached(calls) == ["turn_on"]
+
+
+async def test_a_held_program_stays_tracked_without_a_repairs_issue(
+        pool: HomeAssistant, freezer: Any) -> None:
+    await set_target(pool, freezer, disabled=True)
+    assert_held_out(pool, CLEAN)
+    assert er.async_get(pool).async_get(CLEAN) is not None
+    assert pool.config_entries.async_entries("pururu")[0].data["scripts"] == [
+        "pururu_pool_program_clean"]
+    assert ir.async_get(pool).async_get_issue(DOMAIN, "scripts_not_included") is None
+    calls = capture(pool, "call_service")
+    await start(pool)
+    assert reached(calls) == []  # held out: starting it does nothing
 
 
 FILTER = "switch.pururu_pool_switch_filter"
@@ -396,7 +466,7 @@ async def test_disabling_several_targets_at_once_reloads_once(
         await tick(scripts, freezer, 31)
         await scripts.async_block_till_done()
     assert reloads.call_count == 1
-    assert scripts.states.get(CLEAN) is None
+    assert_held_out(scripts, CLEAN)
 
 
 async def test_disabling_the_device_reloads_once(scripts: HomeAssistant, freezer: Any) -> None:
@@ -410,7 +480,7 @@ async def test_disabling_the_device_reloads_once(scripts: HomeAssistant, freezer
         await tick(scripts, freezer, 31)
         await scripts.async_block_till_done()
     assert reloads.call_count == 1
-    assert scripts.states.get(CLEAN) is None
+    assert_held_out(scripts, CLEAN)
 
 
 # --- reloads, renames, taken IDs, upgrades ------------------------------------------------

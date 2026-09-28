@@ -3,8 +3,9 @@
 Each kind is a file in a folder that configuration.yaml includes once, under
 HA's own domain: HA loads it, runs it and shows it (traces, on/off, its list).
 pururu gives each item the pururu entity ID, drops what the configuration no
-longer has once HA no longer runs it, and raises a Repairs issue while HA
-doesn't load what the file holds.
+longer has once HA no longer runs it, holds what it can't generate for now
+(its registry entry and the user's settings stay), and raises a Repairs issue
+while HA doesn't load what the file holds.
 """
 
 from collections.abc import Collection, Iterable, Mapping
@@ -314,6 +315,7 @@ async def _finish(
     kind: Kind,
     changed: bool,
     ids: list[str],
+    held: list[str],
     stale: set[str],
     checker: _Checker,
 ) -> None:
@@ -321,8 +323,9 @@ async def _finish(
 
     HA reloads when the file changed, and also when it doesn't run the file as
     written (a reload that failed, the include added since): the reload is
-    retried. A dropped item HA still runs keeps its entity ID, and stays
-    tracked, until a reload drops it. The reload is blocking: the include is
+    retried, and so is one that didn't take a held item out. A dropped item HA
+    still runs keeps its entity ID, and stays tracked, until a reload drops it;
+    a held one stays tracked anyway. The reload is blocking: the include is
     checked on what it loaded, once: the state changes of the reload itself are
     ignored.
     """
@@ -331,6 +334,7 @@ async def _finish(
         changed
         or _missing(hass, registry, kind, checker.checked)
         or any(_runs(hass, registry, kind, unique_id) for unique_id in stale)
+        or any(_runs(hass, registry, kind, unique_id) for unique_id in held)
     ):
         checker.reloading = True
         try:
@@ -342,15 +346,26 @@ async def _finish(
     }
     _remove(registry, kind, stale - running)
     hass.config_entries.async_update_entry(
-        entry, data={**entry.data, kind.data_key: [*ids, *sorted(running)]}
+        entry,
+        data={**entry.data, kind.data_key: [*ids, *held, *sorted(running)]},
     )
     checker.check()
 
 
 async def async_sync(
-    hass: HomeAssistant, entry: ConfigEntry, kind: Kind, items: list[Item]
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    kind: Kind,
+    items: list[Item],
+    held: Collection[str] = (),
 ) -> None:
     """Generate the items, and keep in the entry the IDs it tracks.
+
+    `held` are the IDs of items not generated for now (a program whose target is
+    disabled): out of the file, and so out of HA, but not dropped. Their
+    registry entries stay, with what the user set (disabled, entity ID, area),
+    and so does their tracking, for when they are generated again. They are
+    neither stale nor checked for the include.
 
     Each entity ID is registered first. At start, HA has already loaded the
     file; the rest waits for HA to have started, in a task the entry's unload
@@ -370,16 +385,20 @@ async def async_sync(
         _register(hass, registry, kind, item)
     ids = [item.unique_id for item in kept]
     written = await _async_write(hass, kind, kept)
-    stale = {
+    registered = {
         unique_id
         for unique_id in previous
         if unique_id not in ids
         and registry.async_get_entity_id(kind.domain, kind.domain, unique_id)
         is not None
     }
+    # Only what the entry already tracks and has a registry entry: nothing else to keep
+    kept_held = sorted(registered.intersection(held))
+    stale = registered.difference(held)
     checked = ids if written is not None else [i for i in ids if i in previous]
     hass.config_entries.async_update_entry(
-        entry, data={**entry.data, kind.data_key: [*ids, *sorted(stale)]}
+        entry,
+        data={**entry.data, kind.data_key: [*ids, *kept_held, *sorted(stale)]},
     )
 
     checker = _Checker(hass, registry, kind, checked)
@@ -388,7 +407,7 @@ async def async_sync(
     def finish(_hass: HomeAssistant) -> None:
         entry.async_create_task(
             hass,
-            _finish(hass, entry, kind, bool(written), ids, stale, checker),
+            _finish(hass, entry, kind, bool(written), ids, kept_held, stale, checker),
             f"pururu {kind.plural}",
             eager_start=False,
         )
