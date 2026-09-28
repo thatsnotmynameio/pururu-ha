@@ -47,7 +47,7 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.util.color import color_name_to_rgb
 
 from .const import CONF_ALERTS, CONF_CONFIG, CONF_LIGHTS, EVENT_ALERT_LIGHTS_RELEASED
-from .feature import Device
+from .feature import NO_READING, Device
 from .features.alerts import PRIORITIES, ProblemAlert
 from .features.lights import LIGHTS, Borrowable
 
@@ -206,6 +206,7 @@ class AlertLights:
         self._entry = entry
         self._settings = settings
         self._lights = lights
+        self._by_id = {light.entity.entity_id: light for light in lights}
         # Each alert's last on (True) or off: a state that is neither changes nothing
         self._on: dict[str, bool] = {}
 
@@ -224,6 +225,11 @@ class AlertLights:
         self._entry.async_on_unload(
             async_track_state_change_event(
                 self._hass, list(self._on), self._alert_changed
+            )
+        )
+        self._entry.async_on_unload(
+            async_track_state_change_event(
+                self._hass, list(self._by_id), self._light_changed
             )
         )
 
@@ -259,6 +265,27 @@ class AlertLights:
         for light in self._lights:
             if any(alert.entity_id == entity_id for alert in light.alerts):
                 self._update(light)
+
+    @callback
+    def _light_changed(self, event: Event[EventStateChangedData]) -> None:
+        """Someone else changed a borrowed light: put it back, or during resolved let it go.
+
+        The manager's own changes carry one of its recent contexts. A light
+        without a reading was taken by nobody; one back from it during
+        resolved shows resolved again, its `for` running on.
+        """
+        light = self._by_id[event.data["entity_id"]]
+        old, new = event.data["old_state"], event.data["new_state"]
+        if light.shown is None or old is None or new is None:
+            return
+        if new.state in NO_READING or event.context.id in light.recent:
+            return
+        if light.shown != RESOLVED:
+            self._apply(light, light.shown)
+        elif old.state in NO_READING:
+            self._apply(light, RESOLVED)
+        else:
+            self._release(light, turn_off=False)
 
     @callback
     def _update(self, light: _Light) -> None:

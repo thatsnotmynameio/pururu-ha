@@ -3,10 +3,11 @@
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.core import Event, HomeAssistant, State
+from homeassistant.exceptions import HomeAssistantError
 import pytest
 
-from helpers import capture, fake, module, setup, tick
+from helpers import capture, fake, module, settle, setup, tick
 
 HOUSE = "casa"
 REAL_LED = "light.led_piscina"
@@ -415,3 +416,119 @@ async def test_a_ready_made_alert_borrows_its_group(house: HomeAssistant) -> Non
     assert calls(events, LED) == [("turn_on", ORANGE)]
     assert attributes(house, LED)["alerts"] == [
         "binary_sensor.pururu_lavadora_appliance_alert_offline"]
+
+
+# --- someone else changing a borrowed light -------------------------------------------
+
+
+async def test_a_change_by_someone_else_during_an_alert_is_put_back(house: HomeAssistant) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "on", {**BULB, "hs_color": [120.0, 100.0]})
+    await house.async_block_till_done()
+    assert calls(events, LED) == [("turn_on", ORANGE)]
+
+
+def own_calls(events: list[Event]) -> list[Event]:
+    return [event for event in events if event.data["domain"] == "light"
+            and event.data["service_data"].get("entity_id") == LED]
+
+
+async def test_the_managers_own_changes_are_not_put_back(house: HomeAssistant) -> None:
+    """The real light reports what the manager asked, with the manager's context."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    events = capture(house, "call_service")
+    await turn(house, "gate", "on")
+    [call] = own_calls(events)
+    house.states.async_set(REAL_LED, "on", {**BULB, "hs_color": [30.0, 100.0]},
+                           context=call.context)
+    await settle()
+    await house.async_block_till_done()
+    assert len(calls(events, LED)) == 1
+
+
+async def test_a_late_report_of_an_earlier_call_is_still_the_managers(
+        house: HomeAssistant, freezer: Any) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    events = capture(house, "call_service")
+    await turn(house, "gate", "on")
+    await tick(house, freezer, 15)
+    first, _repeat = own_calls(events)
+    house.states.async_set(REAL_LED, "on", {**BULB, "hs_color": [30.0, 100.0]},
+                           context=first.context)
+    await settle()
+    await house.async_block_till_done()
+    assert len(calls(events, LED)) == 2
+
+
+async def test_a_change_during_resolved_hands_the_light_back_without_turning_it_off(
+        house: HomeAssistant, freezer: Any) -> None:
+    """Whoever changed it took it back on purpose: the alert is over."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    released = capture(house, "pururu_alert_lights_released")
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "on", {**BULB, "hs_color": [240.0, 100.0]})
+    await house.async_block_till_done()
+    assert [event.data for event in released] == [{"entity_id": LED}]
+    assert "alert" not in attributes(house, LED)
+    await tick(house, freezer, 120)
+    assert calls(events, LED) == []
+
+
+async def test_a_light_back_from_no_reading_during_resolved_shows_resolved_again(
+        house: HomeAssistant, freezer: Any) -> None:
+    """A bulb dropping off Zigbee isn't someone taking it back."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    released = capture(house, "pururu_alert_lights_released")
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "unavailable")
+    await house.async_block_till_done()
+    assert calls(events, LED) == []
+    await fake(house, REAL_LED, "off", BULB)
+    await house.async_block_till_done()
+    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert released == []
+    await tick(house, freezer, 120)
+    assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LED}]
+
+
+async def test_a_light_gone_unavailable_is_left_until_it_comes_back(house: HomeAssistant) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "unavailable")
+    await house.async_block_till_done()
+    assert calls(events, LED) == []
+    await fake(house, REAL_LED, "off", BULB)
+    await house.async_block_till_done()
+    assert calls(events, LED) == [("turn_on", ORANGE)]
+
+
+async def test_a_free_light_is_left_alone(house: HomeAssistant) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "on", BULB)
+    await house.async_block_till_done()
+    assert calls(events, LED) == []
+
+
+async def test_a_failing_call_is_a_warning_and_the_repeat_tries_again(
+        house: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    async def refuse(self: Any, **kwargs: Any) -> None:
+        raise HomeAssistantError("Zigbee2MQTT refused it")
+
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    monkeypatch.setattr(module("features.lights").Light, "async_turn_on", refuse)
+    events = capture(house, "call_service")
+    await turn(house, "gate", "on")
+    assert ("The alert lights couldn't call light.turn_on on light.pururu_pool_light_led: "
+            "Zigbee2MQTT refused it") in caplog.text
+    await tick(house, freezer, 15)
+    assert calls(events, LED) == [("turn_on", ORANGE)] * 2
