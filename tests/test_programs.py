@@ -650,3 +650,12 @@ async def test_a_removed_program_takes_its_statistics(pool: HomeAssistant) -> No
     await reload(pool, devices(wash=wash))
     assert er.async_get(pool).async_get(STAT + "cycles_total") is None
     assert er.async_get(pool).async_get("sensor.pururu_pool_program_wash_cycles_total") is not None
+
+
+async def test_its_statistics_follow_the_script_renamed(pool: HomeAssistant, freezer: Any) -> None:
+    er.async_get(pool).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+    await pool.async_block_till_done()
+    await start(pool, "script.limpar_piscina")
+    await tick(pool, freezer, TWO_HOURS)
+    await pool.async_block_till_done()
+    assert value(pool, "cycles_total") == "1"

@@ -519,11 +519,20 @@ async def test_it_follows_the_script_renamed(ha: HomeAssistant, both: None) -> N
     assert len(started) == 1
 
 
-async def test_renaming_a_script_no_reaction_starts_reloads_nothing(ha: HomeAssistant) -> None:
-    config = pool(night={"name": "Noite", "at": "22:00"})
-    assert await setup(ha, config)
+async def test_renaming_a_script_no_reaction_starts_still_reloads(ha: HomeAssistant) -> None:
+    """Its statistics watch it: they follow the new ID."""
+    assert await setup(ha, pool(night={"name": "Noite", "at": "22:00"}))
     with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
         er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+        await ha.async_block_till_done()
+    reloading.assert_called_once()
+
+
+async def test_renaming_ones_own_script_reloads_nothing(ha: HomeAssistant) -> None:
+    er.async_get(ha).async_get_or_create("script", "script", "mine", suggested_object_id="mine")
+    assert await setup(ha, pool())
+    with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
+        er.async_get(ha).async_update_entity("script.mine", new_entity_id="script.minha")
         await ha.async_block_till_done()
     reloading.assert_not_called()
 
@@ -613,3 +622,15 @@ async def test_a_reaction_on_a_programs_statistic(ha: HomeAssistant) -> None:
     assert await setup(ha, pool(done=done))
     trigger = generated(ha)[0]["triggers"][0]
     assert trigger["entity_id"] == "sensor.pururu_pool_program_clean_last_cycle_end"
+
+
+async def test_the_count_follows_its_automation_renamed(ha: HomeAssistant, both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    er.async_get(ha).async_update_entity("automation.pururu_pool_reaction_clean",
+                                         new_entity_id="automation.porta_limpa")
+    await ha.async_block_till_done()
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert count(ha) == "1"

@@ -435,7 +435,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     await generated.async_sync(
         hass, entry, reactions.KIND, automations, held_automations
     )
-    started = _started_scripts(devices)
+    watched = _watched_items(devices)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
@@ -444,11 +444,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
 
     @callback
     def changed(event: Event[er.EventEntityRegistryUpdatedData]) -> None:
-        """One of the entry's entities or a started script got a new ID, or a program's target was disabled: build again.
+        """One of the entry's entities or generated items got a new ID, or a program's target was disabled: build again.
 
-        A rename is followed: of a pururu entity, or of a program's script a
-        reaction starts (it would check and start an ID that no longer is). A
-        program acting on an entity just disabled is dropped (`_acted_on`), once
+        A rename is followed: of a pururu entity, or of a script or automation
+        it generates (a reaction's action and the statistics would watch an ID
+        that no longer is). A program acting on an entity just disabled is dropped (`_acted_on`), once
         for a burst of them: HA reloads the entry itself once an entity is
         enabled again, but not when one is disabled (config_entries.py leaves
         that to the entity, which merely clears its own state). No other
@@ -462,7 +462,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         if registered is None:
             return
         why = _rebuild_for(
-            entry.entry_id, registered, data["changes"], started, targets
+            entry.entry_id, registered, data["changes"], watched, targets
         )
         if why is None or (why == "disabled" and reloading):
             return
@@ -475,13 +475,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     return True
 
 
-def _started_scripts(devices: dict[str, dict[str, Any]]) -> set[str]:
-    """The IDs of the programs' scripts a reaction starts: renamed, its automation must follow."""
+def _watched_items(devices: dict[str, dict[str, Any]]) -> set[tuple[str, str]]:
+    """(domain, ID) of every script and automation the entry generates.
+
+    Renamed, what watches it follows: a reaction's action, the statistics.
+    """
     return {
-        programs.script_id(key, reaction["then"])
-        for key, config in devices.items()
-        for reaction in config.get(CONF_REACTIONS, {}).values()
-        if "then" in reaction
+        *(
+            (programs.KIND.domain, programs.script_id(key, program))
+            for key, config in devices.items()
+            for program in config.get(CONF_PROGRAMS, {})
+        ),
+        *(
+            (reactions.KIND.domain, reactions.automation_id(key, reaction))
+            for key, config in devices.items()
+            for reaction in config.get(CONF_REACTIONS, {})
+        ),
     }
 
 
@@ -489,22 +498,20 @@ def _rebuild_for(
     entry_id: str,
     registered: er.RegistryEntry,
     changes: Mapping[str, Any],
-    started: set[str],
+    watched: set[tuple[str, str]],
     targets: set[str],
 ) -> Literal["renamed", "disabled"] | None:
     """Why this registry update needs the entry built again, if it does.
 
-    Renamed: one of the entry's entities, or a script a reaction starts.
+    Renamed: one of the entry's entities, or a script or automation it
+    generates (a reaction starts one, the statistics watch them).
     Disabled: an entity a generated script acts on, just now (the old value
     of `disabled_by` is None).
     """
     ours = registered.config_entry_id == entry_id
     if "entity_id" in changes:
-        started_script = (
-            registered.platform == programs.KIND.domain
-            and registered.unique_id in started
-        )
-        return "renamed" if ours or started_script else None
+        generated_item = (registered.platform, registered.unique_id) in watched
+        return "renamed" if ours or generated_item else None
     if (
         ours
         and "disabled_by" in changes
