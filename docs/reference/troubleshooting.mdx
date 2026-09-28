@@ -168,6 +168,14 @@ A [switch](/features/switches) shows its real switch. It's `unavailable` when th
 
 A [light](/features/lights) shows its real light or switch. It's `unavailable` when the real one is, or when it doesn't exist: check that `entity:` still names it, for example after renaming the real entity, and reload pururu.
 
+### `light.… is not created: the alert lights group … goes without it`
+
+A light of an [alert lights](/concepts/alert-lights) group isn't created, usually because its ID is taken (see `… is already taken by …`). The group's other lights still show its alerts. Free the ID, or take the light out of the group.
+
+### `The alert lights couldn't call light.… on …: …`
+
+Turning a borrowed light on or off failed: its integration refused the call. Followed by a traceback instead of a reason, the light's integration hit a bug of its own: report it there. An `unavailable` light isn't called at all. Either way, a light handed back is still announced (`pururu_alert_lights_released`), and the alert lights go on: the next `repeat`, or the next change of the light or its alerts, tries again.
+
 ### The cycle ends too early, or never starts
 
 - **Ends in the middle of a wash:** the appliance paused for longer than `off_delay`. Increase `off_delay`.

@@ -17,7 +17,7 @@ from homeassistant.helpers.translation import async_get_translations
 from ..const import DOMAIN
 from ..entity import PururuEntity
 from ..feature import ALERTS_KEY, Condition, Device, Feature, Preset
-from .alerts import NOTIFY, PRIORITIES, Alert
+from .alerts import NOTIFY, PRIORITIES, Alert, lights_group
 from .elapsed import ElapsedAlert
 
 
@@ -35,6 +35,7 @@ def _settings(preset: Preset) -> vol.Schema:
             **timing,
             vol.Optional("priority", default=preset.priority): vol.In(PRIORITIES),
             vol.Optional("notify"): NOTIFY,
+            vol.Optional("lights"): lights_group,
         }
     )
 
@@ -132,6 +133,7 @@ def build(
                     notify=notify,
                     sources=(preset.watches,),
                     asks_alert2="notify" in settings,
+                    lights=settings.get("lights"),
                 )
             )
             continue
@@ -159,6 +161,7 @@ def build(
                     *((kind.since_key,) if kind.since_key else ()),
                 ),
                 asks_alert2="notify" in settings,
+                lights=settings.get("lights"),
             )
         )
     return entities

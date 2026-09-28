@@ -35,3 +35,11 @@ PLATFORMS: Final = [
 ]
 # The validated `pururu:` block, from async_setup (and each reload) to the entry
 DATA_CONFIG: HassKey[dict[str, Any]] = HassKey(DOMAIN)
+# pururu: config: settings of the whole house, not of a device
+CONF_CONFIG: Final = "config"
+# A device's lights, config: alerts: lights:, and an alert's lights
+CONF_LIGHTS: Final = "lights"
+# The alert lights group of an alert's `lights: true`
+DEFAULT_ALERT_LIGHTS: Final = "default"
+# Fired when the alert lights hand a light back: {"entity_id": the pururu light}
+EVENT_ALERT_LIGHTS_RELEASED: Final = "pururu_alert_lights_released"

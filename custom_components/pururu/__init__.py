@@ -40,25 +40,38 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import alert2_alerts, dashboard, events, generated, places, programs, reactions
+from . import (
+    alert2_alerts,
+    alert_lights,
+    dashboard,
+    events,
+    generated,
+    places,
+    programs,
+    reactions,
+)
 from .const import (
     CONF_ALERTS,
     CONF_AREA,
     CONF_AREAS,
+    CONF_CONFIG,
     CONF_DEVICES,
     CONF_FLOORS,
+    CONF_LIGHTS,
     CONF_PROGRAMS,
     CONF_REACTIONS,
     DATA_CONFIG,
+    DEFAULT_ALERT_LIGHTS,
     DOMAIN,
     ENTITY_PREFIX,
     PLATFORMS,
 )
 from .device_keys import DEVICE_KEYS
 from .entity import PururuEntity
-from .feature import Device, Feature, preset_keys, qualified
+from .feature import ALERTS_KEY, Device, Feature, preset_keys, qualified
 from .features import FEATURES, presets
 from .features.alerts import ProblemAlert
+from .features.lights import Borrowable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -340,6 +353,54 @@ def _referable(
     }
 
 
+def _alert_lights_resolved(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a group's light that isn't a device's, or an alert's group that isn't one."""
+    devices = config[CONF_DEVICES]
+    groups = config[CONF_CONFIG][CONF_ALERTS][CONF_LIGHTS][alert_lights.GROUPS]
+    for group, members in groups.items():
+        _alert_light_group_resolved(devices, group, members)
+    for key, device in devices.items():
+        for where, group in _alert_light_groups(device):
+            if group in groups:
+                continue
+            if group == DEFAULT_ALERT_LIGHTS:
+                raise vol.Invalid(
+                    f"device {key}: {where}: there is no default group in "
+                    "config.alerts.lights.groups"
+                )
+            raise vol.Invalid(
+                f"device {key}: {where}: {group} is not a group of "
+                "config.alerts.lights.groups"
+            )
+    return config
+
+
+def _alert_light_group_resolved(
+    devices: dict[str, Any], group: str, members: dict[str, list[str]]
+) -> None:
+    """Refuse a light of this group that isn't a device's."""
+    where = f"config.alerts.lights.groups: {group}"
+    for key, lights in members.items():
+        if key not in devices:
+            raise vol.Invalid(f"{where}: device {key} is not in devices")
+        for light in lights:
+            if light not in devices[key].get(CONF_LIGHTS, {}):
+                raise vol.Invalid(f"{where}: device {key} has no light {light}")
+
+
+def _alert_light_groups(device: dict[str, Any]) -> Iterator[tuple[str, str]]:
+    """(where, group) of each of the device's alerts with lights, hand-written or ready-made."""
+    for alert_key, alert in device.get(CONF_ALERTS, {}).items():
+        if (group := alert.get(CONF_LIGHTS)) is not None:
+            yield f"{CONF_ALERTS}: {alert_key}", group
+    for name, feature in FEATURES.items():
+        if not feature.alerts or name not in device:
+            continue
+        for preset, settings in device[name].get(ALERTS_KEY, {}).items():
+            if (group := settings.get(CONF_LIGHTS)) is not None:
+                yield f"{name}: {ALERTS_KEY}: {preset}", group
+
+
 # The features are read when a configuration is validated, not at import
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -357,6 +418,18 @@ CONFIG_SCHEMA = vol.Schema(
                     ),
                     vol.Optional(CONF_DEVICES, default={}): {cv.slug: _device},
                     vol.Optional(events.CONF_EVENTS, default=[]): events.SCHEMA,
+                    # Settings of the whole house; schemas of their own, so a typo is refused
+                    vol.Optional(CONF_CONFIG, default={}): vol.Schema(
+                        {
+                            vol.Optional(CONF_ALERTS, default={}): vol.Schema(
+                                {
+                                    vol.Optional(
+                                        CONF_LIGHTS, default={}
+                                    ): alert_lights.SCHEMA
+                                }
+                            )
+                        }
+                    ),
                 }
             ),
             places.floors_exist,
@@ -364,6 +437,7 @@ CONFIG_SCHEMA = vol.Schema(
             _generated_ids_distinct,
             _entity_ids_distinct,
             _reactions_resolved,
+            _alert_lights_resolved,
         )
     },
     extra=vol.ALLOW_EXTRA,
@@ -420,7 +494,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     Floors and areas come first: devices will be placed in them. The reactions'
     automations, the programs' scripts and Alert2's alerts come after the
     entities: they watch and act on the ones created. The programs' scripts come
-    before the reactions' automations: a reaction starts one. The dashboard comes last:
+    before the reactions' automations: a reaction starts one. The alert lights start
+    after them: their alerts and lights are created. The dashboard comes last:
     it shows them all. The events are set up once the entities are added: they
     fire their changes.
     """
@@ -469,6 +544,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     )
     watched = _watched_items(devices)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
+    lights_settings = alert_lights.settings(configured)
+    lent = alert_lights.async_setup(
+        hass,
+        entry,
+        lights_settings,
+        alert_lights.light_ids(lights_settings, devices),
+        [
+            entity
+            for entity in built[Platform.BINARY_SENSOR]
+            if isinstance(entity, ProblemAlert)
+        ],
+        [entity for entity in built[Platform.LIGHT] if isinstance(entity, Borrowable)],
+    )
     dashboard.async_setup(hass, entry)
 
     # Whether a reload is already scheduled: a burst of disables reloads once
@@ -480,7 +568,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
 
         A rename is followed: of a pururu entity, or of a script or automation
         it generates (a reaction's action and the statistics would watch an ID
-        that no longer is). A program acting on an entity just disabled is dropped (`_acted_on`), once
+        that no longer is). A program acting on an entity just disabled is dropped (`_acted_on`),
+        and a light or alert the alert lights follow is left out, once
         for a burst of them: HA reloads the entry itself once an entity is
         enabled again, but not when one is disabled (config_entries.py leaves
         that to the entity, which merely clears its own state). No other
@@ -494,7 +583,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         if registered is None:
             return
         why = _rebuild_for(
-            entry.entry_id, registered, data["changes"], watched, targets
+            entry.entry_id, registered, data["changes"], watched, targets | lent
         )
         if why is None or (why == "disabled" and reloading):
             return
@@ -554,7 +643,8 @@ def _rebuild_for(
 
     Renamed: one of the entry's entities, or a script or automation it
     generates (a reaction starts one, the statistics watch them).
-    Disabled: an entity a generated script acts on, just now (the old value
+    Disabled: an entity a generated script acts on, or a light or an alert the
+    alert lights follow, just now (the old value
     of `disabled_by` is None).
     """
     ours = registered.config_entry_id == entry_id
