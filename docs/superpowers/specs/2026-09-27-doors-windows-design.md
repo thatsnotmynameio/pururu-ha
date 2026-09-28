@@ -67,7 +67,7 @@ So an event is matched to an opening by time, in both directions. An opening wit
 
 `door:` and `window:` are features (keys of `FEATURES`) with `namespace="door"` and `namespace="window"`. A device can have either alone, or both (their IDs differ by namespace).
 
-- `contact` is required: a `binary_sensor.*`, not `binary_sensor.pururu_…` (as in `standing.py`, with the registry check for a pururu entity renamed in the UI).
+- `contact` is required: a `binary_sensor.*`, not `binary_sensor.pururu_…` (`standing.real_entity`). A pururu binary sensor renamed in the UI gets past that; `build()` checks the registry, logs `<contact> is a pururu binary sensor: name the real contact`, and `open` stands for nothing (`unavailable`), its other entities kept, so a reload never flip-flops.
 - `statistics` is optional: `openings` and `open_time`, each a list of periods, as `appliance`'s `cycles` and `runtime` (`PERIOD_LIST`).
 - `match` is optional, a time period, default `{seconds: 5}`: how far from the opening an `opening` event may be, before or after.
 - `events` is optional, a list with at least one item. Each item:
@@ -87,12 +87,12 @@ Entity keys are local to the namespace: `door` below, `window` alike.
 | `open` | binary_sensor | Open or closed, `device_class` `door` (`window`) whatever the real sensor's. It starts and ends each opening. |
 | `last_opened` | sensor, timestamp | The last opening's start |
 | `last_closed` | sensor, timestamp | The last opening's end |
-| `last_open_duration` | sensor, min | The last opening's duration |
+| `last_open_duration` | sensor, s | The last opening's duration, in seconds: a door opens for seconds, not minutes |
 | `openings_total` | sensor | Openings ever |
 | `open_time_total` | sensor, h | Time open ever |
 | `openings_<period>`, `open_time_<period>` | sensor | The periods in `statistics` only |
 
-`features/cycle/last.py` takes the descriptions' keys from its caller, so the door's `last_opened` and the appliance's `last_cycle_start` share one class.
+`LastCycleValue` takes its keys from its descriptions already: the door defines its own (`last_opened`, `last_closed`, `last_open_duration`) and `features/cycle/last.py` doesn't change. `CyclesTotal` and `RuntimeTotal` take an optional `entity_key` (defaults `cycles_total`, `runtime_total`), for `openings_total` and `open_time_total`.
 
 ### With events
 
@@ -113,8 +113,10 @@ Created only when some event of the block gives that meaning or field:
 ## Behaviour
 
 - **Contact `unavailable` or `unknown`:** `open` holds its last state and the opening goes on, as `Running` holds while the plug has no value. The next real value counts.
-- **Restart during an opening:** the opening's start is restored (`CycleStart`). A contact read closed at start ends the opening then, as the appliance does.
-- **A new event:** the `event.*` state changes to a timestamp not seen before. The same state again (restart, reconnection), `unavailable` and `unknown` don't count.
+- **Restart during an opening:** the opening's start is restored (`CycleStart`). A contact read closed ends the opening once HA has started (`async_at_started`, as `modes`), when every entity of the door listens.
+- **A contact already open at first set-up:** an opening starts then.
+- **An event's time is its state** (an event entity's state is the time of its last event), not when pururu sees it. The same state again (attributes only), `unavailable`, `unknown` and anything not a time don't count. A restart replaying an old event is harmless: its time is far from any new opening, and `last_denied`/`last_ring` take only a time later than theirs.
+- **A field's value** is the attribute as text (`42` → `"42"`); a missing attribute is `unknown`.
 - **An `event_type` not in `types`:** ignored.
 - **`opening` before the contact:** it waits up to `match`. The contact opening in that time takes it; otherwise it's dropped.
 - **`opening` after the contact:** up to `match` after the opening's start, it fills the opening's fields, even if the contact has already closed. The first event wins; later ones are ignored for that opening.
