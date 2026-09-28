@@ -66,10 +66,15 @@ class ElapsedAlert(ProblemAlert):
         notify: Mapping[str, str] | None,
         sources: tuple[str, ...],
         asks_alert2: bool = True,
+        lights: str | None = None,
     ) -> None:
         """`milestone`: the entity whose state is the milestone; None: the watched one's attribute."""
         super().__init__(
-            watched=watched, priority=priority, notify=notify, asks_alert2=asks_alert2
+            watched=watched,
+            priority=priority,
+            notify=notify,
+            asks_alert2=asks_alert2,
+            lights=lights,
         )
         self._identify(device, Platform.BINARY_SENSOR, entity_key)
         self.sources = sources

@@ -31,6 +31,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 
 from ..alert2_alerts import ALERT2
+from ..const import DEFAULT_ALERT_LIGHTS
 from ..entity import PururuEntity
 from ..feature import TEXT, Condition, Device, Feature, finite_float, state_text
 
@@ -60,6 +61,14 @@ def _one_condition(alert: dict[str, Any]) -> dict[str, Any]:
 # What to tell, for Alert2 to deliver; a schema of its own, so unknown keys are refused
 NOTIFY = vol.Schema({vol.Required("message"): TEXT, vol.Required("done_message"): TEXT})
 
+
+def lights_group(value: Any) -> str | None:
+    """An alert's alert lights group (alert_lights.py): true is the default group, false none."""
+    if isinstance(value, bool):
+        return DEFAULT_ALERT_LIGHTS if value else None
+    return str(cv.slug(value))
+
+
 ALERT = vol.All(
     vol.Schema(
         {
@@ -72,6 +81,7 @@ ALERT = vol.All(
             vol.Optional("for", default=timedelta(0)): cv.positive_time_period,
             vol.Optional("priority", default="low"): vol.In(PRIORITIES),
             vol.Optional("notify"): NOTIFY,
+            vol.Optional("lights"): lights_group,
         }
     ),
     _one_condition,
@@ -96,8 +106,9 @@ class ProblemAlert(PururuEntity, BinarySensorEntity, RestoreEntity):
         priority: str,
         notify: Mapping[str, str] | None,
         asks_alert2: bool = True,
+        lights: str | None = None,
     ) -> None:
-        """Watch `watched`; `notify` is what Alert2 tells.
+        """Watch `watched`; `notify` is what Alert2 tells, `lights` the group it borrows.
 
         `asks_alert2` False: its notify is a ready-made alert's own texts, not a
         request of the user's, so no error without Alert2.
@@ -106,10 +117,12 @@ class ProblemAlert(PururuEntity, BinarySensorEntity, RestoreEntity):
         self._asks_alert2 = asks_alert2 and notify is not None
         self.priority = priority
         self.notify = notify
+        self.lights = lights
         self._attr_is_on = False
         self._attr_extra_state_attributes = {
             "priority": priority,
             "watches": watched,
+            **({"lights": lights} if lights is not None else {}),
             **(notify or {}),
         }
         self._pending: CALLBACK_TYPE | None = None
@@ -170,10 +183,15 @@ class Alert(ProblemAlert):
         follows: tuple[str, ...] = (),
         sources: tuple[str, ...] = (),
         asks_alert2: bool = True,
+        lights: str | None = None,
     ) -> None:
         """Watch `watched` for `condition` held for `hold`; `name` None: translated."""
         super().__init__(
-            watched=watched, priority=priority, notify=notify, asks_alert2=asks_alert2
+            watched=watched,
+            priority=priority,
+            notify=notify,
+            asks_alert2=asks_alert2,
+            lights=lights,
         )
         self._identify(device, Platform.BINARY_SENSOR, entity_key, name)
         self.follows = follows
@@ -236,6 +254,7 @@ def build(
             hold=alert["for"],
             priority=alert["priority"],
             notify=alert.get("notify"),
+            lights=alert.get("lights"),
             follows=(alert["when"],),
         )
         for entity_key, alert in config.items()

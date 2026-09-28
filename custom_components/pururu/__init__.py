@@ -40,22 +40,33 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from . import alert2_alerts, dashboard, generated, places, programs, reactions
+from . import (
+    alert2_alerts,
+    alert_lights,
+    dashboard,
+    generated,
+    places,
+    programs,
+    reactions,
+)
 from .const import (
     CONF_ALERTS,
     CONF_AREA,
     CONF_AREAS,
+    CONF_CONFIG,
     CONF_DEVICES,
     CONF_FLOORS,
+    CONF_LIGHTS,
     CONF_PROGRAMS,
     CONF_REACTIONS,
     DATA_CONFIG,
+    DEFAULT_ALERT_LIGHTS,
     DOMAIN,
     PLATFORMS,
 )
 from .device_keys import DEVICE_KEYS
 from .entity import PururuEntity
-from .feature import Device, Feature, preset_keys, qualified
+from .feature import ALERTS_KEY, Device, Feature, preset_keys, qualified
 from .features import FEATURES, presets
 from .features.alerts import ProblemAlert
 
@@ -339,6 +350,47 @@ def _referable(
     }
 
 
+def _alert_lights_resolved(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a group's light that isn't a device's, or an alert's group that isn't one."""
+    devices = config[CONF_DEVICES]
+    groups = config[CONF_CONFIG][CONF_ALERTS][CONF_LIGHTS][alert_lights.GROUPS]
+    for group, members in groups.items():
+        where = f"config.alerts.lights.groups: {group}"
+        for key, lights in members.items():
+            if key not in devices:
+                raise vol.Invalid(f"{where}: device {key} is not in devices")
+            for light in lights:
+                if light not in devices[key].get(CONF_LIGHTS, {}):
+                    raise vol.Invalid(f"{where}: device {key} has no light {light}")
+    for key, device in devices.items():
+        for where, group in _alert_light_groups(device):
+            if group in groups:
+                continue
+            if group == DEFAULT_ALERT_LIGHTS:
+                raise vol.Invalid(
+                    f"device {key}: {where}: there is no default group in "
+                    "config.alerts.lights.groups"
+                )
+            raise vol.Invalid(
+                f"device {key}: {where}: {group} is not a group of "
+                "config.alerts.lights.groups"
+            )
+    return config
+
+
+def _alert_light_groups(device: dict[str, Any]) -> Iterator[tuple[str, str]]:
+    """(where, group) of each of the device's alerts with lights, hand-written or ready-made."""
+    for alert_key, alert in device.get(CONF_ALERTS, {}).items():
+        if (group := alert.get(CONF_LIGHTS)) is not None:
+            yield f"{CONF_ALERTS}: {alert_key}", group
+    for name, feature in FEATURES.items():
+        if not feature.alerts or name not in device:
+            continue
+        for preset, settings in device[name].get(ALERTS_KEY, {}).items():
+            if (group := settings.get(CONF_LIGHTS)) is not None:
+                yield f"{name}: {ALERTS_KEY}: {preset}", group
+
+
 # The features are read when a configuration is validated, not at import
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -355,6 +407,18 @@ CONFIG_SCHEMA = vol.Schema(
                         {cv.slug: places.AREA_SCHEMA}
                     ),
                     vol.Optional(CONF_DEVICES, default={}): {cv.slug: _device},
+                    # Settings of the whole house; schemas of their own, so a typo is refused
+                    vol.Optional(CONF_CONFIG, default={}): vol.Schema(
+                        {
+                            vol.Optional(CONF_ALERTS, default={}): vol.Schema(
+                                {
+                                    vol.Optional(
+                                        CONF_LIGHTS, default={}
+                                    ): alert_lights.SCHEMA
+                                }
+                            )
+                        }
+                    ),
                 }
             ),
             places.floors_exist,
@@ -362,6 +426,7 @@ CONFIG_SCHEMA = vol.Schema(
             _generated_ids_distinct,
             _entity_ids_distinct,
             _reactions_resolved,
+            _alert_lights_resolved,
         )
     },
     extra=vol.ALLOW_EXTRA,
