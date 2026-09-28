@@ -23,7 +23,7 @@ from homeassistant.const import (
     Platform,
 )
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers import config_validation as cv
 
 from .const import CONF_AUTOMATIONS, ENTITY_PREFIX
 from .entity import PururuEntity
@@ -192,8 +192,8 @@ class TriggersTotal(PururuEntity, RestoreSensor):
 
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
-    def __init__(self, device: Device, automation: str, *, item: Item) -> None:
-        """Count the runs of `automation`, the entity of `item`'s reaction."""
+    def __init__(self, device: Device, automation: str | None, *, item: Item) -> None:
+        """Count the runs of `automation`, the entity of `item`'s reaction; None counts none."""
         self._identify(device, Platform.SENSOR, "triggered_total", item=item)
         self._automation = automation
         self._triggers = 0
@@ -211,11 +211,12 @@ class TriggersTotal(PururuEntity, RestoreSensor):
         last = await self.async_get_last_sensor_data()
         if last is not None and isinstance(last.native_value, int | float | Decimal):
             self._triggers = int(last.native_value)
-        self.async_on_remove(
-            self.hass.bus.async_listen(
-                AUTOMATION_TRIGGERED, self._count, event_filter=self._of_it
+        if self._automation is not None:
+            self.async_on_remove(
+                self.hass.bus.async_listen(
+                    AUTOMATION_TRIGGERED, self._count, event_filter=self._of_it
+                )
             )
-        )
 
     @callback
     def _of_it(self, data: Mapping[str, Any]) -> bool:
@@ -239,14 +240,14 @@ def build(
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """Each reaction's trigger count, and the meters asked for."""
-    registry = er.async_get(hass)
+    """Each reaction's trigger count, and the meters asked for.
+
+    `inputs` are the entity IDs of the automations the entry generates, by ID:
+    a reaction whose automation ID someone else holds counts nothing.
+    """
     entities: list[PururuEntity] = []
     for item in _items(config):
-        unique_id = automation_id(device.key, item.slug)
-        automation = registry.async_get_entity_id(
-            KIND.domain, KIND.domain, unique_id
-        ) or (f"{KIND.domain}.{unique_id}")
+        automation = inputs.get(automation_id(device.key, item.slug))
         entities.append(TriggersTotal(device, automation, item=item))
         source = device.current_entity_id(
             hass, Platform.SENSOR, item.key("triggered_total")

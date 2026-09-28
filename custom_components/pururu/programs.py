@@ -21,7 +21,7 @@ from homeassistant.core import (
     callback,
     split_entity_id,
 )
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 
@@ -144,8 +144,8 @@ class Runs(CyclesTotal):
     The run's start is the `on` state's: a pururu reload while it runs keeps it.
     """
 
-    def __init__(self, device: Device, script: str, *, item: Item) -> None:
-        """Count the runs of `script`, the entity of `item`'s program."""
+    def __init__(self, device: Device, script: str | None, *, item: Item) -> None:
+        """Count the runs of `script`, the entity of `item`'s program; None watches none."""
         super().__init__(device, source="cycles_total", item=item)
         # The script isn't pururu's: nothing of the device to wait for
         self.sources = ()
@@ -157,9 +157,10 @@ class Runs(CyclesTotal):
     async def async_added_to_hass(self) -> None:
         """Restore the count and count, then watch the script."""
         await super().async_added_to_hass()
-        self.async_on_remove(
-            async_track_state_change_event(self.hass, self._script, self._changed)
-        )
+        if self._script is not None:
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, self._script, self._changed)
+            )
 
     @callback
     def _changed(self, event: Event[EventStateChangedData]) -> None:
@@ -185,14 +186,14 @@ def build(
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """Each program's runs as cycles: its last run, totals, the meters asked for."""
-    registry = er.async_get(hass)
+    """Each program's runs as cycles: its last run, totals, the meters asked for.
+
+    `inputs` are the entity IDs of the scripts the entry generates, by ID: a
+    program whose script ID someone else holds counts nothing.
+    """
     entities: list[PururuEntity] = []
     for item in _items(config):
-        unique_id = script_id(device.key, item.slug)
-        script = registry.async_get_entity_id(KIND.domain, KIND.domain, unique_id) or (
-            f"{KIND.domain}.{unique_id}"
-        )
+        script = inputs.get(script_id(device.key, item.slug))
         counted = item.key("cycles_total")
         entities.append(Runs(device, script, item=item))
         entities.extend(

@@ -113,6 +113,7 @@ They're named after the program: **Piscina Limpar cycles**.
 - `cycles_total` and `runtime_total` survive restarts and are `total_increasing`, so Home Assistant keeps long-term statistics for them. `runtime_total` is brought up to date every minute.
 - **While the program isn't generated** (an entity it acts on is disabled or not created), its statistics keep their values and count nothing. **Removing the program** from the YAML removes them.
 - **Renaming the script** in the UI is followed: pururu reloads and watches its new ID.
+- **A script ID someone else holds** (one of your scripts, another integration's entity): the program isn't generated, and its statistics count nothing. They never count an entity pururu doesn't manage.
 - A reaction can watch them: `when: program_clean_last_cycle_end`.
 
 ## From 0.1.14 and before

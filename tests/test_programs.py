@@ -686,3 +686,16 @@ async def test_its_statistics_follow_the_script_renamed(pool: HomeAssistant, fre
     await tick(pool, freezer, TWO_HOURS)
     await pool.async_block_till_done()
     assert value(pool, "cycles_total") == "1"
+
+
+async def test_statistics_never_follow_a_script_pururu_does_not_generate(
+        ha: HomeAssistant, freezer: Any) -> None:
+    """Its ID taken by another integration: the program isn't generated, and that script isn't counted."""
+    er.async_get(ha).async_get_or_create(
+        "script", "template", "someone_else", suggested_object_id="pururu_pool_program_clean")
+    assert await setup(ha, devices())
+    await fake(ha, CLEAN, "on")
+    await tick(ha, freezer, 60 * 60)
+    await fake(ha, CLEAN, "off")
+    assert value(ha, "cycles_total") == "0"
+    assert float(value(ha, "runtime_total")) == 0

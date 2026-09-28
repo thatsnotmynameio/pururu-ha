@@ -165,6 +165,14 @@ def _no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None
             )
 
 
+def _own_statistics(reaction_key: str) -> set[str]:
+    """The entity keys of a reaction's own statistics: watching them, it would feed itself."""
+    return {
+        qualified(reactions.NAMESPACE, f"{reaction_key}_{suffix}")
+        for suffix in reactions.PER_REACTION
+    }
+
+
 def _reactions_on_this_device(device: dict[str, Any]) -> None:
     """Refuse a reaction's `when` or `then` that isn't the device's own.
 
@@ -176,11 +184,7 @@ def _reactions_on_this_device(device: dict[str, Any]) -> None:
         for name, entity_key, _ in _entity_keys(device)
     }
     for key, reaction in device.get(CONF_REACTIONS, {}).items():
-        own = {
-            qualified(reactions.NAMESPACE, f"{key}_{suffix}")
-            for suffix in reactions.PER_REACTION
-        }
-        if "device" not in reaction and reaction.get("when") in own:
+        if "device" not in reaction and reaction.get("when") in _own_statistics(key):
             raise vol.Invalid(
                 f"reactions: {key}: {reaction['when']} is its own statistic"
             )
@@ -298,6 +302,8 @@ def _reactions_resolved(config: dict[str, Any]) -> dict[str, Any]:
             where = f"device {key}: reactions: {reaction_key}"
             if other not in devices:
                 raise vol.Invalid(f"{where}: device {other} is not in devices")
+            if other == key and reaction["when"] in _own_statistics(reaction_key):
+                raise vol.Invalid(f"{where}: {reaction['when']} is its own statistic")
             if reaction["when"] not in _referable(other, devices[other]):
                 raise vol.Invalid(
                     f"{where}: {reaction['when']} is not an entity key of device {other}"
@@ -417,8 +423,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     devices = configured.get(CONF_DEVICES, {})
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
     texts = await presets.async_texts(hass)
+    owned = _owned(hass, entry, devices)
     for key, config in devices.items():
-        for entity in _creatable(hass, registry, *_build(hass, key, config, texts)):
+        for entity in _creatable(
+            hass, registry, *_build(hass, key, config, texts, owned)
+        ):
             built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
     entry.runtime_data = built
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -473,6 +482,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, changed)
     )
     return True
+
+
+def _owned(
+    hass: HomeAssistant, entry: PururuConfigEntry, devices: dict[str, dict[str, Any]]
+) -> dict[str, str]:
+    """The current entity IDs of the scripts and automations the entry generates, by ID."""
+    items = _watched_items(devices)
+    return {
+        unique_id: entity_id
+        for kind in (programs.KIND, reactions.KIND)
+        for unique_id, entity_id in generated.owned(
+            hass,
+            entry,
+            kind,
+            (unique_id for domain, unique_id in items if domain == kind.domain),
+        ).items()
+    }
 
 
 def _watched_items(devices: dict[str, dict[str, Any]]) -> set[tuple[str, str]]:
@@ -537,14 +563,19 @@ async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> N
 
 
 def _build(
-    hass: HomeAssistant, key: str, config: dict[str, Any], texts: presets.Texts
+    hass: HomeAssistant,
+    key: str,
+    config: dict[str, Any],
+    texts: presets.Texts,
+    owned: Mapping[str, str],
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
     Each feature sees the device in its own namespace; what it takes through
     <capability>_from, or refers to, is in the owning feature's. Also the
     entity ID of each entity some entity watches (`follows`), by unique ID: the
-    settings may never build it, and then only this names it.
+    settings may never build it, and then only this names it. `owned` are the
+    entity IDs of the scripts and automations the entry generates, by ID.
     """
     referable = _referable(key, config)
     built: list[tuple[PururuEntity, set[str]]] = []
@@ -553,22 +584,7 @@ def _build(
         if name not in config:
             continue
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
-        inputs: dict[str, str] = {}
-        required: set[str] = set()
-        for capability in feature.requires:
-            source = FEATURES[config[name][f"{capability}_from"]]
-            provider = Device(
-                key=key, name=config[CONF_NAME], namespace=source.namespace
-            )
-            entity_key = source.provides[capability]
-            inputs[capability] = provider.current_entity_id(
-                hass, source.entity_keys[entity_key], entity_key
-            )
-            required.add(provider.object_id(entity_key))
-        if feature.refers is not None:
-            for reference in feature.refers(config[name]):
-                owner, entity_key, platform = referable[reference]
-                inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
+        inputs, required = _inputs(hass, key, config, name, referable, owned)
         # Only a feature offering ready-made alerts has them: a program or a
         # reaction may be keyed `alerts`
         ready_made = (
@@ -586,6 +602,40 @@ def _build(
                 (entity, {*map(device.object_id, entity.sources), *required, *follows})
             )
     return built, watched
+
+
+def _inputs(
+    hass: HomeAssistant,
+    key: str,
+    config: dict[str, Any],
+    name: str,
+    referable: dict[str, tuple[Device, str, Platform]],
+    owned: Mapping[str, str],
+) -> tuple[dict[str, str], set[str]]:
+    """What builder `name` gets in `inputs`, and the unique IDs of what it requires.
+
+    A feature: the current entity IDs of what it takes through <capability>_from
+    and of what it refers to. A device key (DEVICE_KEYS): the entity IDs of the
+    scripts and automations the entry generates, by ID: its statistics never
+    watch one it doesn't.
+    """
+    if name in DEVICE_KEYS:
+        return dict(owned), set()
+    feature = FEATURES[name]
+    inputs: dict[str, str] = {}
+    required: set[str] = set()
+    for capability in feature.requires:
+        source = FEATURES[config[name][f"{capability}_from"]]
+        provider = Device(key=key, name=config[CONF_NAME], namespace=source.namespace)
+        entity_key = source.provides[capability]
+        inputs[capability] = provider.current_entity_id(
+            hass, source.entity_keys[entity_key], entity_key
+        )
+        required.add(provider.object_id(entity_key))
+    for reference in feature.refers(config[name]) if feature.refers else ():
+        owner, entity_key, platform = referable[reference]
+        inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
+    return inputs, required
 
 
 def _creatable(

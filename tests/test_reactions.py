@@ -610,9 +610,10 @@ async def test_its_meters_are_asked_for(ha: HomeAssistant) -> None:
     assert ha.states.get("sensor.pururu_pool_reaction_clean_triggered_today") is None
 
 
+@pytest.mark.parametrize("named", [{}, {"device": LIGHTS}], ids=["its device implied", "named"])
 async def test_a_reaction_on_its_own_counter_is_refused(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    it = {"name": "Eu", "when": "reaction_it_triggered_total", "above": 3}
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, named: dict[str, Any]) -> None:
+    it = {"name": "Eu", "when": "reaction_it_triggered_total", "above": 3, **named}
     assert not await setup(ha, devices(it=it))
     assert "reactions: it: reaction_it_triggered_total is its own statistic" in caplog.text
 
@@ -647,3 +648,16 @@ async def test_a_run_its_reaction_started_is_counted_at_its_end(
     await ha.async_block_till_done()
     assert count(ha, "sensor.pururu_pool_program_clean_cycles_total") == "1"
     assert count(ha) == "1"
+
+
+async def test_a_count_never_follows_an_automation_pururu_does_not_generate(
+        ha: HomeAssistant) -> None:
+    """Its ID taken by one of the user's automations: the reaction isn't generated, and that one isn't counted."""
+    er.async_get(ha).async_get_or_create(
+        "automation", "automation", "pururu_pool_reaction_clean", suggested_object_id="mine")
+    assert await setup(ha, pool())
+    ha.bus.async_fire("automation_triggered", {"entity_id": "automation.mine"})
+    ha.bus.async_fire("automation_triggered",
+                      {"entity_id": "automation.pururu_pool_reaction_clean"})
+    await ha.async_block_till_done()
+    assert count(ha) == "0"

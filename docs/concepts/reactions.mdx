@@ -177,9 +177,10 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 
 Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reaction_<reaction>_triggered_total`, named **Luzes da lavanderia Lavadora terminou triggers**. It survives restarts and is `total_increasing`. With `statistics.triggered`, one sensor per period: `…_triggered_month`.
 
-- **Every trigger counts**, including one whose program was already running and so didn't start. A reaction's triggers minus its [program's cycles](/concepts/programs#statistics) is how often it was skipped.
+- **Every trigger counts**, including one whose program was already running and so didn't start.
 - **The automation turned off** in the UI doesn't fire, so it counts nothing.
 - **Renaming the automation** in the UI is followed: pururu reloads and counts under its new ID.
+- **An automation ID someone else holds**: the reaction isn't generated, and it counts nothing. It never counts an automation pururu doesn't manage.
 - **A reaction can't watch its own counter** (`when: reaction_morning_triggered_total` in `morning`): `reactions: morning: reaction_morning_triggered_total is its own statistic`. It can watch another reaction's, or a program's.
 
 ## The automation

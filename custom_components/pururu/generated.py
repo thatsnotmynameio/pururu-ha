@@ -96,14 +96,14 @@ def period(value: timedelta) -> str:
     return text
 
 
-def _free(
+def _holder(
     hass: HomeAssistant,
     registry: er.EntityRegistry,
     kind: Kind,
     unique_id: str,
     managed: Collection[str],
-) -> bool:
-    """Whether <domain>.<ID> is free, or already this item's; the holder logged.
+) -> str | None:
+    """Who else holds <domain>.<ID>, if anyone: None when it is free, or already this item's.
 
     An item with this ID is this one only if the entry manages it: else it is
     someone's own, which keeps its ID and what it does.
@@ -112,19 +112,50 @@ def _free(
     if (
         same := registry.async_get_entity_id(kind.domain, kind.domain, unique_id)
     ) is not None:
-        if unique_id in managed:
-            return True
-        holder = f"{same}, {kind.one} with the same ID"
-    elif (registered := registry.async_get(entity_id)) is not None:
-        holder = f"the {registered.platform} integration"
-    elif (state := hass.states.get(entity_id)) is not None and not state.attributes.get(
+        return None if unique_id in managed else f"{same}, {kind.one} with the same ID"
+    if (registered := registry.async_get(entity_id)) is not None:
+        return f"the {registered.platform} integration"
+    if (state := hass.states.get(entity_id)) is not None and not state.attributes.get(
         ATTR_RESTORED
     ):
-        holder = "an entity without a unique ID"
-    else:
+        return "an entity without a unique ID"
+    return None
+
+
+def _free(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    kind: Kind,
+    unique_id: str,
+    managed: Collection[str],
+) -> bool:
+    """Whether <domain>.<ID> is free, or already this item's; the holder logged."""
+    if (holder := _holder(hass, registry, kind, unique_id, managed)) is None:
         return True
-    _LOGGER.error("%s is already taken by %s; not generating it", entity_id, holder)
+    _LOGGER.error(
+        "%s.%s is already taken by %s; not generating it",
+        kind.domain,
+        unique_id,
+        holder,
+    )
     return False
+
+
+def owned(
+    hass: HomeAssistant, entry: ConfigEntry, kind: Kind, unique_ids: Iterable[str]
+) -> dict[str, str]:
+    """The current entity ID of each of these items the entry has or will have, by ID.
+
+    Not one someone else holds: the entry never watches what it doesn't manage.
+    """
+    registry = er.async_get(hass)
+    managed = entry.data.get(kind.data_key, [])
+    return {
+        unique_id: registry.async_get_entity_id(kind.domain, kind.domain, unique_id)
+        or f"{kind.domain}.{unique_id}"
+        for unique_id in unique_ids
+        if _holder(hass, registry, kind, unique_id, managed) is None
+    }
 
 
 def _register(
