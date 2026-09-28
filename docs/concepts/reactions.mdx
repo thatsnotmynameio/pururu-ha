@@ -128,6 +128,12 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
   A key of **this device's** [`programs`](/concepts/programs): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a script's entity ID or a list is a configuration error: `reactions: morning: clean is not a program of this device`.
 </Property>
 
+---
+
+<Property name="statistics.triggered" type="list of periods" optional>
+  For each period, a sensor with the reaction's triggers in the current period: `today`, `week`, `month`, `year`, each once. See [Statistics](#statistics).
+</Property>
+
 ## Starting a program
 
 A reaction with `then` starts its program's script, but only if it isn't running:
@@ -166,6 +172,15 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 - **A change passing through `unavailable`** (`on → unavailable → off`) isn't seen as `on → off`. That's Home Assistant's rule for `from`.
 - **`above`/`below`** fires when the number crosses into the range, not while it stays there.
 - **A pending `for`** is lost on a restart.
+
+## Statistics
+
+Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reaction_<reaction>_triggered_total`, named **Luzes da lavanderia Lavadora terminou triggers**. It survives restarts and is `total_increasing`. With `statistics.triggered`, one sensor per period: `…_triggered_month`.
+
+- **Every trigger counts**, including one whose program was already running and so didn't start. A reaction's triggers minus its [program's cycles](/concepts/programs#statistics) is how often it was skipped.
+- **The automation turned off** in the UI doesn't fire, so it counts nothing.
+- **Renaming the automation** in the UI is followed: pururu reloads and counts under its new ID.
+- **A reaction can't watch its own counter** (`when: reaction_morning_triggered_total` in `morning`): `reactions: morning: reaction_morning_triggered_total is its own statistic`. It can watch another reaction's, or a program's.
 
 ## The automation
 

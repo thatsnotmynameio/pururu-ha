@@ -195,7 +195,7 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 
 ## 6. What the contract test checks
 
-`tests/test_features.py` runs over every entry in `FEATURES`, so your feature is covered without changing the test:
+`tests/test_features.py` runs over every entry in `FEATURES`, and in `DEVICE_KEYS` (`device_keys.py`: `programs` and `reactions`, not features of a device, whose statistics a `Feature` each builds), so your feature is covered without changing the test:
 
 | Test | Checks |
 |---|---|

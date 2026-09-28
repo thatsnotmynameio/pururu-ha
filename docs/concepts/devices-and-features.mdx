@@ -47,7 +47,7 @@ A feature is a ready-made piece of behaviour. It reads real entities, such as a 
 | [`switches`](/features/switches) | Real switches inside the device, each named in the YAML, that show their switch's state and turn it on and off |
 | [`alerts`](/features/alerts) | Problems on the device's own entities, each a binary sensor that is on while the problem lasts |
 
-A device can also have [`reactions`](/concepts/reactions) and [`programs`](/concepts/programs). They aren't features: they write Home Assistant automations and scripts, and a device still needs a feature.
+A device can also have [`reactions`](/concepts/reactions) and [`programs`](/concepts/programs). They aren't features: they write Home Assistant automations and scripts, and a device still needs a feature. Their statistics (each program's runs, each reaction's triggers) are sensors of the device.
 
 Each feature appears at most once per device, and everything under its key is that feature's configuration. An unknown key inside a feature, such as a typo, is a configuration error, so a mistake never passes silently.
 
