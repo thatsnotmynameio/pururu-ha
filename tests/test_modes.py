@@ -237,9 +237,27 @@ async def test_the_cycle_ending_ends_the_mode_at_its_end(ha: HomeAssistant,
     await tick(ha, freezer, 600)
     dropped = dt_util.utcnow()
     await watts(ha, IDLE_W)
+    assert ha.states.get(CURRENT).attributes["cycle_end"] == dropped
     await tick(ha, freezer, 125)
     assert mode(ha) == "idle"
     assert dt_util.parse_datetime(value(ha, "gelar_last_cycle_end")) == dropped
+    assert float(value(ha, "gelar_runtime_total")) == pytest.approx(600 / 3600, abs=0.0005)
+
+
+async def test_restart_during_a_modes_off_delay_keeps_when_it_left(ha: HomeAssistant,
+                                                                  freezer: Any) -> None:
+    now = dt_util.utcnow()
+    since, left = (now - timedelta(minutes=20)).isoformat(), now - timedelta(seconds=10)
+    await restart(
+        ha, DEVICES,
+        (State(RUNNING, "on"), {"since": since, "since_energy": None}),
+        (State(CURRENT, "gelar"), {"since": since, "since_energy": None,
+                                   "until": left.isoformat()}),
+    )
+    await watts(ha, 1000)
+    await tick(ha, freezer, 35)
+    assert mode(ha) == "quente"
+    assert dt_util.parse_datetime(value(ha, "gelar_last_cycle_end")) == left
 
 
 async def test_no_mode_starts_while_the_cycle_is_unknown(purifier: HomeAssistant,

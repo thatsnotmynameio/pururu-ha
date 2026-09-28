@@ -251,6 +251,50 @@ async def test_a_pause_shorter_than_off_delay_stays_in_the_cycle(washer: HomeAss
     assert float(value(washer, "last_cycle_duration")) == 20
 
 
+async def test_reload_during_off_delay_keeps_when_the_power_went_down(
+        washer: HomeAssistant, freezer: Any) -> None:
+    await start_cycle(washer, freezer)
+    await tick(washer, freezer, 10 * 60)
+    dropped = dt_util.utcnow()
+    await watts(washer, IDLE_W)
+    await tick(washer, freezer, 60)
+    await reload(washer, DEVICES)
+    assert washer.states.get(RUNNING).attributes["cycle_end"] == dropped
+    await tick(washer, freezer, 125)
+    assert running(washer) == "off"
+    assert dt_util.parse_datetime(value(washer, "last_cycle_end")) == dropped
+    assert float(value(washer, "last_cycle_duration")) == 10
+
+
+async def test_restart_during_off_delay_keeps_when_the_power_went_down(
+        ha: HomeAssistant, freezer: Any) -> None:
+    now = dt_util.utcnow()
+    since, dropped = now - timedelta(minutes=20), now - timedelta(minutes=1)
+    await restart(ha, DEVICES, (State(RUNNING, "on"), {
+        "since": since.isoformat(), "since_energy": None, "until": dropped.isoformat()}))
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    assert dt_util.parse_datetime(value(ha, "last_cycle_end")) == dropped
+    assert float(value(ha, "last_cycle_duration")) == 19
+
+
+async def test_a_plug_without_value_during_off_delay_keeps_when_the_power_went_down(
+        washer: HomeAssistant, freezer: Any) -> None:
+    """The delay counts again from the next reading; the end stays when the power went down."""
+    await start_cycle(washer, freezer)
+    await tick(washer, freezer, 10 * 60)
+    dropped = dt_util.utcnow()
+    await watts(washer, IDLE_W)
+    await tick(washer, freezer, 60)
+    await watts(washer, "unavailable")
+    await tick(washer, freezer, 120)
+    assert running(washer) == "on"
+    await watts(washer, IDLE_W)
+    await tick(washer, freezer, 125)
+    assert running(washer) == "off"
+    assert dt_util.parse_datetime(value(washer, "last_cycle_end")) == dropped
+
+
 async def test_before_the_first_cycle_everything_is_unknown(washer: HomeAssistant) -> None:
     for entity_key in LAST:
         assert value(washer, entity_key) == "unknown", entity_key

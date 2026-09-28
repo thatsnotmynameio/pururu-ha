@@ -91,8 +91,8 @@ stateDiagram-v2
 
 - A cycle **starts** when `running` turns on, so `last_cycle_start` is `on_delay` after the power first went up.
 - A cycle **ends** when the power went down for good: `off_delay` only confirms the end. `running` turns off `off_delay` later, and that's when the cycle is recorded, but `last_cycle_end` is the moment the power went down, and `last_cycle_duration` and `runtime` leave `off_delay` out. A pause shorter than `off_delay` stays part of the cycle.
-- While the plug has **no value** (`unknown`, `unavailable`, or not a number), `running` keeps its state, and a pending start or end is cancelled. It resumes from the next reading. A plug dropping off Wi-Fi for a minute doesn't split a cycle.
-- A **restart or reload** in the middle of a cycle doesn't lose it. `running` is restored, and the cycle keeps its original start and is counted once when it ends.
+- While the plug has **no value** (`unknown`, `unavailable`, or not a number), `running` keeps its state, and a pending start or end is cancelled. It resumes from the next reading. A plug dropping off Wi-Fi for a minute doesn't split a cycle. An end keeps the moment the power went down: `off_delay` counts again from the next reading, and only the power back above the threshold cancels the end.
+- A **restart or reload** in the middle of a cycle doesn't lose it. `running` is restored, and the cycle keeps its original start and is counted once when it ends. During `off_delay`, the moment the power went down is restored too.
 
 ## Entities
 
