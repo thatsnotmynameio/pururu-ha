@@ -118,14 +118,14 @@ class FakeAlert2:
     def __init__(self, hass: HomeAssistant, *, included: bool = True) -> None:
         self.hass = hass
         self.included = included
-        self.fails = False
+        self.fails: Exception | None = None
         self.reloads = 0
         hass.config.components.add("alert2")
         hass.services.async_register("alert2", "reload", self._reload)
 
     async def _reload(self, _call: ServiceCall) -> None:
-        if self.fails:
-            raise HomeAssistantError("boom")
+        if self.fails is not None:
+            raise self.fails
         self.reloads += 1
         for entity_id in self.hass.states.async_entity_ids("alert2"):
             self.hass.states.async_remove(entity_id)
@@ -233,11 +233,11 @@ async def test_a_disabled_alert2_alert_is_no_missing_include(ha: HomeAssistant) 
 async def test_a_failed_reload_is_logged_raises_no_issue_and_is_retried(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     alert2 = FakeAlert2(ha)
-    alert2.fails = True
+    alert2.fails = HomeAssistantError("boom")
     assert await setup(ha, devices(**WITH_NOTIFY))
     assert "Alert2 is not reloaded: boom" in caplog.text
     assert issue(ha) is None
-    alert2.fails = False
+    alert2.fails = None
     await reload(ha, devices(**WITH_NOTIFY))
     assert alert2.reloads == 1
     assert ha.states.get(ALERT2) is not None
@@ -264,6 +264,33 @@ async def test_removing_the_entry_empties_the_file_and_reloads(
     await ha.async_block_till_done()
     assert written(ha) == []
     assert alert2.reloads == 2
+    assert issue(ha) is None
+
+
+async def test_a_changed_alert_whose_reload_failed_is_reloaded_at_the_next_reload(
+        ha: HomeAssistant, alert2: FakeAlert2) -> None:
+    """Alert2 still runs the alert as it was: only a reload applies the new file."""
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    changed = devices(overload={**OVERLOAD, "notify": {**NOTIFY, "message": "Too much!"}})
+    alert2.fails = HomeAssistantError("boom")
+    await reload(ha, changed)
+    alert2.fails = None
+    await reload(ha, changed)
+    assert alert2.reloads == 2
+
+
+async def test_any_error_of_alert2s_reload_is_logged(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Alert2 is a third party: whatever its reload raises must not escape."""
+    alert2 = FakeAlert2(ha, included=False)
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    assert issue(ha) is not None
+    alert2.fails = NameError("repot")
+    await reload(ha, devices(other={**OVERLOAD, "notify": NOTIFY}))
+    assert "Alert2 is not reloaded: repot" in caplog.text
+    entry = ha.config_entries.async_entries("pururu")[0]
+    await ha.config_entries.async_remove(entry.entry_id)
+    await ha.async_block_till_done()
     assert issue(ha) is None
 
 
