@@ -1,6 +1,6 @@
 # Doors and windows — design
 
-Version: pururu 0.1.12. Branch: `feat/doors`. Follows #19 (`modes`), whose cycle code in `features/cycle/` the openings reuse.
+Version: pururu 0.1.13. Branch: `feat/doors`. Follows #20 (Alert2's alerts, 0.1.12) and #19 (`modes`), whose cycle code in `features/cycle/` the openings reuse.
 
 ## Goal
 
@@ -141,7 +141,7 @@ Created only when some event of the block gives that meaning or field:
 
 - `docs/features/door.mdx` and `docs/features/window.mdx`, the latter short and linking to the former for what they share, with sidebar entries in `docs.json`.
 - Sonar suppressions only if a new platform appears (none: binary_sensor and sensor exist).
-- `manifest.json` version `0.1.12`.
+- `manifest.json` version `0.1.13`.
 
 ## Later
 
