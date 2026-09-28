@@ -106,7 +106,7 @@ A user may rename an entity ID in the UI. Two things keep pururu consistent:
 
 Entities that must survive restarts are `RestoreEntity` or `RestoreSensor`:
 
-- `running` keeps its state and, as extra data, the running cycle's start and energy reading (`CycleStart`, `features/cycle/`); `modes`' `current` keeps the running mode and the same `CycleStart`.
+- `running` keeps its state and, as extra data, the running cycle's start and energy reading (`CycleStart`, `features/cycle/`); `modes`' `current` keeps the running mode and the same `CycleStart`; a door's (window's) `open` keeps its state and the opening's start in the same `CycleStart`.
 - The `last_cycle_*` sensors, `cycles_total` and `runtime_total` restore their values.
 - `phase` restores its state and its `seen` attribute.
 - The meters rely on `utility_meter`'s own restore.

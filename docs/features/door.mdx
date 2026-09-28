@@ -1,0 +1,109 @@
+---
+title: door
+description: A door from its contact sensor. It records each opening, counts them, and, with events, says who opened it, how and which way.
+---
+
+`door` turns a contact sensor into a door. Each time the contact opens and closes is an **opening**: pururu records its start, end and duration, and counts openings and the time open. A door can also read **events** from other devices, such as an access controller or a doorbell, to say who opened it, how and which way, and when someone was denied or rang.
+
+`door` is pururu's idea of a door, as [`appliance`](/features/appliance) is its idea of an appliance: you point it at the real entities, and it builds the door from them. The contact is required. Everything else is optional. A [window](/features/window) works the same way.
+
+```yaml
+pururu:
+  devices:
+    porta_clausura_frente:
+      name: Clausura frente
+      area: entrada
+      door:
+        contact: binary_sensor.clausura_frente
+        statistics:
+          openings: [today, week, month]
+          open_time: [today, week]
+        events:
+          - entity: event.clausura_frente_access
+            types: {access_granted: opening, access_denied: denied}
+            fields: {who: actor, how: authentication, direction: direction}
+          - entity: event.clausura_frente_doorbell
+            types: {ring: ring}
+```
+
+This creates `binary_sensor.pururu_porta_clausura_frente_door_open`, shown as **Clausura frente Open**, and the entities below.
+
+## Settings
+
+<Property name="contact" type="entity ID" required>
+  The door's contact sensor, a `binary_sensor.*`: `on` is open, `off` is closed. It can't be one of pururu's own binary sensors, even one you renamed in the UI.
+</Property>
+
+---
+
+<Property name="statistics.openings" type="list of periods" optional>
+  For each period, a sensor with the openings in the current period. The periods are `today`, `week`, `month` and `year`, each listed at most once.
+</Property>
+
+---
+
+<Property name="statistics.open_time" type="list of periods" optional>
+  For each period, a sensor with the hours open in the current period.
+</Property>
+
+---
+
+<Property name="events" type="list" optional>
+  Event entities (`event.*`) that tell pururu more about the door. pururu knows no integration, so you say what each event means for the door and where its details are. Each item has:
+
+  - `entity`: required, the `event.*` entity.
+  - `types`: required, at least one: each `event_type` of that entity you care about → what it means for the door. The meanings are `opening` (someone opened the door: the event describes an opening), `denied` (someone tried and was refused) and `ring` (someone rang). Other event types are ignored.
+  - `fields`: optional, where the details are: `who`, `how` and `direction`, each → the name of the event's attribute that holds it.
+</Property>
+
+---
+
+<Property name="match" type="time period" optional>
+  How far from an opening's start an `opening` event may be, before or after, to describe it. Defaults to `{seconds: 5}`. A [time period](/features/appliance#settings).
+</Property>
+
+## Openings
+
+- The door opens when the contact turns `on` and closes when it turns `off`. While the contact is `unavailable` or `unknown`, the door **keeps** its state: an opening in progress goes on.
+- A contact already open when pururu is set up starts an opening then.
+- A **restart or reload** in the middle of an opening doesn't lose it: its start is restored. If the contact is closed once Home Assistant has started, the opening ends then.
+
+## Who, how and which way
+
+An `opening` event describes the opening whose start is at most `match` from the event's time, whichever comes first. Access controllers usually report the event a second or so after the door opens.
+
+- The **first** event near an opening wins. Later ones don't change it.
+- An opening with **no** event near it has `unknown` fields. They never keep an earlier opening's values: leaving by the handle, from inside, doesn't show the last entry's PIN again.
+- An event's time is the event entity's state (the time of its last event), not the moment pururu sees it. The same state again, `unavailable`, `unknown`, or a state that isn't a time is not a new event. So a restart, which brings the event entity back with its last, old, time, describes nothing.
+- A field's value is the attribute as text, as the integration writes it (`PIN_CODE`, `entry`): pururu doesn't translate it. An attribute the event doesn't have leaves its field `unknown`.
+
+## Entities
+
+`<key>` is the device's key.
+
+| Entity | Unit | What it is |
+|---|---|---|
+| `binary_sensor.pururu_<key>_door_open` | | Open or closed. Device class `door`, whatever the contact's. |
+| `sensor.pururu_<key>_door_last_opened` | timestamp | When the last opening started |
+| `sensor.pururu_<key>_door_last_closed` | timestamp | When it ended. **Written last**: trigger on it. |
+| `sensor.pururu_<key>_door_last_open_duration` | s | How long it lasted |
+| `sensor.pururu_<key>_door_openings_total` | openings | Openings, all time |
+| `sensor.pururu_<key>_door_open_time_total` | h | Hours open, all time, brought up to date every minute |
+| `sensor.pururu_<key>_door_<counter>_<period>` | | `openings` or `open_time` this period, one per entry of `statistics` |
+
+With `events`, only what they give:
+
+| Entity | Created when | What it is |
+|---|---|---|
+| `sensor.pururu_<key>_door_last_opened_by` | an `opening` type and `fields.who` | Who made the last opening |
+| `sensor.pururu_<key>_door_last_opened_via` | an `opening` type and `fields.how` | How the last opening was made |
+| `sensor.pururu_<key>_door_last_direction` | an `opening` type and `fields.direction` | Which way the last opening went |
+| `sensor.pururu_<key>_door_last_denied` | a `denied` type | When the last denied attempt was, with attributes `who`, `how` and `direction` (those mapped) |
+| `sensor.pururu_<key>_door_last_ring` | a `ring` type | When the door last rang |
+
+- Every entity keeps its value across restarts. The totals are `total_increasing`, and the per-period sensors reset as [`appliance`'s](/features/appliance#per-period) do.
+- `last_denied` and `last_ring` only move forward: an older event, replayed after a restart, doesn't replace them.
+
+## Provides
+
+`door` provides a **cycle**, carried by `open`: each opening is a cycle. [`phases`](/features/phases) and [`modes`](/features/modes) can take it with `cycle_from: door`, and [`alerts`](/features/alerts) can watch `door_open` (`when: door_open`, `is: "on"`, `for: {minutes: 10}`: a door left open).

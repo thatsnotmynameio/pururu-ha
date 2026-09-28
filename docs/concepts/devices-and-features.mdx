@@ -39,6 +39,8 @@ A feature is a ready-made piece of behaviour. It reads real entities, such as a 
 | Feature | What it does |
 |---|---|
 | [`appliance`](/features/appliance) | An appliance on a power-measuring plug: when it runs, its cycles, their duration and energy, runtime and cycle counts per period |
+| [`door`](/features/door) | A door from its contact sensor: each opening, their count and time open per period, and, with events, who opened it, how and which way |
+| [`window`](/features/window) | A window from its contact sensor, as a door |
 | [`lights`](/features/lights) | Real lights, or relays that drive a lamp, inside the device, each named in the YAML, that show their light's state, offer what it offers and pass commands on |
 | [`phases`](/features/phases) | The phase of a cycle (heating, spinning…), from bands of a sensor's value |
 | [`modes`](/features/modes) | The kind of each cycle (cooling, heating…), each from its own band and delays, with everything a cycle records, per mode |
@@ -74,6 +76,8 @@ The same pattern will hold for every future feature: `<what it needs>_from: <fea
 | Feature | Provides | Needs |
 |---|---|---|
 | `appliance` | `cycle`, carried by `binary_sensor.pururu_<key>_appliance_running` | nothing |
+| `door` | `cycle`, carried by `binary_sensor.pururu_<key>_door_open` | nothing |
+| `window` | `cycle`, carried by `binary_sensor.pururu_<key>_window_open` | nothing |
 | `lights` | nothing | nothing |
 | `phases` | nothing | `cycle`, through `cycle_from` |
 | `modes` | nothing | `cycle`, through `cycle_from` |
