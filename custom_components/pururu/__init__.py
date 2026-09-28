@@ -524,7 +524,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     watched = _watched_items(devices)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     lights_settings = alert_lights.settings(configured)
-    alert_lights.async_setup(
+    lent = alert_lights.async_setup(
         hass,
         entry,
         lights_settings,
@@ -547,7 +547,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
 
         A rename is followed: of a pururu entity, or of a script or automation
         it generates (a reaction's action and the statistics would watch an ID
-        that no longer is). A program acting on an entity just disabled is dropped (`_acted_on`), once
+        that no longer is). A program acting on an entity just disabled is dropped (`_acted_on`),
+        and a light or alert the alert lights follow is left out, once
         for a burst of them: HA reloads the entry itself once an entity is
         enabled again, but not when one is disabled (config_entries.py leaves
         that to the entity, which merely clears its own state). No other
@@ -561,7 +562,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         if registered is None:
             return
         why = _rebuild_for(
-            entry.entry_id, registered, data["changes"], watched, targets
+            entry.entry_id, registered, data["changes"], watched, targets | lent
         )
         if why is None or (why == "disabled" and reloading):
             return
@@ -621,7 +622,8 @@ def _rebuild_for(
 
     Renamed: one of the entry's entities, or a script or automation it
     generates (a reaction starts one, the statistics watch them).
-    Disabled: an entity a generated script acts on, just now (the old value
+    Disabled: an entity a generated script acts on, or a light or an alert the
+    alert lights follow, just now (the old value
     of `disabled_by` is None).
     """
     ours = registered.config_entry_id == entry_id

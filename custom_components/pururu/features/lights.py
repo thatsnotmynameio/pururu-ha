@@ -9,6 +9,7 @@ which is all a switch exposes. Both kinds can be borrowed by the alert lights
 """
 
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 import logging
 from typing import Any, override
 
@@ -25,7 +26,7 @@ from homeassistant.const import (
     Platform,
 )
 from homeassistant.core import Context, HomeAssistant, callback, split_entity_id
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from ..entity import PururuEntity
 from ..feature import Device, Feature
@@ -36,6 +37,21 @@ _LOGGER = logging.getLogger(__name__)
 # What the alert lights show on a light they borrow (alert_lights.py)
 ATTR_ALERT = "alert"
 ATTR_ALERTS = "alerts"
+
+
+@dataclass(frozen=True)
+class AlertShown(ExtraStoredData):
+    """What the alert lights showed on a light, kept apart from its state.
+
+    HA saves no attributes of an unavailable entity, and a bulb may well be
+    offline at a restart or reload.
+    """
+
+    alert: str | None
+
+    @override
+    def as_dict(self) -> dict[str, Any]:
+        return {ATTR_ALERT: self.alert}
 
 
 class Borrowable(PururuEntity, RestoreEntity):
@@ -50,8 +66,14 @@ class Borrowable(PururuEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Follow the real entity as the group does, then read what the alert lights showed."""
         await super().async_added_to_hass()
-        if (last := await self.async_get_last_state()) is not None:
-            self.restored_alert = last.attributes.get(ATTR_ALERT)
+        if (extra := await self.async_get_last_extra_data()) is not None:
+            self.restored_alert = extra.as_dict().get(ATTR_ALERT)
+
+    @property
+    @override
+    def extra_restore_state_data(self) -> AlertShown:
+        """What the alert lights show now, restored whether or not the light is available."""
+        return AlertShown(self._alert)
 
     @callback
     def async_show_alert(

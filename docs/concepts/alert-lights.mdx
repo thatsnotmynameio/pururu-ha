@@ -104,8 +104,8 @@ pururu only calls the light's `turn_on` and `turn_off`. The light takes what it 
 ## Someone else changes a borrowed light
 
 - **During an alert**, pururu puts the light back at once: an automation or a person turning it off, or to another colour, doesn't hide the alert. Only the alert ending frees the light.
-- **During `resolved`**, whoever changed the light took it back on purpose: pururu hands it back at once, without turning it off, and fires the event.
-- **A light going `unavailable`** isn't taken by anyone: pururu waits, and shows what it should once the light is back.
+- **During `resolved`**, a person (in the UI, by voice) or an automation or script changing the light took it back on purpose: pururu hands it back at once, without turning it off, and fires the event. A change neither made, such as the bulb's own late report or a wall switch, shows `resolved` again.
+- **A light going `unavailable`** isn't taken by anyone, and pururu doesn't call it while it can't answer: it shows what it should once the light is back. If `resolved`'s `for` ended meanwhile, the light is turned off then, and handed back.
 - pururu knows its own changes by their context: a bulb reporting what pururu asked is never "put back".
 
 ## Taking the light back
@@ -132,11 +132,12 @@ automation:
 ## Restarts and reloads
 
 - The lights follow the alerts once Home Assistant has started.
-- A light keeps its `alert` across restarts and reloads. If none of its alerts is on when Home Assistant starts, as when one ended while it was off or it restarted during the green, the light goes through `resolved` and is handed back. So does a light taken out of every group while an alert had it.
+- A light keeps its `alert` across restarts and reloads, even when it's `unavailable` then. If none of its alerts is on when Home Assistant starts, as when one ended while it was off or it restarted during the green, the light goes through `resolved` and is handed back. So does a light taken out of every group while an alert had it.
 - A reload while an alert is on sends that alert's `turn_on` again: no green, no release.
 
 ## Good to know
 
-- A light of a group that isn't created, because its ID is taken, is left out of the group, and the log says so. A light you disabled is left out quietly.
-- A call that fails, a light unavailable or Zigbee2MQTT refusing, is a warning in the log. The next `repeat` or change tries again.
+- A light of a group that isn't created, because its ID is taken, is left out of the group, and the log says so. A light you disabled is left out quietly, even while an alert has it.
+- Disabling an alert that holds a light counts as the alert ending: the light goes through `resolved` and is handed back.
+- A call that fails, such as Zigbee2MQTT refusing it, is a warning in the log. The next `repeat` or change tries again.
 - Alert2's **Ignorar** stops the reminders on the phones. It doesn't reach the lights: they show the alert until it ends.

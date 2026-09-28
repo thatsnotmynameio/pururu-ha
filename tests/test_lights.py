@@ -532,6 +532,6 @@ async def test_it_shows_what_the_alert_lights_use_it_for(
 
 async def test_it_remembers_what_the_alert_lights_showed(ha: HomeAssistant) -> None:
     await fake(ha, REAL_TETO, "on", BULB)
-    await restart(ha, DEVICES, (State(TETO, "on", {"alert": "resolved"}), {}))
+    await restart(ha, DEVICES, (State(TETO, "on"), {"alert": "resolved"}))
     assert light_entity(ha, TETO).restored_alert == "resolved"
     assert light_entity(ha, ABAJUR).restored_alert is None

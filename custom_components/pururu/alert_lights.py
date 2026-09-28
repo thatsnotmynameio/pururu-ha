@@ -171,6 +171,8 @@ class _Light:
     recent: deque[str] = field(default_factory=lambda: deque(maxlen=RECENT))
     repeating: CALLBACK_TYPE | None = None
     resolving: CALLBACK_TYPE | None = None
+    # Resolved's `for` ended while it had no reading: turned off once it's back
+    overdue: bool = False
 
     def own(self) -> Context:
         """A new context for the manager's next change of this light."""
@@ -276,7 +278,10 @@ class AlertLights:
 
         The manager's own changes carry one of its recent contexts. A light
         without a reading was taken by nobody; one back from it during
-        resolved shows resolved again, its `for` running on.
+        resolved shows resolved again, its `for` running on, or is turned off
+        if that ended meanwhile. During resolved only a person or an
+        automation takes it back: a change neither made (the bulb's own late
+        report) shows resolved again.
         """
         light = self._by_id[event.data["entity_id"]]
         old, new = event.data["old_state"], event.data["new_state"]
@@ -286,7 +291,9 @@ class AlertLights:
             return
         if light.shown != RESOLVED:
             self._apply(light, light.shown)
-        elif old.state in NO_READING:
+        elif light.overdue:
+            self._release(light, turn_off=True)
+        elif old.state in NO_READING or not _deliberate(event.context):
             self._apply(light, RESOLVED)
         else:
             self._release(light, turn_off=False)
@@ -300,6 +307,7 @@ class AlertLights:
                 self._resolve(light)
             return
         light.stop_resolving()
+        light.overdue = False
         if level == light.shown:
             # An alert of the same priority joined or left
             light.entity.async_show_alert(level, self._holding(light), light.own())
@@ -330,6 +338,7 @@ class AlertLights:
         """Show resolved for its `for`, then hand the light back."""
         light.stop_repeating()
         light.stop_resolving()
+        light.overdue = False
         self._apply(light, RESOLVED)
         light.resolving = async_call_later(
             self._hass, self._settings[RESOLVED][FOR], partial(self._resolved, light)
@@ -337,7 +346,11 @@ class AlertLights:
 
     @callback
     def _resolved(self, light: _Light, _now: datetime) -> None:
+        """Hand the light back, or, while it has no reading, once it's back."""
         light.resolving = None
+        if self._offline(light):
+            light.overdue = True
+            return
         self._release(light, turn_off=True)
 
     @callback
@@ -345,6 +358,7 @@ class AlertLights:
         """Free the light: turned off first, unless someone took it back."""
         light.stop_repeating()
         light.stop_resolving()
+        light.overdue = False
         context = light.own()
         light.shown = None
         light.entity.async_show_alert(None, (), context)
@@ -364,6 +378,11 @@ class AlertLights:
                 context=context,
             )
 
+    def _offline(self, light: _Light) -> bool:
+        """Whether the light has no reading: unavailable, unknown, or no state."""
+        state = self._hass.states.get(light.entity.entity_id)
+        return state is None or state.state in NO_READING
+
     @callback
     def _call(
         self,
@@ -373,7 +392,15 @@ class AlertLights:
         context: Context,
         then: Callable[[], None] | None = None,
     ) -> None:
-        """Call light.`service` on the light in a task of the entry; `then` once it returned."""
+        """Call light.`service` on the light in a task of the entry; `then` once it returned.
+
+        A light without a reading can't take it: not called, it is put back
+        once it's back (`_light_changed`).
+        """
+        if self._offline(light):
+            if then is not None:
+                then()
+            return
         self._entry.async_create_task(
             self._hass,
             self._async_call(light.entity.entity_id, service, data, context, then),
@@ -416,13 +443,14 @@ def async_setup(
     groups: Mapping[str, list[str]],
     alerts: Iterable[ProblemAlert],
     lights: Iterable[Borrowable],
-) -> None:
+) -> set[str]:
     """Lend the created lights to the created alerts with lights, once HA has started.
 
     `groups`: each group's lights, by unique ID. A light of a group that isn't
     created is logged and left out; a disabled one is left out, as HA never
     added it. A light the alert lights had before a restart or reload is
-    handed back even when it is in no group now.
+    handed back even when it is in no group now. Returns the entity IDs of the
+    lights and alerts followed: disabling one needs the entry built again.
     """
     registry = er.async_get(hass)
     built = list(lights)
@@ -456,6 +484,19 @@ def async_setup(
         manager.start()
 
     entry.async_on_unload(async_at_started(hass, start))
+    return {
+        entity_id
+        for light in borrowed.values()
+        for entity_id in (
+            light.entity.entity_id,
+            *(alert.entity_id for alert in light.alerts),
+        )
+    }
+
+
+def _deliberate(context: Context) -> bool:
+    """Whether a person (user_id) or an automation or script (parent_id) made the change."""
+    return context.user_id is not None or context.parent_id is not None
 
 
 def _enabled(registry: er.EntityRegistry, light: Borrowable) -> bool:

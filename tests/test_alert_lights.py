@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from homeassistant.core import Event, HomeAssistant, State
+from homeassistant.core import Context, Event, HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 import pytest
@@ -466,15 +466,21 @@ async def test_a_late_report_of_an_earlier_call_is_still_the_managers(
     assert len(calls(events, LED)) == 2
 
 
+@pytest.mark.parametrize("context", [
+    pytest.param(Context(user_id="someone"), id="a person"),
+    pytest.param(Context(parent_id="an automation's trigger"), id="an automation"),
+])
 async def test_a_change_during_resolved_hands_the_light_back_without_turning_it_off(
-        house: HomeAssistant, freezer: Any) -> None:
+        house: HomeAssistant, freezer: Any, context: Context) -> None:
     """Whoever changed it took it back on purpose: the alert is over."""
     assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
     await turn(house, "gate", "on")
     await turn(house, "gate", "off")
     released = capture(house, "pururu_alert_lights_released")
     events = capture(house, "call_service")
-    await fake(house, REAL_LED, "on", {**BULB, "hs_color": [240.0, 100.0]})
+    house.states.async_set(REAL_LED, "on", {**BULB, "hs_color": [240.0, 100.0]},
+                           context=context)
+    await settle()
     await house.async_block_till_done()
     assert [event.data for event in released] == [{"entity_id": LED}]
     assert "alert" not in attributes(house, LED)
@@ -546,7 +552,7 @@ async def test_a_restart_with_an_alert_on_shows_it(house: HomeAssistant) -> None
     events = capture(house, "call_service")
     await restart(house, devices(gate=raised("gate", "medium")),
                   (State(alert("gate"), "on"), {}),
-                  (State(LED, "on", {"alert": "medium"}), {}), config=CONFIG)
+                  (State(LED, "on"), {"alert": "medium"}), config=CONFIG)
     assert calls(events, LED) == [("turn_on", ORANGE)]
 
 
@@ -556,7 +562,7 @@ async def test_a_restart_during_resolved_hands_the_light_back(
     events = capture(house, "call_service")
     await restart(house, devices(gate=raised("gate", "medium")),
                   (State(alert("gate"), "off"), {}),
-                  (State(LED, "on", {"alert": "resolved"}), {}), config=CONFIG)
+                  (State(LED, "on"), {"alert": "resolved"}), config=CONFIG)
     assert calls(events, LED) == [("turn_on", GREEN)]
     await tick(house, freezer, 120)
     assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
@@ -567,7 +573,7 @@ async def test_a_restart_after_the_alert_ended_hands_the_light_back(house: HomeA
     events = capture(house, "call_service")
     await restart(house, devices(gate=raised("gate", "medium")),
                   (State(alert("gate"), "off"), {}),
-                  (State(LED, "on", {"alert": "medium"}), {}), config=CONFIG)
+                  (State(LED, "on"), {"alert": "medium"}), config=CONFIG)
     assert calls(events, LED) == [("turn_on", GREEN)]
 
 
@@ -584,7 +590,7 @@ async def test_a_light_out_of_every_group_is_handed_back(
     released = capture(house, "pururu_alert_lights_released")
     events = capture(house, "call_service")
     await restart(house, devices(mail=raised("mail", "low", "porch")),
-                  (State(LED, "on", {"alert": "high"}), {}),
+                  (State(LED, "on"), {"alert": "high"}),
                   config={"alerts": {"lights": {"groups": {"porch": {"varanda": ["rele"]}}}}})
     assert calls(events, LED) == [("turn_on", GREEN)]
     await tick(house, freezer, 120)
@@ -643,6 +649,121 @@ async def test_a_disabled_light_is_left_out_quietly(
     assert calls(events, RELAY) == [("turn_on", BLUE)]
     assert calls(events, LED) == []
     assert "goes without it" not in caplog.text
+
+
+# --- offline, disabled, late -------------------------------------------------------------
+
+
+async def test_a_late_report_during_resolved_shows_resolved_again(house: HomeAssistant) -> None:
+    """A change no person nor automation made (the bulb's own report, after the
+    manager's context expired) isn't a hand-back."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    released = capture(house, "pururu_alert_lights_released")
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "on", {**BULB, "hs_color": [120.0, 100.0]})
+    await house.async_block_till_done()
+    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert released == []
+    assert attributes(house, LED)["alert"] == "resolved"
+
+
+async def test_an_offline_light_is_not_called(
+        house: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """No call every repeat while it can't take one: it's put back once it returns."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "unavailable")
+    await tick(house, freezer, 30)
+    assert calls(events, LED) == []
+    assert f"Referenced entities {LED} are missing" not in caplog.text
+    await fake(house, REAL_LED, "off", BULB)
+    await house.async_block_till_done()
+    assert calls(events, LED) == [("turn_on", ORANGE)]
+
+
+async def test_resolved_ending_while_the_light_is_offline_turns_it_off_once_back(
+        house: HomeAssistant, freezer: Any) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    released = capture(house, "pururu_alert_lights_released")
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "unavailable")
+    await tick(house, freezer, 120)
+    assert calls(events, LED) == []
+    assert released == []
+    await fake(house, REAL_LED, "on", BULB)
+    await house.async_block_till_done()
+    assert calls(events, LED) == [("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LED}]
+
+
+async def test_a_restart_with_the_light_offline_still_hands_it_back(
+        house: HomeAssistant, freezer: Any) -> None:
+    """HA saves no attributes of an unavailable entity: what was shown is kept apart."""
+    await fake(house, REAL_LED, "unavailable")
+    released = capture(house, "pururu_alert_lights_released")
+    events = capture(house, "call_service")
+    await restart(house, devices(gate=raised("gate", "medium")),
+                  (State(alert("gate"), "off"), {}),
+                  (State(LED, "unavailable"), {"alert": "resolved"}), config=CONFIG)
+    await fake(house, REAL_LED, "on", BULB)
+    await house.async_block_till_done()
+    assert calls(events, LED) == [("turn_on", GREEN)]
+    await tick(house, freezer, 120)
+    assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LED}]
+
+
+async def test_a_reload_with_the_light_offline_still_hands_it_back(
+        house: HomeAssistant, freezer: Any) -> None:
+    config = devices(gate=raised("gate", "medium"))
+    assert await setup(house, config, config=CONFIG)
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    await fake(house, REAL_LED, "unavailable")
+    released = capture(house, "pururu_alert_lights_released")
+    events = capture(house, "call_service")
+    await reload(house, config, config=CONFIG)
+    await fake(house, REAL_LED, "on", BULB)
+    await house.async_block_till_done()
+    assert calls(events, LED) == [("turn_on", GREEN)]
+    await tick(house, freezer, 120)
+    assert calls(events, LED)[-1] == ("turn_off", {})
+    assert [event.data for event in released] == [{"entity_id": LED}]
+
+
+async def test_disabling_an_alert_hands_its_light_back(house: HomeAssistant, freezer: Any) -> None:
+    """Disabling the alert is a way to silence it."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    released = capture(house, "pururu_alert_lights_released")
+    events = capture(house, "call_service")
+    er.async_get(house).async_update_entity(
+        alert("gate"), disabled_by=er.RegistryEntryDisabler.USER)
+    await house.async_block_till_done()
+    # The reloaded light may show its state after the manager started: green is sent again
+    sent = calls(events, LED)
+    assert sent
+    assert all(call == ("turn_on", GREEN) for call in sent)
+    await tick(house, freezer, 120)
+    assert calls(events, LED)[-1] == ("turn_off", {})
+    assert [event.data for event in released] == [{"entity_id": LED}]
+
+
+async def test_disabling_a_borrowed_light_leaves_it_alone(
+        house: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    events = capture(house, "call_service")
+    er.async_get(house).async_update_entity(LED, disabled_by=er.RegistryEntryDisabler.USER)
+    await house.async_block_till_done()
+    await tick(house, freezer, 30)
+    assert calls(events, LED) == []
+    assert "while it is disabled" not in caplog.text
 
 
 # --- the docs ----------------------------------------------------------------------------

@@ -119,9 +119,14 @@ The manager follows every state change of each borrowed light:
 - **The change carries a context of the manager's:** its own call caused it; ignored. The manager keeps its last few contexts per light, so a late report of an earlier call is still its own.
 - **The light has no reading now** (`unavailable`, `unknown`): nobody took it; ignored.
 - **Else, the light has a level:** `turn_on` with the current priority's parameters.
-- **Else, the light is in `resolved` and comes back from no reading:** `turn_on` with `resolved`'s parameters again, its `for` running on.
-- **Else, the light is in `resolved`:** someone took it back on purpose; `for` cancelled, free, `pururu_alert_lights_released`, no `turn_off`.
+- **Else, the light is in `resolved` and its `for` ended while it had no reading:** `turn_off`, free, released.
+- **Else, the light is in `resolved` and comes back from no reading, or the change has neither a `user_id` nor a `parent_id`** (the bulb's own report after the 5 s, a wall switch): `turn_on` with `resolved`'s parameters again, its `for` running on.
+- **Else, the light is in `resolved`:** a person or an automation took it back on purpose; `for` cancelled, free, `pururu_alert_lights_released`, no `turn_off`.
 - **The light is free:** ignored, whoever changed it.
+
+A light without a reading is never called (HA would skip it and log a missing entity at every `repeat`): what it should show is sent once it's back. Resolved's `for` ending while it has no reading waits for it to be back to turn it off and release it (final review).
+
+Disabling a followed light or alert reloads the entry (as for a program's target): a disabled alert has no state, so it counts as off and its lights go through `resolved`; a disabled light is left out (final review).
 
 Each call gets a new `Context`. HA keeps a call's context on an entity for 5 s (`CONTEXT_RECENT_TIME_SECONDS`), so a change without a context of its own (a wall switch reported by Zigbee2MQTT) within 5 s of a call looks like the manager's and isn't put back until the next `repeat` or change. Accepted.
 
@@ -136,7 +141,7 @@ Both light classes (`Light`, `SwitchLight`) gain:
 | `alert` | `high`, `medium`, `low`, `resolved`, or absent when free |
 | `alerts` | the entity IDs of its alerts that are on, absent when free |
 
-The manager sets them and writes the light's state. `alert` is restored (below).
+The manager sets them and writes the light's state. `alert` is restored (below), from the extra restore data rather than the attribute: HA saves no attributes of an unavailable entity (final review).
 
 ### The method calls
 
