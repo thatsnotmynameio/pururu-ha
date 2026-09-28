@@ -6,7 +6,7 @@ From the real entities and settings in a feature's block, the feature creates
 the device's entities. One config entry owns every floor, area, device and entity.
 """
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from functools import partial
 import logging
 from typing import Any, Literal
@@ -385,7 +385,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
 
     Floors and areas come first: devices will be placed in them. The reactions'
     automations, the programs' scripts and Alert2's alerts come after the
-    entities: they watch and act on the ones created. The dashboard comes last:
+    entities: they watch and act on the ones created. The programs' scripts come
+    before the reactions' automations: a reaction starts one. The dashboard comes last:
     it shows them all.
     """
     configured = hass.data.get(DATA_CONFIG, {})
@@ -408,11 +409,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     _place(hass, entry, devices)
     _remove_stale(hass, entry, set(devices))
     created = {str(entity.unique_id) for each in built.values() for entity in each}
-    await generated.async_sync(
-        hass, entry, reactions.KIND, _automations(hass, devices, created)
-    )
     scripts, held, targets = _scripts(hass, devices, created)
-    await generated.async_sync(hass, entry, programs.KIND, scripts, held)
+    generated_scripts = await generated.async_sync(
+        hass, entry, programs.KIND, scripts, held
+    )
+    automations, held_automations = _automations(
+        hass, devices, created, generated_scripts, held
+    )
+    await generated.async_sync(
+        hass, entry, reactions.KIND, automations, held_automations
+    )
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
     dashboard.async_setup(hass, entry)
 
@@ -634,12 +640,24 @@ def _remove_stale(
 
 
 def _automations(
-    hass: HomeAssistant, devices: dict[str, dict[str, Any]], created: set[str]
-) -> list[generated.Item]:
-    """An automation per reaction of every device; one watching an entity not created is logged."""
+    hass: HomeAssistant,
+    devices: dict[str, dict[str, Any]],
+    created: set[str],
+    scripts: Collection[str],
+    held_scripts: Collection[str],
+) -> tuple[list[generated.Item], set[str]]:
+    """An automation per reaction of every device; one that can't work is logged.
+
+    One watching an entity not created, or starting a program whose script
+    isn't generated, isn't generated. Also the IDs of those held with their
+    program.
+    """
+    registry = er.async_get(hass)
     automations: list[generated.Item] = []
+    held: set[str] = set()
     for key, config in devices.items():
         for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
+            automation_id = reactions.automation_id(key, reaction_key)
             entity_id = reaction.get("entity")
             if (when := reaction.get("when")) is not None:
                 owner_key = reaction.get("device", key)
@@ -650,20 +668,42 @@ def _automations(
                     _LOGGER.error(
                         "automation.%s follows %s, which is not created; "
                         "not generating it",
-                        reactions.automation_id(key, reaction_key),
+                        automation_id,
                         owner.entity_id(platform, entity_key),
                     )
                     continue
                 entity_id = owner.current_entity_id(hass, platform, entity_key)
+            script = None
+            if (then := reaction.get("then")) is not None:
+                script_id = programs.script_id(key, then)
+                if script_id not in scripts:
+                    _LOGGER.error(
+                        "automation.%s runs script.%s, which is not generated; "
+                        "not generating it",
+                        automation_id,
+                        script_id,
+                    )
+                    if script_id in held_scripts:
+                        held.add(automation_id)
+                    continue
+                # Registered by the scripts' sync: its current entity ID
+                script = registry.async_get_entity_id(
+                    programs.KIND.domain, programs.KIND.domain, script_id
+                )
             automations.append(
                 generated.Item(
-                    unique_id=reactions.automation_id(key, reaction_key),
+                    unique_id=automation_id,
                     config=reactions.automation(
-                        key, config[CONF_NAME], reaction_key, reaction, entity_id
+                        key,
+                        config[CONF_NAME],
+                        reaction_key,
+                        reaction,
+                        entity_id,
+                        script,
                     ),
                 )
             )
-    return automations
+    return automations, held
 
 
 def _scripts(

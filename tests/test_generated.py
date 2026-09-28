@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.file import WriteError
 from homeassistant.util.yaml import load_yaml_dict
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 import yaml
 
 from helpers import capture, module, reload, restart, setup, tick
@@ -179,6 +180,19 @@ async def test_an_id_taken_by_another_integration_is_not_generated(
     assert (f"{case.entity_id('door')} is already taken by the template integration; "
             "not generating it") in caplog.text
     assert er.async_get(ha).async_get(f"{case.entity_id('door')}_2") is None
+
+
+async def test_sync_returns_the_ids_it_generated(ha: HomeAssistant, case: Case) -> None:
+    """Not the one whose ID someone else holds: a reaction then knows its program's script is missing."""
+    generated = module("generated")
+    er.async_get(ha).async_get_or_create(
+        case.domain, "template", "someone_else", suggested_object_id=case.unique_id("taken"))
+    entry = MockConfigEntry(domain="pururu", source="import", data={})
+    entry.add_to_hass(ha)
+    items = [generated.Item(unique_id=case.unique_id(key), config={"alias": key})
+             for key in ("free", "taken")]
+    kind = module(case.source).KIND
+    assert await generated.async_sync(ha, entry, kind, items) == [case.unique_id("free")]
 
 
 async def test_an_item_of_ones_own_with_the_same_id_is_not_adopted(
