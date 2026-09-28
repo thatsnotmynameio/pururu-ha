@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from homeassistant.core import Context, CoreState, HomeAssistant
+from homeassistant.components.light.const import DATA_COMPONENT
+from homeassistant.core import Context, CoreState, HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 import pytest
 
@@ -482,3 +483,55 @@ async def test_after_a_restart_it_shows_the_real_light(ha: HomeAssistant) -> Non
     assert state(ha, TETO) == "on"
     assert attributes(ha, TETO)["brightness"] == 128
     assert state(ha, ABAJUR) == "off"
+
+
+# --- the alert lights ------------------------------------------------------------------
+
+
+def light_entity(hass: HomeAssistant, entity_id: str) -> Any:
+    """The light entity itself, as the light component holds it."""
+    return hass.data[DATA_COMPONENT].get_entity(entity_id)
+
+
+async def test_an_effect_the_real_light_does_not_list_is_dropped(sala: HomeAssistant) -> None:
+    """The alert lights ask every light for breathe: a bulb without it takes the rest."""
+    calls = await forwarded(sala, TETO, "turn_on", {"effect": "breathe", "brightness": 100},
+                            Context(), REAL_TETO)
+    assert len(calls) == 1
+    assert "effect" not in calls[0][2]
+    assert calls[0][2]["brightness"] == 100
+
+
+async def test_an_effect_the_real_light_lists_is_passed_on(sala: HomeAssistant) -> None:
+    calls = await forwarded(sala, TETO, "turn_on", {"effect": "strobe"}, Context(), REAL_TETO)
+    assert calls[0][2]["effect"] == "strobe"
+
+
+@pytest.mark.parametrize(("entity_id", "real", "block"), [
+    pytest.param(TETO, REAL_TETO, LIGHTS["teto"], id="a light"),
+    pytest.param(ARANDELA, REAL_ARANDELA, ARANDELA_BLOCK, id="a relay"),
+])
+async def test_it_shows_what_the_alert_lights_use_it_for(
+        ha: HomeAssistant, entity_id: str, real: str, block: dict[str, Any]) -> None:
+    await fake(ha, real, "on", BULB if real == REAL_TETO else None)
+    key = entity_id.rsplit("_", 1)[1]
+    assert await setup(ha, {KEY: {"name": "Sala", "lights": {key: block}}})
+    context = Context()
+    light_entity(ha, entity_id).async_show_alert("medium", ["binary_sensor.x"], context)
+    shown = ha.states.get(entity_id)
+    assert shown.attributes["alert"] == "medium"
+    assert shown.attributes["alerts"] == ["binary_sensor.x"]
+    assert shown.attributes["entity_id"] == [real]
+    assert shown.context.id == context.id
+    light_entity(ha, entity_id).async_show_alert(None, [], Context())
+    free = ha.states.get(entity_id).attributes
+    assert "alert" not in free
+    assert "alerts" not in free
+    assert free["entity_id"] == [real]
+
+
+async def test_it_remembers_what_the_alert_lights_showed(ha: HomeAssistant) -> None:
+    await fake(ha, REAL_TETO, "on", BULB)
+    await restart(ha, DEVICES, (State(TETO, "on", {"alert": "resolved"}), {}))
+    assert light_entity(ha, TETO).restored_alert == "resolved"
+    assert light_entity(ha, ABAJUR).restored_alert is None
