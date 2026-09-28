@@ -600,14 +600,27 @@ async def test_idle_energy_unknown_when_a_cycle_starts_is_lost(idle: HomeAssista
 
 
 async def test_idle_energy_restores_without_the_time_ha_was_down(ha: HomeAssistant) -> None:
+    """The counter's reading at the start may be from before the restart: count from the next."""
     await kwh(ha, 100.4)
     await restart(ha, {KEY: {"name": "Demo washer", "appliance": IDLE}},
                   (State(RUNNING, "off"), {"since": None, "since_energy": None}),
                   (State(sensor("idle_energy_total"), "1.5"),
                    {"native_value": 1.5, "native_unit_of_measurement": "kWh"}))
     assert idle_kwh(ha) == 1.5
-    await kwh(ha, 100.41)
+    await kwh(ha, 100.9)  # the plug's first fresh reading: a cycle may have run meanwhile
+    assert idle_kwh(ha) == 1.5
+    await kwh(ha, 100.91)
     assert idle_kwh(ha) == pytest.approx(1.51)
+
+
+async def test_idle_energy_after_a_reload_counts_from_the_next_reading(
+        idle: HomeAssistant) -> None:
+    await kwh(idle, 100.01)
+    await reload(idle, {KEY: {"name": "Demo washer", "appliance": IDLE}})
+    await kwh(idle, 100.02)
+    assert idle_kwh(idle) == pytest.approx(0.01)
+    await kwh(idle, 100.03)
+    assert idle_kwh(idle) == pytest.approx(0.02)
 
 
 async def test_idle_energy_meters(idle: HomeAssistant, freezer: Any) -> None:

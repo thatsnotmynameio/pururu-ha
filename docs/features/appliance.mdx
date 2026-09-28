@@ -132,7 +132,7 @@ stateDiagram-v2
 - It splits the counter with the cycles at the same instants `running` turns on and off, so the energy of every cycle plus `idle_energy_total` is what the counter grew. The `on_delay` before a cycle counts as idle; the `off_delay` at its end belongs to the cycle.
 - A counter without a value doesn't stop it: the next reading adds what it grew since the last one. If a cycle starts while the counter has no value, what it grew since the last reading is lost.
 - A counter going down (the plug re-paired) adds nothing, and it counts on from the lower reading.
-- What the counter grew while Home Assistant was down isn't counted: a cycle that ran meanwhile would count as idle.
+- After a restart or reload it counts from the counter's **next** reading. The reading already there may be from before Home Assistant was down, and a cycle that ran meanwhile would count as idle. So what the counter grew while Home Assistant was down isn't counted, and neither is its first step after a reload.
 
 ### Per period
 

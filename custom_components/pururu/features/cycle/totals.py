@@ -9,7 +9,13 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import Platform, UnitOfEnergy, UnitOfTime
+from homeassistant.const import (
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    Platform,
+    UnitOfEnergy,
+    UnitOfTime,
+)
 from homeassistant.core import Event, EventStateChangedData, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import (
@@ -188,8 +194,10 @@ class IdleEnergyTotal(PururuEntity, RestoreSensor):
     """kWh the counter grew while `watched` is `state` (between cycles), all time.
 
     The cycles' energy and this add up to the counter's growth: both read the counter
-    at the instant `watched` changes. Not what it grew while HA was down: a cycle that
-    ran meanwhile would count as idle.
+    at the instant `watched` leaves or enters `state`. Added (a restart, a reload) or
+    `watched` coming back from no state, it counts from the counter's next reading: the
+    reading already there may be from before HA was down, and a cycle that ran meanwhile
+    would count as idle.
     """
 
     _attr_device_class = SensorDeviceClass.ENERGY
@@ -218,7 +226,7 @@ class IdleEnergyTotal(PururuEntity, RestoreSensor):
 
     @override
     async def async_added_to_hass(self) -> None:
-        """Restore the kWh, then add while idle, from the counter's reading now."""
+        """Restore the kWh, then add while idle, from the counter's next reading."""
         await super().async_added_to_hass()
         last = await self.async_get_last_sensor_data()
         if last is not None and isinstance(last.native_value, int | float | Decimal):
@@ -233,8 +241,6 @@ class IdleEnergyTotal(PururuEntity, RestoreSensor):
                 self.hass, self._counter, self._counter_changed
             )
         )
-        if self.hass.states.is_state(self._watched, self._state):
-            self._counted_from = kwh_now(self.hass, self._counter)
 
     def _add_until(self, now: float | None) -> None:
         if (used := kwh_used(self._counted_from, now)) is not None:
@@ -245,9 +251,11 @@ class IdleEnergyTotal(PururuEntity, RestoreSensor):
     def _watched_changed(self, event: Event[EventStateChangedData]) -> None:
         now = kwh_now(self.hass, self._counter)
         self._add_until(now)
-        new = event.data["new_state"]
+        old, new = event.data["old_state"], event.data["new_state"]
+        # A cycle's end reads the counter live; from no state, wait for its next reading
+        ended = old is not None and old.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
         idle = new is not None and new.state == self._state
-        self._counted_from = now if idle else None
+        self._counted_from = now if idle and ended else None
 
     @callback
     def _counter_changed(self, event: Event[EventStateChangedData]) -> None:
@@ -256,4 +264,4 @@ class IdleEnergyTotal(PururuEntity, RestoreSensor):
         if (now := kwh_now(self.hass, self._counter)) is None:
             return  # no reading: count on from the last one
         self._add_until(now)
-        self._counted_from = now
+        self._counted_from = now  # after a restart, the first reading only starts it
