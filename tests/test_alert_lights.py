@@ -1,5 +1,6 @@
 """Alert lights: a made-up house's alerts borrowing the pool's LED and the porch's relay."""
 
+import asyncio
 from datetime import timedelta
 from pathlib import Path
 import re
@@ -544,6 +545,39 @@ async def test_a_failing_call_is_a_warning_and_the_repeat_tries_again(
     assert calls(events, LED) == [("turn_on", ORANGE)] * 2
 
 
+async def test_a_slow_turn_off_never_lands_after_the_next_alerts_turn_on(
+        house: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Commands reach a light in the order they were given, even when one is slow."""
+    lights = module("features.lights")
+    done: list[str] = []
+    gate = asyncio.Event()
+    turn_on = lights.Light.async_turn_on
+
+    async def slow_off(self: Any, **kwargs: Any) -> None:
+        await gate.wait()
+        done.append("off")
+
+    async def on(self: Any, **kwargs: Any) -> None:
+        await turn_on(self, **kwargs)
+        done.append("on")
+
+    config = {"alerts": {"lights": {"groups": GROUPS,
+                                    "medium": {"turn_on": {"color_name": "orange"}}}}}
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=config)
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    monkeypatch.setattr(lights.Light, "async_turn_off", slow_off)
+    monkeypatch.setattr(lights.Light, "async_turn_on", on)
+    done.clear()
+    await tick(house, freezer, 120)
+    # Not turn(): it would wait for the turn_off held here
+    await fake(house, REAL["gate"], "on")
+    gate.set()
+    await house.async_block_till_done()
+    assert done == ["off", "on"]
+    assert attributes(house, LED)["alert"] == "medium"
+
+
 async def test_an_integration_bug_turning_it_off_still_releases_the_light(
         house: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch) -> None:
@@ -719,6 +753,29 @@ async def test_resolved_ending_while_the_light_is_offline_turns_it_off_once_back
     await house.async_block_till_done()
     assert calls(events, LED) == [("turn_off", {})]
     assert [event.data for event in released] == [{"entity_id": LED}]
+
+
+@pytest.mark.parametrize("overdue", [pytest.param(False, id="during for"),
+                                     pytest.param(True, id="after for")])
+async def test_a_person_taking_back_a_light_that_returns_keeps_it(
+        house: HomeAssistant, freezer: Any, overdue: bool) -> None:
+    """Back from offline by someone's hand during resolved, or after its for ended: theirs."""
+    assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
+    await turn(house, "gate", "on")
+    await turn(house, "gate", "off")
+    released = capture(house, "pururu_alert_lights_released")
+    events = capture(house, "call_service")
+    await fake(house, REAL_LED, "unavailable")
+    if overdue:
+        await tick(house, freezer, 120)
+    house.states.async_set(REAL_LED, "on", {**BULB, "hs_color": [240.0, 100.0]},
+                           context=Context(user_id="someone"))
+    await settle()
+    await house.async_block_till_done()
+    assert calls(events, LED) == []
+    assert [event.data for event in released] == [{"entity_id": LED}]
+    await tick(house, freezer, 120)
+    assert calls(events, LED) == []
 
 
 async def test_a_restart_with_the_light_offline_still_hands_it_back(

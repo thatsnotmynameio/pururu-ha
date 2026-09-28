@@ -105,8 +105,9 @@ pururu only calls the light's `turn_on` and `turn_off`. The light takes what it 
 
 - **During an alert**, pururu puts the light back at once: an automation or a person turning it off, or to another colour, doesn't hide the alert. Only the alert ending frees the light.
 - **During `resolved`**, a person (in the UI, by voice) or an automation or script changing the light took it back on purpose: pururu hands it back at once, without turning it off, and fires the event. A change neither made, such as the bulb's own late report or a wall switch, shows `resolved` again.
-- **A light going `unavailable`** isn't taken by anyone, and pururu doesn't call it while it can't answer: it shows what it should once the light is back. If `resolved`'s `for` ended meanwhile, the light is turned off then, and handed back.
+- **A light going `unavailable`** isn't taken by anyone, and pururu doesn't call it while it can't answer: it shows what it should once the light is back. If `resolved`'s `for` ended meanwhile, the light is turned off then, and handed back. A person or an automation changing it as it comes back still takes it back, untouched.
 - pururu knows its own changes by their context: a bulb reporting what pururu asked is never "put back".
+- Its commands reach a light in the order it gives them: a slow `turn_off` never lands after the next alert's `turn_on`. A command still waiting behind a slow one is dropped for the newer one.
 
 ## Taking the light back
 

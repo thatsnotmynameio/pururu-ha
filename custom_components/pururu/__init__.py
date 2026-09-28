@@ -358,13 +358,7 @@ def _alert_lights_resolved(config: dict[str, Any]) -> dict[str, Any]:
     devices = config[CONF_DEVICES]
     groups = config[CONF_CONFIG][CONF_ALERTS][CONF_LIGHTS][alert_lights.GROUPS]
     for group, members in groups.items():
-        where = f"config.alerts.lights.groups: {group}"
-        for key, lights in members.items():
-            if key not in devices:
-                raise vol.Invalid(f"{where}: device {key} is not in devices")
-            for light in lights:
-                if light not in devices[key].get(CONF_LIGHTS, {}):
-                    raise vol.Invalid(f"{where}: device {key} has no light {light}")
+        _alert_light_group_resolved(devices, group, members)
     for key, device in devices.items():
         for where, group in _alert_light_groups(device):
             if group in groups:
@@ -379,6 +373,19 @@ def _alert_lights_resolved(config: dict[str, Any]) -> dict[str, Any]:
                 "config.alerts.lights.groups"
             )
     return config
+
+
+def _alert_light_group_resolved(
+    devices: dict[str, Any], group: str, members: dict[str, list[str]]
+) -> None:
+    """Refuse a light of this group that isn't a device's."""
+    where = f"config.alerts.lights.groups: {group}"
+    for key, lights in members.items():
+        if key not in devices:
+            raise vol.Invalid(f"{where}: device {key} is not in devices")
+        for light in lights:
+            if light not in devices[key].get(CONF_LIGHTS, {}):
+                raise vol.Invalid(f"{where}: device {key} has no light {light}")
 
 
 def _alert_light_groups(device: dict[str, Any]) -> Iterator[tuple[str, str]]:

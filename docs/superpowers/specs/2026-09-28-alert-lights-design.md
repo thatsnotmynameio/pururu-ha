@@ -119,10 +119,12 @@ The manager follows every state change of each borrowed light:
 - **The change carries a context of the manager's:** its own call caused it; ignored. The manager keeps its last few contexts per light, so a late report of an earlier call is still its own.
 - **The light has no reading now** (`unavailable`, `unknown`): nobody took it; ignored.
 - **Else, the light has a level:** `turn_on` with the current priority's parameters.
+- **Else, the light is in `resolved` and the change has a `user_id` or a `parent_id`:** a person or an automation took it back on purpose, even as it comes back from no reading; `for` cancelled, free, `pururu_alert_lights_released`, no `turn_off` (PR review).
 - **Else, the light is in `resolved` and its `for` ended while it had no reading:** `turn_off`, free, released.
-- **Else, the light is in `resolved` and comes back from no reading, or the change has neither a `user_id` nor a `parent_id`** (the bulb's own report after the 5 s, a wall switch): `turn_on` with `resolved`'s parameters again, its `for` running on.
-- **Else, the light is in `resolved`:** a person or an automation took it back on purpose; `for` cancelled, free, `pururu_alert_lights_released`, no `turn_off`.
+- **Else, the light is in `resolved`** (back from no reading, the bulb's own report after the 5 s, a wall switch): `turn_on` with `resolved`'s parameters again, its `for` running on.
 - **The light is free:** ignored, whoever changed it.
+
+A light's commands run one at a time, in the order given; a command still waiting when a newer one is given is dropped. A slow `turn_off` of a release can't land after the next alert's `turn_on` (PR review).
 
 A light without a reading is never called (HA would skip it and log a missing entity at every `repeat`): what it should show is sent once it's back. Resolved's `for` ending while it has no reading waits for it to be back to turn it off and release it (final review).
 

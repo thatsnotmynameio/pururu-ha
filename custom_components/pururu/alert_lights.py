@@ -7,6 +7,7 @@ pururu_alert_lights_released says it is free. Only the light's turn_on and
 turn_off are called: the light uses what it has.
 """
 
+import asyncio
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -173,6 +174,11 @@ class _Light:
     resolving: CALLBACK_TYPE | None = None
     # Resolved's `for` ended while it had no reading: turned off once it's back
     overdue: bool = False
+    # Its commands run one at a time, in the order given: a slow turn_off must
+    # never land after the next alert's turn_on
+    commands: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # The number of the latest command given: an older one still waiting is replaced
+    given: int = 0
 
     def own(self) -> Context:
         """A new context for the manager's next change of this light."""
@@ -277,11 +283,11 @@ class AlertLights:
         """Someone else changed a borrowed light: put it back, or during resolved let it go.
 
         The manager's own changes carry one of its recent contexts. A light
-        without a reading was taken by nobody; one back from it during
-        resolved shows resolved again, its `for` running on, or is turned off
-        if that ended meanwhile. During resolved only a person or an
-        automation takes it back: a change neither made (the bulb's own late
-        report) shows resolved again.
+        without a reading was taken by nobody. During resolved only a person
+        or an automation takes it back, even as it comes back from no reading;
+        a change neither made (the bulb back online, its own late report)
+        shows resolved again, its `for` running on, or turns it off if that
+        ended meanwhile.
         """
         light = self._by_id[event.data["entity_id"]]
         old, new = event.data["old_state"], event.data["new_state"]
@@ -291,12 +297,13 @@ class AlertLights:
             return
         if light.shown != RESOLVED:
             self._apply(light, light.shown)
+        elif _deliberate(event.context):
+            self._release(light, turn_off=False)
         elif light.overdue:
             self._release(light, turn_off=True)
-        elif old.state in NO_READING or not _deliberate(event.context):
-            self._apply(light, RESOLVED)
         else:
-            self._release(light, turn_off=False)
+            # Back from no reading, or the bulb's own report
+            self._apply(light, RESOLVED)
 
     @callback
     def _update(self, light: _Light) -> None:
@@ -401,26 +408,41 @@ class AlertLights:
             if then is not None:
                 then()
             return
+        light.given += 1
         self._entry.async_create_task(
             self._hass,
-            self._async_call(light.entity.entity_id, service, data, context, then),
+            self._async_call(light, light.given, service, data, context, then),
             f"pururu alert lights {service}",
         )
 
     async def _async_call(
         self,
-        entity_id: str,
+        light: _Light,
+        number: int,
         service: str,
         data: Mapping[str, Any],
         context: Context,
         then: Callable[[], None] | None,
     ) -> None:
-        """A failure is a warning: the next repeat or change tries again.
+        """Run command `number` once the light's previous one returned, unless a newer one replaced it.
 
-        The light's integration is a third party that may raise anything: an
+        A failure is a warning: the next repeat or change tries again. The
+        light's integration is a third party that may raise anything: an
         error it doesn't expect is its bug, logged with the traceback that
         reports it. Either way `then` runs, so a release is still said.
         """
+        async with light.commands:
+            if number == light.given:
+                await self._async_service(
+                    light.entity.entity_id, service, data, context
+                )
+        if then is not None:
+            then()
+
+    async def _async_service(
+        self, entity_id: str, service: str, data: Mapping[str, Any], context: Context
+    ) -> None:
+        """Call light.`service` on `entity_id`; a failure is logged, never raised."""
         try:
             await self._hass.services.async_call(
                 Platform.LIGHT,
@@ -440,8 +462,6 @@ class AlertLights:
             _LOGGER.exception(
                 "The alert lights couldn't call light.%s on %s", service, entity_id
             )
-        if then is not None:
-            then()
 
 
 @callback
@@ -463,29 +483,11 @@ def async_setup(
     """
     registry = er.async_get(hass)
     built = list(lights)
-    created = {str(light.unique_id) for light in built}
-    for group, members in groups.items():
-        for unique_id in members:
-            if unique_id not in created:
-                _LOGGER.warning(
-                    "%s.%s is not created: the alert lights group %s goes without it",
-                    Platform.LIGHT,
-                    unique_id,
-                    group,
-                )
+    _warn_not_created(groups, {str(light.unique_id) for light in built})
     enabled = {
         str(light.unique_id): light for light in built if _enabled(registry, light)
     }
-    borrowed: dict[str, _Light] = {}
-    for alert in alerts:
-        if alert.lights is None:
-            continue
-        for unique_id in groups[alert.lights]:
-            if (entity := enabled.get(unique_id)) is not None:
-                borrowed.setdefault(unique_id, _Light(entity)).alerts.append(alert)
-    for unique_id, entity in enabled.items():
-        if unique_id not in borrowed and entity.restored_alert is not None:
-            borrowed[unique_id] = _Light(entity)
+    borrowed = _borrowed(groups, alerts, enabled)
     manager = AlertLights(hass, entry, settings, list(borrowed.values()))
 
     @callback
@@ -501,6 +503,38 @@ def async_setup(
             *(alert.entity_id for alert in light.alerts),
         )
     }
+
+
+def _warn_not_created(groups: Mapping[str, list[str]], created: set[str]) -> None:
+    """Log each group's light that isn't created: the group goes without it."""
+    for group, members in groups.items():
+        for unique_id in members:
+            if unique_id not in created:
+                _LOGGER.warning(
+                    "%s.%s is not created: the alert lights group %s goes without it",
+                    Platform.LIGHT,
+                    unique_id,
+                    group,
+                )
+
+
+def _borrowed(
+    groups: Mapping[str, list[str]],
+    alerts: Iterable[ProblemAlert],
+    enabled: Mapping[str, Borrowable],
+) -> dict[str, _Light]:
+    """Each enabled light some alert may borrow, or the alert lights had before, by unique ID."""
+    borrowed: dict[str, _Light] = {}
+    for alert in alerts:
+        if alert.lights is None:
+            continue
+        for unique_id in groups[alert.lights]:
+            if (entity := enabled.get(unique_id)) is not None:
+                borrowed.setdefault(unique_id, _Light(entity)).alerts.append(alert)
+    for unique_id, entity in enabled.items():
+        if unique_id not in borrowed and entity.restored_alert is not None:
+            borrowed[unique_id] = _Light(entity)
+    return borrowed
 
 
 def _deliberate(context: Context) -> bool:
