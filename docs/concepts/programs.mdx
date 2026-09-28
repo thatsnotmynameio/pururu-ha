@@ -47,6 +47,12 @@ Until it's there, **Settings → Repairs** says so. pururu rewrites the file on 
   The steps, run in order. At least one.
 </Property>
 
+---
+
+<Property name="statistics.runtime, statistics.cycles" type="list of periods" optional>
+  For each period, a sensor with the hours the program ran, or the runs it finished, in the current period: `today`, `week`, `month`, `year`, each once. See [Statistics](#statistics).
+</Property>
+
 ## Steps
 
 Each step has exactly one key:
@@ -85,6 +91,30 @@ A program is a method of its device. It acts only on its device's entities, and 
 - **An entity it acts on that you disable** in the UI takes the program out of Home Assistant at once: pururu reloads the entry, and the log says why. Meanwhile the script shows as `unavailable`, and an automation starting it does nothing (the log says the script is missing). It comes back when you enable the entity again, since Home Assistant reloads the entry then, with what you set on it: disabled, renamed or moved to another area, it stays so.
 - If an entity it acts on isn't created, the program isn't either, and the log says so. See [Troubleshooting](/reference/troubleshooting).
 - **Renaming an entity it acts on** in the UI is followed: the file is rewritten with the new ID.
+
+## Statistics
+
+Each run of a program is a **cycle**, as an [appliance](/features/appliance)'s: it starts when its script turns on and ends when it turns off. pururu records them in sensors of the device, with no setting:
+
+| Entity | Unit | What |
+|---|---|---|
+| `sensor.pururu_<key>_program_<program>_last_cycle_start` | | When the last run started |
+| `sensor.pururu_<key>_program_<program>_last_cycle_end` | | When it ended |
+| `sensor.pururu_<key>_program_<program>_last_cycle_duration` | min | How long it ran |
+| `sensor.pururu_<key>_program_<program>_cycles_total` | cycles | Runs finished, all time |
+| `sensor.pururu_<key>_program_<program>_runtime_total` | h | Hours running, all time |
+| `sensor.pururu_<key>_program_<program>_runtime_<period>`, `…_cycles_<period>` | h, cycles | This period's, one per `statistics` entry |
+
+They're named after the program: **Piscina Limpar cycles**.
+
+- **Every run counts**, whoever started it: a [reaction](/concepts/reactions#starting-a-program), you, a voice assistant. What's measured is the script.
+- **A pururu reload while it runs** counts the run once, with its real start.
+- **A restart of Home Assistant while it runs** loses the run, as Home Assistant does: it isn't counted. Its runtime until then is.
+- `cycles_total` and `runtime_total` survive restarts and are `total_increasing`, so Home Assistant keeps long-term statistics for them. `runtime_total` is brought up to date every minute.
+- **While the program isn't generated** (an entity it acts on is disabled or not created), its statistics keep their values and count nothing. **Removing the program** from the YAML removes them.
+- **Renaming the script** in the UI is followed: pururu reloads and watches its new ID.
+- **A script ID someone else holds** (one of your scripts, another integration's entity): the program isn't generated, and its statistics count nothing. They never count an entity pururu doesn't manage.
+- A reaction can watch them: `when: program_clean_last_cycle_end`.
 
 ## From 0.1.14 and before
 

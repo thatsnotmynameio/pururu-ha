@@ -183,7 +183,7 @@ For a feature that stands for real entities of one domain, build each entity on 
 - Each is named by its suffix's translation, `<namespace>_<suffix>` (`mode_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{mode} cycles"`, `"Ciclos de {mode}"`.
 - Each entity calls `self._identify(device, platform, suffix, item=item)`.
 
-The cycle code `appliance`, `modes`, `door` and `window` share (the last cycle's sensors, the totals, the meters, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
+The cycle code `appliance`, `modes`, `door`, `window` and the programs' statistics share (the last cycle's sensors, the totals, the meters, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
 
 **Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Set `alerts` to a mapping of name → `Preset` (`feature.py`), as `features/appliance/alerts.py` does:
 
@@ -195,7 +195,7 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 
 ## 6. What the contract test checks
 
-`tests/test_features.py` runs over every entry in `FEATURES`, so your feature is covered without changing the test:
+`tests/test_features.py` runs over every entry in `FEATURES`, and in `DEVICE_KEYS` (`device_keys.py`: `programs` and `reactions`, not features of a device, whose statistics a `Feature` each builds), so your feature is covered without changing the test:
 
 | Test | Checks |
 |---|---|

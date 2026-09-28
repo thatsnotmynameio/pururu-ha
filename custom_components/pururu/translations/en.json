@@ -150,7 +150,25 @@
       "mode_energy_today": {"name": "{mode} energy today"},
       "mode_energy_week": {"name": "{mode} energy this week"},
       "mode_energy_month": {"name": "{mode} energy this month"},
-      "mode_energy_year": {"name": "{mode} energy this year"}
+      "mode_energy_year": {"name": "{mode} energy this year"},
+      "program_last_cycle_start": {"name": "{program} last run start"},
+      "program_last_cycle_end": {"name": "{program} last run end"},
+      "program_last_cycle_duration": {"name": "{program} last run duration"},
+      "program_cycles_total": {"name": "{program} cycles", "unit_of_measurement": "cycles"},
+      "program_runtime_total": {"name": "{program} runtime"},
+      "program_runtime_today": {"name": "{program} runtime today"},
+      "program_runtime_week": {"name": "{program} runtime this week"},
+      "program_runtime_month": {"name": "{program} runtime this month"},
+      "program_runtime_year": {"name": "{program} runtime this year"},
+      "program_cycles_today": {"name": "{program} cycles today"},
+      "program_cycles_week": {"name": "{program} cycles this week"},
+      "program_cycles_month": {"name": "{program} cycles this month"},
+      "program_cycles_year": {"name": "{program} cycles this year"},
+      "reaction_triggered_total": {"name": "{reaction} triggers", "unit_of_measurement": "triggers"},
+      "reaction_triggered_today": {"name": "{reaction} triggers today"},
+      "reaction_triggered_week": {"name": "{reaction} triggers this week"},
+      "reaction_triggered_month": {"name": "{reaction} triggers this month"},
+      "reaction_triggered_year": {"name": "{reaction} triggers this year"}
     }
   }
 }

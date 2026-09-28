@@ -92,7 +92,25 @@
       "mode_energy_today": {"default": "mdi:lightning-bolt"},
       "mode_energy_week": {"default": "mdi:lightning-bolt"},
       "mode_energy_month": {"default": "mdi:lightning-bolt"},
-      "mode_energy_year": {"default": "mdi:lightning-bolt"}
+      "mode_energy_year": {"default": "mdi:lightning-bolt"},
+      "program_last_cycle_start": {"default": "mdi:clock-start"},
+      "program_last_cycle_end": {"default": "mdi:clock-end"},
+      "program_last_cycle_duration": {"default": "mdi:timer-outline"},
+      "program_cycles_total": {"default": "mdi:counter"},
+      "program_runtime_total": {"default": "mdi:timer-sand"},
+      "program_runtime_today": {"default": "mdi:timer-sand"},
+      "program_runtime_week": {"default": "mdi:timer-sand"},
+      "program_runtime_month": {"default": "mdi:timer-sand"},
+      "program_runtime_year": {"default": "mdi:timer-sand"},
+      "program_cycles_today": {"default": "mdi:counter"},
+      "program_cycles_week": {"default": "mdi:counter"},
+      "program_cycles_month": {"default": "mdi:counter"},
+      "program_cycles_year": {"default": "mdi:counter"},
+      "reaction_triggered_total": {"default": "mdi:gesture-tap"},
+      "reaction_triggered_today": {"default": "mdi:gesture-tap"},
+      "reaction_triggered_week": {"default": "mdi:gesture-tap"},
+      "reaction_triggered_month": {"default": "mdi:gesture-tap"},
+      "reaction_triggered_year": {"default": "mdi:gesture-tap"}
     }
   }
 }

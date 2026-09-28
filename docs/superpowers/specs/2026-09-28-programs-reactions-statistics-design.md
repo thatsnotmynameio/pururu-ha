@@ -43,7 +43,7 @@ pururu:
 | Automatic or asked for | The totals and the last cycle: always, as `appliance`'s. The per-period meters: listed under `statistics`, as `appliance` and `modes`. |
 | Where they live | In the device, as sensors in the `program` and `reaction` namespaces: `sensor.pururu_<device>_program_<program>_<suffix>` and `sensor.pururu_<device>_reaction_<reaction>_<suffix>`. The script and the automation stay where they are (HA keeps them out of any device). |
 | How the code gets them | `programs` and `reactions` stay device keys, not `Feature`s: they don't count as a device's feature. But their entities go through the same path as every pururu entity: `per_item` and `items` on a `Feature` value each module declares (`programs.STATISTICS`, `reactions.STATISTICS`), in a `DEVICE_KEYS` map next to `FEATURES`. `_entity_keys`, `_build`, `_creatable`, `_entity_ids_distinct`, `_referable`, stale removal and the contract test then see them with no second path. Rejected: building them apart in `__init__.py` (a second path around `_creatable`, renames and stale removal, which programs' first spec already refused). |
-| What starts a program's cycle | A tracker in `programs.py`, not an entity: it listens to the script's state and sends `cycle_signal(device, item)` with the run's start (the `on` state's `last_changed`) and its end. Rejected: a pururu `binary_sensor` mirroring the script's state (a second entity saying what the script already says). |
+| What starts a program's cycle | Its `cycles_total` sensor (`Runs`, in `programs.py`), as `current` does for modes: it listens to the script's state and sends `cycle_signal(device, item)` and `end_signal` with the run's start (the `on` state's `last_changed`) and its end; the program's other statistics have it as their source. No entity is added. Rejected: a pururu `binary_sensor` mirroring the script's state (a second entity saying what the script already says). |
 | A reaction watching statistics | A reaction's `when` can name a program's statistic (`program_clean_last_cycle_end`): they are entity keys of the device. Not its own counters: `when: reaction_morning_triggered_total` in `morning` is refused, it would feed itself. |
 
 ## Entities
@@ -84,7 +84,7 @@ Names: the device's name, then the translation with the item's name as the place
 | The script turns `on`, then `off` | One cycle: `last_cycle_*` set, `cycles_total` + 1, the runtime counted |
 | pururu reloaded while the program runs | The tracker starts again; at `off`, the cycle's start is the `on` state's `last_changed`: counted once, with its real start |
 | HA restarted while the program runs | HA loses the running script (it's `off` after the restart, with no `on → off` seen): that run isn't counted. Its runtime until the restart is |
-| The script renamed in the UI | Followed when pururu reloads: at once when a reaction starts it, else at the next reload |
+| The script renamed in the UI | Followed at once: renaming any script or automation pururu generates reloads it |
 | The program not generated (dropped or held) | Its statistics stay, with their values and history, and count nothing until it's generated again |
 | The program removed from the YAML | Its statistics go, as any stale entity |
 | The reaction fires | `triggered_total` + 1, whether its program started or not |
@@ -95,7 +95,7 @@ Names: the device's name, then the translation with the item's name as the place
 - `programs.py`: `statistics` in `PROGRAM`; `STATISTICS`, a `Feature` in namespace `program` with `per_item` (the cycle suffixes above) and `items` (one `Item` per program), whose `build()` makes the `features/cycle/` entities per program and the tracker.
 - `reactions.py`: `statistics` in `REACTION`; `STATISTICS` in namespace `reaction`, whose `build()` makes a `TriggersTotal` per reaction: restored, counting `automation_triggered` for its automation's current entity ID.
 - `features/cycle/`: `CyclesTotal`, `RuntimeTotal`, `LastCycleValue` and `Meter` reused unchanged; a `TriggersTotal` (a count on an event) next to `CyclesTotal` if it fits there.
-- `__init__.py`: a `DEVICE_KEYS` map (`programs`, `reactions` → their `STATISTICS`) that `_entity_keys` and `_build` walk after `FEATURES`; it doesn't count as a feature in `_device`. `_reactions_on_this_device` refuses a reaction watching its own counters.
+- `device_keys.py`: `DEVICE_KEYS` (`programs`, `reactions` → their `STATISTICS`). `__init__.py`: `BUILDERS`, a live `ChainMap` of `FEATURES` then `DEVICE_KEYS`, that `_entity_keys`, `_referable`, `_build` and the reference checks walk; `FEATURES` alone makes a device's features in `_device`. `_reactions_on_this_device` refuses a reaction watching its own counters.
 - Translations (`en.json`, `pt-BR.json`) and icons for every suffix.
 
 ## Testing

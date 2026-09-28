@@ -4,24 +4,43 @@ A reaction is one source (an entity of a device, a real entity, a time of day,
 the sun) and, for an entity, a condition. Each becomes an automation in
 pururu/automations/reactions.yaml, whose folder configuration.yaml includes
 (generated.py). It starts one of its device's programs (then), or does nothing:
-it fires, and its trace shows when and why.
+it fires, and its trace shows when and why. Each reaction's triggers are
+counted: sensors of its device (STATISTICS).
 """
 
 from collections.abc import Mapping
-from typing import Any
+from decimal import Decimal
+from typing import Any, override
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_NAME, STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.components.sensor import RestoreSensor, SensorStateClass
+from homeassistant.const import (
+    CONF_NAME,
+    STATE_OFF,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    Platform,
+)
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 
 from .const import CONF_AUTOMATIONS, ENTITY_PREFIX
-from .feature import TEXT, finite_float, qualified, state_text
+from .entity import PururuEntity
+from .feature import TEXT, Device, Feature, Item, finite_float, qualified, state_text
+from .features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from .generated import Kind, period
 
 # The namespace of every reaction's automation ID
 NAMESPACE = "reaction"
 SOURCES = ("when", "entity", "at", "sun")
+# HA's event when an automation runs (its conditions passed), naming it in its
+# data. A string, not automation's constant: pururu doesn't depend on it
+AUTOMATION_TRIGGERED = "automation_triggered"
+PER_REACTION: dict[str, Platform] = {
+    "triggered_total": Platform.SENSOR,
+    **{f"triggered_{period}": Platform.SENSOR for period in PERIODS},
+}
 # Keys that only a reaction on an entity's state takes
 STATE_KEYS = ("to", "from", "above", "below", "for")
 KIND = Kind(
@@ -85,6 +104,9 @@ REACTION = vol.All(
             vol.Optional("offset"): cv.time_period,
             # A program of this device, started when the reaction fires
             vol.Optional("then"): cv.slug,
+            vol.Optional("statistics", default={}): vol.Schema(
+                {vol.Optional("triggered", default=[]): PERIOD_LIST}
+            ),
         }
     ),
     _consistent,
@@ -163,3 +185,94 @@ def automation(
         "triggers": triggers(reaction, entity_id),
         "actions": actions(script),
     }
+
+
+class TriggersTotal(PururuEntity, RestoreSensor):
+    """A reaction's triggers, all time, whether its program started or not."""
+
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, device: Device, automation: str | None, *, item: Item) -> None:
+        """Count the runs of `automation`, the entity of `item`'s reaction; None counts none."""
+        self._identify(device, Platform.SENSOR, "triggered_total", item=item)
+        self._automation = automation
+        self._triggers = 0
+
+    @property
+    @override
+    def native_value(self) -> int:
+        """The count."""
+        return self._triggers
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Restore the count, then count."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and isinstance(last.native_value, int | float | Decimal):
+            self._triggers = int(last.native_value)
+        if self._automation is not None:
+            self.async_on_remove(
+                self.hass.bus.async_listen(
+                    AUTOMATION_TRIGGERED, self._count, event_filter=self._of_it
+                )
+            )
+
+    @callback
+    def _of_it(self, data: Mapping[str, Any]) -> bool:
+        return bool(data.get("entity_id") == self._automation)
+
+    @callback
+    def _count(self, _event: Event[Mapping[str, Any]]) -> None:
+        self._triggers += 1
+        self.async_write_ha_state()
+
+
+def _items(config: Mapping[str, Any]) -> list[Item]:
+    return [
+        Item(slug=key, name=reaction[CONF_NAME]) for key, reaction in config.items()
+    ]
+
+
+def build(
+    hass: HomeAssistant,
+    device: Device,
+    config: dict[str, Any],
+    inputs: Mapping[str, str],
+) -> list[PururuEntity]:
+    """Each reaction's trigger count, and the meters asked for.
+
+    `inputs` are the entity IDs of the automations the entry generates, by ID:
+    a reaction whose automation ID someone else holds counts nothing.
+    """
+    entities: list[PururuEntity] = []
+    for item in _items(config):
+        automation = inputs.get(automation_id(device.key, item.slug))
+        entities.append(TriggersTotal(device, automation, item=item))
+        source = device.current_entity_id(
+            hass, Platform.SENSOR, item.key("triggered_total")
+        )
+        entities.extend(
+            Meter(
+                device,
+                f"triggered_{period}",
+                "triggered_total",
+                source,
+                period,
+                item=item,
+            )
+            for period in config[item.slug]["statistics"]["triggered"]
+        )
+    return entities
+
+
+# Not a device's feature: its reactions' statistics, built as a Feature's entities
+STATISTICS = Feature(
+    schema=SCHEMA,
+    entity_keys={},
+    build=build,
+    example={"night": {"name": "Night", "at": "22:00"}},
+    namespace=NAMESPACE,
+    per_item=PER_REACTION,
+    items=_items,
+)

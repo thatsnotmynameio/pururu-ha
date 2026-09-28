@@ -118,7 +118,10 @@ class EnergyTotal(PururuEntity, RestoreSensor):
 
 
 class RuntimeTotal(PururuEntity, RestoreSensor):
-    """Hours `watched` has been in `state`, all time; the runtime meters (statistics.py) measure it."""
+    """Hours `watched` has been in `state`, all time; the runtime meters (statistics.py) measure it.
+
+    Without `watched` (a program whose script isn't pururu's), it counts nothing.
+    """
 
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.HOURS
@@ -128,7 +131,7 @@ class RuntimeTotal(PururuEntity, RestoreSensor):
     def __init__(
         self,
         device: Device,
-        watched: str,
+        watched: str | None,
         state: str,
         *,
         source: str,
@@ -157,6 +160,8 @@ class RuntimeTotal(PururuEntity, RestoreSensor):
         last = await self.async_get_last_sensor_data()
         if last is not None and isinstance(last.native_value, int | float | Decimal):
             self._hours = float(last.native_value)
+        if self._watched is None:
+            return
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass, self._watched, self._watched_changed

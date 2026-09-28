@@ -1,4 +1,4 @@
-"""The contract, over every feature in FEATURES: a new feature is covered here unchanged."""
+"""The contract, over every Feature in FEATURES and DEVICE_KEYS: a new one is covered here unchanged."""
 
 import json
 from pathlib import Path
@@ -33,7 +33,8 @@ def named_keys(feature: Any) -> dict[str, Any]:
 
 @pytest.fixture
 def features(ha: HomeAssistant) -> dict[str, Any]:
-    return module("features").FEATURES
+    """Every Feature: a device's features, and the device keys creating entities (programs, reactions)."""
+    return {**module("features").FEATURES, **module("device_keys").DEVICE_KEYS}
 
 
 def test_translation_files_match() -> None:

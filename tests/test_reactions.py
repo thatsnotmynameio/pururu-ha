@@ -519,11 +519,20 @@ async def test_it_follows_the_script_renamed(ha: HomeAssistant, both: None) -> N
     assert len(started) == 1
 
 
-async def test_renaming_a_script_no_reaction_starts_reloads_nothing(ha: HomeAssistant) -> None:
-    config = pool(night={"name": "Noite", "at": "22:00"})
-    assert await setup(ha, config)
+async def test_renaming_a_script_no_reaction_starts_still_reloads(ha: HomeAssistant) -> None:
+    """Its statistics watch it: they follow the new ID."""
+    assert await setup(ha, pool(night={"name": "Noite", "at": "22:00"}))
     with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
         er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+        await ha.async_block_till_done()
+    reloading.assert_called_once()
+
+
+async def test_renaming_ones_own_script_reloads_nothing(ha: HomeAssistant) -> None:
+    er.async_get(ha).async_get_or_create("script", "script", "mine", suggested_object_id="mine")
+    assert await setup(ha, pool())
+    with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
+        er.async_get(ha).async_update_entity("script.mine", new_entity_id="script.minha")
         await ha.async_block_till_done()
     reloading.assert_not_called()
 
@@ -560,3 +569,95 @@ async def test_a_script_not_written_drops_its_reaction(
         assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
     assert ("automation.pururu_pool_reaction_clean runs script.pururu_pool_program_clean, "
             "which is not generated; not generating it") in caplog.text
+
+
+# --- statistics --------------------------------------------------------------------
+
+TRIGGERED = "sensor.pururu_pool_reaction_clean_triggered_total"
+
+
+def count(ha: HomeAssistant, entity_id: str = TRIGGERED) -> str:
+    state = ha.states.get(entity_id)
+    assert state is not None, f"no {entity_id}"
+    return state.state
+
+
+async def test_every_trigger_counts_even_one_its_program_skips(ha: HomeAssistant,
+                                                              both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    assert count(ha) == "0"
+    await fake(ha, DOOR, "on")
+    await fake(ha, DOOR, "off")
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert count(ha) == "2"
+    assert count(ha, "sensor.pururu_pool_program_clean_cycles_total") == "0"
+
+
+async def test_a_reaction_without_then_counts_too(ha: HomeAssistant, freezer: Any,
+                                                 automations: None) -> None:
+    assert await setup(ha, devices(soon={"name": "Logo", "at": "10:05"}))
+    await tick(ha, freezer, 300)
+    assert count(ha, "sensor.pururu_lights_reaction_soon_triggered_total") == "1"
+
+
+async def test_its_meters_are_asked_for(ha: HomeAssistant) -> None:
+    assert await setup(ha, pool(clean={**DOOR_OPENS, "then": "clean",
+                                       "statistics": {"triggered": ["month"]}}))
+    assert ha.states.get("sensor.pururu_pool_reaction_clean_triggered_month") is not None
+    assert ha.states.get("sensor.pururu_pool_reaction_clean_triggered_today") is None
+
+
+@pytest.mark.parametrize("named", [{}, {"device": LIGHTS}], ids=["its device implied", "named"])
+async def test_a_reaction_on_its_own_counter_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, named: dict[str, Any]) -> None:
+    it = {"name": "Eu", "when": "reaction_it_triggered_total", "above": 3, **named}
+    assert not await setup(ha, devices(it=it))
+    assert "reactions: it: reaction_it_triggered_total is its own statistic" in caplog.text
+
+
+async def test_a_reaction_on_a_programs_statistic(ha: HomeAssistant) -> None:
+    done = {"name": "Limpou", "when": "program_clean_last_cycle_end", "to": "unknown"}
+    assert await setup(ha, pool(done=done))
+    trigger = generated(ha)[0]["triggers"][0]
+    assert trigger["entity_id"] == "sensor.pururu_pool_program_clean_last_cycle_end"
+
+
+async def test_the_count_follows_its_automation_renamed(ha: HomeAssistant, both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    er.async_get(ha).async_update_entity("automation.pururu_pool_reaction_clean",
+                                         new_entity_id="automation.porta_limpa")
+    await ha.async_block_till_done()
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert count(ha) == "1"
+
+
+async def test_a_run_its_reaction_started_is_counted_at_its_end(
+        ha: HomeAssistant, freezer: Any, both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    await fake(ha, DOOR, "on")
+    await settle()
+    await tick(ha, freezer, 2 * 60 * 60)
+    await ha.async_block_till_done()
+    assert count(ha, "sensor.pururu_pool_program_clean_cycles_total") == "1"
+    assert count(ha) == "1"
+
+
+async def test_a_count_never_follows_an_automation_pururu_does_not_generate(
+        ha: HomeAssistant) -> None:
+    """Its ID taken by one of the user's automations: the reaction isn't generated, and that one isn't counted."""
+    er.async_get(ha).async_get_or_create(
+        "automation", "automation", "pururu_pool_reaction_clean", suggested_object_id="mine")
+    assert await setup(ha, pool())
+    ha.bus.async_fire("automation_triggered", {"entity_id": "automation.mine"})
+    ha.bus.async_fire("automation_triggered",
+                      {"entity_id": "automation.pururu_pool_reaction_clean"})
+    await ha.async_block_till_done()
+    assert count(ha) == "0"
