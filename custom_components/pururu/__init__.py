@@ -158,12 +158,21 @@ def _no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None
 
 
 def _reactions_on_this_device(device: dict[str, Any]) -> None:
-    """Refuse a reaction's `when` without `device` that isn't an entity key of the device."""
+    """Refuse a reaction's `when` or `then` that isn't the device's own.
+
+    `when` without `device` names an entity key of the device, and `then` one of
+    its programs.
+    """
     keys = {
         qualified(FEATURES[name].namespace, entity_key)
         for name, entity_key, _ in _entity_keys(device)
     }
     for key, reaction in device.get(CONF_REACTIONS, {}).items():
+        then = reaction.get("then")
+        if then is not None and then not in device.get(CONF_PROGRAMS, {}):
+            raise vol.Invalid(
+                f"reactions: {key}: {then} is not a program of this device"
+            )
         if "device" in reaction or (when := reaction.get("when")) is None:
             continue
         if when not in keys:

@@ -143,6 +143,45 @@ async def test_two_reactions_with_one_automation_id_are_refused(
             "a reaction of device lights") in caplog.text
 
 
+CLEAN_PROGRAM = {"name": "Limpar", "sequence": [{"turn_on": "light_teto"}]}
+
+
+def with_program(**reactions: dict[str, Any]) -> dict[str, Any]:
+    config = devices(**reactions)
+    config[LIGHTS]["programs"] = {"clean": CLEAN_PROGRAM}
+    return config
+
+
+@pytest.mark.parametrize("reaction", [
+    pytest.param({**DOOR_OPENS, "then": "clean"}, id="real entity"),
+    pytest.param({**OVERLOAD, "then": "clean"}, id="another device's entity, its own program"),
+])
+async def test_then_a_program_of_the_device_is_accepted(ha: HomeAssistant,
+                                                        reaction: dict[str, Any]) -> None:
+    assert await setup(ha, with_program(it=reaction))
+
+
+@pytest.mark.parametrize("config", [
+    pytest.param(with_program(it={**DOOR_OPENS, "then": "wash"}), id="no such program"),
+    pytest.param(with_program(it={**DOOR_OPENS, "then": ""}), id="empty"),
+    pytest.param(devices(it={**DOOR_OPENS, "then": "clean"}), id="the device has no programs"),
+])
+async def test_then_not_a_program_of_the_device_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, config: dict[str, Any]) -> None:
+    then = config[LIGHTS]["reactions"]["it"]["then"]
+    assert not await setup(ha, config)
+    assert f"reactions: it: {then} is not a program of this device" in caplog.text
+
+
+async def test_then_another_devices_program_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The washer's program isn't the lights': a reaction runs its own device's."""
+    config = devices(it={**OVERLOAD, "then": "clean"})
+    config[WASHER]["programs"] = {"clean": {"name": "X", "sequence": [{"delay": 1}]}}
+    assert not await setup(ha, config)
+    assert "reactions: it: clean is not a program of this device" in caplog.text
+
+
 # --- translation ----------------------------------------------------------------------
 
 
