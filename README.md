@@ -27,6 +27,7 @@ This creates the device **Lava-louças**, with `binary_sensor.pururu_dishwasher_
 - [Your first device](https://docs.page/thatsnotmynameio/pururu-ha/getting-started/first-device): a step-by-step tutorial.
 - [Configuration reference](https://docs.page/thatsnotmynameio/pururu-ha/reference/configuration): every key.
 - [Troubleshooting](https://docs.page/thatsnotmynameio/pururu-ha/reference/troubleshooting): what each logged error means.
+- [Events](https://docs.page/thatsnotmynameio/pururu-ha/concepts/events): send every change of pururu's entities to a webhook, such as n8n.
 
 ## Develop
 
