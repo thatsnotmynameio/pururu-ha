@@ -6,7 +6,6 @@ reading its attributes. pururu sends nothing.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
 from typing import Any, override
@@ -17,13 +16,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.const import (
-    ATTR_RESTORED,
-    STATE_ON,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-    Platform,
-)
+from homeassistant.const import STATE_ON, Platform
 from homeassistant.core import (
     CALLBACK_TYPE,
     Event,
@@ -38,14 +31,12 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 
 from ..alert2_alerts import ALERT2
-from ..entity import PururuEntity, reading
-from ..feature import TEXT, Device, Feature, finite_float, state_text
+from ..entity import PururuEntity
+from ..feature import TEXT, Condition, Device, Feature, finite_float, state_text
 
 _LOGGER = logging.getLogger(__name__)
 
 PRIORITIES = ("low", "medium", "high")
-# States that are no reading, unless the condition is about them
-NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
 
 def _state(value: Any) -> str | float:
@@ -87,43 +78,6 @@ ALERT = vol.All(
 )
 # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
 SCHEMA = vol.All(vol.Schema({cv.slug: ALERT}), vol.Length(min=1))
-
-
-@dataclass(frozen=True, kw_only=True)
-class Condition:
-    """What makes the watched entity's state a problem: a state, a number, or a range."""
-
-    state: str | float | None
-    above: float | None
-    below: float | None
-
-    def holds(self, state: State | None) -> bool | None:
-        """Whether `state` is a problem; None when it is no reading.
-
-        A condition on unavailable or unknown holds while the entity has no
-        reading, either state or missing: a plug reconnecting passes from one to
-        the other. A state HA restored for an entity not loaded yet (at start,
-        during a reload) is no reading, for every condition.
-        """
-        if state is not None and state.attributes.get(ATTR_RESTORED):
-            return None
-        if isinstance(self.state, str):
-            return self._is(STATE_UNAVAILABLE if state is None else state.state)
-        if (value := reading(state)) is None:
-            return None
-        if self.state is not None:  # a number
-            return value == self.state
-        return (self.above is None or value > self.above) and (
-            self.below is None or value < self.below
-        )
-
-    def _is(self, current: str) -> bool | None:
-        """`is` a state: no reading for other states, unless it is about no reading."""
-        if self.state in NO_READING:
-            return current in NO_READING
-        if current in NO_READING:
-            return None
-        return current == self.state
 
 
 class Alert(PururuEntity, BinarySensorEntity, RestoreEntity):

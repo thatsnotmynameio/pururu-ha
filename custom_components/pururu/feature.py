@@ -2,13 +2,21 @@
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import timedelta
 import math
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
-from homeassistant.const import STATE_OFF, STATE_ON, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import (
+    ATTR_RESTORED,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    Platform,
+)
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
@@ -111,6 +119,94 @@ class Device:
         ) or self.entity_id(platform, entity_key)
 
 
+# States that are no reading, unless the condition is about them
+NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
+
+
+def _number(state: State) -> float | None:
+    """A state's finite number, or None (entity.reading, which imports this module)."""
+    try:
+        value = float(state.state)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+@dataclass(frozen=True, kw_only=True)
+class Condition:
+    """What makes the watched entity's state a problem: a state, a number, or a range."""
+
+    state: str | float | None = None
+    above: float | None = None
+    below: float | None = None
+
+    def holds(self, state: State | None) -> bool | None:
+        """Whether `state` is a problem; None when it is no reading.
+
+        A condition on unavailable or unknown holds while the entity has no
+        reading, either state or missing: a plug reconnecting passes from one to
+        the other. A state HA restored for an entity not loaded yet (at start,
+        during a reload) is no reading, for every condition.
+        """
+        if state is not None and state.attributes.get(ATTR_RESTORED):
+            return None
+        if isinstance(self.state, str):
+            return self._is(STATE_UNAVAILABLE if state is None else state.state)
+        if state is None or (value := _number(state)) is None:
+            return None
+        if self.state is not None:  # a number
+            return value == self.state
+        return (self.above is None or value > self.above) and (
+            self.below is None or value < self.below
+        )
+
+    def _is(self, current: str) -> bool | None:
+        """`is` a state: no reading for other states, unless it is about no reading."""
+        if self.state in NO_READING:
+            return current in NO_READING
+        if current in NO_READING:
+            return None
+        return current == self.state
+
+
+@dataclass(frozen=True, kw_only=True)
+class Elapsed:
+    """On while the watched entity is `state` and the time since a milestone is in [for, for + lasts).
+
+    The milestone is the state (a datetime) of `since_key`, an entity key of the
+    feature, or the watched entity's attribute `since_attribute`: exactly one.
+    With `or_since_created`, an alert with no milestone yet counts from its creation.
+    """
+
+    state: str
+    since_key: str | None = None
+    since_attribute: str | None = None
+    or_since_created: bool = False
+
+
+@dataclass(frozen=True, kw_only=True)
+class Preset:
+    """A ready-made alert of a feature: off until the feature's block enables it."""
+
+    # The entity key, in the feature's namespace, it watches
+    watches: str
+    kind: Condition | Elapsed
+    priority: str
+    # The default `for`; None: the user gives it. An alert with `lasts` takes no `for`
+    hold: timedelta | None
+    # How long it stays on after its milestone; the user may change it
+    lasts: timedelta | None = None
+
+
+# The key of a feature's block that enables its ready-made alerts
+ALERTS_KEY = "alerts"
+
+
+def preset_keys(presets: Mapping[str, Preset]) -> dict[str, Platform]:
+    """The entity keys of a feature's ready-made alerts: alert_<name>, binary sensors."""
+    return {f"alert_{name}": Platform.BINARY_SENSOR for name in presets}
+
+
 type Build = Callable[
     [HomeAssistant, Device, dict[str, Any], Mapping[str, str]], list[PururuEntity]
 ]
@@ -154,3 +250,7 @@ class Feature:
     per_item: Mapping[str, Platform] = field(default_factory=dict)
     # The items of its validated block, when it has per_item
     items: Callable[[Any], Iterable[Item]] | None = None
+    # Ready-made alerts it offers, by name: each enabled one is the entity key
+    # alert_<name> (put preset_keys in entity_keys), enabled in its block's
+    # `alerts` (presets.validate)
+    alerts: Mapping[str, Preset] = field(default_factory=dict)

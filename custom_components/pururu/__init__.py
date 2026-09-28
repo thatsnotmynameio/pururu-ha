@@ -7,6 +7,7 @@ the device's entities. One config entry owns every floor, area, device and entit
 """
 
 from collections.abc import Iterator
+from functools import partial
 import logging
 from typing import Any
 
@@ -46,8 +47,8 @@ from .const import (
     PLATFORMS,
 )
 from .entity import PururuEntity
-from .feature import Device, qualified
-from .features import FEATURES
+from .feature import Device, preset_keys, qualified
+from .features import FEATURES, presets
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,7 +67,10 @@ def _device(value: Any) -> dict[str, Any]:
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
         vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
-        **{vol.Optional(name): feature.schema for name, feature in FEATURES.items()},
+        **{
+            vol.Optional(name): partial(presets.validate, feature)
+            for name, feature in FEATURES.items()
+        },
     }
     device: dict[str, Any] = vol.Schema(schema)(value)
     names = [name for name in FEATURES if name in device]
@@ -126,6 +130,13 @@ def _references_resolved(device: dict[str, Any], names: list[str]) -> None:
                 raise vol.Invalid(
                     f"{name}: {key} is not an entity key of another feature "
                     "of this device"
+                )
+            owner = FEATURES[owners[key]]
+            if name == CONF_ALERTS and key in {
+                qualified(owner.namespace, alert) for alert in preset_keys(owner.alerts)
+            }:
+                raise vol.Invalid(
+                    f"{name}: {key} is an alert: an alert can't watch another"
                 )
         # Every key it acts on is one it refers to: its owner is known
         for action, key in feature.acts(device[name]) if feature.acts else ():

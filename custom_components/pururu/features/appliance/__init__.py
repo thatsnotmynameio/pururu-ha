@@ -14,10 +14,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from ...entity import PururuEntity
-from ...feature import Device, Feature, finite_float
+from ...feature import Device, Feature, finite_float, preset_keys
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, RuntimeTotal
+from .alerts import PRESETS
 from .mirrors import Mirror
 from .running import Running
 
@@ -101,7 +102,7 @@ def build(
 
 APPLIANCE = Feature(
     schema=SCHEMA,
-    entity_keys=ENTITY_KEYS,
+    entity_keys={**ENTITY_KEYS, **preset_keys(PRESETS)},
     build=build,
     example={
         "power": "sensor.demo_plug_power",
@@ -113,4 +114,5 @@ APPLIANCE = Feature(
     },
     namespace="appliance",
     provides={"cycle": "running"},
+    alerts=PRESETS,
 )
