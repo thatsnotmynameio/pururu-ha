@@ -2,14 +2,17 @@
 
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.util.file import WriteError
 from homeassistant.util.yaml import load_yaml_dict
 import pytest
 import yaml
 
-from helpers import setup
+from helpers import module, reload, setup
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
@@ -103,3 +106,161 @@ async def test_the_include_tolerates_a_missing_folder_and_reads_the_file(
     assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
     assert load_yaml_dict(configuration) == {"alert2": {"alerts": written(ha)}}
     assert written(ha) != []
+
+
+# --- Alert2, reloads, the include --------------------------------------------------------
+
+
+class FakeAlert2:
+    """Alert2 as pururu sees it: its reload reads the included file into its alerts."""
+
+    def __init__(self, hass: HomeAssistant, *, included: bool = True) -> None:
+        self.hass = hass
+        self.included = included
+        self.fails = False
+        self.reloads = 0
+        hass.config.components.add("alert2")
+        hass.services.async_register("alert2", "reload", self._reload)
+
+    async def _reload(self, _call: ServiceCall) -> None:
+        if self.fails:
+            raise HomeAssistantError("boom")
+        self.reloads += 1
+        for entity_id in self.hass.states.async_entity_ids("alert2"):
+            self.hass.states.async_remove(entity_id)
+        if self.included:
+            for each in written(self.hass):
+                self.hass.states.async_set(f"alert2.{each['domain']}_{each['name']}", "off")
+
+
+@pytest.fixture
+def alert2(ha: HomeAssistant) -> FakeAlert2:
+    return FakeAlert2(ha)
+
+
+ALERT2 = "alert2.pururu_demo_washer_alert_overload"
+WITH_NOTIFY = {"overload": {**OVERLOAD, "notify": NOTIFY}}
+
+
+def issue(ha: HomeAssistant) -> ir.IssueEntry | None:
+    return ir.async_get(ha).async_get_issue("pururu", "alert2_not_included")
+
+
+async def test_a_new_file_reloads_alert2(ha: HomeAssistant, alert2: FakeAlert2) -> None:
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    assert alert2.reloads == 1
+    assert ha.states.get(ALERT2) is not None
+    assert issue(ha) is None
+
+
+async def test_an_unchanged_file_reloads_nothing(ha: HomeAssistant, alert2: FakeAlert2) -> None:
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    await reload(ha, devices(**WITH_NOTIFY))
+    assert alert2.reloads == 1
+
+
+async def test_a_changed_file_reloads_alert2(ha: HomeAssistant, alert2: FakeAlert2) -> None:
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    await reload(ha, devices(other={**OVERLOAD, "notify": NOTIFY}))
+    assert alert2.reloads == 2
+    assert ha.states.get(ALERT2) is None
+    assert ha.states.get("alert2.pururu_demo_washer_alert_other") is not None
+
+
+async def test_a_restored_placeholder_is_not_running(ha: HomeAssistant,
+                                                    alert2: FakeAlert2) -> None:
+    """At start, HA shows Alert2's registered alert as restored until Alert2 declares it."""
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    ha.states.async_set(ALERT2, "unavailable", {"restored": True})
+    await reload(ha, devices(**WITH_NOTIFY))
+    assert alert2.reloads == 2
+    assert not ha.states.get(ALERT2).attributes.get("restored")
+
+
+INCLUDE_WARNING = ("Alert2 doesn't run pururu's alerts: add \"alerts: !include_dir_merge_list "
+                   "pururu/alert2\" to the alert2: block of configuration.yaml")
+
+
+async def test_without_the_include_an_issue_says_what_to_add(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    FakeAlert2(ha, included=False)
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    found = issue(ha)
+    assert found is not None
+    assert found.severity == ir.IssueSeverity.WARNING
+    assert not found.is_fixable
+    assert found.translation_placeholders == {"include": INCLUDE, "file": FILE}
+    assert INCLUDE_WARNING in caplog.text
+
+
+async def test_once_included_the_next_reload_retries_and_the_issue_goes(
+        ha: HomeAssistant) -> None:
+    alert2 = FakeAlert2(ha, included=False)
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    alert2.included = True
+    await reload(ha, devices(**WITH_NOTIFY))
+    assert alert2.reloads == 2
+    assert ha.states.get(ALERT2) is not None
+    assert issue(ha) is None
+
+
+async def test_without_alerts_with_notify_there_is_no_issue(ha: HomeAssistant) -> None:
+    FakeAlert2(ha, included=False)
+    assert await setup(ha, devices(overload=OVERLOAD))
+    assert issue(ha) is None
+
+
+async def test_without_alert2_nothing_is_reloaded_and_there_is_no_issue(
+        ha: HomeAssistant) -> None:
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    assert written(ha) != []
+    assert issue(ha) is None
+
+
+async def test_a_disabled_alert2_alert_is_no_missing_include(ha: HomeAssistant) -> None:
+    er.async_get(ha).async_get_or_create(
+        "alert2", "alert2", "d=pururu-n=demo_washer_alert_overload",
+        suggested_object_id="pururu_demo_washer_alert_overload",
+        disabled_by=er.RegistryEntryDisabler.USER)
+    alert2 = FakeAlert2(ha, included=False)
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    await reload(ha, devices(**WITH_NOTIFY))
+    assert alert2.reloads == 1
+    assert issue(ha) is None
+
+
+async def test_a_failed_reload_is_logged_raises_no_issue_and_is_retried(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    alert2 = FakeAlert2(ha)
+    alert2.fails = True
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    assert "Alert2 is not reloaded: boom" in caplog.text
+    assert issue(ha) is None
+    alert2.fails = False
+    await reload(ha, devices(**WITH_NOTIFY))
+    assert alert2.reloads == 1
+    assert ha.states.get(ALERT2) is not None
+
+
+async def test_a_failed_write_is_logged_and_reloads_nothing(
+        ha: HomeAssistant, alert2: FakeAlert2, caplog: pytest.LogCaptureFixture) -> None:
+    with patch.object(module("files"), "write_utf8_file_atomic",
+                      side_effect=WriteError("disk full")):
+        assert await setup(ha, devices(**WITH_NOTIFY))
+    assert f"The Alert2 alerts are not written to {FILE}: disk full" in caplog.text
+    assert alert2.reloads == 0
+    assert issue(ha) is None
+    assert ha.states.get(SENSOR) is not None
+
+
+async def test_removing_the_entry_empties_the_file_and_reloads(
+        ha: HomeAssistant) -> None:
+    alert2 = FakeAlert2(ha, included=False)
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    assert issue(ha) is not None
+    entry = ha.config_entries.async_entries("pururu")[0]
+    await ha.config_entries.async_remove(entry.entry_id)
+    await ha.async_block_till_done()
+    assert written(ha) == []
+    assert alert2.reloads == 2
+    assert issue(ha) is None

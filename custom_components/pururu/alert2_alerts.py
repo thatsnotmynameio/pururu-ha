@@ -5,14 +5,21 @@ includes its folder as its alerts. Alert2 renders these fields as templates:
 what the user wrote is kept as text.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import ATTR_RESTORED, SERVICE_RELOAD
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers.start import async_at_started
 
 from . import files
 from .const import DOMAIN, ENTITY_PREFIX
+
+_LOGGER = logging.getLogger(__name__)
 
 # Alert2 (HACS) delivers what an alert's notify says
 ALERT2 = "alert2"
@@ -23,6 +30,7 @@ FILE = f"{FOLDER}/alerts.yaml"
 INCLUDE = f"alerts: !include_dir_merge_list {FOLDER}"
 # How the log names what the file holds
 WHAT = "The Alert2 alerts"
+ISSUE = "alert2_not_included"
 
 
 def _text(text: str) -> str:
@@ -55,13 +63,108 @@ def alert(
     }
 
 
+def _unique_id(name: str) -> str:
+    """Alert2's unique ID of its alert `name` in pururu's domain."""
+    return f"d={DOMAIN}-n={name}"
+
+
+@callback
+def _missing(hass: HomeAssistant, names: Iterable[str]) -> list[str]:
+    """The Alert2 alerts Alert2 doesn't run; a disabled one never runs, and isn't missing.
+
+    Found by unique ID, as the user may rename one. A restored placeholder
+    (HA shows a registered alert so until Alert2 declares it) isn't running.
+    """
+    registry = er.async_get(hass)
+    missing = []
+    for name in names:
+        entity_id = registry.async_get_entity_id(ALERT2, ALERT2, _unique_id(name))
+        registered = registry.async_get(entity_id) if entity_id is not None else None
+        if registered is not None and registered.disabled_by is not None:
+            continue
+        state = hass.states.get(entity_id or f"{ALERT2}.{DOMAIN}_{name}")
+        if state is None or state.attributes.get(ATTR_RESTORED):
+            missing.append(name)
+    return missing
+
+
+async def _async_reload(hass: HomeAssistant) -> bool:
+    """Reload Alert2; whether it did. A failure is logged, never raised."""
+    try:
+        await hass.services.async_call(ALERT2, SERVICE_RELOAD, blocking=True)
+    except HomeAssistantError as err:
+        _LOGGER.error("Alert2 is not reloaded: %s", err)
+        return False
+    return True
+
+
+@callback
+def _check_included(hass: HomeAssistant, names: Iterable[str]) -> None:
+    """Raise the Repairs issue while Alert2 doesn't run an alert of the file, else delete it."""
+    if not _missing(hass, names):
+        ir.async_delete_issue(hass, DOMAIN, ISSUE)
+        return
+    _LOGGER.warning(
+        "Alert2 doesn't run pururu's alerts: add \"%s\" to the alert2: block "
+        "of configuration.yaml",
+        INCLUDE,
+    )
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        ISSUE,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE,
+        translation_placeholders={"include": INCLUDE, "file": FILE},
+    )
+
+
+async def _finish(hass: HomeAssistant, changed: bool, names: list[str]) -> None:
+    """Once HA has started: reload Alert2 if it doesn't run the file as written, check the include.
+
+    Without Alert2 there is nothing to reload nor include: each alert with
+    notify logs so. A reload that failed is retried at the next reload, since
+    the alerts still aren't running then; it raises no issue, the include may be there.
+    """
+    if ALERT2 not in hass.config.components:
+        ir.async_delete_issue(hass, DOMAIN, ISSUE)
+        return
+    if (changed or _missing(hass, names)) and not await _async_reload(hass):
+        return
+    _check_included(hass, names)
+
+
 async def async_sync(
     hass: HomeAssistant, entry: ConfigEntry, alerts: list[dict[str, Any]]
 ) -> None:
-    """Write the Alert2 alerts."""
-    await files.async_write(hass, FILE, WHAT, alerts)
+    """Write the Alert2 alerts; once HA has started, have Alert2 run them.
+
+    Alert2 loaded the file as it was at start; the rest waits for HA to have
+    started (Alert2 may set up after pururu), in a task the entry's unload
+    waits for. After a failed write the file is the previous one: nothing is
+    reloaded nor checked.
+    """
+    written = await files.async_write(hass, FILE, WHAT, alerts)
+    if written is None:
+        return
+    names = [each["name"] for each in alerts]
+
+    @callback
+    def finish(_hass: HomeAssistant) -> None:
+        entry.async_create_task(
+            hass, _finish(hass, written, names), "pururu alert2", eager_start=False
+        )
+
+    entry.async_on_unload(async_at_started(hass, finish))
 
 
 async def async_remove(hass: HomeAssistant) -> None:
-    """Write no alerts: an empty file, still valid for the include."""
-    await files.async_write(hass, FILE, WHAT, [])
+    """Write no alerts: an empty file, still valid for the include; Alert2 drops them."""
+    if (
+        await files.async_write(hass, FILE, WHAT, [])
+        and hass.is_running
+        and ALERT2 in hass.config.components
+    ):
+        await _async_reload(hass)
+    ir.async_delete_issue(hass, DOMAIN, ISSUE)
