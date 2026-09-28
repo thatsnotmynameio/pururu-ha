@@ -9,15 +9,17 @@ doesn't load what the file holds.
 
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_RESTORED, EVENT_STATE_CHANGED, SERVICE_RELOAD
 from homeassistant.core import (
+    CALLBACK_TYPE,
     Event,
     EventStateChangedData,
+    HassJob,
     HomeAssistant,
     callback,
     split_entity_id,
@@ -28,12 +30,17 @@ from homeassistant.helpers import (
     entity_registry as er,
     issue_registry as ir,
 )
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.start import async_at_started
 
 from . import files
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+# Quiet time after the domain's last state change before the include is checked:
+# a reload adds its items one by one, so a check in between finds some missing
+QUIET = timedelta(seconds=1)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -211,21 +218,22 @@ def _check_included(
 ) -> None:
     """Raise the Repairs issue while a generated item isn't loaded, else delete it.
 
-    The warning is logged when the issue is raised: this runs at every state
-    change of the domain.
+    The warning is logged when the issue is raised: an open one is left as it
+    is. One a restart restored is inactive, and is raised again.
     """
     if not _missing(hass, registry, kind, ids):
         ir.async_delete_issue(hass, DOMAIN, kind.issue)
         return
     if (
         found := ir.async_get(hass).async_get_issue(DOMAIN, kind.issue)
-    ) is None or not found.active:
-        _LOGGER.warning(
-            'The %s of pururu\'s %s are not loaded: add "%s" to configuration.yaml',
-            kind.plural,
-            kind.source,
-            kind.include,
-        )
+    ) is not None and found.active:
+        return
+    _LOGGER.warning(
+        'The %s of pururu\'s %s are not loaded: add "%s" to configuration.yaml',
+        kind.plural,
+        kind.source,
+        kind.include,
+    )
     ir.async_create_issue(
         hass,
         DOMAIN,
@@ -237,6 +245,69 @@ def _check_included(
     )
 
 
+class _Checker:
+    """Checks the include once a burst of the domain's state changes is over.
+
+    A reload removes and adds its items one by one: checked in between, some
+    look missing (no state yet, or a restored placeholder) and the issue would
+    come and go. So each state change of the domain (a user's own reload, an
+    item added or removed) postpones the check until the domain has been quiet
+    for QUIET; while pururu's own reload of the domain runs, they are ignored,
+    as it checks once it is done.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        registry: er.EntityRegistry,
+        kind: Kind,
+        checked: list[str],
+    ) -> None:
+        """Check these items of this kind."""
+        self._hass = hass
+        self._registry = registry
+        self._kind = kind
+        self.checked = checked
+        self._job = HassJob(
+            self._run, f"pururu {kind.plural} include", cancel_on_shutdown=True
+        )
+        self._pending: CALLBACK_TYPE | None = None
+        # True while pururu's own reload of the domain runs
+        self.reloading = False
+
+    @callback
+    def of_kind(self, data: EventStateChangedData) -> bool:
+        """Whether the state change is of the domain, and not during pururu's reload."""
+        return (
+            not self.reloading
+            and split_entity_id(data["entity_id"])[0] == self._kind.domain
+        )
+
+    @callback
+    def schedule(self, _event: Event[EventStateChangedData]) -> None:
+        """Check once the domain has been quiet for QUIET."""
+        self.cancel()
+        self._pending = async_call_later(self._hass, QUIET, self._job)
+
+    @callback
+    def cancel(self) -> None:
+        """Drop a scheduled check."""
+        if self._pending is not None:
+            self._pending()
+            self._pending = None
+
+    @callback
+    def check(self) -> None:
+        """Check now, dropping a scheduled check."""
+        self.cancel()
+        _check_included(self._hass, self._registry, self._kind, self.checked)
+
+    @callback
+    def _run(self, _now: datetime) -> None:
+        self._pending = None
+        self.check()
+
+
 async def _finish(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -244,7 +315,7 @@ async def _finish(
     changed: bool,
     ids: list[str],
     stale: set[str],
-    checked: list[str],
+    checker: _Checker,
 ) -> None:
     """Once HA has started: apply the file, drop what HA no longer runs, check the include.
 
@@ -252,15 +323,20 @@ async def _finish(
     written (a reload that failed, the include added since): the reload is
     retried. A dropped item HA still runs keeps its entity ID, and stays
     tracked, until a reload drops it. The reload is blocking: the include is
-    checked on what it loaded.
+    checked on what it loaded, once: the state changes of the reload itself are
+    ignored.
     """
     registry = er.async_get(hass)
     if (
         changed
-        or _missing(hass, registry, kind, checked)
+        or _missing(hass, registry, kind, checker.checked)
         or any(_runs(hass, registry, kind, unique_id) for unique_id in stale)
     ):
-        await _async_reload(hass, kind)
+        checker.reloading = True
+        try:
+            await _async_reload(hass, kind)
+        finally:
+            checker.reloading = False
     running = {
         unique_id for unique_id in stale if _runs(hass, registry, kind, unique_id)
     }
@@ -268,7 +344,7 @@ async def _finish(
     hass.config_entries.async_update_entry(
         entry, data={**entry.data, kind.data_key: [*ids, *sorted(running)]}
     )
-    _check_included(hass, registry, kind, checked)
+    checker.check()
 
 
 async def async_sync(
@@ -282,7 +358,8 @@ async def async_sync(
     the generated ones and the dropped ones still registered: their entries go
     once HA no longer runs them. After a failed write, the file is the previous
     one: only what it holds is checked for the include. Once HA has started, a
-    state change of the domain (a user's own reload) checks the include again.
+    state change of the domain (a user's own reload) checks the include again,
+    once the domain is quiet (`_Checker`).
     """
     registry = er.async_get(hass)
     previous = entry.data.get(kind.data_key, [])
@@ -305,34 +382,22 @@ async def async_sync(
         entry, data={**entry.data, kind.data_key: [*ids, *sorted(stale)]}
     )
 
-    @callback
-    def of_kind(data: EventStateChangedData) -> bool:
-        # Ignore a removal: for a registered item, HA sets a restored placeholder
-        # (ATTR_RESTORED) rather than clearing the state outright, so a reload
-        # that removes a changed item before re-adding it would otherwise raise
-        # the issue in between
-        new_state = data["new_state"]
-        return (
-            new_state is not None
-            and not new_state.attributes.get(ATTR_RESTORED)
-            and split_entity_id(data["entity_id"])[0] == kind.domain
-        )
-
-    @callback
-    def changed(_event: Event[EventStateChangedData]) -> None:
-        _check_included(hass, registry, kind, checked)
+    checker = _Checker(hass, registry, kind, checked)
 
     @callback
     def finish(_hass: HomeAssistant) -> None:
         entry.async_create_task(
             hass,
-            _finish(hass, entry, kind, bool(written), ids, stale, checked),
+            _finish(hass, entry, kind, bool(written), ids, stale, checker),
             f"pururu {kind.plural}",
             eager_start=False,
         )
         entry.async_on_unload(
-            hass.bus.async_listen(EVENT_STATE_CHANGED, changed, event_filter=of_kind)
+            hass.bus.async_listen(
+                EVENT_STATE_CHANGED, checker.schedule, event_filter=checker.of_kind
+            )
         )
+        entry.async_on_unload(checker.cancel)
 
     entry.async_on_unload(async_at_started(hass, finish))
 
