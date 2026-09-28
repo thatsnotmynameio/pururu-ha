@@ -156,6 +156,12 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 
 ---
 
+<Property name="programs" type="map" optional>
+  A map of **program key → program**, each one a Home Assistant script. It isn't a feature. See [Programs](/concepts/programs#settings).
+</Property>
+
+---
+
 <Property name="<feature>" type="map" required>
   At least one feature, under its own key:
 
@@ -165,7 +171,6 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
   - [`modes`](/features/modes#settings): the kind of each cycle.
   - [`switches`](/features/switches#settings): real switches inside the device.
   - [`alerts`](/features/alerts#settings): problems on the device's own entities.
-  - [`programs`](/concepts/programs#settings): sequences of actions on the device's own entities, as Home Assistant scripts.
 </Property>
 
 ## Actions
