@@ -679,3 +679,14 @@ async def test_an_opening_saved_before_described_is_restored_undescribed(
     await restart(ha, devices(kind, events=EVENTS), saved_open(kind, 1))
     await access(ha, **ENTRY)
     assert fields(ha, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+
+
+async def test_a_waiting_event_too_early_leaves_the_next_to_describe(
+        enclosure: HomeAssistant, kind: str, freezer: Any) -> None:
+    """Events at 0 s and 4 s, the door opening at 8 s: only the second is within 5 s of it."""
+    await access(enclosure, **EXIT)
+    await tick(enclosure, freezer, 4)
+    await access(enclosure, **ENTRY)
+    await tick(enclosure, freezer, 4)
+    await contact(enclosure, "on")
+    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")

@@ -84,11 +84,11 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
         # False until HA has started: every entity of the door listens by then
         self._following = False
         # The last opening's start, whether an event described it, the start of
-        # the opening before, and an event waiting for the next opening
+        # the opening before, and the events waiting for the next opening
         self._opened: datetime | None = None
         self._described = False
         self._before: datetime | None = None
-        self._pending: Fired | None = None
+        self._pending: list[Fired] = []
 
     @property
     @override
@@ -161,12 +161,15 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
 
     @callback
     def _opening_starts(self, now: datetime) -> None:
-        """A new opening: an event waiting close enough describes it; else nothing does yet."""
+        """A new opening: the first event waiting close enough describes it; else nothing does yet."""
         self._before, self._opened = self._opened, now
         self._described = False
-        pending, self._pending = self._pending, None
-        if pending is not None and abs(now - pending.time) <= self._match:
-            self._describe(pending.fields)
+        near = [
+            fired for fired in self._pending if abs(now - fired.time) <= self._match
+        ]
+        self._pending = []
+        if near:
+            self._describe(min(near, key=lambda fired: fired.time).fields)
         else:
             async_dispatcher_send(self.hass, self._described_signal, {})
 
@@ -176,8 +179,8 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
 
         Nearer the opening before, it is that one's, come late: it describes no
         other. Near an opening already described, it is still that opening's (a
-        second source for it). Waiting, the first event near the next opening
-        stays; a later one takes its place only once it is `match` apart.
+        second source for it). Otherwise it waits: when the next opening
+        starts, the first waiting event near it describes it.
         """
         if not self._following or (fired := source.fired(event, OPENING)) is None:
             return
@@ -189,8 +192,12 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
                 if not self._described:
                     self._describe(fired.fields)
                 return
-        if self._pending is None or fired.time - self._pending.time > self._match:
-            self._pending = fired
+        # An opening starts from now on: an event `match` before now can't describe it
+        horizon = dt_util.utcnow() - self._match
+        self._pending = [
+            *(waiting for waiting in self._pending if waiting.time >= horizon),
+            fired,
+        ]
 
     @callback
     def _describe(self, fields: Mapping[str, str | None]) -> None:
