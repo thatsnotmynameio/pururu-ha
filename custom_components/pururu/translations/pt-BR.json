@@ -164,7 +164,12 @@
       "program_cycles_today": {"name": "Ciclos de {program} hoje"},
       "program_cycles_week": {"name": "Ciclos de {program} na semana"},
       "program_cycles_month": {"name": "Ciclos de {program} no mês"},
-      "program_cycles_year": {"name": "Ciclos de {program} no ano"}
+      "program_cycles_year": {"name": "Ciclos de {program} no ano"},
+      "reaction_triggered_total": {"name": "Disparos de {reaction}", "unit_of_measurement": "disparos"},
+      "reaction_triggered_today": {"name": "Disparos de {reaction} hoje"},
+      "reaction_triggered_week": {"name": "Disparos de {reaction} na semana"},
+      "reaction_triggered_month": {"name": "Disparos de {reaction} no mês"},
+      "reaction_triggered_year": {"name": "Disparos de {reaction} no ano"}
     }
   }
 }

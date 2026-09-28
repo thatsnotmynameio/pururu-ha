@@ -560,3 +560,56 @@ async def test_a_script_not_written_drops_its_reaction(
         assert [a["id"] for a in generated(ha)] == ["pururu_pool_reaction_night"]
     assert ("automation.pururu_pool_reaction_clean runs script.pururu_pool_program_clean, "
             "which is not generated; not generating it") in caplog.text
+
+
+# --- statistics --------------------------------------------------------------------
+
+TRIGGERED = "sensor.pururu_pool_reaction_clean_triggered_total"
+
+
+def count(ha: HomeAssistant, entity_id: str = TRIGGERED) -> str:
+    state = ha.states.get(entity_id)
+    assert state is not None, f"no {entity_id}"
+    return state.state
+
+
+async def test_every_trigger_counts_even_one_its_program_skips(ha: HomeAssistant,
+                                                              both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool())
+    assert count(ha) == "0"
+    await fake(ha, DOOR, "on")
+    await fake(ha, DOOR, "off")
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert count(ha) == "2"
+    assert count(ha, "sensor.pururu_pool_program_clean_cycles_total") == "0"
+
+
+async def test_a_reaction_without_then_counts_too(ha: HomeAssistant, freezer: Any,
+                                                 automations: None) -> None:
+    assert await setup(ha, devices(soon={"name": "Logo", "at": "10:05"}))
+    await tick(ha, freezer, 300)
+    assert count(ha, "sensor.pururu_lights_reaction_soon_triggered_total") == "1"
+
+
+async def test_its_meters_are_asked_for(ha: HomeAssistant) -> None:
+    assert await setup(ha, pool(clean={**DOOR_OPENS, "then": "clean",
+                                       "statistics": {"triggered": ["month"]}}))
+    assert ha.states.get("sensor.pururu_pool_reaction_clean_triggered_month") is not None
+    assert ha.states.get("sensor.pururu_pool_reaction_clean_triggered_today") is None
+
+
+async def test_a_reaction_on_its_own_counter_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    it = {"name": "Eu", "when": "reaction_it_triggered_total", "above": 3}
+    assert not await setup(ha, devices(it=it))
+    assert "reactions: it: reaction_it_triggered_total is its own statistic" in caplog.text
+
+
+async def test_a_reaction_on_a_programs_statistic(ha: HomeAssistant) -> None:
+    done = {"name": "Limpou", "when": "program_clean_last_cycle_end", "to": "unknown"}
+    assert await setup(ha, pool(done=done))
+    trigger = generated(ha)[0]["triggers"][0]
+    assert trigger["entity_id"] == "sensor.pururu_pool_program_clean_last_cycle_end"

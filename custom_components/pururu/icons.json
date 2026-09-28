@@ -105,7 +105,12 @@
       "program_cycles_today": {"default": "mdi:counter"},
       "program_cycles_week": {"default": "mdi:counter"},
       "program_cycles_month": {"default": "mdi:counter"},
-      "program_cycles_year": {"default": "mdi:counter"}
+      "program_cycles_year": {"default": "mdi:counter"},
+      "reaction_triggered_total": {"default": "mdi:gesture-tap"},
+      "reaction_triggered_today": {"default": "mdi:gesture-tap"},
+      "reaction_triggered_week": {"default": "mdi:gesture-tap"},
+      "reaction_triggered_month": {"default": "mdi:gesture-tap"},
+      "reaction_triggered_year": {"default": "mdi:gesture-tap"}
     }
   }
 }

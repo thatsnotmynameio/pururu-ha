@@ -163,7 +163,12 @@
       "program_cycles_today": {"name": "{program} cycles today"},
       "program_cycles_week": {"name": "{program} cycles this week"},
       "program_cycles_month": {"name": "{program} cycles this month"},
-      "program_cycles_year": {"name": "{program} cycles this year"}
+      "program_cycles_year": {"name": "{program} cycles this year"},
+      "reaction_triggered_total": {"name": "{reaction} triggers", "unit_of_measurement": "triggers"},
+      "reaction_triggered_today": {"name": "{reaction} triggers today"},
+      "reaction_triggered_week": {"name": "{reaction} triggers this week"},
+      "reaction_triggered_month": {"name": "{reaction} triggers this month"},
+      "reaction_triggered_year": {"name": "{reaction} triggers this year"}
     }
   }
 }

@@ -176,6 +176,14 @@ def _reactions_on_this_device(device: dict[str, Any]) -> None:
         for name, entity_key, _ in _entity_keys(device)
     }
     for key, reaction in device.get(CONF_REACTIONS, {}).items():
+        own = {
+            qualified(reactions.NAMESPACE, f"{key}_{suffix}")
+            for suffix in reactions.PER_REACTION
+        }
+        if "device" not in reaction and reaction.get("when") in own:
+            raise vol.Invalid(
+                f"reactions: {key}: {reaction['when']} is its own statistic"
+            )
         then = reaction.get("then")
         if then is not None and then not in device.get(CONF_PROGRAMS, {}):
             raise vol.Invalid(
