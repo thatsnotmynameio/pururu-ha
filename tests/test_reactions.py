@@ -312,10 +312,10 @@ def test_a_message_is_told_after_its_program_starts(ha: HomeAssistant) -> None:
     actions = reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, script,
                                    ["notify.a", "notify.b"])["actions"]
     assert actions[0]["then"] == [{"action": "script.turn_on", "target": {"entity_id": script}}]
-    assert actions[1:] == [
+    assert actions[1:] == [{"parallel": [
         {"action": target, "data": {"title": "Luzes", "message": "A porta abriu."}, "continue_on_error": True}
         for target in ("notify.a", "notify.b")
-    ]
+    ]}]
 
 
 def test_without_a_message_nobody_is_told(ha: HomeAssistant) -> None:
@@ -399,7 +399,7 @@ async def test_a_state_reaction_fires(ha: HomeAssistant, automations: None) -> N
 async def test_the_default_or_its_own_notify(ha: HomeAssistant) -> None:
     assert await setup(ha, devices(door=TOLD, mine={**TOLD, "notify": "notify.tablet"}),
                        config={"notify": [PHONE]})
-    told = {a["id"]: [action["action"] for action in a["actions"]] for a in generated(ha)}
+    told = {a["id"]: [action["action"] for action in a["actions"][0]["parallel"]] for a in generated(ha)}
     assert told == {"pururu_lights_reaction_door": [PHONE],
                     "pururu_lights_reaction_mine": ["notify.tablet"]}
 
@@ -413,6 +413,17 @@ async def test_a_message_is_text(ha: HomeAssistant, automations: None) -> None:
     await fake(ha, DOOR, "on")
     await ha.async_block_till_done()
     assert [call.data for call in calls] == [{"title": "Luzes", "message": "Porta {{ aberta }} {% raw %}"}]
+
+
+async def test_a_phone_gone_does_not_keep_the_next_from_being_told(ha: HomeAssistant,
+                                                                   automations: None) -> None:
+    """An unpaired phone's notify action doesn't exist: HA stops a sequence on it, whatever continue_on_error."""
+    calls = async_mock_service(ha, "notify", "phone")
+    await fake(ha, DOOR, "off")
+    assert await setup(ha, devices(door=TOLD), config={"notify": ["notify.gone", PHONE]})
+    await fake(ha, DOOR, "on")
+    await ha.async_block_till_done()
+    assert [call.data for call in calls] == [{"title": "Luzes", "message": "A porta abriu."}]
 
 
 async def test_for_waits(ha: HomeAssistant, freezer: Any, automations: None) -> None:

@@ -44,9 +44,9 @@ def test_text_without_a_brace_is_left_alone(ha: HomeAssistant) -> None:
 
 
 def test_each_target_is_told_the_title_and_the_message(ha: HomeAssistant) -> None:
-    assert module("messages").actions(["notify.a", "notify.b"], "Máquina", "Terminou {x}") == [
+    assert module("messages").actions(["notify.a", "notify.b"], "Máquina", "Terminou {x}") == [{"parallel": [
         {"action": "notify.a", "data": {"title": "Máquina", "message": "{% raw %}Terminou {x}{% endraw %}"},
          "continue_on_error": True},
         {"action": "notify.b", "data": {"title": "Máquina", "message": "{% raw %}Terminou {x}{% endraw %}"},
          "continue_on_error": True},
-    ]
+    ]}]

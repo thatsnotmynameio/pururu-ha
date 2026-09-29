@@ -113,8 +113,8 @@ async def test_the_file_holds_the_notifications_automation(ha: HomeAssistant) ->
         "alias": "Máquina Finished",
         "description": "pururu: washer, appliance notification finished",
         "triggers": [{"trigger": "state", "entity_id": RUNNING, "from": "on", "to": "off"}],
-        "actions": [{"action": PHONE, "data": {"title": "Máquina", "message": "The cycle finished."},
-                     "continue_on_error": True}],
+        "actions": [{"parallel": [{"action": PHONE, "data": {"title": "Máquina", "message": "The cycle finished."},
+                                   "continue_on_error": True}]}],
     }]
     assert generated(ha) == []
 
@@ -124,15 +124,16 @@ async def test_in_hass_language(ha: HomeAssistant) -> None:
     assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
     [automation] = generated_notifications(ha)
     assert automation["alias"] == "Máquina Terminou"
-    assert automation["actions"][0]["data"]["message"] == "O ciclo terminou."
+    assert automation["actions"][0]["parallel"][0]["data"]["message"] == "O ciclo terminou."
 
 
 async def test_its_own_message_and_notify(ha: HomeAssistant) -> None:
     mine = {"appliance": {"finished": {"message": "Roupa {pronta}!", "notify": ["notify.a", "notify.b"]}}}
     assert await setup(ha, devices(mine), config={"notify": PHONE})
     [automation] = generated_notifications(ha)
-    assert [action["action"] for action in automation["actions"]] == ["notify.a", "notify.b"]
-    assert automation["actions"][0]["data"]["message"] == "{% raw %}Roupa {pronta}!{% endraw %}"
+    told = automation["actions"][0]["parallel"]
+    assert [action["action"] for action in told] == ["notify.a", "notify.b"]
+    assert told[0]["data"]["message"] == "{% raw %}Roupa {pronta}!{% endraw %}"
 
 
 async def test_it_follows_a_renamed_running(ha: HomeAssistant) -> None:

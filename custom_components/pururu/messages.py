@@ -35,9 +35,17 @@ def escaped(text: str) -> str:
 
 
 def actions(targets: Sequence[str], title: str, message: str) -> list[dict[str, Any]]:
-    """Tell each target the title and the message; one failing doesn't keep the next from being told."""
+    """Tell each target the title and the message; one failing doesn't keep another from being told.
+
+    In parallel: a sequence stops at an action that doesn't exist (a phone
+    unpaired), whatever continue_on_error says; parallel runs every branch.
+    """
     data = {"title": escaped(title), "message": escaped(message)}
     return [
-        {"action": target, "data": dict(data), "continue_on_error": True}
-        for target in targets
+        {
+            "parallel": [
+                {"action": target, "data": dict(data), "continue_on_error": True}
+                for target in targets
+            ]
+        }
     ]
