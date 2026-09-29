@@ -8,7 +8,7 @@ longer has once HA no longer runs it, holds what it can't generate for now
 while HA doesn't load what the file holds.
 """
 
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
@@ -36,6 +36,7 @@ from homeassistant.helpers.start import async_at_started
 
 from . import files
 from .const import DOMAIN
+from .entity import other_holder
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,13 +114,7 @@ def _holder(
         same := registry.async_get_entity_id(kind.domain, kind.domain, unique_id)
     ) is not None:
         return None if unique_id in managed else f"{same}, {kind.one} with the same ID"
-    if (registered := registry.async_get(entity_id)) is not None:
-        return f"the {registered.platform} integration"
-    if (state := hass.states.get(entity_id)) is not None and not state.attributes.get(
-        ATTR_RESTORED
-    ):
-        return "an entity without a unique ID"
-    return None
+    return other_holder(hass, registry, entity_id)
 
 
 def _free(
@@ -260,35 +255,53 @@ def _missing(
 
 
 @callback
-def _check_included(
-    hass: HomeAssistant, registry: er.EntityRegistry, kind: Kind, ids: Iterable[str]
+def async_issue(
+    hass: HomeAssistant,
+    issue: str,
+    missing: bool,
+    warn: Callable[[], None],
+    placeholders: dict[str, str],
 ) -> None:
-    """Raise the Repairs issue while a generated item isn't loaded, else delete it.
+    """Raise `issue` while something isn't included, else delete it; `warn` once while it is open.
 
     The warning is logged when the issue is raised: an open one is left as it
     is. One a restart restored is inactive, and is raised again.
     """
-    if not _missing(hass, registry, kind, ids):
-        ir.async_delete_issue(hass, DOMAIN, kind.issue)
+    if not missing:
+        ir.async_delete_issue(hass, DOMAIN, issue)
         return
-    if (
-        found := ir.async_get(hass).async_get_issue(DOMAIN, kind.issue)
-    ) is not None and found.active:
+    if (found := ir.async_get(hass).async_get_issue(DOMAIN, issue)) is not None and (
+        found.active
+    ):
         return
-    _LOGGER.warning(
-        'The %s of pururu\'s %s are not loaded: add "%s" to configuration.yaml',
-        kind.plural,
-        kind.source,
-        kind.include,
-    )
+    warn()
     ir.async_create_issue(
         hass,
         DOMAIN,
-        kind.issue,
+        issue,
         is_fixable=False,
         severity=ir.IssueSeverity.WARNING,
-        translation_key=kind.issue,
-        translation_placeholders={"include": kind.include, "file": kind.file},
+        translation_key=issue,
+        translation_placeholders=placeholders,
+    )
+
+
+@callback
+def _check_included(
+    hass: HomeAssistant, registry: er.EntityRegistry, kind: Kind, ids: Iterable[str]
+) -> None:
+    """Raise the Repairs issue while a generated item isn't loaded, else delete it."""
+    async_issue(
+        hass,
+        kind.issue,
+        bool(_missing(hass, registry, kind, ids)),
+        lambda: _LOGGER.warning(
+            'The %s of pururu\'s %s are not loaded: add "%s" to configuration.yaml',
+            kind.plural,
+            kind.source,
+            kind.include,
+        ),
+        {"include": kind.include, "file": kind.file},
     )
 
 

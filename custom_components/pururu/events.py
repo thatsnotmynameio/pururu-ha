@@ -31,7 +31,8 @@ from homeassistant.helpers.json import json_bytes
 from homeassistant.util.json import json_loads_object
 from homeassistant.util.ulid import ulid_now
 
-from .const import CONF_DEVICES, DOMAIN, ENTITY_PREFIX
+from .const import CONF_DEVICES, DOMAIN
+from .entity import PururuEntity
 from .runtime import Built, PururuConfigEntry
 
 CONF_EVENTS: Final = "events"
@@ -144,10 +145,9 @@ def watched(
             key=key,
             name=devices[key][CONF_NAME],
             entities={
-                entity.entity_id: str(entity.unique_id).removeprefix(
-                    f"{ENTITY_PREFIX}_{key}_"
-                )
+                entity.entity_id: entity.key
                 for entity in created
+                if isinstance(entity, PururuEntity)
             },
         )
         for key, created in created_by.items()

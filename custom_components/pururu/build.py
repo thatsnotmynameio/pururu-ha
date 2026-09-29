@@ -4,7 +4,7 @@ from collections.abc import Mapping
 import logging
 from typing import Any
 
-from homeassistant.const import ATTR_RESTORED, CONF_NAME, Platform
+from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
@@ -12,7 +12,7 @@ from homeassistant.helpers.entity import Entity
 from . import catalogue
 from .const import DOMAIN
 from .device_keys import DEVICE_KEYS
-from .entity import PururuEntity
+from .entity import PururuEntity, other_holder
 from .feature import Device
 from .features import FEATURES, presets
 from .texts import Texts
@@ -159,10 +159,4 @@ def _holder(
     if entity.unique_id is not None:
         if registry.async_get_entity_id(domain, DOMAIN, entity.unique_id) is not None:
             return None
-    registered = registry.async_get(entity.entity_id)
-    if registered is not None:
-        return f"the {registered.platform} integration"
-    state = hass.states.get(entity.entity_id)
-    if state is not None and not state.attributes.get(ATTR_RESTORED):
-        return "an entity without a unique ID"
-    return None
+    return other_holder(hass, registry, entity.entity_id)

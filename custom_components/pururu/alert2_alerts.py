@@ -26,6 +26,7 @@ from homeassistant.util.hass_dict import HassKey
 from . import files
 from .const import ALERT2, DOMAIN, ENTITY_PREFIX
 from .features.alerts import ProblemAlert
+from .generated import async_issue
 from .messages import escaped
 from .runtime import Built, PururuConfigEntry
 
@@ -115,22 +116,16 @@ async def _async_reload(hass: HomeAssistant) -> bool:
 @callback
 def _check_included(hass: HomeAssistant, names: Iterable[str]) -> None:
     """Raise the Repairs issue while Alert2 doesn't run an alert of the file, else delete it."""
-    if not _missing(hass, names):
-        ir.async_delete_issue(hass, DOMAIN, ISSUE)
-        return
-    _LOGGER.warning(
-        "Alert2 doesn't run pururu's alerts: add \"%s\" to the alert2: block "
-        "of configuration.yaml",
-        INCLUDE,
-    )
-    ir.async_create_issue(
+    async_issue(
         hass,
-        DOMAIN,
         ISSUE,
-        is_fixable=False,
-        severity=ir.IssueSeverity.WARNING,
-        translation_key=ISSUE,
-        translation_placeholders={"include": INCLUDE, "file": FILE},
+        bool(_missing(hass, names)),
+        lambda: _LOGGER.warning(
+            "Alert2 doesn't run pururu's alerts: add \"%s\" to the alert2: block "
+            "of configuration.yaml",
+            INCLUDE,
+        ),
+        {"include": INCLUDE, "file": FILE},
     )
 
 
