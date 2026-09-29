@@ -1,5 +1,7 @@
 """What HA's entry points do: apply the YAML, set the entry up, unload it, remove it."""
 
+import logging
+
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntryState
 from homeassistant.const import SERVICE_RELOAD, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, split_entity_id
@@ -27,6 +29,8 @@ from . import (
 from .const import CONF_AREAS, CONF_DEVICES, CONF_FLOORS, DATA_CONFIG, DOMAIN, PLATFORMS
 from .runtime import Built, PururuConfigEntry, Step
 from .texts import async_texts
+
+_LOGGER = logging.getLogger(__name__)
 
 # The outputs after the platforms, in order: the events once the entities have their
 # IDs; the devices placed and what is stale removed; the scripts before the
@@ -132,8 +136,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         ),
     )
     targets: set[str] = set()
-    for _, step in STEPS:
-        targets |= await step(hass, entry, built)
+    for name, step in STEPS:
+        try:
+            targets |= await step(hass, entry, built)
+        except Exception:
+            # Failing after the platforms would leave the entry stuck until a
+            # restart: HA unloads a non-loaded entry without async_unload_entry
+            _LOGGER.exception("Step %s failed", name)
     listener.async_listen(hass, entry, generate.watched_items(devices), targets)
     return True
 
