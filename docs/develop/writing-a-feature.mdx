@@ -153,31 +153,31 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 **On an entity of the same device:** set `sources` on the entity to the entity keys of its own feature it reads. If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another entity key's entity, use `device.current_entity_id(hass, platform, entity_key)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `features/cycle/totals.py` is an example.
 
-**On another feature:** declare it as a capability instead of hard-coding the other feature's name:
+**On another feature:** declare it as a capability instead of hard-coding the other feature's name. What a feature is beyond its five fields goes in its `roles` (`core/roles.py`):
 
-- The provider maps a capability to the entity key that carries it: `provides={"cycle": "running"}`.
-- The consumer lists it in `requires=("cycle",)`. Its schema then **must** have a `cycle_from` key (use `cv.slug`), and its `example` must include it.
+- The provider names the entity key that carries the capability: `roles=(Provides("cycle", "running"),)`.
+- The consumer has `Requires("cycle")`. Its schema then **must** have a `cycle_from` key (use `cv.slug`), and its `example` must include it.
 - `build()` receives the providing entity's current ID in `inputs["cycle"]`, and the consumer's entities depend on it automatically.
 - The device schema checks that `cycle_from` names a feature of the same device that provides `cycle`.
 
 `phases.py` is the example to copy.
 
-**On one entity of another feature, named in the configuration:** set `refers` to a function that returns, from the validated block, the entity keys it names, in their namespace (`appliance_power`). The device schema checks each is another feature's entity key, and `build()` receives its current ID in `inputs[<key>]`. Set `follows` on each entity to the keys it reads. [`alerts`](/features/alerts) (`features/alerts.py`) is the example.
+**On one entity of another feature, named in the configuration:** add `Refers(refers)`, `refers` a function that returns, from the validated block, a `Ref` (`core/resolve.py`) for each entity key it names, in their namespace: `Ref(None, "appliance_power")` on this device. `checks.references` checks each is another feature's entity key, and `build()` receives its current ID in `inputs` under the reference as written (`Ref.text`, `appliance_power`). Set `follows` on each entity to the keys it reads. [`alerts`](/features/alerts) (`features/alerts.py`) is the example.
 
-**Being acted on:** a feature whose entities a [program](/concepts/programs) can act on declares `actions`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `("turn_on", "turn_off", "toggle")`.
+**Being acted on:** a feature whose entities a [program](/concepts/programs) can act on has `Actions(...)`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `Actions(("turn_on", "turn_off", "toggle"))`.
 
 ## 5. Entity keys from the configuration
 
 Some features create one entity per key the user writes, such as [`switches`](/features/switches). Their entity keys aren't known in the code, so they aren't in `entity_keys`, and they have no translation:
 
-- Set `configured` to the platform of those entities, and leave `entity_keys` empty.
+- Add `Configured(<platform of those entities>)`, and leave `entity_keys` empty.
 - The schema is a `vol.Schema({cv.slug: ...})` of its own, with a required `name`. A feature whose entities stand for real entities uses `standing.schema(*domains)` (`features/standing.py`): `{key: {entity, name}}`, `entity` one of those domains and not pururu's own. In `build()`, `standing.is_pururu(hass, entity)` catches a pururu entity renamed in the UI; log it and skip that entity.
 - Each entity calls `self._identify(device, platform, entity_key, name)`: it's named by `name`, with no translation key.
-- It can't `provide` a capability: a capability points to a fixed entity key.
+- It can't `Provides` a capability: a capability points to a fixed entity key.
 
 For a feature that stands for real entities of one domain, build each entity on Home Assistant's group entity of that domain, with the real entity as its only member: `Switch` in `features/switches.py` is a `SwitchGroup` of one, and `Light` in `features/lights.py` a `LightGroup` of one, as `Mirror` is a `SensorGroup` of one. The group already follows the real entity's state and passes every command on, with everything its domain offers. One feature per domain of the entity pururu creates: a light gets `lights`, not a place in `switches`. When a feature takes several domains of real entity, a mapping from each domain to its class (`KINDS` in `lights.py`) gives both the schema's domains and the class to build: `lights` takes a `switch.*` as a `SwitchLight`, on `GroupEntity`, on and off only. In one device, a real entity is in one configured feature at most.
 
-**Entity keys repeated per item.** Some features create the same set of entities for every item of their block: [`modes`](/features/modes) gives each mode its own last cycle, totals and meters. Set `per_item` to those suffixes (suffix → platform) and `items` to a function that returns, from the validated block, its items as `Item(slug, name)` (`core/feature.py`):
+**Entity keys repeated per item.** Some features create the same set of entities for every item of their block: [`modes`](/features/modes) gives each mode its own last cycle, totals and meters. Add `Items(keys, items)`: `keys` the suffixes (suffix → platform), `items` a function that returns, from the validated block, its items as `Item(slug, name)` (`core/feature.py`). `Configured` and `Items` never go together:
 
 - An item's entity key is `<slug>_<suffix>` (`gelar_cycles_total`), so `sensor.pururu_<key>_mode_gelar_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
 - Each is named by its suffix's translation, `<namespace>_<suffix>` (`mode_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{mode} cycles"`, `"Ciclos de {mode}"`.
@@ -185,7 +185,7 @@ For a feature that stands for real entities of one domain, build each entity on 
 
 The cycle code `appliance`, `modes`, `door`, `window` and the programs' statistics share (the last cycle's sensors, the totals, the meters, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
 
-**Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Set `alerts` to a mapping of name → `Preset` (`core/feature.py`), as `features/appliance/alerts.py` does:
+**Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Add `Presets(<name → Preset>)` (`Preset` in `core/feature.py`), as `features/appliance/` does with `features/appliance/alerts.py`'s `PRESETS`:
 
 - `watches`: the entity key, in the feature's namespace, it watches.
 - `kind`: a `Condition`, as a hand-written alert's `is`/`above`/`below`, or an `Elapsed`: a state of the watched entity and a milestone, either an entity key whose state is a datetime (`since_key`) or an attribute of the watched entity (`since_attribute`), with `or_since_created` to count from the alert's creation until there's one. A condition alert is an `Alert`; an elapsed one an `ElapsedAlert` (`features/elapsed.py`), which survives restarts.
@@ -193,7 +193,7 @@ The cycle code `appliance`, `modes`, `door`, `window` and the programs' statisti
 
 Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity key `alert_<name>`, so ID collisions, names and icons are checked as for any entity key. Add its name and icon under `<namespace>_alert_<name>`, and its default texts under `<namespace>_alert_<name>_message` and `_done_message` in the translations' `common` block. `features/presets.py` validates the settings and builds the enabled alerts; nothing else is needed.
 
-**Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Set `notifications` to a mapping of name → `Happening` (`core/feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py` does. It creates no entity: `device_keys/notifications.py` validates that key of the block (`schema._feature_block` takes it out before the feature's schema) and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
+**Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Add `Happenings(<name → Happening>)` (`Happening` in `core/feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py`'s `HAPPENINGS` does. It creates no entity: `device_keys/notifications.py` validates that key of the block (`schema._feature_block` takes it out before the feature's schema) and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
 
 ## 6. What the contract test checks
 
@@ -208,16 +208,21 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 | `test_every_translated_entity_key_is_created` | Every name and icon is under a key some feature creates |
 | `test_example_is_valid_and_unknown_keys_are_refused` | `example` passes `schema`, and `example` plus an unknown key fails |
 | `test_every_platform_is_set_up` | Every entity key's platform, and a configured feature's platform, is in `PLATFORMS` |
-| `test_capabilities_line_up` | `provides` points to real entity keys and a configured feature provides nothing, every `requires` is provided by some feature, and the example has `<capability>_from` |
-| `test_refers_names_entity_keys_as_in_an_entity_id` | What `refers` returns for the example is a slug, as an entity key in its namespace |
-| `test_every_action_is_a_service_of_its_platform` | A feature with `actions` is configured, and its platform has a service for each action |
+| `test_capabilities_line_up` | `Provides` points to a real entity key and a configured feature provides nothing, every `Requires` is provided by some feature, and the example has `<capability>_from` |
+| `test_refers_names_entity_keys_as_in_an_entity_id` | What `Refers` returns for the example names slugs, as entity keys in their namespace |
+| `test_every_action_is_a_service_of_its_platform` | A feature with `Actions` is configured, and its platform has a service for each action |
 | `test_it_takes_turn_on_turn_off_and_toggle` | `switches` and `lights` have exactly `("turn_on", "turn_off", "toggle")` |
-| `test_per_item_goes_with_items` | `items` is set exactly when `per_item` is, and the example's items are slugs |
+| `test_items_have_suffixes_and_slugs` | `Items` has suffixes, and the example's items are slugs |
 | `test_every_per_item_name_has_its_placeholder` | Every suffix's name has the `{<namespace>}` placeholder, in both languages |
 | `test_ready_made_alerts_line_up` | Every ready-made alert's key is in `entity_keys`, it watches (and counts from) its own feature's entity keys, has both default texts in both languages, and its settings validate |
 | `test_ready_made_notifications_line_up` | Every ready-made notification watches its own feature's entity key, has its name and message in both languages, and validates |
+| `test_each_role_at_most_once` | No role twice in `roles` |
+| `test_configured_and_items_never_together` | A block's keys are either its entity keys or its items |
+| `test_a_device_key_neither_provides_requires_nor_acts` | `programs` and `reactions` have no `Provides`, `Requires` or `Actions` |
+| `test_ready_made_watch_the_builders_keys` | What a ready-made alert or notification watches, or counts from, is one of its builder's entity keys |
+| `test_a_generating_builder_generates_from_its_example` | What `Generates` writes carries its device's pururu pattern |
 
-The name, icon, platform and namespace checks above cover `per_item`'s suffixes too.
+The name, icon, platform and namespace checks above cover `Items`' suffixes too.
 
 The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_phases.py` do.
 

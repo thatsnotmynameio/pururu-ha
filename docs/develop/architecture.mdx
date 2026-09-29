@@ -55,25 +55,41 @@ A device is a name plus one or more **features**. `FEATURES` in `features/__init
 | Field | What it is |
 |---|---|
 | `schema` | Validates the feature's block, and refuses unknown keys |
-| `entity_keys` | Everything it can create: entity key → platform |
+| `entity_keys` | Everything it can create itself: entity key → platform |
 | `build` | `(hass, device, config, inputs) → list[PururuEntity]` |
 | `example` | A minimal valid block, for the contract test |
 | `namespace` | Where its entity keys live in an entity ID: `appliance`, `light`, `phase`, `switch` |
-| `provides` | capability → the entity key whose entity carries it |
-| `requires` | capabilities it takes through `<capability>_from` |
-| `configured` | A platform, when its entity keys are the keys of its block, named by the block's `name`; `None` otherwise |
-| `refers` | Given its block, the entity keys of other features of the device it names, in their namespace (`appliance_running`); `None` otherwise |
-| `actions` | Services its entities take on their platform (`turn_on`, `turn_off`, `toggle` for `switches` and `lights`), which a program can call |
+| `roles` | What else it is, as small frozen dataclasses of `core/roles.py`, asked for by type: `feature.role(Configured)` |
 
-The device schema (`_device` in `setup/schema.py`) is built from `FEATURES`. It requires at least one feature, it checks that every `<capability>_from` names a feature of the same device that provides that capability, and it refuses a real entity in two configured features of the device (a relay is its switch or its light, not both).
+A builder is its roles (the Extension Object pattern), so `Feature` never gains a field:
+
+| Role | What it says |
+|---|---|
+| `Provides(capability, key)` | Others take this capability through `<capability>_from`; its entity key `key` carries it |
+| `Requires(capability)` | It takes a capability through `<capability>_from` |
+| `Configured(platform)` | Its entity keys are its block's keys, on this platform, named by each block's `name` |
+| `Actions(actions)` | Services its entities take on their platform (`turn_on`, `turn_off`, `toggle` for `switches` and `lights`), which a program can call |
+| `Items(keys, items)` | Its block is a map of items, each with the entity keys `<slug>_<suffix>` |
+| `Refers(refers)` | Given its block, the `Ref`s it names: entity keys of other features of the device |
+| `Presets(presets)` | Ready-made alerts it offers |
+| `Happenings(happenings)` | Ready-made notifications it offers |
+| `Generates(what, generates)` | The scripts or automations it writes (`programs`, `reactions`) |
+
+The contract test holds the rules between roles: each at most once, `Configured` and `Items` never together, no device key `Provides`, `Requires` or has `Actions`.
+
+**The index.** `setup/catalogue.index(devices)` maps each device key to everything it can create: qualified entity key → `Target` (`core/resolve.py`). A `Target` knows its device in its builder's namespace, its platform, its builder, `by` (`"alerts"` for a ready-made alert's key), its `item` (the mode, program or reaction that owns it) and its builder's `actions`, and gives its unique ID and its **current** entity ID (following renames). A reference is a `Ref(device, key)`, `device` None for this device, and `find(index, here, ref)` gives its `Target`, or None when that device can't create it. The prelude builds the index once; `Built.index` carries it to the steps.
+
+**The checks.** The device schema (`_device` in `setup/schema.py`) is built from `FEATURES`: it requires at least one feature and checks that every `<capability>_from` names a feature of the same device that provides it. Everything that looks across blocks or devices is a check of `schema.CHECKS`, `check(house, index, builders)`, run once over the validated house and its index. Each raises `vol.Invalid` with a path (`pururu->devices->washer->reactions->it`), and each lives in the module that owns the rule: `checks.py` for the generic ones (references, one real entity per device, distinct entity and generated IDs, areas exist, messages go somewhere), `reactions.check`, `programs.check`, `alert_lights.check` and `places.floors_exist`.
 
 It doesn't compare entity keys between features. Each feature has its own `namespace`, and the entity keys it creates are in it (`appliance_power`, `switch_power`), so they can't meet. The contract test checks that namespaces are distinct slugs and that none is another's followed by `_`. Between devices, `checks.entity_ids_distinct` still refuses two that would give an entity one ID: `pool` with the switch `switch_pump` and `pool_switch` with the switch `pump`.
 
 When a feature requires a capability, `build.build` looks up the providing entity key's **current** entity ID with a `Device` in the providing feature's namespace (`Device.current_entity_id`, which follows renames), and passes it to `build()` in `inputs`. The provider's unique ID is also added to the entity's sources, so if the provider isn't created, neither is this entity.
 
-A feature can also watch one particular entity of another feature, named in its block, as an alert's `when: appliance_power`. `refers` returns those keys. `schema._device` checks that each is an entity key another feature of the device can create, whatever its settings. `build.build` passes each one's current entity ID in `inputs`, under that key. An entity lists what it watches in `follows`, so it isn't created when that entity isn't, including when the settings never build it (`build.creatable`).
+A feature can also watch one particular entity of another feature, named in its block, as an alert's `when: appliance_power`. `Refers` returns those references; `checks.references` refuses one that isn't another feature's entity key, whatever its settings. `build.build` passes each one's current entity ID in `inputs`, under the reference as written (`Ref.text`). An entity lists what it watches in `follows`, so it isn't created when that entity isn't, including when the settings never build it (`build.creatable`).
 
-A program's step acts on a feature's entity: `checks.programs_on_this_device` checks that the feature owning each key has the action in its `actions` (`programs: appliance_power does not take turn_on` otherwise). `device_keys/programs.py` translates the steps to Home Assistant's script syntax on the keys' current entity IDs, and HA runs the script.
+A program's step acts on a feature's entity: `programs.check` checks that the target's builder has the action in its `Actions` (`programs: appliance_power does not take turn_on` otherwise). `device_keys/programs.py` translates the steps to Home Assistant's script syntax on the keys' current entity IDs, and HA runs the script.
+
+**The plans.** Each generated kind plans itself: `programs.plan`, `reactions.plan` and `notifications.plan` return a `Planned` (`core/generated.py`): the items for the file, the IDs held while a target is disabled, and the entity IDs the items act on. The generate step (`setup/generate.py`) only calls them in order and syncs each kind.
 
 [Writing a feature](/develop/writing-a-feature) walks through adding one.
 
