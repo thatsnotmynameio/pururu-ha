@@ -1,9 +1,9 @@
 ---
 title: Places and dashboard
-description: How places.py gives floors and areas the IDs the YAML chooses, and how dashboard.py shows a dashboard without a public API.
+description: How outputs/places.py gives floors and areas the IDs the YAML chooses, and how outputs/dashboard.py shows a dashboard without a public API.
 ---
 
-## Floors and areas (`places.py`)
+## Floors and areas (`outputs/places.py`)
 
 ### Choosing the ID
 
@@ -32,16 +32,16 @@ The registries raise `ValueError` for a name another floor or area already has (
 - A **new** one is deleted again and logged as `left out`.
 - An **existing** one keeps its settings and is logged as `not synced`. It stays managed.
 
-These errors are logged without a traceback because they're configuration errors and a traceback would only add noise. Core's ruff settings ignore `TRY400` for the same reason, and Sonar's `python:S8572` is suppressed for `places.py`.
+These errors are logged without a traceback because they're configuration errors and a traceback would only add noise. Core's ruff settings ignore `TRY400` for the same reason, and Sonar's `python:S8572` is suppressed for `outputs/places.py`.
 
 ### Validation
 
-`FLOOR_SCHEMA` and `AREA_SCHEMA` validate each entry. `floors_exist` (in `places.py`) and `areas_exist` (in `checks.py`) run over the whole block: an area's `floor` must be a key of `floors:`, and a device's `area` must be a key of `areas:`. A floor's `level` is an integer or `None`, and `_level` refuses booleans, because `level: yes` would otherwise pass as `1`.
+`FLOOR_SCHEMA` and `AREA_SCHEMA` validate each entry. `floors_exist` (in `outputs/places.py`) and `areas_exist` (in `setup/checks.py`) run over the whole block: an area's `floor` must be a key of `floors:`, and a device's `area` must be a key of `areas:`. A floor's `level` is an integer or `None`, and `_level` refuses booleans, because `level: yes` would otherwise pass as `1`.
 
-## Dashboard (`dashboard.py`)
+## Dashboard (`outputs/dashboard.py`)
 
 <Warning>
-  Home Assistant has **no public API** for an integration to provide a dashboard. `dashboard.py` uses lovelace's and frontend's internals. Keep every use of them in this module.
+  Home Assistant has **no public API** for an integration to provide a dashboard. `outputs/dashboard.py` uses lovelace's and frontend's internals. Keep every use of them in this module.
 </Warning>
 
 ### How it's shown

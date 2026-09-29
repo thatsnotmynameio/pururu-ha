@@ -40,33 +40,43 @@ python3 release.py check                        # the manifest's version is semv
 
 ```
 custom_components/pururu/     the integration
-  __init__.py                 HA's entry points only, each calling lifecycle.py
-  lifecycle.py                applying the YAML, the set-up's prelude and STEPS, unload, remove
-  listener.py                 the registry listener: renames and disabled targets
-  runtime.py                  PururuConfigEntry: what the entry carries
-  schema.py                   CONFIG_SCHEMA: each device, then the checks over the whole house
-  checks.py                   the rules beyond each block's own schema
-  catalogue.py                builders(): every builder of a device, and its entity keys
-  build.py                    each device's entities, and which can be created
-  devices.py                  each device in its area, nothing stale left
-  generate.py                 the scripts and automations the entry generates
-  vocabulary.py               Condition: what makes a watched state hold
-  texts.py                    the translations' common texts
-  const.py                    names shared by the modules
+  __init__.py                 HA's entry points only, each calling setup/lifecycle.py
   config_flow.py              the import-only flow that creates the single entry
-  feature.py                  Device and Feature: the contract every feature fulfils
-  entity.py                   PururuEntity (the base of every entity) and reading()
+  const.py                    names shared by the modules
+  sensor.py, binary_sensor.py, switch.py, light.py
+                              the platforms: they only add what the entry built
+  core/                       the contracts and shared helpers; imports only core/ and const
+    runtime.py                PururuConfigEntry, Built, Step: what the entry carries
+    feature.py                Device and Feature: the contract every feature fulfils
+    entity.py                 PururuEntity (the base of every entity) and reading()
+    vocabulary.py             Condition: what makes a watched state hold
+    texts.py                  the translations' common texts
+    messages.py               a message's notify actions
+    files.py                  the generated files' writer
+    generated.py              a Kind per generated domain: sync, include check, removal
   features/                   one module or package per feature, and FEATURES
     appliance/                running, cycles, runtime, mirrors, statistics
     lights.py
     phases.py
     standing.py               what switches and lights share: their schema, is_pururu
     switches.py
-  places.py                   floors and areas from YAML
-  events.py                   pururu_state_changed and pururu_reading on the bus
-  dashboard.py                the read-only dashboard (private lovelace API)
-  sensor.py, binary_sensor.py, switch.py, light.py
-                              the platforms: they only add what the entry built
+  device_keys/                DEVICE_KEYS: the device keys that aren't features
+    programs.py, reactions.py, notifications.py
+  outputs/                    what the entry does once its entities exist: each a step
+    events.py                 pururu_state_changed and pururu_reading on the bus
+    devices.py                each device in its area, nothing stale left
+    places.py                 floors and areas from YAML
+    alert2_alerts.py          Alert2's alerts file
+    alert_lights.py           lights lent to the alerts
+    dashboard.py              the read-only dashboard (private lovelace API)
+  setup/                      the wiring
+    lifecycle.py              applying the YAML, the set-up's prelude and STEPS, unload, remove
+    listener.py               the registry listener: renames and disabled targets
+    schema.py                 CONFIG_SCHEMA: each device, then the checks over the whole house
+    checks.py                 the rules beyond each block's own schema
+    catalogue.py              builders(): every builder of a device, and its entity keys
+    build.py                  each device's entities, and which can be created
+    generate.py               the scripts and automations the entry generates
   translations/               en.json and pt-BR.json, with the same keys
   icons.json, services.yaml, manifest.json, quality_scale.yaml
 tests/                        pytest, with the HA test plugin

@@ -23,7 +23,7 @@ def test_something(ha: HomeAssistant) -> None:
     FEATURES = module("features").FEATURES
 ```
 
-An autouse fixture, `no_step_failed` in `tests/conftest.py`, fails any test in which a set-up step logged `Step <name> failed`: the guard in `lifecycle.py` keeps the entry loaded, so a step's bug would otherwise pass silently. A test that makes a step fail on purpose clears `caplog` once it has checked the log.
+An autouse fixture, `no_step_failed` in `tests/conftest.py`, fails any test in which a set-up step logged `Step <name> failed`: the guard in `setup/lifecycle.py` keeps the entry loaded, so a step's bug would otherwise pass silently. A test that makes a step fail on purpose clears `caplog` once it has checked the log.
 
 ## Helpers (`tests/helpers.py`)
 
