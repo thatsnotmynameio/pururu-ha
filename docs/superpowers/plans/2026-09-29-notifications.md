@@ -36,7 +36,7 @@
 - **A plug reconnecting or a reload** (`running`: `unavailable → off`, or `on → unavailable → on`) must not send "finished"; only a real `on → off` does. Test: Task 4, `test_a_plug_reconnecting_tells_nobody`.
 - **A message with `{`** (`"Roupa {pronta}"`, `"{% raw %}"`) must reach the phone as written, not rendered or failing. Test: Task 1, `test_a_message_is_text` (end to end through HA's automation, not only the dict).
 - **A notify action that doesn't exist** must not keep the reaction's program from starting. Test: Task 2, `test_a_missing_notify_action_does_not_keep_the_program_from_starting`.
-- **Two devices whose reaction and notification IDs meet** (device `a`'s reaction `appliance_notification_finished`, device `a_reaction`... no: device `a`'s reaction vs device `a_appliance`): the configuration is refused, not one automation silently lost. Test: Task 3, `test_a_notification_and_a_reaction_with_one_id_are_refused`.
+- **Two devices whose reaction and notification IDs meet** (device `a`'s reaction `x_appliance_notification_finished` and device `a_reaction_x`'s `finished`, both `pururu_a_reaction_x_appliance_notification_finished`): the configuration is refused, not one automation silently lost. Test: Task 3, `test_a_notification_and_a_reaction_with_one_id_are_refused`.
 - **Upgrading with `appliance: alerts: finished`** must fail with a message that says where it went, not a generic "not a ready-made alert". Test: Task 5, `test_finished_as_an_alert_says_where_it_went`.
 
 ---
@@ -954,11 +954,12 @@ async def test_the_automation_has_the_pururu_entity_id(ha: HomeAssistant, automa
     assert state.attributes["friendly_name"] == "Máquina Finished"
 
 
-async def test_a_repair_while_the_file_is_not_loaded(ha: HomeAssistant) -> None:
-    """No automation component including the folder: the notification isn't loaded."""
-    assert await async_setup_component(ha, "automation", {})
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
-    await ha.async_block_till_done()
+async def test_a_repair_while_the_file_is_not_loaded(ha: HomeAssistant, freezer: Any) -> None:
+    """A configuration.yaml without the include: the notification isn't loaded."""
+    with patch("homeassistant.config.load_yaml_config_file", side_effect=lambda *_a, **_k: {}):
+        assert await async_setup_component(ha, "automation", {})
+        assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    await tick(ha, freezer, 5)
     issue = ir.async_get(ha).async_get_issue("pururu", "notifications_not_included")
     assert issue is not None
     assert issue.translation_placeholders == {
@@ -1090,7 +1091,7 @@ Translations, `issues`, after `automations_not_included`:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_notifications.py tests/test_places.py tests/test_reactions.py tests/test_generated.py -n 0 -q`
-Expected: PASS. If `test_a_repair_while_the_file_is_not_loaded` finds no issue, check the `ha` fixture's HA state: the check runs once HA has started (`async_at_started`); start it with `await ha.async_start()` before the assert, as `restart` in helpers does.
+Expected: PASS. The repair test follows `tests/test_generated.py::test_the_warning_is_logged_once_while_the_issue_is_open`: a patched configuration without the include, then quiet time for the check.
 
 - [ ] **Step 5: Commit**
 
@@ -1120,13 +1121,7 @@ git commit -m "pururu: ready-made notifications as automations"   # plus the two
 
 In `tests/test_presets.py`:
 - `test_valid_alerts_are_accepted`: replace the two `finished` params with `pytest.param({"no_power": None}, id="no_power")`.
-- `test_invalid_alerts_are_refused`: the unknown-alert reason becomes `"nope is not a ready-made alert: offline, no_power, long_cycle, no_cycle"`; replace the `for on finished` param with:
-
-```python
-    pytest.param({"finished": None},
-                 "finished is now a notification: notifications: appliance: finished",
-                 id="finished moved"),
-```
+- `test_invalid_alerts_are_refused`: the unknown-alert reason becomes `"nope is not a ready-made alert: offline, no_power, long_cycle, no_cycle"`; delete the `for on finished` param (the test below covers `finished`).
 
 - Delete `test_finished_turns_on_at_the_end_and_off_after_lasts`, `test_finished_turns_off_when_a_new_cycle_starts`, `test_finished_still_turns_off_at_lasts_without_a_reading` and `test_a_plug_reconnecting_is_no_finished_cycle` (the last one's case is covered by `test_a_plug_reconnecting_tells_nobody`).
 - `test_time_alerts_watch_running_and_are_alert2_alerts` uses `no_cycle` instead:
@@ -1197,8 +1192,8 @@ def validate(feature: Feature, value: Any, key: str = "") -> Any:
     """
     if not feature.alerts or not isinstance(value, dict) or ALERTS_KEY not in value:
         return feature.schema(value)
-    if isinstance(enabled := value[ALERTS_KEY], dict):
-        for name in enabled:
+    if isinstance(given := value[ALERTS_KEY], dict):
+        for name in given:
             if name in feature.notifications and name not in feature.alerts:
                 raise vol.Invalid(
                     f"{name} is now a notification: notifications: "
