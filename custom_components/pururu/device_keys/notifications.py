@@ -18,9 +18,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from ..const import CONF_MESSAGE, CONF_NOTIFICATIONS, CONF_NOTIFY, ENTITY_PREFIX
-from ..core import generated, messages
+from ..core import generated, messages, vocabulary
 from ..core.feature import TEXT, Device, Feature, Happening, happenings_of, qualified
-from . import reactions
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,7 +107,7 @@ def automation(
         "id": automation_id(device.key, device.namespace, name),
         "alias": f"{device.name} {alias}",
         "description": f"pururu: {device.key}, {device.namespace} {NAMESPACE} {name}",
-        "triggers": reactions.triggers(trigger, entity_id),
+        "triggers": [vocabulary.trigger(trigger, entity_id)],
         "actions": messages.actions(notify, device.name, message),
     }
 

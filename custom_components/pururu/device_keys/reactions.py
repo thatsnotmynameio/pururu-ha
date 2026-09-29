@@ -19,13 +19,7 @@ from typing import Any, override
 import voluptuous as vol
 
 from homeassistant.components.sensor import RestoreSensor, SensorStateClass
-from homeassistant.const import (
-    CONF_NAME,
-    STATE_OFF,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-    Platform,
-)
+from homeassistant.const import CONF_NAME, STATE_OFF, Platform
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
@@ -38,7 +32,7 @@ from ..const import (
     CONF_REACTIONS,
     ENTITY_PREFIX,
 )
-from ..core import generated, messages
+from ..core import generated, messages, vocabulary
 from ..core.entity import PururuEntity
 from ..core.feature import (
     TEXT,
@@ -236,28 +230,12 @@ def triggers(
 ) -> list[dict[str, Any]]:
     """The HA triggers of a validated reaction; `entity_id` is the entity it watches.
 
-    With `to` and no `from`, a state coming back from no reading doesn't fire:
-    a plug reconnecting (unavailable → off) is no "turned off". An at or sun
-    reaction with retry also triggers at each try (retry_<k>).
+    An at or sun reaction with retry also triggers at each try (retry_<k>);
+    otherwise it's the vocabulary's state or numeric_state trigger.
     """
     if "at" in reaction or "sun" in reaction:
         return [_occurrence(reaction, timedelta(0)), *_retries(reaction)]
-    trigger: dict[str, Any]
-    if "to" in reaction:
-        trigger = {"trigger": "state", "entity_id": entity_id}
-        if "from" in reaction:
-            trigger["from"] = reaction["from"]
-        else:
-            trigger["not_from"] = [STATE_UNAVAILABLE, STATE_UNKNOWN]
-        trigger["to"] = reaction["to"]
-    else:
-        trigger = {"trigger": "numeric_state", "entity_id": entity_id}
-        for key in ("above", "below"):
-            if key in reaction:
-                trigger[key] = reaction[key]
-    if "for" in reaction:
-        trigger["for"] = period(reaction["for"])
-    return [trigger]
+    return [vocabulary.trigger(reaction, entity_id)]
 
 
 def conditions(reaction: Mapping[str, Any], script: str | None) -> list[dict[str, Any]]:
