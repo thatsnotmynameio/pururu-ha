@@ -41,6 +41,7 @@ from ..core.feature import (
     state_text,
 )
 from ..core.generated import Kind, period
+from ..core.roles import Items
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
 
 # The namespace of every reaction's automation ID
@@ -423,6 +424,5 @@ STATISTICS = Feature(
     build=build,
     example={"night": {"name": "Night", "at": "22:00"}},
     namespace=NAMESPACE,
-    per_item=PER_REACTION,
-    items=_items,
+    roles=(Items(PER_REACTION, _items),),
 )

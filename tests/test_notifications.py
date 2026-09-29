@@ -254,5 +254,5 @@ def test_the_page_lists_every_ready_made_notification(ha: HomeAssistant) -> None
     section = re.search(r"## Ready-made notifications\n(.*?)\n## ", page, re.DOTALL)
     assert section is not None, "no Ready-made notifications section"
     for name, feature in module("features").FEATURES.items():
-        for notification in feature.notifications:
+        for notification in module("core.feature").happenings_of(feature):
             assert f"`{name}: notifications: {notification}`" in section[1], notification

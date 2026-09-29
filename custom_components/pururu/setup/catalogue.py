@@ -6,6 +6,7 @@ from typing import Any
 from homeassistant.const import CONF_NAME, Platform
 
 from ..core.feature import Device, Feature, qualified
+from ..core.roles import Configured, Items
 from ..device_keys import DEVICE_KEYS
 from ..features import FEATURES
 
@@ -28,13 +29,15 @@ def entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
             (name, entity_key, platform)
             for entity_key, platform in feature.entity_keys.items()
         )
-        if (configured := feature.configured) is not None:
-            yield from ((name, entity_key, configured) for entity_key in device[name])
-        if (items := feature.items) is not None:
+        if (configured := feature.role(Configured)) is not None:
+            yield from (
+                (name, entity_key, configured.platform) for entity_key in device[name]
+            )
+        if (items := feature.role(Items)) is not None:
             yield from (
                 (name, item.key(suffix), platform)
-                for item in items(device[name])
-                for suffix, platform in feature.per_item.items()
+                for item in items.items(device[name])
+                for suffix, platform in items.keys.items()
             )
 
 

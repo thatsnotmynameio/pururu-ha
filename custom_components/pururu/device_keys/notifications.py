@@ -1,7 +1,7 @@
 """Ready-made notifications: what a device's features offer to tell, as automations pururu generates.
 
 A device's `notifications` enables them, by feature and name: each is a
-Happening of the feature (Feature.notifications), told once through HA's notify
+Happening of the feature (roles.Happenings), told once through HA's notify
 actions (messages.py). Each becomes an automation in
 pururu/automations/notifications.yaml, next to the reactions' in the folder
 configuration.yaml includes (generated.py).
@@ -19,7 +19,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ..const import CONF_MESSAGE, CONF_NOTIFICATIONS, CONF_NOTIFY, ENTITY_PREFIX
 from ..core import generated, messages
-from ..core.feature import TEXT, Device, Feature, Happening, qualified
+from ..core.feature import TEXT, Device, Feature, Happening, happenings_of, qualified
 from ..features import FEATURES
 from . import reactions
 
@@ -80,7 +80,7 @@ def enabled(
     switches) may have an item keyed `notifications`.
     """
     for key, feature in FEATURES.items():
-        if not feature.notifications or key not in device:
+        if not happenings_of(feature) or key not in device:
             continue
         for name, settings in device[key].get(CONF_NOTIFICATIONS, {}).items():
             yield key, feature, name, settings
@@ -132,7 +132,7 @@ def items(
             device = Device(
                 key=key, name=config[CONF_NAME], namespace=feature.namespace
             )
-            happening = feature.notifications[notification]
+            happening = happenings_of(feature)[notification]
             platform = feature.entity_keys[happening.watches]
             unique_id = automation_id(key, feature.namespace, notification)
             if device.object_id(happening.watches) not in created:

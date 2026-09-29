@@ -46,6 +46,7 @@ TAGS = {"first": {"name": "First"}, "second": {"name": "Second"}}
 def demo(ha: HomeAssistant) -> Iterator[None]:
     """Put `gauge` and `echo` in FEATURES for the test."""
     feature = module("core.feature")
+    roles = module("core.roles")
     entity = module("core.entity")
     features = module("features").FEATURES
 
@@ -85,7 +86,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             build=lambda hass, device, config, inputs: [Level(device, config["source"]),
                                                         Active(device)],
             example=GAUGE,
-            provides={"activity": "active"},
+            roles=(roles.Provides("activity", "active"),),
         ),
         "echo": feature.Feature(
             schema=vol.Schema({vol.Required("activity_from"): cv.slug}),
@@ -93,7 +94,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             entity_keys={"echo": Platform.SENSOR},
             build=lambda hass, device, config, inputs: [Echo(device, inputs["activity"])],
             example={"activity_from": "gauge"},
-            requires=("activity",),
+            roles=(roles.Requires("activity"),),
         ),
         "tags": feature.Feature(
             schema=vol.All(vol.Schema({cv.slug: vol.Schema({vol.Required("name"): cv.string})}),
@@ -103,7 +104,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             build=lambda hass, device, config, inputs: [Tag(device, key, tag["name"])
                                                         for key, tag in config.items()],
             example={"first": {"name": "First"}},
-            configured=Platform.SENSOR,
+            roles=(roles.Configured(Platform.SENSOR),),
         ),
         "watch": feature.Feature(
             schema=vol.Schema({vol.Required("of"): cv.slug}),
@@ -112,7 +113,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             build=lambda hass, device, config, inputs: [Seen(device, config["of"],
                                                              inputs[config["of"]])],
             example={"of": "gauge_level"},
-            refers=lambda config: [config["of"]],
+            roles=(roles.Refers(lambda config: [config["of"]]),),
         ),
     }
     features.update(added)
@@ -463,7 +464,7 @@ async def test_reload_sets_up_a_failed_entry_again(ha: HomeAssistant) -> None:
 
     features["gauge"] = feature.Feature(
         schema=original.schema, namespace=original.namespace, entity_keys=original.entity_keys,
-        build=flaky_build, example=original.example, provides=original.provides,
+        build=flaky_build, example=original.example, roles=original.roles,
     )
     assert await setup(ha, {"demo_widget": WIDGET})
     [entry] = ha.config_entries.async_entries(DOMAIN)

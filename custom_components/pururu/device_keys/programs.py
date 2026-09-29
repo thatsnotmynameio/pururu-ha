@@ -29,6 +29,7 @@ from ..const import CONF_SCRIPTS, ENTITY_PREFIX
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature, Item, qualified
 from ..core.generated import Kind, period
+from ..core.roles import Items
 from ..features.cycle import Cycle, cycle_signal, end_signal
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
@@ -220,6 +221,5 @@ STATISTICS = Feature(
     build=build,
     example={"clean": {"name": "Clean", "sequence": [{"delay": 1}]}},
     namespace=NAMESPACE,
-    per_item=PER_PROGRAM,
-    items=_items,
+    roles=(Items(PER_PROGRAM, _items),),
 )

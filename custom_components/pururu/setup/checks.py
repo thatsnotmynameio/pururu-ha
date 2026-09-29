@@ -20,7 +20,15 @@ from ..const import (
     CONF_REACTIONS,
     DEFAULT_ALERT_LIGHTS,
 )
-from ..core.feature import ALERTS_KEY, Device, preset_keys, qualified
+from ..core.feature import (
+    ALERTS_KEY,
+    Device,
+    Feature,
+    preset_keys,
+    presets_of,
+    qualified,
+)
+from ..core.roles import Actions, Configured, Provides, Refers, Requires
 from ..device_keys import notifications, programs, reactions
 from ..features import FEATURES
 from ..outputs import alert_lights
@@ -30,20 +38,28 @@ from .catalogue import builders, entity_keys, referable
 def capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
     """Refuse a <capability>_from that names no feature of the device providing it."""
     for name in names:
-        for capability in FEATURES[name].requires:
-            source = device[name][f"{capability}_from"]
-            if source not in names or capability not in FEATURES[source].provides:
-                raise vol.Invalid(
-                    f"{name}: {capability}_from must name a feature of this device "
-                    f"that provides {capability}"
-                )
+        if (requires := FEATURES[name].role(Requires)) is None:
+            continue
+        capability = requires.capability
+        source = device[name][f"{capability}_from"]
+        if source not in names or not _provides(FEATURES[source], capability):
+            raise vol.Invalid(
+                f"{name}: {capability}_from must name a feature of this device "
+                f"that provides {capability}"
+            )
+
+
+def _provides(feature: Feature, capability: str) -> bool:
+    return (provides := feature.role(Provides)) is not None and (
+        provides.capability == capability
+    )
 
 
 def real_entities_distinct(device: dict[str, Any], names: list[str]) -> None:
     """Refuse a real entity in two configured features: a relay is a switch or a light."""
     owners: dict[str, str] = {}  # real entity -> the configured feature that has it
     for name in names:
-        if FEATURES[name].configured is None:
+        if FEATURES[name].role(Configured) is None:
             continue
         for item in device[name].values():
             # A configured key need not stand for a real entity (an alert)
@@ -61,10 +77,9 @@ def references_resolved(device: dict[str, Any], names: list[str]) -> None:
         for name, entity_key, _ in entity_keys(device)
     }
     for name in names:
-        feature = FEATURES[name]
-        if feature.refers is None:
+        if (refers := FEATURES[name].role(Refers)) is None:
             continue
-        for key in feature.refers(device[name]):
+        for key in refers.refers(device[name]):
             if owners.get(key, name) == name:
                 raise vol.Invalid(
                     f"{name}: {key} is not an entity key of another feature "
@@ -74,15 +89,15 @@ def references_resolved(device: dict[str, Any], names: list[str]) -> None:
 
 def no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None:
     """Refuse a hand-written alert whose `when` is another feature's ready-made alert."""
-    alerts_feature = FEATURES[CONF_ALERTS]
-    if CONF_ALERTS not in names or alerts_feature.refers is None:
+    refers = FEATURES[CONF_ALERTS].role(Refers)
+    if CONF_ALERTS not in names or refers is None:
         return
     ready_made = {
         qualified(FEATURES[name].namespace, alert)
         for name in names
-        for alert in preset_keys(FEATURES[name].alerts)
+        for alert in preset_keys(presets_of(FEATURES[name]))
     }
-    for key in alerts_feature.refers(device[CONF_ALERTS]):
+    for key in refers.refers(device[CONF_ALERTS]):
         if key in ready_made:
             raise vol.Invalid(
                 f"{CONF_ALERTS}: {key} is an alert: an alert can't watch another"
@@ -138,7 +153,8 @@ def programs_on_this_device(device: dict[str, Any]) -> None:
                     f"programs: {key} is not an entity key of another feature "
                     "of this device"
                 )
-            if action not in builders()[owners[key]].actions:
+            actions = builders()[owners[key]].role(Actions)
+            if actions is None or action not in actions.actions:
                 raise vol.Invalid(f"programs: {key} does not take {action}")
 
 
@@ -305,7 +321,7 @@ def _alert_light_groups(device: dict[str, Any]) -> Iterator[tuple[str, str]]:
         if (group := alert.get(CONF_LIGHTS)) is not None:
             yield f"{CONF_ALERTS}: {alert_key}", group
     for name, feature in FEATURES.items():
-        if not feature.alerts or name not in device:
+        if not presets_of(feature) or name not in device:
             continue
         for preset, settings in device[name].get(ALERTS_KEY, {}).items():
             if (group := settings.get(CONF_LIGHTS)) is not None:

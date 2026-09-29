@@ -23,7 +23,7 @@ from ..const import (
     DOMAIN,
 )
 from ..core import messages
-from ..core.feature import Feature
+from ..core.feature import Feature, happenings_of
 from ..device_keys import notifications, programs, reactions
 from ..features import FEATURES, presets
 from ..outputs import alert_lights, events, places
@@ -83,15 +83,15 @@ def _feature_block(feature: Feature, key: str, value: Any) -> Any:
     switches) may have an item keyed `notifications`.
     """
     if (
-        not feature.notifications
+        not (happenings := happenings_of(feature))
         or not isinstance(value, dict)
         or CONF_NOTIFICATIONS not in value
     ):
         return presets.validate(feature, value, key)
     rest = {each: block for each, block in value.items() if each != CONF_NOTIFICATIONS}
-    enabled = vol.Schema(
-        {CONF_NOTIFICATIONS: notifications.schema(key, feature.notifications)}
-    )({CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]})
+    enabled = vol.Schema({CONF_NOTIFICATIONS: notifications.schema(key, happenings)})(
+        {CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]}
+    )
     return {**presets.validate(feature, rest, key), **enabled}
 
 

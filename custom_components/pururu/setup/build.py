@@ -11,7 +11,8 @@ from homeassistant.helpers.entity import Entity
 
 from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
-from ..core.feature import Device
+from ..core.feature import Device, presets_of
+from ..core.roles import Provides, Refers, Requires
 from ..core.texts import Texts
 from ..device_keys import DEVICE_KEYS
 from ..features import FEATURES, presets
@@ -47,7 +48,7 @@ def build(
         # reaction may be keyed `alerts`
         ready_made = (
             presets.build(hass, device, feature, config[name], texts)
-            if feature.alerts
+            if presets_of(feature)
             else []
         )
         for entity in (*feature.build(hass, device, config[name], inputs), *ready_made):
@@ -82,15 +83,19 @@ def _inputs(
     feature = FEATURES[name]
     inputs: dict[str, str] = {}
     required: set[str] = set()
-    for capability in feature.requires:
+    if (requires := feature.role(Requires)) is not None:
+        capability = requires.capability
         source = FEATURES[config[name][f"{capability}_from"]]
         provider = Device(key=key, name=config[CONF_NAME], namespace=source.namespace)
-        entity_key = source.provides[capability]
+        provides = source.role(Provides)
+        assert provides is not None  # the schema checked it (capabilities_provided)
+        entity_key = provides.key
         inputs[capability] = provider.current_entity_id(
             hass, source.entity_keys[entity_key], entity_key
         )
         required.add(provider.object_id(entity_key))
-    for reference in feature.refers(config[name]) if feature.refers else ():
+    refers = feature.role(Refers)
+    for reference in refers.refers(config[name]) if refers else ():
         owner, entity_key, platform = referable[reference]
         inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
     return inputs, required

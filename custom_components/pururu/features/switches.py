@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant
 
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature
+from ..core.roles import Actions, Configured
 from . import standing
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,6 +70,5 @@ SWITCHES = Feature(
     build=build,
     example={"pump": {"entity": "switch.demo_pump", "name": "Pump"}},
     namespace="switch",
-    configured=Platform.SWITCH,
-    actions=("turn_on", "turn_off", "toggle"),
+    roles=(Configured(Platform.SWITCH), Actions(("turn_on", "turn_off", "toggle"))),
 )
