@@ -34,7 +34,7 @@ flowchart TD
 
 ### `async_setup_entry`
 
-It does all the work, in this order:
+`__init__.py` holds only Home Assistant's entry points; each calls `lifecycle.py`. `async_setup_entry` does all the work, in this order. Steps 1 to 3 are the prelude: a failure there fails the setup. From the events in step 3 on, each output is a **step** of `lifecycle.STEPS`, an `async_step(hass, entry, built)` in its own module that reads a frozen `runtime.Built` (the house, the common texts, the created entities by platform and by device, their unique IDs) and returns the entity IDs whose disabling rebuilds the entry. Each step runs in `try/except`: one that raises is logged as `Step <name> failed` and the others still run, since a failure after the platforms would leave the entry stuck until a restart.
 
 1. **Floors and areas** (`places.async_sync`). They come first because devices are placed in them. The IDs it now manages are saved in `entry.data`, as `{"floors": [...], "areas": [...], "automations": [...], "scripts": [...]}`, where `automations` and `scripts` hold the IDs of the reactions' automations and the programs' scripts (step 6).
 2. **Build every device's entities.** For each device, each feature's `build()` returns entities, and then its enabled ready-made alerts (`features/presets.py`: an `Alert` for a `Condition`, an `ElapsedAlert` for an `Elapsed`, their default texts read once per setup in HA's language). `build.creatable` drops the ones whose ID is taken, and then everything that follows them (see [Entity IDs are the identity](#entity-ids-are-the-identity)).
@@ -46,7 +46,7 @@ It does all the work, in this order:
 8. **Lend lights to the alerts** (`alert_lights.py`): the created alerts with `lights` and the created pururu lights of their groups (`config.alerts.lights.groups`, resolved to unique IDs) go to a manager that starts once HA has started. It keeps, per light, only what the alerts can't tell: whether it is in `resolved` (its `for` timer) and its `repeat` timer; the level is computed from the alerts' states each time. It calls only `light.turn_on`/`turn_off` on the pururu light, each call with a new `Context` whose id the light remembers (the last few), so a state change carrying one is its own. A light is a `Borrowable` (`features/lights.py`): it shows `alert`/`alerts` and restores `alert` (extra restore data: HA saves no attributes of an unavailable entity), which is how a light borrowed before a restart or reload is handed back. A light without a reading is never called; a change during `resolved` hands it back only with a `user_id` or `parent_id`. Disabling a followed light or alert reloads the entry (`_rebuild_for`).
 9. **Show the dashboard.** It comes last because it lists everything above.
 
-Finally it listens for entity registry updates. When one of the entry's entities gets a new entity ID, it schedules a reload of the entry, so that everything that follows that entity picks up the new ID.
+Finally it listens for entity registry updates (`listener.py`). When one of the entry's entities, or a generated item the entry tracks in `entry.data` (a script, a reaction's or a notification's automation), gets a new entity ID, it schedules a reload of the entry, so that everything that follows it picks up the new ID.
 
 ## Features
 
@@ -98,7 +98,7 @@ A taken ID is logged as an error, and that entity isn't created. `build.creatabl
 A user may rename an entity ID in the UI. Two things keep pururu consistent:
 
 - `Device.current_entity_id` looks up the registry by unique ID. Every entity that reads another entity of the same device, such as `RuntimeTotal` reading `running` or a meter reading its total, is built with the current ID.
-- The registry listener reloads the entry when one of its entities is renamed, or a program's script that a reaction starts.
+- The registry listener reloads the entry when one of its entities is renamed, or any generated item it tracks: one rule for scripts, reactions' and notifications' automations.
 
 The same listener reloads the entry, once for a burst, when an entity a generated script acts on is disabled, so the program is held out of the file; no other disable or enable reloads it (Home Assistant itself reloads the entry when one of its entities is enabled again).
 

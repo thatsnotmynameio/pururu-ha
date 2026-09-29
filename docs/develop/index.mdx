@@ -40,7 +40,9 @@ python3 release.py check                        # the manifest's version is semv
 
 ```
 custom_components/pururu/     the integration
-  __init__.py                 HA's entry points: set-up, reload, unload, remove
+  __init__.py                 HA's entry points only, each calling lifecycle.py
+  lifecycle.py                applying the YAML, the set-up's prelude and STEPS, unload, remove
+  listener.py                 the registry listener: renames and disabled targets
   runtime.py                  PururuConfigEntry: what the entry carries
   schema.py                   CONFIG_SCHEMA: each device, then the checks over the whole house
   checks.py                   the rules beyond each block's own schema
