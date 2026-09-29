@@ -70,6 +70,11 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "device washer: alerts: x: porch is not a group of config.alerts.lights.groups",
         id="an alert's missing group"),
     pytest.param(
+        {"devices": {"washer": washer(appliance={**APPLIANCE, "alerts": {"offline": {"lights": True}}})}},
+        ["devices", "washer", "appliance", "alerts", "offline"],
+        "device washer: appliance: alerts: offline: there is no default group in config.alerts.lights.groups",
+        id="a ready-made alert's missing default group"),
+    pytest.param(
         {"devices": {"pool": {"name": "Pool", "switches": PUMP}},
          "config": {"alerts": {"lights": {"groups": {"porch": {"garagem": ["x"]}}}}}},
         ["config", "alerts", "lights", "groups", "porch"],
