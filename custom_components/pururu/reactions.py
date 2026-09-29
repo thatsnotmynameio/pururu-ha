@@ -4,11 +4,13 @@ A reaction is one source (an entity of a device, a real entity, a time of day,
 the sun) and, for an entity, a condition. Each becomes an automation in
 pururu/automations/reactions.yaml, whose folder configuration.yaml includes
 (generated.py). It starts one of its device's programs (then), or does nothing:
-it fires, and its trace shows when and why. Each reaction's triggers are
-counted: sensors of its device (STATISTICS).
+it fires, and its trace shows when and why. An at or sun reaction can retry:
+its automation triggers again, each try skipped once the occurrence ran. Each
+reaction's triggers are counted: sensors of its device (STATISTICS).
 """
 
 from collections.abc import Mapping
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, override
 
@@ -43,6 +45,41 @@ PER_REACTION: dict[str, Platform] = {
 }
 # Keys that only a reaction on an entity's state takes
 STATE_KEYS = ("to", "from", "above", "below", "for")
+# How late a reaction's last try may be, after its occurrence: a chain never
+# reaches the next day's occurrence, and a sun event drifts a few minutes a day
+RETRY_LIMIT = timedelta(hours=12)
+# Added to a try's window: the occurrence's run is recorded a moment after it
+SLACK = timedelta(minutes=1)
+# Whether a try may run: the occurrence always, a try without a run in its
+# window. as_timestamp takes last_triggered as HA restores it (a datetime) and
+# as none (never run: 0); as_datetime refuses a datetime
+RAN = "{{{{ since is not defined or as_timestamp({last}, 0) < now().timestamp() - since }}}}"
+
+
+def _whole_seconds(value: timedelta) -> timedelta:
+    """A try's time is HH:MM:SS: HA's time trigger refuses a fraction of a second."""
+    if value.microseconds:
+        raise vol.Invalid("a reaction's retry every must be whole seconds")
+    return value
+
+
+def _whole_number(value: Any) -> int:
+    """An int as YAML writes it: 2.9 isn't truncated to 2, true isn't 1."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise vol.Invalid("a reaction's retry times must be a whole number")
+    return value
+
+
+RETRY = vol.Schema(
+    {
+        vol.Required("times"): vol.All(_whole_number, vol.Range(min=1)),
+        vol.Required("every"): vol.All(
+            cv.positive_time_period,
+            vol.Range(min=timedelta(minutes=1)),
+            _whole_seconds,
+        ),
+    }
+)
 KIND = Kind(
     domain="automation",
     folder="pururu/automations",
@@ -56,6 +93,17 @@ KIND = Kind(
 )
 
 
+def _retry_consistent(reaction: dict[str, Any], source: str) -> None:
+    """A retry only on a time or the sun, its tries within RETRY_LIMIT."""
+    if "retry" not in reaction:
+        return
+    if source not in ("at", "sun"):
+        raise vol.Invalid("a reaction's retry goes with at or sun")
+    retry = reaction["retry"]
+    if retry["times"] * retry["every"] > RETRY_LIMIT:
+        raise vol.Invalid("a reaction's retries must end within 12 hours")
+
+
 def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
     """One source, and the keys that go with it."""
     sources = [key for key in SOURCES if key in reaction]
@@ -65,6 +113,7 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
         raise vol.Invalid("a reaction's device goes with when")
     if "offset" in reaction and "sun" not in reaction:
         raise vol.Invalid("a reaction's offset goes with sun")
+    _retry_consistent(reaction, sources[0])
     if sources[0] in ("at", "sun"):
         if any(key in reaction for key in STATE_KEYS):
             raise vol.Invalid(
@@ -102,6 +151,8 @@ REACTION = vol.All(
             vol.Optional("at"): cv.time,
             vol.Optional("sun"): vol.In(("sunrise", "sunset")),
             vol.Optional("offset"): cv.time_period,
+            # More tries of an at or sun occurrence, each skipped once it ran
+            vol.Optional("retry"): RETRY,
             # A program of this device, started when the reaction fires
             vol.Optional("then"): cv.slug,
             vol.Optional("statistics", default={}): vol.Schema(
@@ -120,21 +171,43 @@ def automation_id(device_key: str, reaction_key: str) -> str:
     return f"{ENTITY_PREFIX}_{device_key}_{qualified(NAMESPACE, reaction_key)}"
 
 
+def _occurrence(reaction: Mapping[str, Any], later: timedelta) -> dict[str, Any]:
+    """The trigger of an at or sun reaction, `later` after its time."""
+    if "at" in reaction:
+        at = datetime.combine(date.min, reaction["at"]) + later
+        return {"trigger": "time", "at": at.time().isoformat()}
+    sun: dict[str, Any] = {"trigger": "sun", "event": reaction["sun"]}
+    if "offset" in reaction or later:
+        sun["offset"] = period(reaction.get("offset", timedelta(0)) + later)
+    return sun
+
+
+def _retries(reaction: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Each try k, k times `every` after the occurrence, with its window in seconds."""
+    if "retry" not in reaction:
+        return []
+    every: timedelta = reaction["retry"]["every"]
+    return [
+        {
+            **_occurrence(reaction, k * every),
+            "id": f"retry_{k}",
+            "variables": {"since": int((k * every + SLACK).total_seconds())},
+        }
+        for k in range(1, reaction["retry"]["times"] + 1)
+    ]
+
+
 def triggers(
     reaction: Mapping[str, Any], entity_id: str | None
 ) -> list[dict[str, Any]]:
     """The HA triggers of a validated reaction; `entity_id` is the entity it watches.
 
     With `to` and no `from`, a state coming back from no reading doesn't fire:
-    a plug reconnecting (unavailable → off) is no "turned off".
+    a plug reconnecting (unavailable → off) is no "turned off". An at or sun
+    reaction with retry also triggers at each try (retry_<k>).
     """
-    if "at" in reaction:
-        return [{"trigger": "time", "at": reaction["at"].isoformat()}]
-    if "sun" in reaction:
-        sun: dict[str, Any] = {"trigger": "sun", "event": reaction["sun"]}
-        if "offset" in reaction:
-            sun["offset"] = period(reaction["offset"])
-        return [sun]
+    if "at" in reaction or "sun" in reaction:
+        return [_occurrence(reaction, timedelta(0)), *_retries(reaction)]
     trigger: dict[str, Any]
     if "to" in reaction:
         trigger = {"trigger": "state", "entity_id": entity_id}
@@ -151,6 +224,24 @@ def triggers(
     if "for" in reaction:
         trigger["for"] = period(reaction["for"])
     return [trigger]
+
+
+def conditions(reaction: Mapping[str, Any], script: str | None) -> list[dict[str, Any]]:
+    """With retry, a try runs only if nothing ran since the occurrence; none without.
+
+    What ran: the program started (`script`, its current entity ID), from here
+    or anywhere; without a program, the automation fired (`this`, its state
+    before this run). HA restores both at a restart. A condition, not an
+    action: a skipped try isn't a trigger.
+    """
+    if "retry" not in reaction:
+        return []
+    last = (
+        "this.attributes.last_triggered"
+        if script is None
+        else f"state_attr('{script}', 'last_triggered')"
+    )
+    return [{"condition": "template", "value_template": RAN.format(last=last)}]
 
 
 def actions(script: str | None) -> list[dict[str, Any]]:
@@ -178,13 +269,16 @@ def automation(
     script: str | None = None,
 ) -> dict[str, Any]:
     """The automation of a reaction; `script` is the current entity ID of its program's."""
-    return {
+    written: dict[str, Any] = {
         "id": automation_id(device_key, reaction_key),
         "alias": f"{device_name} {reaction[CONF_NAME]}",
         "description": f"pururu: {device_key}, {reaction_key}",
         "triggers": triggers(reaction, entity_id),
-        "actions": actions(script),
     }
+    if checks := conditions(reaction, script):
+        written["conditions"] = checks
+    written["actions"] = actions(script)
+    return written
 
 
 class TriggersTotal(PururuEntity, RestoreSensor):
