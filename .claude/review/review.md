@@ -201,6 +201,9 @@ Then query the review threads again (Step 1) to get each new thread's URL.
 - The Findings list is every finding still open: the new ones, then the outstanding earlier
   ones. "No issues found." when there are none.
 - "N more findings were not posted (at most 6 per review)." after the list when you cut some.
+- With two or more findings open, a collapsed `<details><summary>Prompt to fix all with AI</summary>`
+  right after the list: one self-contained prompt covering every open finding (file, what's
+  wrong, what to change, how to test each), in a `markdown` fence.
 - Confidence and risk per `rules.md`, capped by all the findings still open.
 - Nothing new (Step 2): the paragraph and the files table stay as they were; the Findings list,
   the confidence, the footer and the state are brought up to date.
