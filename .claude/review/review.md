@@ -17,10 +17,12 @@ are a bad one.
   Use that sha everywhere below (never `HEAD`'s name in the state or links). `origin/{base}` is
   the base branch. History is complete.
 - You have read-only `git`, `gh pr view`, `gh pr diff`, `gh pr comment`, `gh api`, the
-  inline-comment tool, and subagents. Never edit files, push, approve, merge, or change the pull
+  inline-comment tool, subagents, and `Write` only inside `/tmp/pururu-review/` (for the
+  summary's body). Never edit the repository's files, push, approve, merge, or change the pull
   request itself.
-- Run one command per call, without `$(...)`: when a command needs another's output, run the
-  first, then paste its result. Pass long text on standard input with a quoted heredoc (below).
+- Run one command per call, without `$(...)` and without heredocs: when a command needs another's
+  output, run the first, then paste its result. Long text goes in a file under
+  `/tmp/pururu-review/`, passed to `gh` by its path (below).
 
 ## Step 1: Find the earlier review
 
@@ -188,19 +190,16 @@ Then query the review threads again (Step 1) to get each new thread's URL.
 - The state is one line of JSON. Inside a string, write the `>` of any `-->` as the JSON escape
   backslash, `u`, `003e`, so the HTML comment doesn't end early.
 
-Post it on standard input with a quoted heredoc, which keeps quotes, backticks and `$` as they are.
-When there is no summary yet:
+Write the whole summary with `Write` to `/tmp/pururu-review/summary.md`, which keeps quotes,
+backticks and `$` as they are. Then, when there is no summary yet:
 
-    gh pr comment {pr} --repo {repo} --body-file - <<'EOF'
-    ...the summary...
-    EOF
+    gh pr comment {pr} --repo {repo} --body-file /tmp/pururu-review/summary.md
 
 Otherwise edit it by its ID:
 
-    gh api -X PATCH repos/{repo}/issues/comments/{id} -F body=@- <<'EOF'
-    ...the summary...
-    EOF
+    gh api -X PATCH repos/{repo}/issues/comments/{id} -F body=@/tmp/pururu-review/summary.md
 
-Never use `--edit-last`: the last `claude[bot]` comment may be an `@claude` answer.
+Never pass the body inline or through a heredoc (the command is refused), and never use
+`--edit-last`: the last `claude[bot]` comment may be an `@claude` answer.
 
 End with one line: the mode, the number of new findings, the threads resolved, and the confidence.

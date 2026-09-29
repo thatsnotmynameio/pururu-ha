@@ -16,7 +16,7 @@ import voluptuous as vol
 
 from homeassistant.components.sensor.const import ATTR_STATE_CLASS
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_RESTORED
+from homeassistant.const import ATTR_RESTORED, CONF_NAME
 from homeassistant.core import (
     Event,
     EventStateChangedData,
@@ -25,12 +25,13 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.json import json_bytes
 from homeassistant.util.json import json_loads_object
 from homeassistant.util.ulid import ulid_now
 
-from .const import DOMAIN
+from .const import DOMAIN, ENTITY_PREFIX
 
 CONF_EVENTS: Final = "events"
 STATE_CHANGED: Final = "state_changed"
@@ -131,3 +132,22 @@ def _data(
             if (state := hass.states.get(entity_id)) is not None
         },
     }
+
+
+def watched(
+    devices: dict[str, dict[str, Any]], created_by: Mapping[str, list[Entity]]
+) -> list[Watched]:
+    """Each device with its created entities: current entity ID → key, its unique ID after pururu_<device>_."""
+    return [
+        Watched(
+            key=key,
+            name=devices[key][CONF_NAME],
+            entities={
+                entity.entity_id: str(entity.unique_id).removeprefix(
+                    f"{ENTITY_PREFIX}_{key}_"
+                )
+                for entity in created
+            },
+        )
+        for key, created in created_by.items()
+    ]

@@ -40,7 +40,16 @@ python3 release.py check                        # the manifest's version is semv
 
 ```
 custom_components/pururu/     the integration
-  __init__.py                 CONFIG_SCHEMA, set-up, reload, building devices, removing stale ones
+  __init__.py                 HA's entry points: set-up, reload, unload, remove
+  runtime.py                  PururuConfigEntry: what the entry carries
+  schema.py                   CONFIG_SCHEMA: each device, then the checks over the whole house
+  checks.py                   the rules beyond each block's own schema
+  catalogue.py                builders(): every builder of a device, and its entity keys
+  build.py                    each device's entities, and which can be created
+  devices.py                  each device in its area, nothing stale left
+  generate.py                 the scripts and automations the entry generates
+  vocabulary.py               Condition: what makes a watched state hold
+  texts.py                    the translations' common texts
   const.py                    names shared by the modules
   config_flow.py              the import-only flow that creates the single entry
   feature.py                  Device and Feature: the contract every feature fulfils
@@ -69,7 +78,7 @@ ruff.toml, mypy.ini           Home Assistant core's settings
 ## Code style
 
 - ruff and mypy run only on `custom_components/pururu`, with core's settings, and mypy is strict. Tests aren't linted.
-- Match the surrounding code: short docstrings that say *what* and *why*, comments only where the code can't speak for itself, and names that read as prose (`_creatable`, `current_entity_id`).
+- Match the surrounding code: short docstrings that say *what* and *why*, comments only where the code can't speak for itself, and names that read as prose (`creatable`, `current_entity_id`).
 - A SonarQube Cloud finding that conflicts with a signature or convention Home Assistant requires is suppressed in `sonar-project.properties`, with a comment giving the reason, never in the code. See [Releases and CI](/develop/releases#sonarqube).
 
 ## Where to go next

@@ -12,12 +12,12 @@ import voluptuous as vol
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.translation import async_get_translations
 
-from ..const import DOMAIN
 from ..entity import PururuEntity
-from ..feature import ALERTS_KEY, Condition, Device, Feature, Preset
-from .alerts import NOTIFY, PRIORITIES, Alert, lights_group
+from ..feature import ALERTS_KEY, PRIORITIES, Device, Feature, Preset
+from ..texts import Texts
+from ..vocabulary import Condition
+from .alerts import NOTIFY, Alert, lights_group
 from .elapsed import ElapsedAlert
 
 
@@ -82,23 +82,6 @@ def validate(feature: Feature, value: Any, key: str = "") -> Any:
         {ALERTS_KEY: value[ALERTS_KEY]}
     )
     return {**feature.schema(block), **enabled}
-
-
-# Default texts, by their key in the translations' common block
-type Texts = Mapping[str, str]
-FALLBACK_LANGUAGE = "en"
-
-
-async def async_texts(hass: HomeAssistant) -> Texts:
-    """The common texts in HA's language; English for what it lacks."""
-    prefix = f"component.{DOMAIN}.common."
-    english = await async_get_translations(hass, FALLBACK_LANGUAGE, "common", [DOMAIN])
-    local = await async_get_translations(hass, hass.config.language, "common", [DOMAIN])
-    return {
-        key.removeprefix(prefix): local.get(key) or text
-        for key, text in english.items()
-        if key.startswith(prefix)
-    }
 
 
 def _notify(
