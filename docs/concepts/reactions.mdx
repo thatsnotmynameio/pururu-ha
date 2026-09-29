@@ -220,6 +220,7 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
 | Every try missed | Nothing more until tomorrow |
 
 - **A restart** doesn't lose it: Home Assistant keeps `last_triggered` of automations and scripts. It saves them every 15 minutes and when it stops cleanly, though: if it stopped abruptly (a crash, a power cut) less than 15 minutes after a run, that run can be forgotten, and a try runs it again.
+- **A minute of margin:** a try looks back to a minute before the occurrence, so that a try firing a few seconds late still sees the occurrence's own run. A run in that minute (the program started by hand at 12:59:30) counts as the occurrence's, and the tries are skipped: running twice is the worse mistake.
 - **A new reaction** has never run: added at 20:30 with `at: "19:00"` and hourly tries, it runs at the 21:00 try, the same day. So does one whose program has never run.
 - **Past midnight** is fine: `at: "23:00"` with three tries every hour tries at 00:00, 01:00 and 02:00.
 - **The sun:** a try is the same event with its offset moved: sunset, then sunset + 1 h, and so on.

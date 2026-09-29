@@ -63,9 +63,16 @@ def _whole_seconds(value: timedelta) -> timedelta:
     return value
 
 
+def _whole_number(value: Any) -> int:
+    """An int as YAML writes it: 2.9 isn't truncated to 2, true isn't 1."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise vol.Invalid("a reaction's retry times must be a whole number")
+    return value
+
+
 RETRY = vol.Schema(
     {
-        vol.Required("times"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Required("times"): vol.All(_whole_number, vol.Range(min=1)),
         vol.Required("every"): vol.All(
             cv.positive_time_period,
             vol.Range(min=timedelta(minutes=1)),

@@ -132,6 +132,10 @@ PATH = "'pururu->devices->lights->reactions->it"
                  id="unknown key in retry"),
     pytest.param({"name": "X", "at": "13:00", "retry": {"times": 1, "every": {"seconds": 90.5}}},
                  "a reaction's retry every must be whole seconds", id="retry every fractional"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 2.9, "every": {"hours": 1}}},
+                 "a reaction's retry times must be a whole number", id="retry times fractional"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": True, "every": {"hours": 1}}},
+                 "a reaction's retry times must be a whole number", id="retry times a boolean"),
 ])
 async def test_invalid_reaction_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
                                            reaction: dict[str, Any], reason: str) -> None:
@@ -795,12 +799,19 @@ async def switch(ha: HomeAssistant, entity_id: str, on: bool) -> None:
                                  {"entity_id": entity_id}, blocking=True)
 
 
-async def restarted(ha: HomeAssistant, last_triggered: str) -> None:
-    """HA's automations set up again, the reaction's restored with `last_triggered`."""
-    mock_restore_cache(ha, [State(automation("soon"), "on",
-                                  {"last_triggered": last_triggered})])
-    with patch("homeassistant.config.load_yaml_config_file",
-               side_effect=lambda *_args, **_kwargs: {"automation pururu": generated(ha)}):
+async def restarted(ha: HomeAssistant, *, scripts: bool = False) -> None:
+    """HA's automations (and scripts) set up after pururu, from the restore cache seeded first.
+
+    Seeded before pururu's setup: seeding it later replaces the data its
+    entities registered in, and their removal at teardown fails.
+    """
+    def included(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"automation pururu": generated(ha), "script pururu": generated_scripts(ha)}
+
+    with patch("homeassistant.config.load_yaml_config_file", side_effect=included):
+        if scripts:
+            assert await async_setup_component(ha, "script",
+                                               {"script pururu": generated_scripts(ha)})
         assert await async_setup_component(ha, "automation",
                                            {"automation pururu": generated(ha)})
     await ha.async_block_till_done()
@@ -847,11 +858,17 @@ async def test_a_run_by_hand_skips_the_tries(ha: HomeAssistant, freezer: Any,
     assert runs(triggered, automation("soon")) == 1
 
 
+def ran(minutes: float) -> dict[str, str]:
+    """Restored attributes: last triggered `minutes` after now (the test's start, 10:00)."""
+    return {"last_triggered": (dt_util.utcnow() + timedelta(minutes=minutes)).isoformat()}
+
+
 async def test_a_restart_keeps_the_occurrences_run(ha: HomeAssistant, freezer: Any) -> None:
     """HA restores last_triggered: after a restart, a try still sees the occurrence's run."""
+    mock_restore_cache(ha, [State(automation("soon"), "on", ran(5))])
     assert await setup(ha, devices(soon=SOON))
     await tick(ha, freezer, 360)    # 10:06: the occurrence ran at 10:05, then HA restarted
-    await restarted(ha, (dt_util.utcnow() - timedelta(minutes=1)).isoformat())
+    await restarted(ha)
     triggered = capture(ha, "automation_triggered")
     await tick(ha, freezer, 540)    # 10:15
     await tick(ha, freezer, 600)    # 10:25
@@ -860,13 +877,29 @@ async def test_a_restart_keeps_the_occurrences_run(ha: HomeAssistant, freezer: A
 
 async def test_a_restart_without_a_run_tries_again(ha: HomeAssistant, freezer: Any) -> None:
     """The counterpart: restored with no run since 10:05, the first try runs."""
+    mock_restore_cache(ha, [State(automation("soon"), "on", ran(-24 * 60))])
     assert await setup(ha, devices(soon=SOON))
     await tick(ha, freezer, 360)    # 10:06: HA was down at 10:05
-    await restarted(ha, (dt_util.utcnow() - timedelta(days=1)).isoformat())
+    await restarted(ha)
     triggered = capture(ha, "automation_triggered")
     await tick(ha, freezer, 540)    # 10:15
     await tick(ha, freezer, 600)    # 10:25
     assert runs(triggered, automation("soon")) == 1
+
+
+async def test_a_restart_keeps_the_programs_start(ha: HomeAssistant, freezer: Any) -> None:
+    """With then, the try reads the script's restored last_triggered, not the automation's."""
+    await fake(ha, REAL_PUMP, "off")
+    mock_restore_cache(ha, [State(CLEAN, "off", ran(5))])
+    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+                                       "retry": {"times": 2, "every": {"minutes": 10}}}))
+    await tick(ha, freezer, 360)    # 10:06: the program started at 10:05, then HA restarted
+    await restarted(ha, scripts=True)
+    triggered = capture(ha, "automation_triggered")
+    started = capture(ha, "script_started")
+    await tick(ha, freezer, 540)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert (len(triggered), len(started)) == (0, 0)
 
 
 async def test_a_busy_program_is_started_by_a_try(ha: HomeAssistant, freezer: Any,
