@@ -47,6 +47,7 @@ from . import (
     events,
     generated,
     messages,
+    notifications,
     places,
     programs,
     reactions,
@@ -60,6 +61,7 @@ from .const import (
     CONF_FLOORS,
     CONF_LIGHTS,
     CONF_MESSAGE,
+    CONF_NOTIFICATIONS,
     CONF_NOTIFY,
     CONF_PROGRAMS,
     CONF_REACTIONS,
@@ -93,13 +95,15 @@ def _device(value: Any) -> dict[str, Any]:
     Every <capability>_from names a feature of this device that provides it,
     every entity key a feature refers to is another feature's, a program's step
     acts on another feature's entity key that takes the action, and a real
-    entity is in one configured feature of the device at most.
+    entity is in one configured feature of the device at most, and a
+    ready-made notification is of one of its features.
     """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
         vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
         vol.Optional(CONF_PROGRAMS): programs.SCHEMA,
+        vol.Optional(CONF_NOTIFICATIONS): notifications.validate,
         **{
             vol.Optional(name): partial(presets.validate, feature)
             for name, feature in FEATURES.items()
@@ -117,6 +121,7 @@ def _device(value: Any) -> dict[str, Any]:
     _real_entities_distinct(device, names)
     _reactions_on_this_device(device)
     _programs_on_this_device(device)
+    _notifications_on_this_device(device)
     return device
 
 
@@ -235,6 +240,13 @@ def _programs_on_this_device(device: dict[str, Any]) -> None:
                 raise vol.Invalid(f"programs: {key} does not take {action}")
 
 
+def _notifications_on_this_device(device: dict[str, Any]) -> None:
+    """Refuse a ready-made notification of a feature the device doesn't have."""
+    for key in device.get(CONF_NOTIFICATIONS, {}):
+        if key not in device:
+            raise vol.Invalid(f"notifications: {key}: the device has no {key}")
+
+
 def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
     """(builder, entity key, platform) of every entity the device's features and device keys can create."""
     for name, feature in BUILDERS.items():
@@ -285,27 +297,44 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _generated_ids(key: str, device: dict[str, Any]) -> Iterator[tuple[str, str, str]]:
+    """(domain, ID, what) of every automation and script the device generates."""
+    for reaction_key in device.get(CONF_REACTIONS, {}):
+        yield (
+            reactions.KIND.domain,
+            reactions.automation_id(key, reaction_key),
+            "reaction",
+        )
+    for name, enabled in device.get(CONF_NOTIFICATIONS, {}).items():
+        namespace = FEATURES[name].namespace
+        for notification in enabled:
+            yield (
+                notifications.KIND.domain,
+                notifications.automation_id(key, namespace, notification),
+                "notification",
+            )
+    for program in device.get(CONF_PROGRAMS, {}):
+        yield programs.KIND.domain, programs.script_id(key, program), "program"
+
+
 def _generated_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
-    """Refuse two reactions, or two programs, whose automations or scripts would share an ID.
+    """Refuse two automations, or two scripts, that would share an ID.
 
     Device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b`
-    with the reaction `c` would both have pururu_lights_reaction_b_reaction_c.
+    with the reaction `c` would both have pururu_lights_reaction_b_reaction_c; a
+    reaction's and a notification's may meet the same way.
     """
-    blocks = (
-        (CONF_REACTIONS, reactions.KIND, reactions.automation_id, "reaction"),
-        (CONF_PROGRAMS, programs.KIND, programs.script_id, "program"),
-    )
-    for block, kind, id_of, what in blocks:
-        owners: dict[str, str] = {}  # ID -> the device that has it
-        for key, device in config[CONF_DEVICES].items():
-            for item_key in device.get(block, {}):
-                unique_id = id_of(key, item_key)
-                if unique_id in owners:
-                    raise vol.Invalid(
-                        f"device {key}: {kind.domain}.{unique_id} is already a {what} "
-                        f"of device {owners[unique_id]}"
-                    )
-                owners[unique_id] = key
+    owners: dict[
+        tuple[str, str], tuple[str, str]
+    ] = {}  # (domain, ID) -> (device, what)
+    for key, device in config[CONF_DEVICES].items():
+        for domain, unique_id, what in _generated_ids(key, device):
+            if (owner := owners.get((domain, unique_id))) is not None:
+                raise vol.Invalid(
+                    f"device {key}: {domain}.{unique_id} is already a {owner[1]} "
+                    f"of device {owner[0]}"
+                )
+            owners[domain, unique_id] = (key, what)
     return config
 
 
@@ -339,7 +368,10 @@ def _reaction_resolved(
 
 
 def _messages_sent(config: dict[str, Any]) -> dict[str, Any]:
-    """Refuse a message that goes nowhere: no notify of its own, none in config.notify."""
+    """Refuse a message that goes nowhere, a reaction's or a notification's.
+
+    Neither a notify of its own nor one in config.notify.
+    """
     if config[CONF_CONFIG].get(CONF_NOTIFY):
         return config
     for key, device in config[CONF_DEVICES].items():
@@ -349,6 +381,13 @@ def _messages_sent(config: dict[str, Any]) -> dict[str, Any]:
                     f"device {key}: reactions: {reaction_key}: message needs notify, "
                     "here or in config.notify"
                 )
+        for name, enabled in device.get(CONF_NOTIFICATIONS, {}).items():
+            for notification, settings in enabled.items():
+                if CONF_NOTIFY not in settings:
+                    raise vol.Invalid(
+                        f"device {key}: notifications: {name}: {notification} needs "
+                        "notify, here or in config.notify"
+                    )
     return config
 
 
@@ -446,7 +485,7 @@ CONFIG_SCHEMA = vol.Schema(
                                         CONF_LIGHTS, default={}
                                     ): alert_lights.SCHEMA
                                 }
-                            )
+                            ),
                         }
                     ),
                 }

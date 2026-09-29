@@ -20,6 +20,7 @@ from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal
 from .alerts import PRESETS
 from .mirrors import Mirror
+from .notifications import HAPPENINGS
 from .running import Running
 
 # The totals measured per period, each with its statistics key
@@ -127,4 +128,5 @@ APPLIANCE = Feature(
     namespace="appliance",
     provides={"cycle": "running"},
     alerts=PRESETS,
+    notifications=HAPPENINGS,
 )

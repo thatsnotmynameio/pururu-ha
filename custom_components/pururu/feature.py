@@ -207,6 +207,20 @@ def preset_keys(presets: Mapping[str, Preset]) -> dict[str, Platform]:
     return {f"alert_{name}": Platform.BINARY_SENSOR for name in presets}
 
 
+@dataclass(frozen=True, kw_only=True)
+class Happening:
+    """A ready-made notification of a feature: what happens, as a reaction's trigger.
+
+    Off until the device's `notifications` enables it; it creates no entity.
+    """
+
+    # The entity key, in the feature's namespace, it watches
+    watches: str
+    # The state it goes to, and from: a reaction's to and from
+    to: str
+    from_: str | None = None
+
+
 type Build = Callable[
     [HomeAssistant, Device, dict[str, Any], Mapping[str, str]], list[PururuEntity]
 ]
@@ -251,3 +265,6 @@ class Feature:
     # alert_<name> (put preset_keys in entity_keys), enabled in its block's
     # `alerts` (presets.validate)
     alerts: Mapping[str, Preset] = field(default_factory=dict)
+    # Ready-made notifications it offers, by name: each enabled one, in the
+    # device's `notifications`, is an automation (notifications.py)
+    notifications: Mapping[str, Happening] = field(default_factory=dict)

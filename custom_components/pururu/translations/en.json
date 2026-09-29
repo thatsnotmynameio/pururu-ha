@@ -26,7 +26,9 @@
     "appliance_alert_no_cycle_message": "It hasn't run in a while.",
     "appliance_alert_no_cycle_done_message": "It's running again.",
     "appliance_alert_finished_message": "The cycle finished.",
-    "appliance_alert_finished_done_message": "Done."
+    "appliance_alert_finished_done_message": "Done.",
+    "appliance_notification_finished_name": "Finished",
+    "appliance_notification_finished_message": "The cycle finished."
   },
   "issues": {
     "automations_not_included": {
