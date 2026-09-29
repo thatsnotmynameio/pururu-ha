@@ -32,3 +32,24 @@ async def test_a_step_that_raises_leaves_the_entry_loaded(
         await ha.async_block_till_done()
         assert entry.state is ConfigEntryState.LOADED
     caplog.clear()  # expected: the autouse fixture would fail on it
+
+
+async def test_renaming_a_ready_made_notification_reloads(ha: HomeAssistant) -> None:
+    """Every generated item the entry tracks follows one rule: renamed, the entry builds again."""
+    washer = {
+        "name": "Washer",
+        "appliance": {
+            "power": "sensor.washer_power",
+            "running": {"threshold": 4, "on_delay": 1, "off_delay": 1},
+            "notifications": {"finished": None},
+        },
+    }
+    assert await setup(ha, {"washer": washer}, config={"notify": "notify.phone"})
+    registry = er.async_get(ha)
+    with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
+        registry.async_update_entity(
+            "automation.pururu_washer_appliance_notification_finished",
+            new_entity_id="automation.roupa_pronta",
+        )
+        await ha.async_block_till_done()
+    reloading.assert_called_once()

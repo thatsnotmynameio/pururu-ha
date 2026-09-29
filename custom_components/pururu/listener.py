@@ -1,21 +1,27 @@
 """The registry listener: build the entry again when what it built is renamed, or a target disabled."""
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
+from .generated import Kind
 from .runtime import PururuConfigEntry
 
 
 def async_listen(
     hass: HomeAssistant,
     entry: PururuConfigEntry,
-    watched: set[tuple[str, str]],
+    kinds: Iterable[Kind],
     targets: set[str],
 ) -> None:
-    """Build the entry again when one of its entities or generated items is renamed, or a target disabled."""
+    """Build the entry again when one of its entities or generated items is renamed, or a target disabled.
+
+    A generated item is any the entry tracks, of any of `kinds`: one rule for
+    scripts, reactions' and notifications' automations alike.
+    """
+    kinds = tuple(kinds)
     registry = er.async_get(hass)
     # Whether a reload is already scheduled: a burst of disables reloads once
     reloading = False
@@ -40,6 +46,11 @@ def async_listen(
         registered = registry.async_get(data["entity_id"])
         if registered is None:
             return
+        watched = {
+            (kind.domain, unique_id)
+            for kind in kinds
+            for unique_id in entry.data.get(kind.data_key, [])
+        }
         why = rebuild_for(entry.entry_id, registered, data["changes"], watched, targets)
         if why is None or (why == "disabled" and reloading):
             return

@@ -143,7 +143,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
             # Failing after the platforms would leave the entry stuck until a
             # restart: HA unloads a non-loaded entry without async_unload_entry
             _LOGGER.exception("Step %s failed", name)
-    listener.async_listen(hass, entry, generate.watched_items(devices), targets)
+    listener.async_listen(
+        hass, entry, (programs.KIND, reactions.KIND, notifications.KIND), targets
+    )
     return True
 
 
