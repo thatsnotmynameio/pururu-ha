@@ -1,4 +1,4 @@
-"""Sensors of the configured devices, built by the entry (see __init__.py)."""
+"""Sensors of the configured devices, built by the entry (see lifecycle.py)."""
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant

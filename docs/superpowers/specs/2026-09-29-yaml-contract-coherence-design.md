@@ -2,7 +2,7 @@
 
 **Status:** agreed, not started. **Base:** `main` at 7b5fb5c (0.1.23), which already has [a reaction's retry](2026-09-29-reaction-retry-design.md) (0.1.22) and [notifications](2026-09-29-notifications-design.md) (0.1.23). **Branch:** `worktree-peaceful-bubbling-bee`.
 
-**For:** whoever implements it, person or agent. It says what changes, why, in which PR, and what stays on purpose. Read the Summary and the Glossary first; Parts 1–4 are the detail, and [The whole contract](#the-whole-contract-020) shows the result; PRs says the order. Everything in the Summary is decided; [Open decisions](#open-decisions) lists what isn't, none of which blocks the five PRs. All five together are **0.2.0**.
+**For:** whoever implements it, person or agent. It says what changes, why, in which PR, and what stays on purpose. Read the Summary and the Glossary first; Parts 1–4 are the detail, and [The whole contract](#the-whole-contract-020) shows the result; PRs says the order. Everything in the Summary is decided; [Open decisions](#open-decisions) lists what isn't, none of which blocks the seven PRs. All seven together are **0.2.0**.
 
 **pururu has one user, its author.** Nothing here keeps backward compatibility (see [Compatibility](#compatibility)).
 
@@ -25,13 +25,14 @@
 | D13 | No backward compatibility: no aliases, deprecation issues or migration code | One user | [Compatibility](#compatibility) | all |
 | D14 | Code: every concern is one module owning schema, rules, build and output; the wiring and `__init__` walk four lists (`builders()`, `ASPECTS`, `CHECKS`, `STEPS`) | Growing is one module and one line; no god module | [Part 3](#part-3-the-code-architecture) | A |
 | D15 | A `Feature` is 5 fields plus a tuple of **roles** (Extension Object), replacing today's 9 optional fields | `Feature` stops growing; each builder lists only what it is | Part 3 | A |
-| D16 | Six layers, all enforced by one import test | Dependency direction stays true without review | Part 3 | A2 (part), B (the whole table) |
+| D16 | Six layers, all enforced by one import test | Dependency direction stays true without review | Part 3 | A2a (part), B (the whole table) |
 | D17 | Validate (no `hass`) → plan (a frozen `Built`) → apply (`STEPS`, each guarded) | A broken output can't leave the entry stuck until a restart | Part 3 | A |
 | D18 | One automations file for reactions and ready-made notifications | One include, one Repairs issue, one reload per change | Part 3 | B |
-| D19 | Five PRs: A1 (moves), A2 (types), B (aspects), C (vocabulary), D (programs). Together they are 0.2.0; A1 sets the version, so v0.2.0 is tagged with A1 alone, and the rest lands on `main` under it. An ID snapshot first | Small reviewable steps; one version for one breaking change | [PRs](#prs) | — |
+| D19 | Seven PRs: A1 (moves), A2a (lifecycle), A2-layout (folders), A2b (model), B (aspects), D (programs), C (vocabulary). Together they are 0.2.0; A1 sets the version, so v0.2.0 is tagged with A1 alone, and the rest lands on `main` under it. An ID snapshot first | Small reviewable steps; one version for one breaking change | [PRs](#prs) | — |
 | D20 | No entity ID or unique ID changes in A1–C. D changes the IDs of today's `modes` and `phases` entities (their history is lost, accepted); the appliance's own entities keep theirs | Keep history where it costs nothing | PRs | all |
-| D21 | Keep the package flat (no `core/` folder) | Python-idiomatic; the layers are enforced by the import test, not by folders; a folder can come later at no cost | Part 3 | A1 |
+| D21 | One folder per layer: `core/` (L0), `features/` (L1), `aspects/` and `device_keys/` (L2), `outputs/` (L3), `setup/` (L4 and the lifecycle); at the root only what HA requires there (`__init__`, `config_flow`, `const`, the platforms, manifest, translations, icons, services) | The root had 32 modules and would pass 35; the tree then shows the layers the import test enforces. Replaces the earlier "keep it flat" | [PRs](#prs) | A2-layout |
 | D22 | A program's scope: in a feature's block it sees only that feature; at the device it sees the device's features and may run their executable programs. Only an executable program can be started, and one program runs another only from the device to a feature | Placement by what it can reference (D2); no call cycles, fixed depth | Part 4 | D |
+| D23 | `__init__.py` holds only HA's entry points, each a few lines; what they do is in `lifecycle.py` and `listener.py` | HA finds them there and reviewers look there; logic belongs to modules with one job | Part 3 | A2 |
 
 ## Glossary
 
@@ -252,8 +253,11 @@ Growing is **one new module and one line in a list**, guided by the contract tes
 
 ```
 custom_components/pururu/
-├── __init__.py       HA entry points (~180 lines): CONFIG_SCHEMA, async_setup, reload,
-│                       async_setup_entry, the listener, unload, async_remove_entry
+├── __init__.py       HA's entry points only, no logic: CONFIG_SCHEMA, async_setup, async_setup_entry,
+│                       async_unload_entry, async_remove_entry, each a few lines calling lifecycle
+├── lifecycle.py      what the entry points do: apply the YAML (reload), the prelude, the STEPS
+│                       tuple and its guarded loop, unload, remove
+├── listener.py       the registry listener: the one rename rule, disabled targets
 ├── config_flow.py    unchanged
 ├── const.py          DOMAIN, PLATFORMS, CONF_*, EVENT_*, ALERT2
 ├── runtime.py        PururuConfigEntry, Built, Step
@@ -316,7 +320,7 @@ The test lands in two steps, because today's code breaks the table until B moves
 
 | PR | Rules the test enforces |
 |---|---|
-| A2 | L0 imports only L0; the platforms import only `runtime` and `homeassistant`; the preload names. (A1 already moved `ALERT2` to `const.py` and `PRIORITIES` to `feature.py`, so L1 stops importing outputs.) |
+| A2a | L0 imports only L0; the platforms import only `runtime` and `homeassistant`; the preload names. (A1 already moved `ALERT2` to `const.py` and `PRIORITIES` to `feature.py`, so L1 stops importing outputs.) |
 | B | The whole table: L1 imports no aspect and no output (today `features/alerts.py` imports `alert2_alerts`); L2 imports only what its row allows (today `notifications.py` imports `FEATURES` and `reactions`); L3 imports only what its row allows (today `alert_lights.py` imports `features.alerts`); only `aspects/statistics` imports `utility_meter`. |
 
 ### A builder is composed of roles
@@ -471,8 +475,9 @@ class Built:
     by_device: Mapping[str, tuple[PururuEntity, ...]]
     created: frozenset[str]                             # unique IDs created
 
-type Step = Callable[[HomeAssistant, PururuConfigEntry, Built], Awaitable[frozenset[str]]]
-# returns the entity IDs whose disabling reloads the entry
+type Step = Callable[[HomeAssistant, PururuConfigEntry, Built, set[str]], Awaitable[None]]
+# adds to the set the entity IDs whose disabling reloads the entry, as soon as it knows
+# them: a step that fails partway keeps what it added
 
 # generated.py: deletes the sentinel `dict[str, str] | Literal["held"] | None` of today's _acted_on
 @dataclass(frozen=True)
@@ -525,16 +530,19 @@ As Terraform's plan/apply: the plan is a value; validation never touches `hass`.
    |---|---|
    | events | follows state changes; `event_name` is `entity.reference` |
    | devices | `_place`, `_remove_stale` |
-   | generate | `programs.plan` → `pururu/scripts/programs.yaml` (unchanged); `reactions.plan(…, scripts)` and `notifications.plan` → `automations.yaml`; returns the programs' targets. `scripts` maps `(device key, program key)` to the script's current entity ID, or to `None` when the program is held or not generated; `generate.py` builds it from `programs.plan`'s result, so `reactions` never imports `programs` |
+   | generate | `programs.plan` → `pururu/scripts/programs.yaml` (unchanged); `reactions.plan(…, scripts)` and `notifications.plan` → `automations.yaml`; adds the programs' targets once the scripts are planned, before the automations. `scripts` maps `(device key, program key)` to the script's current entity ID, or to `None` when the program is held or not generated; `generate.py` builds it from `programs.plan`'s result, so `reactions` never imports `programs` |
    | Alert2 | the `ProblemAlert`s with a message |
    | alert lights | lends and hands back lights |
    | dashboard | `/pururu` |
 
-6. **Listener.** Reloads the entry when one of its entities is renamed; when a script or automation whose `(platform, unique_id)` is tracked in `entry.data[kind.data_key]` is renamed (one rule for every generated kind, instead of today's `_watched_items`, which lists reactions and programs only: nothing refers to a notification's automation, so its rename needs no rebuild, but one rule is simpler than a rule with an exception); when an ID a step returned is disabled (once per burst).
+6. **Listener.** Reloads the entry when one of its entities is renamed; when a script or automation whose `(platform, unique_id)` is tracked in `entry.data[kind.data_key]` is renamed (one rule for every generated kind, instead of today's `_watched_items`, which lists reactions and programs only: nothing refers to a notification's automation, so its rename needs no rebuild, but one rule is simpler than a rule with an exception); when an ID a step added to the targets is disabled (once per burst).
 
 ### What `__init__.py` becomes
 
-About 180 lines: `CONFIG_SCHEMA` imported from `schema`; `async_setup` with `pururu.reload` and `_async_apply` (re-read the YAML, reload the entry) as today; `async_setup_entry` with the prelude, the `STEPS` tuple and the guarded loop; `_rebuild_for` with the one rename rule; unload; `async_remove_entry` (`places`, then `generate.async_remove`: automations then scripts, then `alert2_alerts.async_remove`).
+HA looks up `CONFIG_SCHEMA`, `async_setup`, `async_setup_entry`, `async_unload_entry` and `async_remove_entry` on the package, so they stay in `__init__.py`, and nothing else does: each is a few lines calling `lifecycle.py`. HA's convention (a reviewer opens `__init__` to see the lifecycle) is kept, without logic in it.
+
+- `lifecycle.py`: `async_apply` (re-read the YAML, reload the entry; today's `_async_apply`), the prelude, the `STEPS` tuple and the guarded loop, unload, and remove (`places`, then `generate.async_remove`: automations then scripts, then `alert2_alerts.async_remove`).
+- `listener.py`: the registry listener and `rebuild_for`, with the one rename rule.
 
 ### Generated files
 
@@ -640,7 +648,7 @@ Small choices that don't change the model:
 
 ## The whole contract, 0.2.0
 
-After all five PRs. Lines marked `←` change from 0.1.23, with the PR that changes them.
+After all seven PRs. Lines marked `←` change from 0.1.23, with the PR that changes them.
 
 ```yaml
 pururu:
@@ -823,7 +831,7 @@ pururu has one user, its author. So:
 - An old key is voluptuous' `extra keys not allowed`, with HA's file and line.
 - One manual step, in PR B (below).
 - No entity ID or unique ID changes in A1–C; D changes those of today's `modes` and `phases` (D20). Everything else keeps its history, statistics and dashboards.
-- A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and B–D land on `main` under the same version. That is accepted: 0.2.0 is the sum of the five PRs.
+- A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under the same version. That is accepted: 0.2.0 is the sum of the seven PRs.
 
 ## PRs
 
@@ -832,7 +840,9 @@ Each leaves the whole suite green. Before merging A1, which bumps the version, c
 | PR | What | Release |
 |---|---|---|
 | A1 | ID snapshot; move code out of `__init__.py`, plus three mechanical changes | sets 0.2.0 (tagged) |
-| A2 | The new types and lists (Part 3) | stays 0.2.0 |
+| A2a | The lifecycle: entry points only in `__init__`, `lifecycle.py`, `listener.py`, `Built`, `STEPS` and their guard, the one rename rule | stays 0.2.0 |
+| A2-layout | Move the modules into one folder per layer (D21), nothing else | stays 0.2.0 |
+| A2b | The model: roles, `resolve.py` and the `Index`, `CHECKS` at the domain level, `Planned` and each `plan()` in its owner | stays 0.2.0 |
 | B | Part 1: the aspects | stays 0.2.0 |
 | D | Part 4: programs | stays 0.2.0 |
 | C | Part 2: the vocabulary | stays 0.2.0 |
@@ -840,14 +850,32 @@ Each leaves the whole suite green. Before merging A1, which bumps the version, c
 **Why this order.** Each PR builds on the previous one without redoing it:
 - **D after B:** programs and phases get their statistics from B's aspect (`Counters` on items) and their entities from B's `CycleSource`. Before B, D would build meters the old way for B to move.
 - **D before C:** C applies the vocabulary (references, `state`, `notify`, `lasts`) once, to the final shape; `threshold` → `above` comes with D's `running_program`, and C never adds `cycle_from`'s `inherits`.
-- **What D still replaces:** A2's `Provides`/`Requires` (two small roles and the capability check, needed to express today's `cycle_from`) and B's role tuples for `modes`/`phases`. That's a few dozen lines, against moving statistics twice in any other order.
+- **What D still replaces:** A2b's `Provides`/`Requires` (two small roles and the capability check, needed to express today's `cycle_from`) and B's role tuples for `modes`/`phases`. That's a few dozen lines, against moving statistics twice in any other order.
 
 **A1, moves only.**
 1. First `tests/test_ids.py` and `tests/fixtures/house.yaml`: the whole contract above written in 0.1.23's syntax and extended to every counter × period on every namespace, every ready-made alert and every ready-made notification. The test pins the sorted `(platform, unique_id)` of every entity and the `(domain, ID)` of every generated item. It guards against `_remove_stale` deleting customisations when a key fails to build. Only additions may update it, except D, which updates it on purpose for today's `modes` and `phases`; D and C rewrite the fixture in their syntax, and nothing else in the snapshot may change.
 2. Split `__init__.py` into `schema`, `catalogue`, `checks`, `build`, `devices` and `generate` without changing code; `texts.py`; `feature.Condition`, `NO_READING` and `_number` moved to `vocabulary.py` as is; `runtime.py` holding only `PururuConfigEntry` (`Built` and `Step` come in A2). The three mechanical changes: `builders()` replaces the `ChainMap`; `ALERT2` moves from `alert2_alerts.py` to `const.py` and `PRIORITIES` from `features/alerts.py` to `feature.py`, so L0 and L1 stop importing outputs.
 3. Docs: CLAUDE.md's Architecture, `docs/develop/architecture.mdx`.
 
-**A2, the types.** `roles.py` and `Feature` with roles; `resolve.py`, `Index`, `Target`, with `Ref` built from 0.1.23's syntax (a reaction's `device:` + `when:`, a light group's `{device: [key]}`), so the old resolvers go now and C only changes the parsing; `CHECKS` at the domain level with paths (error texts and their order may change); `Planned`; `STEPS`, the guard, its test and an autouse fixture failing a test on an unexpected guard log; the one rename rule; `generated.async_issue` shared by the kinds and Alert2 (warn once while active); `entity.reference` (`f"{device.key}.{device.qualified(key)}"`, set in `_identify`), `entity.other_holder`; each `plan()` in its owner (`programs.py`, `reactions.py`, `notifications.py`), returning `Planned`; the import test. Docs: `writing-a-feature.mdx`, `testing.mdx`.
+**A2 is two PRs**, independent of each other, so each stays reviewable.
+
+**A2a, the lifecycle.** `__init__.py` with only HA's entry points (D23), `lifecycle.py` and `listener.py`; `Built`; `STEPS`, each owned by its output module (`async_step`), the guard, its test and an autouse fixture failing a test on an unexpected guard log; the one rename rule; `generated.async_issue` shared by the kinds and Alert2 (warn once while active); `entity.key` and `entity.reference` (`f"{device.key}.{device.qualified(key)}"`, set in `_identify`), `entity.other_holder`; the import test's A2 rules. Plan: `docs/superpowers/plans/2026-09-29-refactor-a2a-lifecycle.md`.
+
+**A2-layout, the folders (D21).** Right after A2a, before A2b, so the PRs that follow start in the new tree. A pure move (`git mv`, imports rewritten), proved as A1 was: the unchanged suite, `tests/test_ids.py`, and the import test turned into rules per folder. The layout:
+
+```
+custom_components/pururu/
+├── __init__.py, config_flow.py, const.py, sensor.py, binary_sensor.py, switch.py, light.py
+├── core/          runtime, feature, vocabulary, entity, texts, messages, files, generated (A2b adds roles, resolve)
+├── features/      unchanged
+├── device_keys/   programs, reactions, and DEVICE_KEYS
+├── outputs/       events, dashboard, places, devices, alert2_alerts, alert_lights
+└── setup/         schema, catalogue, checks, build, generate, lifecycle, listener
+```
+
+`notifications.py` goes to `device_keys/` until B moves it to `aspects/`. Sonar suppressions and docs that name a path follow.
+
+**A2b, the model.** `roles.py` and `Feature` with roles; `resolve.py`, `Index`, `Target`, with `Ref` built from 0.1.23's syntax (a reaction's `device:` + `when:`, a light group's `{device: [key]}`), so the old resolvers go now and C only changes the parsing; `CHECKS` at the domain level with paths (error texts and their order may change); `Planned`, and each `plan()` in its owner (`programs.py`, `reactions.py`, `notifications.py`); `Built` gains `builders` and `index`. Docs: `writing-a-feature.mdx`, `testing.mdx`.
 
 **B, the aspects.** `aspects/` (statistics, alerts with the `ALERTS` device key, notifications); `features/presets.py`, `features/alerts.py`, `features/elapsed.py`, `features/cycle/statistics.py` and `notifications.py` move there; generic `mount`; `alerts` from `FEATURES` to `DEVICE_KEYS`; one automations kind, and `programs.KIND` moved to `generate.SCRIPTS` next to it (`tests/test_generated.py` reads both from `generate`); the statistics translations owned by the aspect (`<counter>_<period>`, `item_<counter>_<period>` with `{item}`), written so the names shown don't change; `CycleSource`; the contract test's role and aspect rules; the import test's full table; `trigger()` moved to `vocabulary.py`; `presets.validate`'s redirect "{name} is now a notification" goes (D13). Docs: `docs/features/alerts.mdx` to `docs/concepts/alerts.mdx`, a statistics concept page, `docs.json`, `configuration.mdx`.
 

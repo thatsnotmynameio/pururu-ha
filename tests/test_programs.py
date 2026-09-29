@@ -18,7 +18,8 @@ from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from helpers import DOMAIN, capture, device_of, fake, generated, generated_scripts, held, reload, settle, setup, tick
+from helpers import (DOMAIN, capture, device_of, fake, generated, generated_scripts, held, module, reload, settle,
+                     setup, tick)
 
 KEY = "pool"
 REAL_PUMP = "switch.pool_pump"
@@ -457,6 +458,21 @@ async def test_enabling_a_target_again_reloads_once(
         await pool.async_block_till_done()
     assert reloads.call_count == 1
     assert pool.states.get(CLEAN) is not None
+
+
+async def test_a_target_is_followed_when_a_later_generated_kind_fails(
+        scripts: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """The scripts are written before the notifications fail: disabling their target still rebuilds."""
+    await fake(scripts, REAL_PUMP, "off")
+    with patch.object(module("notifications"), "items", side_effect=RuntimeError("boom")):
+        assert await setup(scripts, devices())
+    assert "Step generate failed" in caplog.text
+    caplog.clear()  # expected: the autouse fixture would fail on it
+    with counting_reloads(scripts) as reloads:
+        await disable(scripts, PUMP)
+        await tick(scripts, freezer, 31)
+        await scripts.async_block_till_done()
+    assert reloads.call_count == 1
 
 
 async def test_disabling_several_targets_at_once_reloads_once(

@@ -23,6 +23,8 @@ def test_something(ha: HomeAssistant) -> None:
     FEATURES = module("features").FEATURES
 ```
 
+An autouse fixture, `no_step_failed` in `tests/conftest.py`, fails any test in which a set-up step logged `Step <name> failed`: the guard in `lifecycle.py` keeps the entry loaded, so a step's bug would otherwise pass silently. A test that makes a step fail on purpose clears `caplog` once it has checked the log.
+
 ## Helpers (`tests/helpers.py`)
 
 | Helper | What it does |
@@ -62,6 +64,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 
 | File | Covers |
 |---|---|
+| `test_lifecycle.py` | The steps' order, a failing step logged with the entry loaded, the one rename rule |
 | `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices, configured entity keys |
 | `test_ids.py` | Every entity and generated ID of a whole house (`fixtures/house.yaml`), pinned: a refactor can't lose or rename one |
 | `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every feature in `FEATURES` |
@@ -73,7 +76,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_dashboard.py` | The dashboard's content, refreshes, and what keeps it from being created |
 | `test_events.py` | The two classes of events, their data, what isn't fired, renames and reloads |
 | `test_entity.py` | `reading()` |
-| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale |
+| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale; the core and the platforms import only what their layer allows; no module named after a platform HA preloads |
 | `test_release.py`, `test_fetch_hassfest.py` | The release and hassfest scripts |
 
 ## `test_code.py`: core's checks

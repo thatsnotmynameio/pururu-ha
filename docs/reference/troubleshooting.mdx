@@ -41,6 +41,25 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 
 That's expected for what the YAML describes. Floors, areas and a device's `area` follow the YAML at every start and reload. Change the YAML instead. Renaming a device or an entity in the UI, or changing an entity ID, is kept. See [Floors and areas: YAML wins](/concepts/floors-and-areas#yaml-wins).
 
+## `Step … failed`
+
+```
+Step dashboard failed
+Traceback (most recent call last):
+  …
+```
+
+Once the entities are created, pururu does the rest in steps: `events`, `devices`, `generate`, `alert2`, `alert lights` and `dashboard`. One that fails is logged with its traceback, and the others still run. The entities stay; only what that step makes is missing until the next reload:
+
+- `events`: the `pururu_state_changed` and `pururu_reading` events.
+- `devices`: devices put in their areas, and what the configuration dropped removed.
+- `generate`: the programs' scripts, the reactions' and the notifications' automations, from the part that failed on.
+- `alert2`: Alert2's alerts file.
+- `alert lights`: lights lent to the alerts.
+- `dashboard`: the `/pururu` dashboard.
+
+**Fix:** this is a bug in pururu. [Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the traceback and the configuration of the device it names, if any. A reload tries the step again.
+
 ## Entities
 
 ### `… is already taken by …; not creating it`

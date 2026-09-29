@@ -26,6 +26,7 @@ from homeassistant.helpers.json import json_bytes, json_fragment
 from homeassistant.helpers.translation import async_get_translations
 
 from .const import CONF_AREAS, CONF_FLOORS, DOMAIN
+from .runtime import Built, PururuConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -277,3 +278,10 @@ def _async_refresh(hass: HomeAssistant) -> None:
     """
     for _ in range(2):
         hass.bus.async_fire(EVENT_LOVELACE_UPDATED, {"url_path": URL_PATH})
+
+
+async def async_step(
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
+    """Show the entry's dashboard: it lists everything the steps before it made."""
+    async_setup(hass, entry)

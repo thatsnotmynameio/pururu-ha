@@ -5,7 +5,7 @@ includes its folder as its alerts. Alert2 renders these fields as templates:
 what the user wrote is kept as text.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 import logging
 from typing import Any
 
@@ -26,7 +26,9 @@ from homeassistant.util.hass_dict import HassKey
 from . import files
 from .const import ALERT2, DOMAIN, ENTITY_PREFIX
 from .features.alerts import ProblemAlert
+from .generated import async_issue
 from .messages import escaped
+from .runtime import Built, PururuConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,22 +116,16 @@ async def _async_reload(hass: HomeAssistant) -> bool:
 @callback
 def _check_included(hass: HomeAssistant, names: Iterable[str]) -> None:
     """Raise the Repairs issue while Alert2 doesn't run an alert of the file, else delete it."""
-    if not _missing(hass, names):
-        ir.async_delete_issue(hass, DOMAIN, ISSUE)
-        return
-    _LOGGER.warning(
-        "Alert2 doesn't run pururu's alerts: add \"%s\" to the alert2: block "
-        "of configuration.yaml",
-        INCLUDE,
-    )
-    ir.async_create_issue(
+    async_issue(
         hass,
-        DOMAIN,
         ISSUE,
-        is_fixable=False,
-        severity=ir.IssueSeverity.WARNING,
-        translation_key=ISSUE,
-        translation_placeholders={"include": INCLUDE, "file": FILE},
+        bool(_missing(hass, names)),
+        lambda: _LOGGER.warning(
+            "Alert2 doesn't run pururu's alerts: add \"%s\" to the alert2: block "
+            "of configuration.yaml",
+            INCLUDE,
+        ),
+        {"include": INCLUDE, "file": FILE},
     )
 
 
@@ -197,7 +193,7 @@ async def async_remove(hass: HomeAssistant) -> None:
 
 
 def items(
-    hass: HomeAssistant, built: dict[Platform, list[Entity]]
+    hass: HomeAssistant, built: Mapping[Platform, Sequence[Entity]]
 ) -> list[dict[str, Any]]:
     """An Alert2 alert per created alert with notify, hand-written or ready-made.
 
@@ -219,3 +215,10 @@ def items(
             )
         )
     return alerts
+
+
+async def async_step(
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
+    """Write Alert2's alerts: one per created alert with notify."""
+    await async_sync(hass, entry, items(hass, built.entities))

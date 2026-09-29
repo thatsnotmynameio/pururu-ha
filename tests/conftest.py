@@ -1,5 +1,6 @@
 """The pururu integration in the HA test plugin's instance; hassfest cached first."""
 
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -49,3 +50,16 @@ def ha(hass: HomeAssistant, enable_custom_integrations: None,
     monkeypatch.setattr(custom_components, "__path__",
                         [str(PROJECT / "custom_components"), *custom_components.__path__])
     return hass
+
+
+@pytest.fixture(autouse=True)
+def no_step_failed(caplog: pytest.LogCaptureFixture) -> Iterator[None]:
+    """Fail a test in which a setup step failed unexpectedly, in a fixture or the test (a test expecting it clears caplog)."""
+    yield
+    failed = [
+        record.getMessage()
+        for phase in ("setup", "call")
+        for record in caplog.get_records(phase)
+        if record.name.endswith(".lifecycle") and record.getMessage().startswith("Step ")
+    ]
+    assert not failed, failed

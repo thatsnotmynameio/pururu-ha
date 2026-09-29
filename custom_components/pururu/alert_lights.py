@@ -47,10 +47,17 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util.color import color_name_to_rgb
 
-from .const import CONF_ALERTS, CONF_CONFIG, CONF_LIGHTS, EVENT_ALERT_LIGHTS_RELEASED
+from .const import (
+    CONF_ALERTS,
+    CONF_CONFIG,
+    CONF_DEVICES,
+    CONF_LIGHTS,
+    EVENT_ALERT_LIGHTS_RELEASED,
+)
 from .feature import PRIORITIES, Device
 from .features.alerts import ProblemAlert
 from .features.lights import LIGHTS, Borrowable
+from .runtime import Built, PururuConfigEntry
 from .vocabulary import NO_READING
 
 _LOGGER = logging.getLogger(__name__)
@@ -555,3 +562,28 @@ def _enabled(registry: er.EntityRegistry, light: Borrowable) -> bool:
     """Whether the user left the light enabled."""
     registered = registry.async_get(light.entity_id)
     return registered is None or not registered.disabled
+
+
+async def async_step(
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
+    """Lend the created lights to the created alerts; adds the lights and alerts it follows to `targets`."""
+    lights_settings = settings(built.house)
+    targets.update(
+        async_setup(
+            hass,
+            entry,
+            lights_settings,
+            light_ids(lights_settings, built.house.get(CONF_DEVICES, {})),
+            [
+                entity
+                for entity in built.entities.get(Platform.BINARY_SENSOR, ())
+                if isinstance(entity, ProblemAlert)
+            ],
+            [
+                entity
+                for entity in built.entities.get(Platform.LIGHT, ())
+                if isinstance(entity, Borrowable)
+            ],
+        )
+    )

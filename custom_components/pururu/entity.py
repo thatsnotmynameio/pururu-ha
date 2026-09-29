@@ -2,8 +2,9 @@
 
 import math
 
-from homeassistant.const import Platform
-from homeassistant.core import State
+from homeassistant.const import ATTR_RESTORED, Platform
+from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 
 from .feature import Device, Item, item_key
@@ -20,6 +21,23 @@ def reading(state: State | None) -> float | None:
     return value if math.isfinite(value) else None
 
 
+def other_holder(
+    hass: HomeAssistant, registry: er.EntityRegistry, entity_id: str
+) -> str | None:
+    """Who holds `entity_id`, once it isn't ours: another integration, an entity without unique ID, or no one.
+
+    A restored placeholder holds nothing: it is what HA shows for an entity not
+    loaded yet.
+    """
+    if (registered := registry.async_get(entity_id)) is not None:
+        return f"the {registered.platform} integration"
+    if (state := hass.states.get(entity_id)) is not None and not state.attributes.get(
+        ATTR_RESTORED
+    ):
+        return "an entity without a unique ID"
+    return None
+
+
 class PururuEntity(Entity):
     """An entity of a configured device, named after its entity key."""
 
@@ -30,6 +48,9 @@ class PururuEntity(Entity):
     # Entity keys of other features of its device, in their namespace, it reads:
     # without them it isn't created either
     follows: tuple[str, ...] = ()
+    # Its entity key in its namespace (appliance_running), and <device key>.<that key>
+    key: str
+    reference: str
 
     def _identify(
         self,
@@ -50,6 +71,8 @@ class PururuEntity(Entity):
         placeholder named after the namespace ({mode}).
         """
         key = item_key(entity_key, item)
+        self.key = device.qualified(key)
+        self.reference = f"{device.key}.{self.key}"
         self.entity_id = device.entity_id(platform, key)
         self._attr_unique_id = device.object_id(key)
         self._attr_device_info = device.info

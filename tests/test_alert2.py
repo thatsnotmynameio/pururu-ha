@@ -211,6 +211,16 @@ async def test_without_the_include_an_issue_says_what_to_add(
     assert INCLUDE_WARNING in caplog.text
 
 
+async def test_the_include_warning_is_logged_once_while_its_issue_is_open(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """As the scripts' and automations' issues: an open issue isn't warned about again at each reload."""
+    FakeAlert2(ha, included=False)
+    assert await setup(ha, devices(**WITH_NOTIFY))
+    await reload(ha, devices(**WITH_NOTIFY))
+    assert issue(ha) is not None
+    assert caplog.text.count(INCLUDE_WARNING) == 1
+
+
 async def test_once_included_the_next_reload_retries_and_the_issue_goes(
         ha: HomeAssistant) -> None:
     alert2 = FakeAlert2(ha, included=False)

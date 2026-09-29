@@ -1,5 +1,6 @@
 """custom_components/pururu passes core's own tools at the pinned HA."""
 
+import ast
 import os
 from pathlib import Path
 import re
@@ -60,3 +61,43 @@ def test_quality_scale_covers_every_rule() -> None:
         assert isinstance(status, dict), rule
         assert status["status"] in ("done", "exempt", "todo"), rule
         assert status.get("comment"), f"{rule}: {status['status']} without a comment"
+
+
+# The core (L0): contracts and shared helpers, importing nothing but each other
+CORE = {"const", "runtime", "feature", "vocabulary", "entity", "texts", "messages", "files",
+        "generated"}
+PLATFORMS = {"sensor", "binary_sensor", "switch", "light"}
+
+
+def imports_of(path: Path) -> set[str]:
+    """The integration's modules a file imports, dotted from the package root (features.alerts)."""
+    package = path.relative_to(PROJECT / CODE).with_suffix("").parts[:-1]
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if not isinstance(node, ast.ImportFrom) or not node.level:
+            continue
+        base = package[:len(package) - (node.level - 1)]
+        if node.module:
+            found.add(".".join([*base, *node.module.split(".")]))
+        else:
+            found.update(".".join([*base, alias.name]) for alias in node.names)
+    return found
+
+
+def test_the_core_imports_only_the_core() -> None:
+    for name in CORE:
+        assert imports_of(PROJECT / CODE / f"{name}.py") <= CORE, name
+
+
+def test_the_platforms_import_only_runtime() -> None:
+    for name in PLATFORMS:
+        assert imports_of(PROJECT / CODE / f"{name}.py") <= {"runtime"}, name
+
+
+def test_no_module_is_named_after_a_platform_ha_preloads() -> None:
+    """HA imports <integration>.condition, .repairs… itself: a module by that name would be taken for one."""
+    from homeassistant.loader import BASE_PRELOAD_PLATFORMS  # noqa: PLC0415
+    root = PROJECT / CODE
+    ours = {path.stem for path in root.glob("*.py")} | {
+        path.parent.name for path in root.glob("*/__init__.py")}
+    assert not (ours & set(BASE_PRELOAD_PLATFORMS)) - {"config_flow"}
