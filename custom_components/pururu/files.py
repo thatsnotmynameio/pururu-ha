@@ -34,7 +34,7 @@ async def async_write(
     file: str,
     what: str,
     items: list[dict[str, Any]] | dict[str, dict[str, Any]],
-) -> bool:
+) -> bool | None:
     """Write `items` to `file` if it changed; whether it did, or None on failure.
 
     `items` is a list, or a mapping (as an include merging named items reads
@@ -48,7 +48,7 @@ async def async_write(
         )
     except (OSError, HomeAssistantError) as err:
         _LOGGER.error("%s are not written to %s: %s", what, file, err)
-        return False
+        return None
 
 
 def _read(path: Path) -> Any:
