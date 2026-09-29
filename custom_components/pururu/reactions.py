@@ -50,12 +50,10 @@ STATE_KEYS = ("to", "from", "above", "below", "for")
 RETRY_LIMIT = timedelta(hours=12)
 # Added to a try's window: the occurrence's run is recorded a moment after it
 SLACK = timedelta(minutes=1)
-# Whether a try may run: the occurrence always, a try without a run in its window
-RAN = (
-    "{{% set last = {last} %}}"
-    "{{{{ since is not defined or last is none"
-    " or as_datetime(last) < now() - timedelta(seconds=since) }}}}"
-)
+# Whether a try may run: the occurrence always, a try without a run in its
+# window. as_timestamp takes last_triggered as HA restores it (a datetime) and
+# as none (never run: 0); as_datetime refuses a datetime
+RAN = "{{{{ since is not defined or as_timestamp({last}, 0) < now().timestamp() - since }}}}"
 RETRY = vol.Schema(
     {
         vol.Required("times"): vol.All(vol.Coerce(int), vol.Range(min=1)),

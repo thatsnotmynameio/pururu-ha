@@ -11,6 +11,7 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from homeassistant.util.file import WriteError
+from pytest_homeassistant_custom_component.common import mock_restore_cache
 import pytest
 import voluptuous as vol
 
@@ -311,8 +312,7 @@ def test_retries_of_the_sun_without_offset(ha: HomeAssistant) -> None:
     ]
 
 
-RAN = ("{{% set last = {} %}}{{{{ since is not defined or last is none"
-       " or as_datetime(last) < now() - timedelta(seconds=since) }}}}")
+RAN = "{{{{ since is not defined or as_timestamp({}, 0) < now().timestamp() - since }}}}"
 
 
 def test_a_try_without_then_looks_at_the_automation(ha: HomeAssistant) -> None:
@@ -775,3 +775,144 @@ async def test_a_count_never_follows_an_automation_pururu_does_not_generate(
                       {"entity_id": "automation.pururu_pool_reaction_clean"})
     await ha.async_block_till_done()
     assert count(ha) == "0"
+
+
+# --- retry --------------------------------------------------------------------------------
+
+SOON = {"name": "Logo", "at": "10:05", "retry": {"times": 2, "every": {"minutes": 10}}}
+CLEANING_AUTOMATION = "automation.pururu_pool_reaction_clean"
+
+
+def runs(events: list[Any], entity_id: str) -> int:
+    """How many times the automation ran (its conditions passed)."""
+    return sum(1 for e in events if e.data["entity_id"] == entity_id)
+
+
+async def switch(ha: HomeAssistant, entity_id: str, on: bool) -> None:
+    await ha.services.async_call("automation", "turn_on" if on else "turn_off",
+                                 {"entity_id": entity_id}, blocking=True)
+
+
+async def restarted(ha: HomeAssistant, last_triggered: str) -> None:
+    """HA's automations set up again, the reaction's restored with `last_triggered`."""
+    mock_restore_cache(ha, [State(automation("soon"), "on",
+                                  {"last_triggered": last_triggered})])
+    with patch("homeassistant.config.load_yaml_config_file",
+               side_effect=lambda *_args, **_kwargs: {"automation pururu": generated(ha)}):
+        assert await async_setup_component(ha, "automation",
+                                           {"automation pururu": generated(ha)})
+    await ha.async_block_till_done()
+
+
+async def test_the_occurrence_run_skips_the_tries(ha: HomeAssistant, freezer: Any,
+                                                  automations: None) -> None:
+    assert await setup(ha, devices(soon=SOON))
+    triggered = capture(ha, "automation_triggered")
+    await tick(ha, freezer, 300)    # 10:05, the occurrence
+    assert runs(triggered, automation("soon")) == 1
+    await tick(ha, freezer, 600)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert runs(triggered, automation("soon")) == 1
+
+
+async def test_a_missed_occurrence_is_tried_again_once(ha: HomeAssistant, freezer: Any,
+                                                       automations: None) -> None:
+    assert await setup(ha, devices(soon=SOON))
+    triggered = capture(ha, "automation_triggered")
+    await switch(ha, automation("soon"), on=False)
+    await tick(ha, freezer, 360)    # 10:06, off at 10:05
+    await switch(ha, automation("soon"), on=True)
+    assert runs(triggered, automation("soon")) == 0
+    await tick(ha, freezer, 540)    # 10:15, the first try runs
+    assert runs(triggered, automation("soon")) == 1
+    await tick(ha, freezer, 600)    # 10:25, skipped
+    assert runs(triggered, automation("soon")) == 1
+
+
+async def test_a_run_by_hand_skips_the_tries(ha: HomeAssistant, freezer: Any,
+                                             automations: None) -> None:
+    assert await setup(ha, devices(soon=SOON))
+    triggered = capture(ha, "automation_triggered")
+    await switch(ha, automation("soon"), on=False)
+    await tick(ha, freezer, 360)    # 10:06, off at 10:05
+    await switch(ha, automation("soon"), on=True)
+    assert runs(triggered, automation("soon")) == 0
+    await ha.services.async_call("automation", "trigger",
+                                 {"entity_id": automation("soon")}, blocking=True)
+    assert runs(triggered, automation("soon")) == 1
+    await tick(ha, freezer, 540)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert runs(triggered, automation("soon")) == 1
+
+
+async def test_a_restart_keeps_the_occurrences_run(ha: HomeAssistant, freezer: Any) -> None:
+    """HA restores last_triggered: after a restart, a try still sees the occurrence's run."""
+    assert await setup(ha, devices(soon=SOON))
+    await tick(ha, freezer, 360)    # 10:06: the occurrence ran at 10:05, then HA restarted
+    await restarted(ha, (dt_util.utcnow() - timedelta(minutes=1)).isoformat())
+    triggered = capture(ha, "automation_triggered")
+    await tick(ha, freezer, 540)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert runs(triggered, automation("soon")) == 0
+
+
+async def test_a_restart_without_a_run_tries_again(ha: HomeAssistant, freezer: Any) -> None:
+    """The counterpart: restored with no run since 10:05, the first try runs."""
+    assert await setup(ha, devices(soon=SOON))
+    await tick(ha, freezer, 360)    # 10:06: HA was down at 10:05
+    await restarted(ha, (dt_util.utcnow() - timedelta(days=1)).isoformat())
+    triggered = capture(ha, "automation_triggered")
+    await tick(ha, freezer, 540)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert runs(triggered, automation("soon")) == 1
+
+
+async def test_a_busy_program_is_started_by_a_try(ha: HomeAssistant, freezer: Any,
+                                                  both: None) -> None:
+    """Started by hand at 10:00, it runs 2 hours: 10:05 and 11:05 find it running, 12:05 starts it."""
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+                                       "retry": {"times": 3, "every": {"hours": 1}}}))
+    await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+    triggered = capture(ha, "automation_triggered")
+    started = capture(ha, "script_started")
+    await tick(ha, freezer, 300)    # 10:05, busy
+    await tick(ha, freezer, 3600)   # 11:05, a try: nothing started since, still busy
+    await settle()
+    assert (len(triggered), len(started)) == (2, 0)
+    await tick(ha, freezer, 3360)   # 12:01: the program ended at 12:00
+    await settle()
+    await tick(ha, freezer, 240)    # 12:05, a try
+    await settle()
+    assert (len(triggered), len(started)) == (3, 1)
+
+
+async def test_a_program_started_after_the_occurrence_skips_the_tries(
+        ha: HomeAssistant, freezer: Any, both: None) -> None:
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+                                       "retry": {"times": 2, "every": {"hours": 3}}}))
+    triggered = capture(ha, "automation_triggered")
+    await switch(ha, CLEANING_AUTOMATION, on=False)
+    await tick(ha, freezer, 360)    # 10:06, off at 10:05
+    await switch(ha, CLEANING_AUTOMATION, on=True)
+    await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
+    await settle()                  # started by hand at 10:06, ends at 12:06
+    await tick(ha, freezer, 3 * 3600)   # 13:05
+    await tick(ha, freezer, 3 * 3600)   # 16:05
+    assert len(triggered) == 0
+
+
+async def test_the_sun_is_tried_again(ha: HomeAssistant, freezer: Any,
+                                      automations: None) -> None:
+    assert await setup(ha, devices(dusk={"name": "Anoitecer", "sun": "sunset",
+                                         "retry": {"times": 1, "every": {"minutes": 10}}}))
+    triggered = capture(ha, "automation_triggered")
+    await switch(ha, automation("dusk"), on=False)
+    sunset = get_astral_event_next(ha, "sunset")
+    await tick(ha, freezer, (sunset - dt_util.utcnow()).total_seconds() + 60)
+    await switch(ha, automation("dusk"), on=True)
+    assert runs(triggered, automation("dusk")) == 0
+    await tick(ha, freezer, 540)
+    assert runs(triggered, automation("dusk")) == 1
