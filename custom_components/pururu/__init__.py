@@ -7,7 +7,6 @@ the device's entities. One config entry owns every floor, area, device and entit
 """
 
 from collections.abc import Mapping
-import logging
 from typing import Any, Literal
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntryState
@@ -54,8 +53,6 @@ from .features.lights import Borrowable
 from .runtime import PururuConfigEntry
 from .schema import CONFIG_SCHEMA as CONFIG_SCHEMA
 from .texts import async_texts
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

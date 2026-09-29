@@ -10,7 +10,6 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 
 from . import catalogue
-from .catalogue import builders
 from .const import DOMAIN
 from .device_keys import DEVICE_KEYS
 from .entity import PururuEntity
@@ -39,7 +38,7 @@ def build(
     referable = catalogue.referable(key, config)
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
-    for name, feature in builders().items():
+    for name, feature in catalogue.builders().items():
         if name not in config:
             continue
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)

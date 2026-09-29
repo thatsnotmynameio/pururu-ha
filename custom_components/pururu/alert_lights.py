@@ -90,7 +90,7 @@ def _distinct(lights: list[str]) -> list[str]:
     return lights
 
 
-# Device key -> keys of that device's lights; __init__ checks them against the devices
+# Device key -> keys of that device's lights; checks.alert_lights_resolved checks them against the devices
 GROUP = vol.All(
     vol.Schema({cv.slug: vol.All([cv.slug], vol.Length(min=1), _distinct)}),
     vol.Length(min=1),

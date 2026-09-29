@@ -1,6 +1,6 @@
 """Every ID the whole house creates, pinned: a refactor that loses or renames one fails here.
 
-`_remove_stale` deletes the registry entries of whatever isn't built, and with them
+`devices.remove_stale` deletes the registry entries of whatever isn't built, and with them
 the user's customisations. PURURU_UPDATE_IDS=1 rewrites the snapshot; do it only
 for IDs a change adds, never to accept one that moved or went.
 """
@@ -19,7 +19,7 @@ from helpers import DOMAIN, setup
 FIXTURES = Path(__file__).parent / "fixtures"
 HOUSE = yaml.safe_load((FIXTURES / "house.yaml").read_text())
 SNAPSHOT = FIXTURES / "house_ids.json"
-# The entry's data keys holding the IDs of generated scripts and automations
+# The entry's data keys holding the IDs of generated scripts, reactions' automations and notifications' automations
 GENERATED = ("scripts", "automations", "notifications")
 
 
