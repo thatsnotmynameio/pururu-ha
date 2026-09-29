@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Self, override
 
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.util import dt as dt_util
 from homeassistant.util.signal_type import SignalType
 
+from ...core.entity import PururuEntity
 from ...core.feature import Device, Item, item_key
 
 
@@ -38,6 +40,25 @@ def cycle_signal(device: Device, item: Item | None = None) -> SignalType[Cycle]:
 def end_signal(device: Device, item: Item | None = None) -> SignalType[Cycle]:
     """Then here, for last_cycle_end: what it triggers reads the rest already updated."""
     return SignalType(device.object_id(item_key("cycle_end", item)))
+
+
+class CycleSource(PururuEntity):
+    """An entity whose finished cycles are sent on its cycle and end signals, state written first.
+
+    `Running`, `Open` and `Runs` set the signals up once, in `__init__`; `Current`
+    (modes) has one running mode at a time, so it sets them up again for each
+    item it sends.
+    """
+
+    def _cycle_signals(self, device: Device, item: Item | None = None) -> None:
+        """The signals this entity (or this item of it) sends a finished cycle on."""
+        self._signals = (cycle_signal(device, item), end_signal(device, item))
+
+    def _send(self, cycle: Cycle) -> None:
+        """Write the state, then send the cycle: its own signal first, the end's last."""
+        self.async_write_ha_state()
+        for signal in self._signals:  # the end's own signal last
+            async_dispatcher_send(self.hass, signal, cycle)
 
 
 @dataclass

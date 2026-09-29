@@ -128,6 +128,22 @@ def test_capabilities_line_up(features: dict[str, Any]) -> None:
             assert f"{capability}_from" in feature.example, f"{name}'s example lacks {capability}_from"
 
 
+def test_a_capability_is_carried_by_a_cycle_source(
+    ha: HomeAssistant, features: dict[str, Any]
+) -> None:
+    """What a builder provides (appliance's running, door/window's open) sends its cycles as a CycleSource."""
+    cycle_source = module("features.cycle").CycleSource
+    device_cls = module("core.feature").Device
+    for name, feature in features.items():
+        if (provides := role(feature, "Provides")) is None:
+            continue
+        device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
+        config = feature.schema(dict(feature.example))
+        built = {entity.key: entity for entity in feature.build(ha, device, config, {})}
+        carrier = built[device.qualified(provides.key)]
+        assert isinstance(carrier, cycle_source), name
+
+
 async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, features: dict[str, Any]) -> None:
     """A program's step calls <platform>.<action> on the entity: the platform must have that service."""
     for name, feature in features.items():
