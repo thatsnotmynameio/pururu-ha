@@ -50,6 +50,12 @@ def devices(**reactions: dict[str, Any]) -> dict[str, Any]:
     pytest.param({"name": "Anoitecer", "sun": "sunset", "offset": {"minutes": -30}}, id="sun"),
     pytest.param({"name": "Mês", "device": WASHER, "when": "appliance_runtime_month", "to": "1"},
                  id="an entity the settings don't build"),
+    pytest.param({"name": "Tarde", "at": "13:00", "retry": {"times": 3, "every": {"hours": 1}}},
+                 id="retry on a time"),
+    pytest.param({"name": "Anoitecer", "sun": "sunset", "offset": {"minutes": -30},
+                  "retry": {"times": 1, "every": {"minutes": 1}}}, id="retry on the sun"),
+    pytest.param({"name": "Tarde", "at": "13:00", "retry": {"times": 12, "every": {"hours": 1}}},
+                 id="retries ending at 12 hours"),
 ])
 async def test_valid_reaction_is_accepted(ha: HomeAssistant, reaction: dict[str, Any]) -> None:
     assert await setup(ha, devices(it=reaction))
@@ -104,6 +110,25 @@ PATH = "'pururu->devices->lights->reactions->it"
     pytest.param({"name": "X", "device": WASHER, "when": "light_teto", "to": "on"},
                  "device lights: reactions: it: light_teto is not an entity key of device washer",
                  id="when not of that device"),
+    pytest.param({**DOOR_OPENS, "retry": {"times": 1, "every": {"hours": 1}}},
+                 "a reaction's retry goes with at or sun", id="retry on an entity"),
+    pytest.param({"name": "X", "when": "light_teto", "to": "on",
+                  "retry": {"times": 1, "every": {"hours": 1}}},
+                 "a reaction's retry goes with at or sun", id="retry on when"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 0, "every": {"hours": 1}}},
+                 "value must be at least 1", id="no retry"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 1, "every": {"seconds": 59}}},
+                 "value must be at least 0:01:00", id="retry every under a minute"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 13, "every": {"hours": 1}}},
+                 "a reaction's retries must end within 12 hours", id="retries over 12 hours"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"every": {"hours": 1}}},
+                 "required key 'times' not provided", id="retry without times"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 1}},
+                 "required key 'every' not provided", id="retry without every"),
+    pytest.param({"name": "X", "at": "13:00",
+                  "retry": {"times": 1, "every": {"hours": 1}, "until": "on"}},
+                 f"'until' is an invalid option for 'pururu', check: {PATH[1:]}->retry->until",
+                 id="unknown key in retry"),
 ])
 async def test_invalid_reaction_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
                                            reaction: dict[str, Any], reason: str) -> None:

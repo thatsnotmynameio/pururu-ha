@@ -9,6 +9,7 @@ counted: sensors of its device (STATISTICS).
 """
 
 from collections.abc import Mapping
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any, override
 
@@ -43,6 +44,19 @@ PER_REACTION: dict[str, Platform] = {
 }
 # Keys that only a reaction on an entity's state takes
 STATE_KEYS = ("to", "from", "above", "below", "for")
+# How late a reaction's last try may be, after its occurrence: a chain never
+# reaches the next day's occurrence, and a sun event drifts a few minutes a day
+RETRY_LIMIT = timedelta(hours=12)
+# Added to a try's window: the occurrence's run is recorded a moment after it
+SLACK = timedelta(minutes=1)
+RETRY = vol.Schema(
+    {
+        vol.Required("times"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Required("every"): vol.All(
+            cv.positive_time_period, vol.Range(min=timedelta(minutes=1))
+        ),
+    }
+)
 KIND = Kind(
     domain="automation",
     folder="pururu/automations",
@@ -65,6 +79,12 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
         raise vol.Invalid("a reaction's device goes with when")
     if "offset" in reaction and "sun" not in reaction:
         raise vol.Invalid("a reaction's offset goes with sun")
+    if "retry" in reaction:
+        if sources[0] not in ("at", "sun"):
+            raise vol.Invalid("a reaction's retry goes with at or sun")
+        retry = reaction["retry"]
+        if retry["times"] * retry["every"] > RETRY_LIMIT:
+            raise vol.Invalid("a reaction's retries must end within 12 hours")
     if sources[0] in ("at", "sun"):
         if any(key in reaction for key in STATE_KEYS):
             raise vol.Invalid(
@@ -102,6 +122,8 @@ REACTION = vol.All(
             vol.Optional("at"): cv.time,
             vol.Optional("sun"): vol.In(("sunrise", "sunset")),
             vol.Optional("offset"): cv.time_period,
+            # More tries of an at or sun occurrence, each skipped once it ran
+            vol.Optional("retry"): RETRY,
             # A program of this device, started when the reaction fires
             vol.Optional("then"): cv.slug,
             vol.Optional("statistics", default={}): vol.Schema(
