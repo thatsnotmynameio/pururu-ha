@@ -34,6 +34,9 @@ jobs:
       - name: Checkout the pull request
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The head itself, not GitHub's test-merge commit: line numbers, suggestions and the
+          # last reviewed commit must be the pull request's.
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0 # Claude diffs against the last reviewed commit and the base
 
       - name: Review with Claude
@@ -45,9 +48,9 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: >-
-            Review pull request #${{ github.event.pull_request.number }} of ${{ github.repository }}
-            (base branch ${{ github.event.pull_request.base.ref }}, head ${{ github.event.pull_request.head.sha }}).
-            Read .claude/review/review.md and follow it.
+            Review pull request #${{ github.event.pull_request.number }} of ${{ github.repository }}:
+            base branch ${{ github.event.pull_request.base.ref }}, head commit ${{ github.event.pull_request.head.sha }}
+            (checked out). Read .claude/review/review.md and follow it.
           claude_args: >-
             --model opus
             --max-turns 150
@@ -58,4 +61,4 @@ jobs:
         if: always() && github.event.action == 'labeled'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr edit ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --remove-label claude-review
+        run: gh api -X DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/claude-review

@@ -38,7 +38,10 @@ Greptile's reviews on this repo (PRs up to #33):
 | What it never flags | What CI enforces (ruff, ruff format, mypy strict, hassfest, the tests, docs.page links, Sonar), style, nits, `docs/superpowers/`, lockfiles. |
 | Severity | P0: breaks every user or loses data. P1: a real bug on a normal path. P2: a real but narrow bug, a contract or docs contradiction, at most one missing test per PR. |
 | Caps | At most 6 new findings per round, most severe first. Confidence capped by the open findings: any P0 → at most 1; two or more P1 → at most 3; any P1 → at most 4. The review follows them. They're in `review.md`, not in code. |
-| State | In the summary comment: a hidden line `<!-- pururu-review:state {"sha": "...", "findings": [...]} -->` with the last reviewed commit and the open findings (title, severity, the URL of each thread). The summary is found by its marker `<!-- pururu-review:summary -->` among `claude[bot]`'s comments. |
+| State | The earlier findings are Claude's review threads themselves: unresolved ones are open, resolved ones are dismissed and never posted again. This includes a thread left by a run that died before its summary. The summary comment keeps the rest in a hidden line, `<!-- pururu-review:state {"sha": "...", "summary_only": [...]} -->`: the last reviewed commit, and the findings listed only in the summary. The summary is found by its marker `<!-- pururu-review:summary -->` among `claude[bot]`'s comments, and edited by ID (an `@claude` answer is `claude[bot]` too). |
+| Checkout | The PR's head commit (`ref: head.sha`), not GitHub's test-merge commit, with full history. The head sha is in the prompt; it goes into the state, the links and each comment's `commit_id`. |
+| Subagents | Finders and verifiers are a `review-reader` agent (`.claude/agents/review-reader.md`: `Read`, `Grep`, `Glob`, `Bash`), so they can't post. The action posts an unconfirmed inline call without classifying it when it runs on an OAuth token. |
+| Instructions vs. the PR's `CLAUDE.md` | The action restores `CLAUDE.md` and `.claude/` from the base branch: those are the instructions. The PR's own `CLAUDE.md` is reviewed as a change (`git show <head>:CLAUDE.md`). |
 | Incremental | When the state's commit is an ancestor of the head and no merge came in since, the review looks at `git diff <state sha>..HEAD`. It judges each earlier finding as fixed, outstanding or withdrawn. Otherwise it does a full review. A re-review with nothing new changes nothing and says so in the summary. |
 | Threads | Earlier findings judged fixed or withdrawn have their threads resolved (GraphQL `resolveReviewThread`; `main` requires every thread resolved). A thread the owner resolved drops its finding. Replies to findings stay with `@claude` (`claude.yml`), unchanged. |
 | Triggers | `opened`, `reopened`, `ready_for_review`: a full review. `labeled` with `claude-review`: a re-review, drafts included; a last step removes the label. Every push (`synchronize`) is **not** on yet: the owner decides later, and it is one line in `on:`. |
@@ -51,6 +54,7 @@ Greptile's reviews on this repo (PRs up to #33):
 .github/workflows/claude-code-review.yml   one job: checkout (full history) → Claude → remove the label
 .claude/review/review.md                   the process: context, lenses, finders, verifiers, earlier findings, posting
 .claude/review/rules.md                    this repo's severity, never-flag list, pointers into CLAUDE.md, score and risk
+.claude/agents/review-reader.md            the read-only subagent for finders and verifiers
 ```
 
 `claude.yml` is unchanged. The code-review plugin is no longer used.
