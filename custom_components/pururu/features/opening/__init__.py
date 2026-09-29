@@ -18,8 +18,8 @@ from homeassistant.const import STATE_ON, Platform, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
-from ...entity import PururuEntity
-from ...feature import Build, Device, Feature
+from ...core.entity import PururuEntity
+from ...core.feature import Build, Device, Feature
 from .. import standing
 from ..cycle.last import LastCycleDescription, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter

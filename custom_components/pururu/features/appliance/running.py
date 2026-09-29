@@ -20,8 +20,8 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
-from ...entity import PururuEntity, reading
-from ...feature import Device
+from ...core.entity import PururuEntity, reading
+from ...core.feature import Device
 from ..cycle import Cycle, CycleStart, cycle_signal, end_signal
 from ..cycle.energy import kwh_now, kwh_used
 

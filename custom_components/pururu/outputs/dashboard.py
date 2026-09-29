@@ -25,8 +25,8 @@ from homeassistant.helpers import (
 from homeassistant.helpers.json import json_bytes, json_fragment
 from homeassistant.helpers.translation import async_get_translations
 
-from .const import CONF_AREAS, CONF_FLOORS, DOMAIN
-from .runtime import Built, PururuConfigEntry
+from ..const import CONF_AREAS, CONF_FLOORS, DOMAIN
+from ..core.runtime import Built, PururuConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 

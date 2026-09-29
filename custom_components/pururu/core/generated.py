@@ -34,8 +34,8 @@ from homeassistant.helpers import (
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.start import async_at_started
 
+from ..const import DOMAIN
 from . import files
-from .const import DOMAIN
 from .entity import other_holder
 
 _LOGGER = logging.getLogger(__name__)

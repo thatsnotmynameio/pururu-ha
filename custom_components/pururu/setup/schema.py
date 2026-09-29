@@ -8,7 +8,25 @@ import voluptuous as vol
 from homeassistant.const import CONF_NAME
 from homeassistant.helpers import config_validation as cv
 
-from . import alert_lights, events, messages, notifications, places, programs, reactions
+from ..const import (
+    CONF_ALERTS,
+    CONF_AREA,
+    CONF_AREAS,
+    CONF_CONFIG,
+    CONF_DEVICES,
+    CONF_FLOORS,
+    CONF_LIGHTS,
+    CONF_NOTIFICATIONS,
+    CONF_NOTIFY,
+    CONF_PROGRAMS,
+    CONF_REACTIONS,
+    DOMAIN,
+)
+from ..core import messages
+from ..core.feature import Feature
+from ..device_keys import notifications, programs, reactions
+from ..features import FEATURES, presets
+from ..outputs import alert_lights, events, places
 from .checks import (
     alert_lights_resolved,
     areas_exist,
@@ -23,22 +41,6 @@ from .checks import (
     real_entities_distinct,
     references_resolved,
 )
-from .const import (
-    CONF_ALERTS,
-    CONF_AREA,
-    CONF_AREAS,
-    CONF_CONFIG,
-    CONF_DEVICES,
-    CONF_FLOORS,
-    CONF_LIGHTS,
-    CONF_NOTIFICATIONS,
-    CONF_NOTIFY,
-    CONF_PROGRAMS,
-    CONF_REACTIONS,
-    DOMAIN,
-)
-from .feature import Feature
-from .features import FEATURES, presets
 
 
 def _device(value: Any) -> dict[str, Any]:

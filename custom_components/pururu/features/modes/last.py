@@ -8,8 +8,8 @@ from homeassistant.const import Platform
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from ...entity import PururuEntity
-from ...feature import Device, Item
+from ...core.entity import PururuEntity
+from ...core.feature import Device, Item
 from ..cycle import Cycle, cycle_signal
 
 

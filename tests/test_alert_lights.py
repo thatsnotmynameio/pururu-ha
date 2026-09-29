@@ -105,7 +105,7 @@ async def turn(hass: HomeAssistant, name: str, state: str) -> None:
 
 async def test_without_config_every_default_applies(house: HomeAssistant) -> None:
     assert await setup(house, devices())
-    assert module("alert_lights").SCHEMA({}) == {
+    assert module("outputs.alert_lights").SCHEMA({}) == {
         "groups": {},
         "high": {"turn_on": RED, "repeat": timedelta(seconds=15)},
         "medium": {"turn_on": ORANGE, "repeat": timedelta(seconds=15)},
@@ -117,7 +117,7 @@ async def test_without_config_every_default_applies(house: HomeAssistant) -> Non
 async def test_a_priority_written_replaces_its_default_whole(house: HomeAssistant) -> None:
     """No breathe nor repeat left over from the default."""
     assert await setup(house, devices())
-    settings = module("alert_lights").SCHEMA({"high": {"turn_on": {"color_name": "purple"}}})
+    settings = module("outputs.alert_lights").SCHEMA({"high": {"turn_on": {"color_name": "purple"}}})
     assert settings["high"] == {"turn_on": {"color_name": "purple"}}
     assert settings["medium"]["turn_on"] == ORANGE
 
@@ -911,5 +911,5 @@ async def test_the_pages_example_is_valid(ha: HomeAssistant) -> None:
 def test_the_documented_defaults_are_the_defaults(ha: HomeAssistant) -> None:
     [defaults] = [block["pururu"]["config"]["alerts"]["lights"] for block in yaml_blocks()
                   if "pururu" in block and "high" in block["pururu"]["config"]["alerts"]["lights"]]
-    schema = module("alert_lights").SCHEMA
+    schema = module("outputs.alert_lights").SCHEMA
     assert schema(defaults) == schema({})

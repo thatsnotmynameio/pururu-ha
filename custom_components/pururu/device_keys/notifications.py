@@ -17,10 +17,11 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
-from . import generated, messages, reactions
-from .const import CONF_MESSAGE, CONF_NOTIFICATIONS, CONF_NOTIFY, ENTITY_PREFIX
-from .feature import TEXT, Device, Feature, Happening, qualified
-from .features import FEATURES
+from ..const import CONF_MESSAGE, CONF_NOTIFICATIONS, CONF_NOTIFY, ENTITY_PREFIX
+from ..core import generated, messages
+from ..core.feature import TEXT, Device, Feature, Happening, qualified
+from ..features import FEATURES
+from . import reactions
 
 _LOGGER = logging.getLogger(__name__)
 

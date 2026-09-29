@@ -17,7 +17,7 @@ COZINHA = {"name": "Cozinha", "floor": "terreo", "icon": "mdi:stove", "aliases":
 def sync(hass: HomeAssistant, floors: dict[str, Any], areas: dict[str, Any],
          managed: dict[str, Any] | None = None) -> dict[str, list[str]]:
     """places.async_sync on validated blocks, as the entry calls it."""
-    places = module("places")
+    places = module("outputs.places")
     return places.async_sync(
         hass,
         {key: places.FLOOR_SCHEMA(block) for key, block in floors.items()},
@@ -224,7 +224,7 @@ async def test_remove_deletes_only_what_is_managed(ha: HomeAssistant) -> None:
     their_area = ar.async_get(ha).async_create("Garagem")
     managed = sync(ha, {"terreo": TERREO}, {"cozinha": COZINHA})
 
-    module("places").async_remove(ha, managed)
+    module("outputs.places").async_remove(ha, managed)
 
     assert floor(ha, "terreo") is None
     assert area(ha, "cozinha") is None

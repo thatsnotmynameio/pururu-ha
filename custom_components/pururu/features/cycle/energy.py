@@ -4,7 +4,7 @@ from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.util.unit_conversion import EnergyConverter
 
-from ...entity import reading
+from ...core.entity import reading
 
 
 def kwh_now(hass: HomeAssistant, counter: str | None) -> float | None:

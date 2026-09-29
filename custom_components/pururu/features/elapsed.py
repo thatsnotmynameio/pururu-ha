@@ -18,8 +18,8 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.util import dt as dt_util
 
-from ..feature import Device, Elapsed
-from ..vocabulary import NO_READING
+from ..core.feature import Device, Elapsed
+from ..core.vocabulary import NO_READING
 from .alerts import ProblemAlert
 
 

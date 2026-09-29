@@ -67,7 +67,7 @@ def test_refers_names_entity_keys_as_in_an_entity_id(features: dict[str, Any]) -
 
 
 def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> None:
-    qualified = module("feature").qualified
+    qualified = module("core.feature").qualified
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
     for feature in features.values():
         for entity_key, platform in named_keys(feature).items():
@@ -79,7 +79,7 @@ def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> 
 
 def test_every_translated_entity_key_is_created(features: dict[str, Any]) -> None:
     """A name or an icon under a key no feature creates is left over, as from before namespaces."""
-    qualified = module("feature").qualified
+    qualified = module("core.feature").qualified
     created = {(str(platform), qualified(feature.namespace, entity_key))
                for feature in features.values()
                for entity_key, platform in named_keys(feature).items()}
@@ -144,7 +144,7 @@ def test_per_item_goes_with_items(features: dict[str, Any]) -> None:
 
 def test_every_per_item_name_has_its_placeholder(features: dict[str, Any]) -> None:
     """A per-item entity's name is its item's: {<namespace>} in every language."""
-    qualified = module("feature").qualified
+    qualified = module("core.feature").qualified
     for translations in (load("translations/en.json"), load("translations/pt-BR.json")):
         for feature in features.values():
             for suffix, platform in feature.per_item.items():
@@ -155,7 +155,7 @@ def test_every_per_item_name_has_its_placeholder(features: dict[str, Any]) -> No
 
 def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
     """Every ready-made alert is an entity key, watches its own feature's, has both texts, validates."""
-    feature_module = module("feature")
+    feature_module = module("core.feature")
     en, pt = load("translations/en.json"), load("translations/pt-BR.json")
     offering = [name for name, feature in features.items() if feature.alerts]
     assert offering, "no feature offers ready-made alerts"
@@ -181,7 +181,7 @@ def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
 
 def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:
     """Every ready-made notification watches its own feature's entity key and has both texts."""
-    feature_module = module("feature")
+    feature_module = module("core.feature")
     en, pt = load("translations/en.json"), load("translations/pt-BR.json")
     offering = [name for name, feature in features.items() if feature.notifications]
     assert offering, "no feature offers ready-made notifications"
@@ -194,7 +194,7 @@ def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:
             for translations in (en, pt):
                 assert translations["common"][f"{key}_name"], key
                 assert translations["common"][f"{key}_message"], key
-        validate = module("notifications").schema(name, feature.notifications)
+        validate = module("device_keys.notifications").schema(name, feature.notifications)
         assert validate(dict.fromkeys(feature.notifications)) == {
             notification: {} for notification in feature.notifications}
         with pytest.raises(vol.Invalid):

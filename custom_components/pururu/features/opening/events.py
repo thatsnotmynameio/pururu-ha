@@ -23,8 +23,8 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 from homeassistant.util.signal_type import SignalType
 
-from ...entity import PururuEntity
-from ...feature import TEXT, Device
+from ...core.entity import PururuEntity
+from ...core.feature import TEXT, Device
 
 OPENING = "opening"
 DENIED = "denied"

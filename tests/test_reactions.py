@@ -256,7 +256,7 @@ async def test_then_another_devices_program_is_refused(
 def translated(ha: HomeAssistant, reaction: dict[str, Any],
                entity_id: str | None = None) -> list[dict[str, Any]]:
     """The triggers of a reaction as validated, watching `entity_id`."""
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     return reactions.triggers(reactions.REACTION(reaction), entity_id)
 
 
@@ -357,7 +357,7 @@ RAN = "{{{{ since is not defined or as_timestamp({}, 0) < now().timestamp() - si
 
 
 def test_a_try_without_then_looks_at_the_automation(ha: HomeAssistant) -> None:
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY})
     assert reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None)["conditions"] == [
         {"condition": "template",
@@ -365,7 +365,7 @@ def test_a_try_without_then_looks_at_the_automation(ha: HomeAssistant) -> None:
 
 
 def test_a_try_with_then_looks_at_the_program(ha: HomeAssistant) -> None:
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY,
                                    "then": "clean"})
     script = "script.pururu_lights_program_clean"
@@ -377,7 +377,7 @@ def test_a_try_with_then_looks_at_the_program(ha: HomeAssistant) -> None:
 
 def test_without_retry_there_are_no_conditions(ha: HomeAssistant) -> None:
     """Every file written before retry is written again the same."""
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({"name": "Noite", "at": "22:00", "then": "clean"})
     written = reactions.automation(LIGHTS, "Luzes", "night", reaction, None,
                                    "script.pururu_lights_program_clean")
@@ -385,14 +385,14 @@ def test_without_retry_there_are_no_conditions(ha: HomeAssistant) -> None:
 
 
 def test_conditions_come_before_actions(ha: HomeAssistant) -> None:
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY})
     assert list(reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None)) == [
         "id", "alias", "description", "triggers", "conditions", "actions"]
 
 
 def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     assert reactions.automation(LIGHTS, "Luzes", "door", reactions.REACTION(DOOR_OPENS),
                                 DOOR) == {
         "id": "pururu_lights_reaction_door",
@@ -404,7 +404,7 @@ def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
 
 
 def test_then_starts_its_program_unless_it_runs(ha: HomeAssistant) -> None:
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({**DOOR_OPENS, "then": "clean"})
     script = "script.pururu_lights_program_clean"
     assert reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, script)["actions"] == [{
@@ -414,7 +414,7 @@ def test_then_starts_its_program_unless_it_runs(ha: HomeAssistant) -> None:
 
 
 def test_a_message_is_told_after_its_program_starts(ha: HomeAssistant) -> None:
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({**TOLD, "then": "clean"})
     script = "script.pururu_lights_program_clean"
     actions = reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, script,
@@ -427,14 +427,14 @@ def test_a_message_is_told_after_its_program_starts(ha: HomeAssistant) -> None:
 
 
 def test_without_a_message_nobody_is_told(ha: HomeAssistant) -> None:
-    reactions = module("reactions")
+    reactions = module("device_keys.reactions")
     reaction = reactions.REACTION(DOOR_OPENS)
     assert reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, None, ["notify.a"])["actions"] == []
 
 
 @pytest.mark.parametrize("then", [["clean"], "script.pururu_lights_program_clean"])
 def test_then_is_a_slug(ha: HomeAssistant, then: Any) -> None:
-    reaction = module("reactions").REACTION
+    reaction = module("device_keys.reactions").REACTION
     with pytest.raises(vol.Invalid):
         reaction({**DOOR_OPENS, "then": then})
 
@@ -628,7 +628,7 @@ def script_state(ha: HomeAssistant, entity_id: str = CLEAN) -> str:
 
 async def test_the_automation_starts_the_programs_script(ha: HomeAssistant) -> None:
     assert await setup(ha, pool())
-    assert generated(ha)[0]["actions"] == module("reactions").actions(CLEAN)
+    assert generated(ha)[0]["actions"] == module("device_keys.reactions").actions(CLEAN)
 
 
 async def test_the_reaction_starts_its_program(ha: HomeAssistant, both: None) -> None:
@@ -715,7 +715,7 @@ async def test_it_follows_the_script_renamed(ha: HomeAssistant, both: None) -> N
     assert await setup(ha, pool())
     er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
     await ha.async_block_till_done()
-    assert generated(ha)[0]["actions"] == module("reactions").actions("script.limpar_piscina")
+    assert generated(ha)[0]["actions"] == module("device_keys.reactions").actions("script.limpar_piscina")
     started = capture(ha, "script_started")
     await fake(ha, DOOR, "on")
     await settle()
@@ -729,7 +729,7 @@ async def test_the_condition_follows_the_script_renamed(ha: HomeAssistant) -> No
                                        "retry": {"times": 1, "every": {"hours": 1}}}))
     er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
     await ha.async_block_till_done()
-    assert generated(ha)[0]["conditions"] == module("reactions").conditions(
+    assert generated(ha)[0]["conditions"] == module("device_keys.reactions").conditions(
         {"retry": {"times": 1, "every": timedelta(hours=1)}}, "script.limpar_piscina")
     assert "script.limpar_piscina" in generated(ha)[0]["conditions"][0]["value_template"]
 
@@ -757,13 +757,13 @@ async def test_a_reaction_on_another_device_starts_its_own_program(ha: HomeAssis
                          "above": 10, "then": "clean"})
     config[WASHER] = {"name": "Washer", "appliance": APPLIANCE}
     assert await setup(ha, config)
-    assert generated(ha)[0]["actions"] == module("reactions").actions(CLEAN)
+    assert generated(ha)[0]["actions"] == module("device_keys.reactions").actions(CLEAN)
 
 
 async def test_a_script_not_written_drops_its_reaction(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """The scripts' file can't be written: the new program isn't in HA, so its reaction isn't generated."""
-    files = module("files")
+    files = module("core.files")
     real = files.write_utf8_file_atomic
 
     def only_automations(path: str, content: str) -> None:

@@ -4,8 +4,8 @@ from datetime import timedelta
 
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 
-from ...feature import Elapsed, Preset
-from ...vocabulary import Condition
+from ...core.feature import Elapsed, Preset
+from ...core.vocabulary import Condition
 
 PRESETS: dict[str, Preset] = {
     # The plug has no reading

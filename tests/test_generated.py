@@ -184,14 +184,14 @@ async def test_an_id_taken_by_another_integration_is_not_generated(
 
 async def test_sync_returns_the_ids_it_generated(ha: HomeAssistant, case: Case) -> None:
     """Not the one whose ID someone else holds: a reaction then knows its program's script is missing."""
-    generated = module("generated")
+    generated = module("core.generated")
     er.async_get(ha).async_get_or_create(
         case.domain, "template", "someone_else", suggested_object_id=case.unique_id("taken"))
     entry = MockConfigEntry(domain="pururu", source="import", data={})
     entry.add_to_hass(ha)
     items = [generated.Item(unique_id=case.unique_id(key), config={"alias": key})
              for key in ("free", "taken")]
-    kind = module(case.source).KIND
+    kind = module(f"device_keys.{case.source}").KIND
     assert await generated.async_sync(ha, entry, kind, items) == [case.unique_id("free")]
 
 
@@ -378,7 +378,7 @@ async def test_an_open_issue_is_not_raised_again(
         assert await async_setup_component(ha, case.domain, {})
         assert await setup(ha, case.devices("door"))
     assert issue(ha, case) is not None
-    with patch.object(module("generated").ir, "async_create_issue") as create:
+    with patch.object(module("core.generated").ir, "async_create_issue") as create:
         ha.states.async_set(f"{case.domain}.mine", "on")
         await tick(ha, freezer, 5)
     create.assert_not_called()
@@ -480,7 +480,7 @@ async def test_a_disabled_item_is_no_missing_include(ha: HomeAssistant, case: Ca
 
 
 def failing_write() -> Any:
-    return patch.object(module("files"), "write_utf8_file_atomic",
+    return patch.object(module("core.files"), "write_utf8_file_atomic",
                         side_effect=WriteError("disk full"))
 
 
@@ -532,7 +532,7 @@ async def test_a_failed_write_raises_no_include_issue(ha: HomeAssistant, case: C
 async def test_after_a_failed_write_a_file_it_cannot_read_holds_nothing(
         ha: HomeAssistant, case: Case, content: bytes) -> None:
     """What HA will load is what the file holds: nothing of pururu's, so nothing is generated."""
-    generated = module("generated")
+    generated = module("core.generated")
     path = Path(ha.config.path(case.file))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
@@ -540,7 +540,7 @@ async def test_after_a_failed_write_a_file_it_cannot_read_holds_nothing(
     entry.add_to_hass(ha)
     items = [generated.Item(unique_id=case.unique_id("door"), config={"alias": "door"})]
     with failing_write():
-        assert await generated.async_sync(ha, entry, module(case.source).KIND, items) == []
+        assert await generated.async_sync(ha, entry, module(f"device_keys.{case.source}").KIND, items) == []
 
 
 async def test_a_failed_removal_keeps_the_items_ids(ha: HomeAssistant, case: Case,

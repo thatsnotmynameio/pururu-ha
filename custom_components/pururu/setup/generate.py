@@ -8,8 +8,7 @@ from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from . import catalogue, generated, notifications, programs, reactions
-from .const import (
+from ..const import (
     CONF_AREA,
     CONF_CONFIG,
     CONF_DEVICES,
@@ -17,8 +16,11 @@ from .const import (
     CONF_PROGRAMS,
     CONF_REACTIONS,
 )
-from .feature import Device
-from .runtime import Built, PururuConfigEntry
+from ..core import generated
+from ..core.feature import Device
+from ..core.runtime import Built, PururuConfigEntry
+from ..device_keys import notifications, programs, reactions
+from . import catalogue
 
 _LOGGER = logging.getLogger(__name__)
 

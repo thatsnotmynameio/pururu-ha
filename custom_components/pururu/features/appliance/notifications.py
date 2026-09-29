@@ -2,7 +2,7 @@
 
 from homeassistant.const import STATE_OFF, STATE_ON
 
-from ...feature import Happening
+from ...core.feature import Happening
 
 HAPPENINGS: dict[str, Happening] = {
     # A cycle ends exactly when running goes off; from on, so a plug

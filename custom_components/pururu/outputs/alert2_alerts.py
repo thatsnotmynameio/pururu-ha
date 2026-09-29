@@ -23,12 +23,12 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util.hass_dict import HassKey
 
-from . import files
-from .const import ALERT2, DOMAIN, ENTITY_PREFIX
-from .features.alerts import ProblemAlert
-from .generated import async_issue
-from .messages import escaped
-from .runtime import Built, PururuConfigEntry
+from ..const import ALERT2, DOMAIN, ENTITY_PREFIX
+from ..core import files
+from ..core.generated import async_issue
+from ..core.messages import escaped
+from ..core.runtime import Built, PururuConfigEntry
+from ..features.alerts import ProblemAlert
 
 _LOGGER = logging.getLogger(__name__)
 

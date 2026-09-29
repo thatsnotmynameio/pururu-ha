@@ -6,8 +6,8 @@ from typing import Any, Literal
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
-from .generated import Kind
-from .runtime import PururuConfigEntry
+from ..core.generated import Kind
+from ..core.runtime import PururuConfigEntry
 
 
 def async_listen(

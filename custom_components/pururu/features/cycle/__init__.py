@@ -11,7 +11,7 @@ from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.util import dt as dt_util
 from homeassistant.util.signal_type import SignalType
 
-from ...feature import Device, Item, item_key
+from ...core.feature import Device, Item, item_key
 
 
 @dataclass(frozen=True, kw_only=True)

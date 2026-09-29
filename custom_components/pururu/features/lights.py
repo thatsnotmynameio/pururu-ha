@@ -28,8 +28,8 @@ from homeassistant.const import (
 from homeassistant.core import Context, HomeAssistant, callback, split_entity_id
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
-from ..entity import PururuEntity
-from ..feature import Device, Feature
+from ..core.entity import PururuEntity
+from ..core.feature import Device, Feature
 from . import standing
 
 _LOGGER = logging.getLogger(__name__)

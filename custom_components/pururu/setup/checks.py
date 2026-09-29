@@ -7,9 +7,7 @@ import voluptuous as vol
 
 from homeassistant.const import CONF_NAME
 
-from . import alert_lights, notifications, programs, reactions
-from .catalogue import builders, entity_keys, referable
-from .const import (
+from ..const import (
     CONF_ALERTS,
     CONF_AREA,
     CONF_AREAS,
@@ -22,8 +20,11 @@ from .const import (
     CONF_REACTIONS,
     DEFAULT_ALERT_LIGHTS,
 )
-from .feature import ALERTS_KEY, Device, preset_keys, qualified
-from .features import FEATURES
+from ..core.feature import ALERTS_KEY, Device, preset_keys, qualified
+from ..device_keys import notifications, programs, reactions
+from ..features import FEATURES
+from ..outputs import alert_lights
+from .catalogue import builders, entity_keys, referable
 
 
 def capabilities_provided(device: dict[str, Any], names: list[str]) -> None:

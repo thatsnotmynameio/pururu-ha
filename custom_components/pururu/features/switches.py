@@ -13,8 +13,8 @@ from homeassistant.components.group.switch import SwitchGroup
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from ..entity import PururuEntity
-from ..feature import Device, Feature
+from ..core.entity import PururuEntity
+from ..core.feature import Device, Feature
 from . import standing
 
 _LOGGER = logging.getLogger(__name__)

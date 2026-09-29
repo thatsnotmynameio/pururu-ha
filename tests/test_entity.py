@@ -7,7 +7,7 @@ from helpers import DOMAIN, module, setup
 
 
 def value(state: str | None) -> float | None:
-    entity = module("entity")
+    entity = module("core.entity")
     return entity.reading(None if state is None else State("sensor.demo", state))
 
 

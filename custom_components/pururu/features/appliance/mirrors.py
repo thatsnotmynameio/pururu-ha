@@ -4,8 +4,8 @@ from homeassistant.components.group.sensor import SensorGroup
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from ...entity import PururuEntity
-from ...feature import Device
+from ...core.entity import PururuEntity
+from ...core.feature import Device
 
 
 class Mirror(PururuEntity, SensorGroup):

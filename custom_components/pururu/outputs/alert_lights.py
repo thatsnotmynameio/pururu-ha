@@ -47,18 +47,18 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util.color import color_name_to_rgb
 
-from .const import (
+from ..const import (
     CONF_ALERTS,
     CONF_CONFIG,
     CONF_DEVICES,
     CONF_LIGHTS,
     EVENT_ALERT_LIGHTS_RELEASED,
 )
-from .feature import PRIORITIES, Device
-from .features.alerts import ProblemAlert
-from .features.lights import LIGHTS, Borrowable
-from .runtime import Built, PururuConfigEntry
-from .vocabulary import NO_READING
+from ..core.feature import PRIORITIES, Device
+from ..core.runtime import Built, PururuConfigEntry
+from ..core.vocabulary import NO_READING
+from ..features.alerts import ProblemAlert
+from ..features.lights import LIGHTS, Borrowable
 
 _LOGGER = logging.getLogger(__name__)
 

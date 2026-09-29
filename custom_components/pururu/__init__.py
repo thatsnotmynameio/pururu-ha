@@ -11,9 +11,9 @@ This module holds HA's entry points only; what they do is in lifecycle.py.
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
-from . import lifecycle
-from .runtime import PururuConfigEntry
-from .schema import CONFIG_SCHEMA as CONFIG_SCHEMA
+from .core.runtime import PururuConfigEntry
+from .setup import lifecycle
+from .setup.schema import CONFIG_SCHEMA as CONFIG_SCHEMA
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

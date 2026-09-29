@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.translation import async_get_translations
 
-from .const import DOMAIN
+from ..const import DOMAIN
 
 # Default texts, by their key in the translations' common block
 type Texts = Mapping[str, str]

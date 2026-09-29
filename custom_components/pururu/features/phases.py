@@ -22,8 +22,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from ..entity import PururuEntity, reading
-from ..feature import Device, Feature, bounded, finite_float
+from ..core.entity import PururuEntity, reading
+from ..core.feature import Device, Feature, bounded, finite_float
 
 
 @dataclass(frozen=True, kw_only=True)

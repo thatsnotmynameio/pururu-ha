@@ -5,8 +5,8 @@ files; each program's runs and each reaction's triggers are sensors of the
 device, built as a Feature's entities are. They don't count as a device's feature.
 """
 
+from ..core.feature import Feature
 from . import programs, reactions
-from .feature import Feature
 
 DEVICE_KEYS: dict[str, Feature] = {
     "programs": programs.STATISTICS,

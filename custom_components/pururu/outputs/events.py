@@ -31,9 +31,9 @@ from homeassistant.helpers.json import json_bytes
 from homeassistant.util.json import json_loads_object
 from homeassistant.util.ulid import ulid_now
 
-from .const import CONF_DEVICES, DOMAIN
-from .entity import PururuEntity
-from .runtime import Built, PururuConfigEntry
+from ..const import CONF_DEVICES, DOMAIN
+from ..core.entity import PururuEntity
+from ..core.runtime import Built, PururuConfigEntry
 
 CONF_EVENTS: Final = "events"
 STATE_CHANGED: Final = "state_changed"

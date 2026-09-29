@@ -64,8 +64,8 @@ def test_quality_scale_covers_every_rule() -> None:
 
 
 # The core (L0): contracts and shared helpers, importing nothing but each other
-CORE = {"const", "runtime", "feature", "vocabulary", "entity", "texts", "messages", "files",
-        "generated"}
+# The core (L0), core/: contracts and shared helpers, importing nothing but each other and const
+CORE = "core"
 PLATFORMS = {"sensor", "binary_sensor", "switch", "light"}
 
 
@@ -85,13 +85,15 @@ def imports_of(path: Path) -> set[str]:
 
 
 def test_the_core_imports_only_the_core() -> None:
-    for name in CORE:
-        assert imports_of(PROJECT / CODE / f"{name}.py") <= CORE, name
+    for path in (PROJECT / CODE / CORE).glob("*.py"):
+        imported = imports_of(path)
+        assert all(name == "const" or name.startswith(f"{CORE}.") or name == CORE
+                   for name in imported), (path.name, imported)
 
 
 def test_the_platforms_import_only_runtime() -> None:
     for name in PLATFORMS:
-        assert imports_of(PROJECT / CODE / f"{name}.py") <= {"runtime"}, name
+        assert imports_of(PROJECT / CODE / f"{name}.py") <= {f"{CORE}.runtime"}, name
 
 
 def test_no_module_is_named_after_a_platform_ha_preloads() -> None:
