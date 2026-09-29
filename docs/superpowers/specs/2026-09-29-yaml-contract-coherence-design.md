@@ -2,7 +2,7 @@
 
 **Status:** agreed, not started. **Base:** `main` at 7b5fb5c (0.1.23), which already has [a reaction's retry](2026-09-29-reaction-retry-design.md) (0.1.22) and [notifications](2026-09-29-notifications-design.md) (0.1.23). **Branch:** `worktree-peaceful-bubbling-bee`.
 
-**For:** whoever implements it, person or agent. It says what changes, why, in which PR, and what stays on purpose. Read the Summary and the Glossary first; Parts 1–4 are the detail, and [The whole contract](#the-whole-contract-020) shows the result; PRs says the order. Everything in the Summary is decided; [Open decisions](#open-decisions) lists what isn't, none of which blocks the six PRs. All six together are **0.2.0**.
+**For:** whoever implements it, person or agent. It says what changes, why, in which PR, and what stays on purpose. Read the Summary and the Glossary first; Parts 1–4 are the detail, and [The whole contract](#the-whole-contract-020) shows the result; PRs says the order. Everything in the Summary is decided; [Open decisions](#open-decisions) lists what isn't, none of which blocks the seven PRs. All seven together are **0.2.0**.
 
 **pururu has one user, its author.** Nothing here keeps backward compatibility (see [Compatibility](#compatibility)).
 
@@ -28,9 +28,9 @@
 | D16 | Six layers, all enforced by one import test | Dependency direction stays true without review | Part 3 | A2a (part), B (the whole table) |
 | D17 | Validate (no `hass`) → plan (a frozen `Built`) → apply (`STEPS`, each guarded) | A broken output can't leave the entry stuck until a restart | Part 3 | A |
 | D18 | One automations file for reactions and ready-made notifications | One include, one Repairs issue, one reload per change | Part 3 | B |
-| D19 | Six PRs: A1 (moves), A2a (lifecycle), A2b (model), B (aspects), D (programs), C (vocabulary). Together they are 0.2.0; A1 sets the version, so v0.2.0 is tagged with A1 alone, and the rest lands on `main` under it. An ID snapshot first | Small reviewable steps; one version for one breaking change | [PRs](#prs) | — |
+| D19 | Seven PRs: A1 (moves), A2a (lifecycle), A2-layout (folders), A2b (model), B (aspects), D (programs), C (vocabulary). Together they are 0.2.0; A1 sets the version, so v0.2.0 is tagged with A1 alone, and the rest lands on `main` under it. An ID snapshot first | Small reviewable steps; one version for one breaking change | [PRs](#prs) | — |
 | D20 | No entity ID or unique ID changes in A1–C. D changes the IDs of today's `modes` and `phases` entities (their history is lost, accepted); the appliance's own entities keep theirs | Keep history where it costs nothing | PRs | all |
-| D21 | Keep the package flat (no `core/` folder) | Python-idiomatic; the layers are enforced by the import test, not by folders; a folder can come later at no cost | Part 3 | A1 |
+| D21 | One folder per layer: `core/` (L0), `features/` (L1), `aspects/` and `device_keys/` (L2), `outputs/` (L3), `setup/` (L4 and the lifecycle); at the root only what HA requires there (`__init__`, `config_flow`, `const`, the platforms, manifest, translations, icons, services) | The root had 32 modules and would pass 35; the tree then shows the layers the import test enforces. Replaces the earlier "keep it flat" | [PRs](#prs) | A2-layout |
 | D22 | A program's scope: in a feature's block it sees only that feature; at the device it sees the device's features and may run their executable programs. Only an executable program can be started, and one program runs another only from the device to a feature | Placement by what it can reference (D2); no call cycles, fixed depth | Part 4 | D |
 | D23 | `__init__.py` holds only HA's entry points, each a few lines; what they do is in `lifecycle.py` and `listener.py` | HA finds them there and reviewers look there; logic belongs to modules with one job | Part 3 | A2 |
 
@@ -647,7 +647,7 @@ Small choices that don't change the model:
 
 ## The whole contract, 0.2.0
 
-After all six PRs. Lines marked `←` change from 0.1.23, with the PR that changes them.
+After all seven PRs. Lines marked `←` change from 0.1.23, with the PR that changes them.
 
 ```yaml
 pururu:
@@ -830,7 +830,7 @@ pururu has one user, its author. So:
 - An old key is voluptuous' `extra keys not allowed`, with HA's file and line.
 - One manual step, in PR B (below).
 - No entity ID or unique ID changes in A1–C; D changes those of today's `modes` and `phases` (D20). Everything else keeps its history, statistics and dashboards.
-- A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under the same version. That is accepted: 0.2.0 is the sum of the six PRs.
+- A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under the same version. That is accepted: 0.2.0 is the sum of the seven PRs.
 
 ## PRs
 
@@ -840,6 +840,7 @@ Each leaves the whole suite green. Before merging A1, which bumps the version, c
 |---|---|---|
 | A1 | ID snapshot; move code out of `__init__.py`, plus three mechanical changes | sets 0.2.0 (tagged) |
 | A2a | The lifecycle: entry points only in `__init__`, `lifecycle.py`, `listener.py`, `Built`, `STEPS` and their guard, the one rename rule | stays 0.2.0 |
+| A2-layout | Move the modules into one folder per layer (D21), nothing else | stays 0.2.0 |
 | A2b | The model: roles, `resolve.py` and the `Index`, `CHECKS` at the domain level, `Planned` and each `plan()` in its owner | stays 0.2.0 |
 | B | Part 1: the aspects | stays 0.2.0 |
 | D | Part 4: programs | stays 0.2.0 |
@@ -858,6 +859,20 @@ Each leaves the whole suite green. Before merging A1, which bumps the version, c
 **A2 is two PRs**, independent of each other, so each stays reviewable.
 
 **A2a, the lifecycle.** `__init__.py` with only HA's entry points (D23), `lifecycle.py` and `listener.py`; `Built`; `STEPS`, each owned by its output module (`async_step`), the guard, its test and an autouse fixture failing a test on an unexpected guard log; the one rename rule; `generated.async_issue` shared by the kinds and Alert2 (warn once while active); `entity.key` and `entity.reference` (`f"{device.key}.{device.qualified(key)}"`, set in `_identify`), `entity.other_holder`; the import test's A2 rules. Plan: `docs/superpowers/plans/2026-09-29-refactor-a2a-lifecycle.md`.
+
+**A2-layout, the folders (D21).** Right after A2a, before A2b, so the PRs that follow start in the new tree. A pure move (`git mv`, imports rewritten), proved as A1 was: the unchanged suite, `tests/test_ids.py`, and the import test turned into rules per folder. The layout:
+
+```
+custom_components/pururu/
+├── __init__.py, config_flow.py, const.py, sensor.py, binary_sensor.py, switch.py, light.py
+├── core/          runtime, feature, vocabulary, entity, texts, messages, files, generated (A2b adds roles, resolve)
+├── features/      unchanged
+├── device_keys/   programs, reactions, and DEVICE_KEYS
+├── outputs/       events, dashboard, places, devices, alert2_alerts, alert_lights
+└── setup/         schema, catalogue, checks, build, generate, lifecycle, listener
+```
+
+`notifications.py` goes to `device_keys/` until B moves it to `aspects/`. Sonar suppressions and docs that name a path follow.
 
 **A2b, the model.** `roles.py` and `Feature` with roles; `resolve.py`, `Index`, `Target`, with `Ref` built from 0.1.23's syntax (a reaction's `device:` + `when:`, a light group's `{device: [key]}`), so the old resolvers go now and C only changes the parsing; `CHECKS` at the domain level with paths (error texts and their order may change); `Planned`, and each `plan()` in its owner (`programs.py`, `reactions.py`, `notifications.py`); `Built` gains `builders` and `index`. Docs: `writing-a-feature.mdx`, `testing.mdx`.
 
