@@ -13,9 +13,8 @@ from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
 from ..core.feature import Device, presets_of
 from ..core.resolve import Target
-from ..core.roles import Provides, Refers, Requires
+from ..core.roles import Generates, Provides, Refers, Requires
 from ..core.texts import Texts
-from ..device_keys import DEVICE_KEYS
 from ..features import FEATURES, presets
 from . import catalogue
 
@@ -75,12 +74,16 @@ def _inputs(
     """What builder `name` gets in `inputs`, and the unique IDs of what it requires.
 
     A feature: the current entity IDs of what it takes through <capability>_from
-    and of what it refers to. A device key (DEVICE_KEYS): the entity IDs of the
-    scripts and automations the entry generates, by ID: its statistics never
-    watch one it doesn't.
+    and of what it refers to. A builder that Generates: the entity IDs of its
+    scripts or automations the entry owns, by ID: its statistics never watch
+    one the entry doesn't.
     """
-    if name in DEVICE_KEYS:
-        return dict(owned), set()
+    if (generates := catalogue.builders()[name].role(Generates)) is not None:
+        return {
+            unique_id: owned[unique_id]
+            for _, unique_id in generates.generates(key, config[name])
+            if unique_id in owned
+        }, set()
     feature = FEATURES[name]
     inputs: dict[str, str] = {}
     required: set[str] = set()

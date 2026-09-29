@@ -83,6 +83,25 @@ class Happenings:
     happenings: Mapping[str, Happening]
 
 
+@dataclass(frozen=True)
+class Generates:
+    """What it writes to a generated kind: (domain, object ID) from (device key, validated block).
+
+    `what` names one in a message: "program", "reaction".
+    """
+
+    what: str
+    generates: Callable[[str, Any], Iterable[tuple[str, str]]]
+
+
 type Role = (
-    Provides | Requires | Configured | Actions | Items | Refers | Presets | Happenings
+    Provides
+    | Requires
+    | Configured
+    | Actions
+    | Items
+    | Refers
+    | Presets
+    | Happenings
+    | Generates
 )

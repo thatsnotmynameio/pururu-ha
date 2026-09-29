@@ -18,6 +18,7 @@ from ..const import (
 )
 from ..core import generated
 from ..core.resolve import Target
+from ..core.roles import Generates
 from ..core.runtime import Built, PururuConfigEntry
 from ..device_keys import notifications, programs, reactions
 from . import catalogue
@@ -43,21 +44,16 @@ def owned(
 
 
 def watched_items(devices: dict[str, dict[str, Any]]) -> set[tuple[str, str]]:
-    """(domain, ID) of every script and automation the entry generates.
+    """(domain, ID) of every script and automation the device keys generate.
 
     Renamed, what watches it follows: a reaction's action, the statistics.
     """
     return {
-        *(
-            (programs.KIND.domain, programs.script_id(key, program))
-            for key, config in devices.items()
-            for program in config.get(CONF_PROGRAMS, {})
-        ),
-        *(
-            (reactions.KIND.domain, reactions.automation_id(key, reaction))
-            for key, config in devices.items()
-            for reaction in config.get(CONF_REACTIONS, {})
-        ),
+        generated_item
+        for key, config in devices.items()
+        for name, feature in catalogue.builders().items()
+        if name in config and (generates := feature.role(Generates)) is not None
+        for generated_item in generates.generates(key, config[name])
     }
 
 

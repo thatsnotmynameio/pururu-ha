@@ -243,3 +243,16 @@ def test_ready_made_watch_the_builders_keys(features: dict[str, Any]) -> None:
         happenings = role(feature, "Happenings")
         for notification, happening in (happenings.happenings if happenings else {}).items():
             assert happening.watches in feature.entity_keys, f"{name}: {notification}"
+
+
+def test_a_generating_builder_generates_from_its_example(features: dict[str, Any]) -> None:
+    """What a builder writes to a generated kind carries the pururu pattern of its device."""
+    generating = [name for name, feature in features.items() if role(feature, "Generates")]
+    assert set(generating) == {"programs", "reactions"}
+    for name in generating:
+        feature = features[name]
+        generated = list(role(feature, "Generates").generates("dev", feature.schema(dict(feature.example))))
+        assert generated, name
+        for domain, unique_id in generated:
+            assert domain in ("script", "automation"), name
+            assert unique_id.startswith("pururu_dev_"), name

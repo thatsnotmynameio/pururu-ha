@@ -19,7 +19,7 @@ from ..const import (
     DEFAULT_ALERT_LIGHTS,
 )
 from ..core.feature import ALERTS_KEY, Feature, preset_keys, presets_of, qualified
-from ..core.roles import Actions, Configured, Provides, Refers, Requires
+from ..core.roles import Actions, Configured, Generates, Provides, Refers, Requires
 from ..device_keys import notifications, programs, reactions
 from ..features import FEATURES
 from ..outputs import alert_lights
@@ -179,20 +179,16 @@ def entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
 
 def _generated_ids(key: str, device: dict[str, Any]) -> Iterator[tuple[str, str, str]]:
     """(domain, ID, what) of every automation and script the device generates."""
-    for reaction_key in device.get(CONF_REACTIONS, {}):
-        yield (
-            reactions.KIND.domain,
-            reactions.automation_id(key, reaction_key),
-            "reaction",
-        )
+    for name, feature in builders().items():
+        if name in device and (generates := feature.role(Generates)) is not None:
+            for domain, unique_id in generates.generates(key, device[name]):
+                yield domain, unique_id, generates.what
     for _, feature, notification, _ in notifications.enabled(device):
         yield (
             notifications.KIND.domain,
             notifications.automation_id(key, feature.namespace, notification),
             "notification",
         )
-    for program in device.get(CONF_PROGRAMS, {}):
-        yield programs.KIND.domain, programs.script_id(key, program), "program"
 
 
 def generated_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
