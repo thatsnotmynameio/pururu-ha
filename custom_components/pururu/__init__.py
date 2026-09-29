@@ -7,7 +7,7 @@ the device's entities. One config entry owns every floor, area, device and entit
 """
 
 from collections import ChainMap
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from functools import partial
 import logging
 from typing import Any, Literal
@@ -46,6 +46,7 @@ from . import (
     dashboard,
     events,
     generated,
+    messages,
     places,
     programs,
     reactions,
@@ -58,6 +59,8 @@ from .const import (
     CONF_DEVICES,
     CONF_FLOORS,
     CONF_LIGHTS,
+    CONF_MESSAGE,
+    CONF_NOTIFY,
     CONF_PROGRAMS,
     CONF_REACTIONS,
     DATA_CONFIG,
@@ -335,6 +338,20 @@ def _reaction_resolved(
         )
 
 
+def _messages_sent(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a message that goes nowhere: no notify of its own, none in config.notify."""
+    if config[CONF_CONFIG].get(CONF_NOTIFY):
+        return config
+    for key, device in config[CONF_DEVICES].items():
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
+            if CONF_MESSAGE in reaction and CONF_NOTIFY not in reaction:
+                raise vol.Invalid(
+                    f"device {key}: reactions: {reaction_key}: message needs notify, "
+                    "here or in config.notify"
+                )
+    return config
+
+
 def _referable(
     key: str, config: dict[str, Any]
 ) -> dict[str, tuple[Device, str, Platform]]:
@@ -421,6 +438,8 @@ CONFIG_SCHEMA = vol.Schema(
                     # Settings of the whole house; schemas of their own, so a typo is refused
                     vol.Optional(CONF_CONFIG, default={}): vol.Schema(
                         {
+                            # Where every message goes, unless its own notify says
+                            vol.Optional(CONF_NOTIFY): messages.TARGETS,
                             vol.Optional(CONF_ALERTS, default={}): vol.Schema(
                                 {
                                     vol.Optional(
@@ -438,6 +457,7 @@ CONFIG_SCHEMA = vol.Schema(
             _entity_ids_distinct,
             _reactions_resolved,
             _alert_lights_resolved,
+            _messages_sent,
         )
     },
     extra=vol.ALLOW_EXTRA,
@@ -536,8 +556,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     generated_scripts = await generated.async_sync(
         hass, entry, programs.KIND, scripts, held
     )
+    # Where a message goes without a notify of its own
+    notify = configured.get(CONF_CONFIG, {}).get(CONF_NOTIFY, [])
     automations, held_automations = _automations(
-        hass, devices, created, generated_scripts, held
+        hass, devices, created, generated_scripts, held, notify
     )
     await generated.async_sync(
         hass, entry, reactions.KIND, automations, held_automations
@@ -894,12 +916,13 @@ def _automations(
     created: set[str],
     scripts: Collection[str],
     held_scripts: Collection[str],
+    notify: Sequence[str],
 ) -> tuple[list[generated.Item], set[str]]:
     """An automation per reaction of every device; one that can't work is logged.
 
     One watching an entity not created, or starting a program whose script
     isn't generated, isn't generated. Also the IDs of those held with their
-    program.
+    program. `notify` is config's: where a message without its own goes.
     """
     registry = er.async_get(hass)
     automations: list[generated.Item] = []
@@ -929,6 +952,7 @@ def _automations(
                         reaction,
                         entity_id,
                         script,
+                        reaction.get(CONF_NOTIFY, notify),
                     ),
                 )
             )
