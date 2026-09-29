@@ -1,6 +1,10 @@
-"""The rules a configuration must follow beyond each block's own schema."""
+"""The rules over the whole house that no one block owns: references, real entities, IDs, areas, messages.
 
-from collections.abc import Iterator
+Each is a Check (schema.CHECKS). The rules a block owns live in its module:
+reactions.check, programs.check, alert_lights.check, places.floors_exist.
+"""
+
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -11,19 +15,16 @@ from ..const import (
     CONF_AREAS,
     CONF_CONFIG,
     CONF_DEVICES,
-    CONF_LIGHTS,
     CONF_MESSAGE,
+    CONF_NOTIFICATIONS,
     CONF_NOTIFY,
-    CONF_PROGRAMS,
     CONF_REACTIONS,
-    DEFAULT_ALERT_LIGHTS,
 )
-from ..core.feature import ALERTS_KEY, Feature, preset_keys, presets_of, qualified
-from ..core.roles import Actions, Configured, Generates, Provides, Refers, Requires
-from ..device_keys import notifications, programs, reactions
+from ..core.feature import ALERTS_KEY, Feature
+from ..core.resolve import Index, find
+from ..core.roles import Configured, Generates, Provides, Refers, Requires
+from ..device_keys import notifications
 from ..features import FEATURES
-from ..outputs import alert_lights
-from .catalogue import builders, keys, targets
 
 
 def capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
@@ -46,140 +47,87 @@ def _provides(feature: Feature, capability: str) -> bool:
     )
 
 
-def real_entities_distinct(device: dict[str, Any], names: list[str]) -> None:
-    """Refuse a real entity in two configured features: a relay is a switch or a light."""
-    owners: dict[str, str] = {}  # real entity -> the configured feature that has it
-    for name in names:
-        if FEATURES[name].role(Configured) is None:
-            continue
-        for item in device[name].values():
-            # A configured key need not stand for a real entity (an alert)
-            if (entity := item.get("entity")) is None:
+def references(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> None:
+    """Refuse a reference that isn't another feature's entity key, or an alert watching an alert."""
+    for key, device in house[CONF_DEVICES].items():
+        for name, feature in builders.items():
+            if name not in device or (refers := feature.role(Refers)) is None:
                 continue
-            if owners.setdefault(entity, name) != name:
-                raise vol.Invalid(f"{name}: {entity} is already in {owners[entity]}")
+            for ref in refers.refers(device[name]):
+                target = find(index, key, ref)
+                if target is None or target.builder == name:
+                    raise vol.Invalid(
+                        f"{name}: {ref.key} is not an entity key of another feature "
+                        "of this device",
+                        path=[CONF_DEVICES, key, name],
+                    )
+                if name == CONF_ALERTS and target.by == ALERTS_KEY:
+                    raise vol.Invalid(
+                        f"{CONF_ALERTS}: {ref.key} is an alert: an alert can't watch "
+                        "another",
+                        path=[CONF_DEVICES, key, name],
+                    )
 
 
-def references_resolved(device: dict[str, Any], names: list[str]) -> None:
-    """Refuse a reference that isn't another feature's entity key."""
-    # Every entity key the device can create, in its namespace -> its feature
-    owners = {
-        qualified(builders()[name].namespace, entity_key): name
-        for name, entity_key, *_ in keys(device)
-    }
-    for name in names:
-        if (refers := FEATURES[name].role(Refers)) is None:
-            continue
-        for key in (ref.key for ref in refers.refers(device[name])):
-            if owners.get(key, name) == name:
-                raise vol.Invalid(
-                    f"{name}: {key} is not an entity key of another feature "
-                    "of this device"
-                )
+def real_entities_distinct(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> None:
+    """Refuse a real entity in two configured features of a device: a relay is a switch or a light."""
+    for key, device in house[CONF_DEVICES].items():
+        owners: dict[str, str] = {}  # real entity -> the configured feature that has it
+        for name, feature in builders.items():
+            if name not in device or feature.role(Configured) is None:
+                continue
+            for item in device[name].values():
+                # A configured key need not stand for a real entity (an alert)
+                if (entity := item.get("entity")) is None:
+                    continue
+                if owners.setdefault(entity, name) != name:
+                    raise vol.Invalid(
+                        f"{name}: {entity} is already in {owners[entity]}",
+                        path=[CONF_DEVICES, key, name],
+                    )
 
 
-def no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None:
-    """Refuse a hand-written alert whose `when` is another feature's ready-made alert."""
-    refers = FEATURES[CONF_ALERTS].role(Refers)
-    if CONF_ALERTS not in names or refers is None:
-        return
-    ready_made = {
-        qualified(FEATURES[name].namespace, alert)
-        for name in names
-        for alert in preset_keys(presets_of(FEATURES[name]))
-    }
-    for key in (ref.key for ref in refers.refers(device[CONF_ALERTS])):
-        if key in ready_made:
-            raise vol.Invalid(
-                f"{CONF_ALERTS}: {key} is an alert: an alert can't watch another"
-            )
-
-
-def _own_statistics(reaction_key: str) -> set[str]:
-    """The entity keys of a reaction's own statistics: watching them, it would feed itself."""
-    return {
-        qualified(reactions.NAMESPACE, f"{reaction_key}_{suffix}")
-        for suffix in reactions.PER_REACTION
-    }
-
-
-def reactions_on_this_device(device: dict[str, Any]) -> None:
-    """Refuse a reaction's `when` or `then` that isn't the device's own.
-
-    `when` without `device` names an entity key of the device, and `then` one of
-    its programs.
-    """
-    own = {
-        qualified(builders()[name].namespace, entity_key)
-        for name, entity_key, *_ in keys(device)
-    }
-    for key, reaction in device.get(CONF_REACTIONS, {}).items():
-        if "device" not in reaction and reaction.get("when") in _own_statistics(key):
-            raise vol.Invalid(
-                f"reactions: {key}: {reaction['when']} is its own statistic"
-            )
-        then = reaction.get("then")
-        if then is not None and then not in device.get(CONF_PROGRAMS, {}):
-            raise vol.Invalid(
-                f"reactions: {key}: {then} is not a program of this device"
-            )
-        if "device" in reaction or (when := reaction.get("when")) is None:
-            continue
-        if when not in own:
-            raise vol.Invalid(
-                f"reactions: {key}: {when} is not an entity key of this device"
-            )
-
-
-def programs_on_this_device(device: dict[str, Any]) -> None:
-    """Refuse a step on what isn't a feature's entity key of the device taking its action."""
-    owners = {
-        qualified(builders()[name].namespace, entity_key): name
-        for name, entity_key, *_ in keys(device)
-    }
-    for program in device.get(CONF_PROGRAMS, {}).values():
-        for action, key in programs.targets(program):
-            if key not in owners:
-                raise vol.Invalid(
-                    f"programs: {key} is not an entity key of another feature "
-                    "of this device"
-                )
-            actions = builders()[owners[key]].role(Actions)
-            if actions is None or action not in actions.actions:
-                raise vol.Invalid(f"programs: {key} does not take {action}")
-
-
-def areas_exist(config: dict[str, Any]) -> dict[str, Any]:
+def areas_exist(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> None:
     """Refuse a device in an area the configuration doesn't declare."""
-    for key, device in config[CONF_DEVICES].items():
+    for key, device in house[CONF_DEVICES].items():
         area_id = device.get(CONF_AREA)
-        if area_id is not None and area_id not in config[CONF_AREAS]:
-            raise vol.Invalid(f"device {key}: area {area_id} is not in areas")
-    return config
+        if area_id is not None and area_id not in house[CONF_AREAS]:
+            raise vol.Invalid(
+                f"device {key}: area {area_id} is not in areas",
+                path=[CONF_DEVICES, key, CONF_AREA],
+            )
 
 
-def entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
+def entity_ids_distinct(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> None:
     """Refuse two devices whose entities would share an ID.
 
     Device `pool` with the switch `switch_pump` and device `pool_switch` with
     the switch `pump` would both have pururu_pool_switch_switch_pump.
     """
     owners: dict[str, str] = {}  # object ID -> the device that has it
-    for key, device in config[CONF_DEVICES].items():
-        for target in targets(key, device).values():
-            object_id = target.unique_id
-            if object_id in owners:
+    for key, targets in index.items():
+        for target in targets.values():
+            if (owner := owners.setdefault(target.unique_id, key)) != key:
                 raise vol.Invalid(
-                    f"device {key}: {object_id} is already an entity of device "
-                    f"{owners[object_id]}"
+                    f"device {key}: {target.unique_id} is already an entity of "
+                    f"device {owner}",
+                    path=[CONF_DEVICES, key],
                 )
-            owners[object_id] = key
-    return config
 
 
-def _generated_ids(key: str, device: dict[str, Any]) -> Iterator[tuple[str, str, str]]:
+def _generated_ids(
+    key: str, device: Mapping[str, Any], builders: Mapping[str, Feature]
+) -> Iterator[tuple[str, str, str]]:
     """(domain, ID, what) of every automation and script the device generates."""
-    for name, feature in builders().items():
+    for name, feature in builders.items():
         if name in device and (generates := feature.role(Generates)) is not None:
             for domain, unique_id in generates.generates(key, device[name]):
                 yield domain, unique_id, generates.what
@@ -191,7 +139,9 @@ def _generated_ids(key: str, device: dict[str, Any]) -> Iterator[tuple[str, str,
         )
 
 
-def generated_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
+def generated_ids_distinct(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> None:
     """Refuse two automations, or two scripts, that would share an ID.
 
     Device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b`
@@ -201,112 +151,38 @@ def generated_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     owners: dict[
         tuple[str, str], tuple[str, str]
     ] = {}  # (domain, ID) -> (device, what)
-    for key, device in config[CONF_DEVICES].items():
-        for domain, unique_id, what in _generated_ids(key, device):
+    for key, device in house[CONF_DEVICES].items():
+        for domain, unique_id, what in _generated_ids(key, device, builders):
             if (owner := owners.get((domain, unique_id))) is not None:
                 raise vol.Invalid(
                     f"device {key}: {domain}.{unique_id} is already a {owner[1]} "
-                    f"of device {owner[0]}"
+                    f"of device {owner[0]}",
+                    path=[CONF_DEVICES, key],
                 )
             owners[domain, unique_id] = (key, what)
-    return config
 
 
-def reactions_resolved(config: dict[str, Any]) -> dict[str, Any]:
-    """Refuse a reaction's `device` that isn't a device, or its `when` that isn't that device's."""
-    devices = config[CONF_DEVICES]
-    for key, device in devices.items():
-        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
-            if "device" in reaction:
-                _reaction_resolved(devices, key, reaction_key, reaction)
-    return config
-
-
-def _reaction_resolved(
-    devices: dict[str, Any], key: str, reaction_key: str, reaction: dict[str, Any]
+def messages_sent(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> None:
-    """Refuse this reaction's `device` that isn't a device, or `when` it can't watch there.
-
-    Naming its own device, it can't watch its own statistics either.
-    """
-    other = reaction["device"]
-    where = f"device {key}: reactions: {reaction_key}"
-    if other not in devices:
-        raise vol.Invalid(f"{where}: device {other} is not in devices")
-    if other == key and reaction["when"] in _own_statistics(reaction_key):
-        raise vol.Invalid(f"{where}: {reaction['when']} is its own statistic")
-    if reaction["when"] not in targets(other, devices[other]):
-        raise vol.Invalid(
-            f"{where}: {reaction['when']} is not an entity key of device {other}"
-        )
-
-
-def messages_sent(config: dict[str, Any]) -> dict[str, Any]:
     """Refuse a message that goes nowhere, a reaction's or a notification's.
 
     Neither a notify of its own nor one in config.notify.
     """
-    if config[CONF_CONFIG].get(CONF_NOTIFY):
-        return config
-    for key, device in config[CONF_DEVICES].items():
+    if house[CONF_CONFIG].get(CONF_NOTIFY):
+        return
+    for key, device in house[CONF_DEVICES].items():
         for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
             if CONF_MESSAGE in reaction and CONF_NOTIFY not in reaction:
                 raise vol.Invalid(
                     f"device {key}: reactions: {reaction_key}: message needs notify, "
-                    "here or in config.notify"
+                    "here or in config.notify",
+                    path=[CONF_DEVICES, key, CONF_REACTIONS, reaction_key],
                 )
         for name, _, notification, settings in notifications.enabled(device):
             if CONF_NOTIFY not in settings:
                 raise vol.Invalid(
                     f"device {key}: {name}: notifications: {notification} needs "
-                    "notify, here or in config.notify"
+                    "notify, here or in config.notify",
+                    path=[CONF_DEVICES, key, name, CONF_NOTIFICATIONS, notification],
                 )
-    return config
-
-
-def alert_lights_resolved(config: dict[str, Any]) -> dict[str, Any]:
-    """Refuse a group's light that isn't a device's, or an alert's group that isn't one."""
-    devices = config[CONF_DEVICES]
-    groups = config[CONF_CONFIG][CONF_ALERTS][CONF_LIGHTS][alert_lights.GROUPS]
-    for group, members in groups.items():
-        _alert_light_group_resolved(devices, group, members)
-    for key, device in devices.items():
-        for where, group in _alert_light_groups(device):
-            if group in groups:
-                continue
-            if group == DEFAULT_ALERT_LIGHTS:
-                raise vol.Invalid(
-                    f"device {key}: {where}: there is no default group in "
-                    "config.alerts.lights.groups"
-                )
-            raise vol.Invalid(
-                f"device {key}: {where}: {group} is not a group of "
-                "config.alerts.lights.groups"
-            )
-    return config
-
-
-def _alert_light_group_resolved(
-    devices: dict[str, Any], group: str, members: dict[str, list[str]]
-) -> None:
-    """Refuse a light of this group that isn't a device's."""
-    where = f"config.alerts.lights.groups: {group}"
-    for key, lights in members.items():
-        if key not in devices:
-            raise vol.Invalid(f"{where}: device {key} is not in devices")
-        for light in lights:
-            if light not in devices[key].get(CONF_LIGHTS, {}):
-                raise vol.Invalid(f"{where}: device {key} has no light {light}")
-
-
-def _alert_light_groups(device: dict[str, Any]) -> Iterator[tuple[str, str]]:
-    """(where, group) of each of the device's alerts with lights, hand-written or ready-made."""
-    for alert_key, alert in device.get(CONF_ALERTS, {}).items():
-        if (group := alert.get(CONF_LIGHTS)) is not None:
-            yield f"{CONF_ALERTS}: {alert_key}", group
-    for name, feature in FEATURES.items():
-        if not presets_of(feature) or name not in device:
-            continue
-        for preset, settings in device[name].get(ALERTS_KEY, {}).items():
-            if (group := settings.get(CONF_LIGHTS)) is not None:
-                yield f"{name}: {ALERTS_KEY}: {preset}", group

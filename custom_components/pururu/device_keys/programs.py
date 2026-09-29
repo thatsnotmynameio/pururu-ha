@@ -8,7 +8,7 @@ can reach outside the device. Each run is a cycle: its statistics are sensors
 of its device (STATISTICS).
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Hashable, Iterator, Mapping
 from typing import Any, override
 
 import voluptuous as vol
@@ -25,10 +25,11 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 
-from ..const import CONF_SCRIPTS, ENTITY_PREFIX
+from ..const import CONF_DEVICES, CONF_PROGRAMS, CONF_SCRIPTS, ENTITY_PREFIX
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature, Item, qualified
 from ..core.generated import Kind, period
+from ..core.resolve import Index, Ref, find
 from ..core.roles import Generates, Items
 from ..features.cycle import Cycle, cycle_signal, end_signal
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
@@ -229,3 +230,24 @@ STATISTICS = Feature(
         ),
     ),
 )
+
+
+def check(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> None:
+    """Refuse a step on what isn't another feature's entity key of the device taking its action (a schema check)."""
+    for key, device in house[CONF_DEVICES].items():
+        for program_key, program in device.get(CONF_PROGRAMS, {}).items():
+            path: list[Hashable] = [CONF_DEVICES, key, CONF_PROGRAMS, program_key]
+            for action, entity_key in targets(program):
+                target = find(index, key, Ref(None, entity_key))
+                if target is None:
+                    raise vol.Invalid(
+                        f"programs: {entity_key} is not an entity key of another "
+                        "feature of this device",
+                        path=path,
+                    )
+                if action not in target.actions:
+                    raise vol.Invalid(
+                        f"programs: {entity_key} does not take {action}", path=path
+                    )

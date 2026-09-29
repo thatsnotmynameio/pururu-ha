@@ -10,7 +10,7 @@ try skipped once the occurrence ran. Each reaction's triggers are counted:
 sensors of its device (STATISTICS).
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, override
@@ -28,7 +28,15 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 
-from ..const import CONF_AUTOMATIONS, CONF_MESSAGE, CONF_NOTIFY, ENTITY_PREFIX
+from ..const import (
+    CONF_AUTOMATIONS,
+    CONF_DEVICES,
+    CONF_MESSAGE,
+    CONF_NOTIFY,
+    CONF_PROGRAMS,
+    CONF_REACTIONS,
+    ENTITY_PREFIX,
+)
 from ..core import messages
 from ..core.entity import PururuEntity
 from ..core.feature import (
@@ -41,6 +49,7 @@ from ..core.feature import (
     state_text,
 )
 from ..core.generated import Kind, period
+from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Generates, Items
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
 
@@ -432,3 +441,68 @@ STATISTICS = Feature(
         ),
     ),
 )
+
+
+def check(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> None:
+    """Refuse a reaction's `when`, `device` or `then` it can't have (a schema check).
+
+    `when` without `device` names an entity key of the device, and never one of
+    the reaction's own statistics; `device` names a device; `then` one of the
+    device's programs.
+    """
+    devices = house[CONF_DEVICES]
+    for key, device in devices.items():
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
+            _check(index, devices, key, reaction_key, reaction)
+
+
+def _own_statistic(target: Target | None, key: str, reaction_key: str) -> bool:
+    """Whether it counts this reaction: watching it, the reaction would feed itself."""
+    return (
+        target is not None
+        and target.device.key == key
+        and target.builder == CONF_REACTIONS
+        and target.item == reaction_key
+    )
+
+
+def _check(
+    index: Index,
+    devices: Mapping[str, Any],
+    key: str,
+    reaction_key: str,
+    reaction: Mapping[str, Any],
+) -> None:
+    path: list[Hashable] = [CONF_DEVICES, key, CONF_REACTIONS, reaction_key]
+    when, other = reaction.get("when"), reaction.get("device")
+    target = None if when is None else find(index, key, Ref(other, when))
+    if other is None and _own_statistic(target, key, reaction_key):
+        raise vol.Invalid(
+            f"reactions: {reaction_key}: {when} is its own statistic", path=path
+        )
+    then = reaction.get("then")
+    if then is not None and then not in devices[key].get(CONF_PROGRAMS, {}):
+        raise vol.Invalid(
+            f"reactions: {reaction_key}: {then} is not a program of this device",
+            path=path,
+        )
+    if when is None:
+        return
+    if other is None:
+        if target is None:
+            raise vol.Invalid(
+                f"reactions: {reaction_key}: {when} is not an entity key of this device",
+                path=path,
+            )
+        return
+    where = f"device {key}: reactions: {reaction_key}"
+    if other not in devices:
+        raise vol.Invalid(f"{where}: device {other} is not in devices", path=path)
+    if _own_statistic(target, key, reaction_key):
+        raise vol.Invalid(f"{where}: {when} is its own statistic", path=path)
+    if target is None:
+        raise vol.Invalid(
+            f"{where}: {when} is not an entity key of device {other}", path=path
+        )
