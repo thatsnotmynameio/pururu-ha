@@ -13,13 +13,8 @@ from homeassistant.core import State
 NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
 
-def _period(value: timedelta) -> str:
-    """A time period as HA reads it: [-]HH:MM:SS, and the fraction of a second if any.
-
-    A copy of generated.period: generated.py imports entity.py, which imports
-    feature.py, which imports this module for Condition, so this module can't
-    import generated.py back without a cycle.
-    """
+def period(value: timedelta) -> str:
+    """A time period as HA reads it: [-]HH:MM:SS, and the fraction of a second if any."""
     sign = "-" if value < timedelta(0) else ""
     minutes, seconds = divmod(abs(value), timedelta(minutes=1))
     hours, minutes = divmod(minutes, 60)
@@ -95,5 +90,5 @@ def trigger(block: Mapping[str, Any], entity_id: str | None) -> dict[str, Any]:
             if key in block:
                 result[key] = block[key]
     if "for" in block:
-        result["for"] = _period(block["for"])
+        result["for"] = period(block["for"])
     return result

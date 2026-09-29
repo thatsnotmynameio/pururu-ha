@@ -29,9 +29,10 @@ from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, CONF_SCRIPTS, ENTITY
 from ..core import generated
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature, Item, qualified
-from ..core.generated import Kind, Planned, period
+from ..core.generated import Kind, Planned
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Generates, Items
+from ..core.vocabulary import period
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter

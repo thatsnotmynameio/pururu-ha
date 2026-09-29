@@ -43,7 +43,7 @@ from ..core.feature import (
     qualified,
     state_text,
 )
-from ..core.generated import Kind, Planned, period
+from ..core.generated import Kind, Planned
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Generates, Items
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
@@ -206,7 +206,7 @@ def _occurrence(reaction: Mapping[str, Any], later: timedelta) -> dict[str, Any]
         return {"trigger": "time", "at": at.time().isoformat()}
     sun: dict[str, Any] = {"trigger": "sun", "event": reaction["sun"]}
     if "offset" in reaction or later:
-        sun["offset"] = period(reaction.get("offset", timedelta(0)) + later)
+        sun["offset"] = vocabulary.period(reaction.get("offset", timedelta(0)) + later)
     return sun
 
 
