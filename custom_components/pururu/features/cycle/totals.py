@@ -49,7 +49,7 @@ class CyclesTotal(PururuEntity, RestoreSensor):
         """Count the cycles (of `item`) that `source` sends, as `entity_key` (a door's openings)."""
         self.sources = (source,)
         self._identify(device, Platform.SENSOR, entity_key, item=item)
-        self._signal = cycle_signal(device, item)
+        self._signal = cycle_signal(device, item)  # only _watch reads it
         self._cycles = 0
 
     @property
@@ -68,7 +68,7 @@ class CyclesTotal(PururuEntity, RestoreSensor):
         self._watch()
 
     def _watch(self) -> None:
-        """Count each cycle `self._signal` sends; `Runs` counts itself instead, before it sends."""
+        """Count each cycle `self._signal` sends; a subclass that counts itself overrides it."""
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._signal, self._count)
         )

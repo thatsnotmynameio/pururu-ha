@@ -26,13 +26,12 @@ from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 
 from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, CONF_SCRIPTS, ENTITY_PREFIX
-from ..core import generated
+from ..core import generated, vocabulary
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature, Item, qualified
 from ..core.generated import Kind, Planned
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Generates, Items
-from ..core.vocabulary import period
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
@@ -117,7 +116,7 @@ def _translated(
     """A step in HA's script syntax."""
     ((action, value),) = step.items()
     if action == DELAY:
-        return {DELAY: period(value)}
+        return {DELAY: vocabulary.period(value)}
     entity_id = entity_ids[value]
     return {
         "action": f"{split_entity_id(entity_id)[0]}.{action}",
@@ -145,7 +144,7 @@ def script(
 
 
 class Runs(CyclesTotal, CycleSource):
-    """A program's finished runs, all time; it counts each one itself, then sends it: its script on, then off.
+    """A program's finished runs (its script on, then off), all time; it counts each run itself, then sends it as a cycle.
 
     The run's start is the `on` state's: a pururu reload while it runs keeps it.
     """
@@ -155,6 +154,7 @@ class Runs(CyclesTotal, CycleSource):
         super().__init__(device, source="cycles_total", item=item)
         # The script isn't pururu's: nothing of the device to wait for
         self.sources = ()
+        # It counts itself, so the inherited signal (only _watch reads it) goes unread
         self._script = script
         self._cycle_signals(device, item)
 

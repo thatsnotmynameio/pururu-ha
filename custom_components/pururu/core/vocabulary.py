@@ -1,4 +1,4 @@
-"""The vocabulary of conditions: what makes a watched state hold."""
+"""The vocabulary of conditions and triggers: what makes a watched state hold, the HA trigger that watches it, and a period as HA reads it."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
