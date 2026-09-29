@@ -254,7 +254,7 @@ async def async_step(
     devices = built.house.get(CONF_DEVICES, {})
     created = set(built.created)
     items, held, acted_on = scripts(hass, devices, created)
-    targets |= acted_on
+    targets.update(acted_on)
     generated_scripts = await generated.async_sync(
         hass, entry, programs.KIND, items, held
     )

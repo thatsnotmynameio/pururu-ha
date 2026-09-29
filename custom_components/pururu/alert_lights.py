@@ -569,19 +569,21 @@ async def async_step(
 ) -> None:
     """Lend the created lights to the created alerts; adds the lights and alerts it follows to `targets`."""
     lights_settings = settings(built.house)
-    targets |= async_setup(
-        hass,
-        entry,
-        lights_settings,
-        light_ids(lights_settings, built.house.get(CONF_DEVICES, {})),
-        [
-            entity
-            for entity in built.entities.get(Platform.BINARY_SENSOR, ())
-            if isinstance(entity, ProblemAlert)
-        ],
-        [
-            entity
-            for entity in built.entities.get(Platform.LIGHT, ())
-            if isinstance(entity, Borrowable)
-        ],
+    targets.update(
+        async_setup(
+            hass,
+            entry,
+            lights_settings,
+            light_ids(lights_settings, built.house.get(CONF_DEVICES, {})),
+            [
+                entity
+                for entity in built.entities.get(Platform.BINARY_SENSOR, ())
+                if isinstance(entity, ProblemAlert)
+            ],
+            [
+                entity
+                for entity in built.entities.get(Platform.LIGHT, ())
+                if isinstance(entity, Borrowable)
+            ],
+        )
     )
