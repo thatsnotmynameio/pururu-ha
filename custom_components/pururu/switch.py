@@ -4,7 +4,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import PururuConfigEntry
+from .runtime import PururuConfigEntry
 
 # Nothing polls, and a command goes straight on to the real switch
 PARALLEL_UPDATES = 0

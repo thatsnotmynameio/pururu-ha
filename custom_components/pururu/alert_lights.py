@@ -48,9 +48,10 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.util.color import color_name_to_rgb
 
 from .const import CONF_ALERTS, CONF_CONFIG, CONF_LIGHTS, EVENT_ALERT_LIGHTS_RELEASED
-from .feature import NO_READING, Device
-from .features.alerts import PRIORITIES, ProblemAlert
+from .feature import PRIORITIES, Device
+from .features.alerts import ProblemAlert
 from .features.lights import LIGHTS, Borrowable
+from .vocabulary import NO_READING
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def _distinct(lights: list[str]) -> list[str]:
     return lights
 
 
-# Device key -> keys of that device's lights; __init__ checks them against the devices
+# Device key -> keys of that device's lights; checks.alert_lights_resolved checks them against the devices
 GROUP = vol.All(
     vol.Schema({cv.slug: vol.All([cv.slug], vol.Length(min=1), _distinct)}),
     vol.Length(min=1),

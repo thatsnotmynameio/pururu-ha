@@ -36,7 +36,7 @@ These errors are logged without a traceback because they're configuration errors
 
 ### Validation
 
-`FLOOR_SCHEMA` and `AREA_SCHEMA` validate each entry. `floors_exist` (in `places.py`) and `_areas_exist` (in `__init__.py`) run over the whole block: an area's `floor` must be a key of `floors:`, and a device's `area` must be a key of `areas:`. A floor's `level` is an integer or `None`, and `_level` refuses booleans, because `level: yes` would otherwise pass as `1`.
+`FLOOR_SCHEMA` and `AREA_SCHEMA` validate each entry. `floors_exist` (in `places.py`) and `areas_exist` (in `checks.py`) run over the whole block: an area's `floor` must be a key of `floors:`, and a device's `area` must be a key of `areas:`. A floor's `level` is an integer or `None`, and `_level` refuses booleans, because `level: yes` would otherwise pass as `1`.
 
 ## Dashboard (`dashboard.py`)
 

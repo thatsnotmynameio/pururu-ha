@@ -63,6 +63,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | File | Covers |
 |---|---|
 | `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices, configured entity keys |
+| `test_ids.py` | Every entity and generated ID of a whole house (`fixtures/house.yaml`), pinned: a refactor can't lose or rename one |
 | `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every feature in `FEATURES` |
 | `test_appliance.py` | `running`, cycles, energy, runtime, meters, restores |
 | `test_phases.py` | Bands, `for`, `seen`, restores, translations |

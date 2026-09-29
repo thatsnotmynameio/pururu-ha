@@ -8,19 +8,13 @@ from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
-from homeassistant.const import (
-    ATTR_RESTORED,
-    STATE_OFF,
-    STATE_ON,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-    Platform,
-)
-from homeassistant.core import HomeAssistant, State
+from homeassistant.const import STATE_OFF, STATE_ON, Platform
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN, ENTITY_PREFIX
+from .vocabulary import Condition
 
 if TYPE_CHECKING:  # entity.py imports Device from here
     from .entity import PururuEntity
@@ -33,6 +27,9 @@ def finite_float(value: Any) -> float:
         raise vol.Invalid(f"expected a finite number, got {value!r}")
     return number
 
+
+# How serious a problem is, lowest first
+PRIORITIES = ("low", "medium", "high")
 
 # Text a person reads, or a state: a blank one would say nothing
 TEXT = vol.All(cv.string, vol.Strip, vol.Length(min=1))
@@ -117,56 +114,6 @@ class Device:
         return er.async_get(hass).async_get_entity_id(
             platform, DOMAIN, self.object_id(entity_key)
         ) or self.entity_id(platform, entity_key)
-
-
-# States that are no reading, unless the condition is about them
-NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
-
-
-def _number(state: State) -> float | None:
-    """A state's finite number, or None (entity.reading, which imports this module)."""
-    try:
-        value = float(state.state)
-    except ValueError:
-        return None
-    return value if math.isfinite(value) else None
-
-
-@dataclass(frozen=True, kw_only=True)
-class Condition:
-    """What makes the watched entity's state a problem: a state, a number, or a range."""
-
-    state: str | float | None = None
-    above: float | None = None
-    below: float | None = None
-
-    def holds(self, state: State | None) -> bool | None:
-        """Whether `state` is a problem; None when it is no reading.
-
-        A condition on unavailable or unknown holds while the entity has no
-        reading, either state or missing: a plug reconnecting passes from one to
-        the other. A state HA restored for an entity not loaded yet (at start,
-        during a reload) is no reading, for every condition.
-        """
-        if state is not None and state.attributes.get(ATTR_RESTORED):
-            return None
-        if isinstance(self.state, str):
-            return self._is(STATE_UNAVAILABLE if state is None else state.state)
-        if state is None or (value := _number(state)) is None:
-            return None
-        if self.state is not None:  # a number
-            return value == self.state
-        return (self.above is None or value > self.above) and (
-            self.below is None or value < self.below
-        )
-
-    def _is(self, current: str) -> bool | None:
-        """`is` a state: no reading for other states, unless it is about no reading."""
-        if self.state in NO_READING:
-            return current in NO_READING
-        if current in NO_READING:
-            return None
-        return current == self.state
 
 
 @dataclass(frozen=True, kw_only=True)
