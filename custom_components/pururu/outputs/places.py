@@ -20,7 +20,7 @@ from homeassistant.helpers import (
     floor_registry as fr,
 )
 
-from .const import CONF_ALIASES, CONF_AREAS, CONF_FLOOR, CONF_FLOORS, CONF_LEVEL
+from ..const import CONF_ALIASES, CONF_AREAS, CONF_FLOOR, CONF_FLOORS, CONF_LEVEL
 
 _LOGGER = logging.getLogger(__name__)
 

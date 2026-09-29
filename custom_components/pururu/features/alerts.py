@@ -31,9 +31,9 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 
 from ..const import ALERT2, DEFAULT_ALERT_LIGHTS
-from ..entity import PururuEntity
-from ..feature import PRIORITIES, TEXT, Device, Feature, finite_float, state_text
-from ..vocabulary import Condition
+from ..core.entity import PururuEntity
+from ..core.feature import PRIORITIES, TEXT, Device, Feature, finite_float, state_text
+from ..core.vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
 

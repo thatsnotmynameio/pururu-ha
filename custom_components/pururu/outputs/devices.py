@@ -10,8 +10,8 @@ from homeassistant.helpers import (
     entity_registry as er,
 )
 
-from .const import CONF_AREA, CONF_DEVICES, DOMAIN
-from .runtime import Built, PururuConfigEntry
+from ..const import CONF_AREA, CONF_DEVICES, DOMAIN
+from ..core.runtime import Built, PururuConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 

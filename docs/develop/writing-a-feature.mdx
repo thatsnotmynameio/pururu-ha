@@ -33,8 +33,8 @@ from homeassistant.core import Event, EventStateChangedData, HomeAssistant, call
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_state_change_event
 
-from ..entity import PururuEntity
-from ..feature import Device, Feature
+from ..core.entity import PururuEntity
+from ..core.feature import Device, Feature
 
 # vol.Schema refuses unknown keys by default: keep it that way
 SCHEMA = vol.Schema({vol.Required("sensor"): cv.entity_id})
@@ -102,7 +102,7 @@ OPENINGS = Feature(
 
 The pieces:
 
-- **`schema`** validates the block. Use `vol.Schema(...)` for every nested mapping that must refuse unknown keys (see [`ALLOW_EXTRA` leaks](/develop/architecture#voluptuous-allowextra-leaks)). For numbers, use `finite_float` from `feature.py`, which refuses `nan` and infinities.
+- **`schema`** validates the block. Use `vol.Schema(...)` for every nested mapping that must refuse unknown keys (see [`ALLOW_EXTRA` leaks](/develop/architecture#voluptuous-allowextra-leaks)). For numbers, use `finite_float` from `core/feature.py`, which refuses `nan` and infinities.
 - **`entity_keys`** lists **every** entity key the feature can create, even those that only exist with some settings, mapped to its platform.
 - **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, entity_key)`, which gives it its entity ID, unique ID, device and translated name.
 - **`example`** is a minimal valid block. The contract test validates it.
@@ -113,7 +113,7 @@ The pieces:
 ```python title="features/__init__.py"
 """Every feature a device can have, by its key in the device's configuration."""
 
-from ..feature import Feature
+from ..core.feature import Feature
 from .appliance import APPLIANCE
 from .openings import OPENINGS
 from .phases import PHASES
@@ -177,7 +177,7 @@ Some features create one entity per key the user writes, such as [`switches`](/f
 
 For a feature that stands for real entities of one domain, build each entity on Home Assistant's group entity of that domain, with the real entity as its only member: `Switch` in `features/switches.py` is a `SwitchGroup` of one, and `Light` in `features/lights.py` a `LightGroup` of one, as `Mirror` is a `SensorGroup` of one. The group already follows the real entity's state and passes every command on, with everything its domain offers. One feature per domain of the entity pururu creates: a light gets `lights`, not a place in `switches`. When a feature takes several domains of real entity, a mapping from each domain to its class (`KINDS` in `lights.py`) gives both the schema's domains and the class to build: `lights` takes a `switch.*` as a `SwitchLight`, on `GroupEntity`, on and off only. In one device, a real entity is in one configured feature at most.
 
-**Entity keys repeated per item.** Some features create the same set of entities for every item of their block: [`modes`](/features/modes) gives each mode its own last cycle, totals and meters. Set `per_item` to those suffixes (suffix → platform) and `items` to a function that returns, from the validated block, its items as `Item(slug, name)` (`feature.py`):
+**Entity keys repeated per item.** Some features create the same set of entities for every item of their block: [`modes`](/features/modes) gives each mode its own last cycle, totals and meters. Set `per_item` to those suffixes (suffix → platform) and `items` to a function that returns, from the validated block, its items as `Item(slug, name)` (`core/feature.py`):
 
 - An item's entity key is `<slug>_<suffix>` (`gelar_cycles_total`), so `sensor.pururu_<key>_mode_gelar_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
 - Each is named by its suffix's translation, `<namespace>_<suffix>` (`mode_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{mode} cycles"`, `"Ciclos de {mode}"`.
@@ -185,7 +185,7 @@ For a feature that stands for real entities of one domain, build each entity on 
 
 The cycle code `appliance`, `modes`, `door`, `window` and the programs' statistics share (the last cycle's sensors, the totals, the meters, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
 
-**Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Set `alerts` to a mapping of name → `Preset` (`feature.py`), as `features/appliance/alerts.py` does:
+**Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Set `alerts` to a mapping of name → `Preset` (`core/feature.py`), as `features/appliance/alerts.py` does:
 
 - `watches`: the entity key, in the feature's namespace, it watches.
 - `kind`: a `Condition`, as a hand-written alert's `is`/`above`/`below`, or an `Elapsed`: a state of the watched entity and a milestone, either an entity key whose state is a datetime (`since_key`) or an attribute of the watched entity (`since_attribute`), with `or_since_created` to count from the alert's creation until there's one. A condition alert is an `Alert`; an elapsed one an `ElapsedAlert` (`features/elapsed.py`), which survives restarts.
@@ -193,11 +193,11 @@ The cycle code `appliance`, `modes`, `door`, `window` and the programs' statisti
 
 Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity key `alert_<name>`, so ID collisions, names and icons are checked as for any entity key. Add its name and icon under `<namespace>_alert_<name>`, and its default texts under `<namespace>_alert_<name>_message` and `_done_message` in the translations' `common` block. `features/presets.py` validates the settings and builds the enabled alerts; nothing else is needed.
 
-**Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Set `notifications` to a mapping of name → `Happening` (`feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py` does. It creates no entity: `notifications.py` validates that key of the block (`schema._feature_block` takes it out before the feature's schema) and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
+**Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Set `notifications` to a mapping of name → `Happening` (`core/feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py` does. It creates no entity: `device_keys/notifications.py` validates that key of the block (`schema._feature_block` takes it out before the feature's schema) and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
 
 ## 6. What the contract test checks
 
-`tests/test_features.py` runs over every entry in `FEATURES`, and in `DEVICE_KEYS` (`device_keys.py`: `programs` and `reactions`, not features of a device, whose statistics a `Feature` each builds), so your feature is covered without changing the test:
+`tests/test_features.py` runs over every entry in `FEATURES`, and in `DEVICE_KEYS` (`device_keys/__init__.py`: `programs` and `reactions`, not features of a device, whose statistics a `Feature` each builds), so your feature is covered without changing the test:
 
 | Test | Checks |
 |---|---|

@@ -15,8 +15,8 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
-from ...entity import PururuEntity
-from ...feature import TEXT, Device, Feature, Item, bounded, finite_float
+from ...core.entity import PururuEntity
+from ...core.feature import TEXT, Device, Feature, Item, bounded, finite_float
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, EnergyTotal, RuntimeTotal

@@ -273,7 +273,7 @@ async def test_a_failed_reload_is_logged_raises_no_issue_and_is_retried(
 
 async def test_a_failed_write_is_logged_and_reloads_nothing(
         ha: HomeAssistant, alert2: FakeAlert2, caplog: pytest.LogCaptureFixture) -> None:
-    with patch.object(module("files"), "write_utf8_file_atomic",
+    with patch.object(module("core.files"), "write_utf8_file_atomic",
                       side_effect=WriteError("disk full")):
         assert await setup(ha, devices(**WITH_NOTIFY))
     assert f"The Alert2 alerts are not written to {FILE}: disk full" in caplog.text
@@ -349,5 +349,5 @@ ALERTS_PAGE = Path(__file__).resolve().parents[1] / "docs/features/alerts.mdx"
 def test_the_documented_include_is_the_one_pururu_asks_for(ha: HomeAssistant) -> None:
     block = re.search(r"```yaml[^\n]*\n(alert2:\n.*?)```", ALERTS_PAGE.read_text(), re.DOTALL)
     assert block is not None, "no alert2: block on the alerts page"
-    assert f"  {module('alert2_alerts').INCLUDE}\n" in block[1]
+    assert f"  {module('outputs.alert2_alerts').INCLUDE}\n" in block[1]
     assert "generator" not in block[1]

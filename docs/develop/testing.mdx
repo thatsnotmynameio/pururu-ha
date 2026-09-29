@@ -14,7 +14,7 @@ Every test that needs Home Assistant takes `ha` (from `tests/conftest.py`) inste
 
 It also marks lingering timers as expected: `running`'s delays and the phase bands' `for` may still be pending when a test ends.
 
-Load the integration's modules with `helpers.module("<name>")` **after** the fixture, not with a top-level import. The loader path only includes the repository once `ha` has run.
+Load the integration's modules with `helpers.module("<name>")` **after** the fixture, the name dotted from the package root (`"core.feature"`, `"setup.lifecycle"`), not with a top-level import. The loader path only includes the repository once `ha` has run.
 
 ```python
 from helpers import module
@@ -23,7 +23,7 @@ def test_something(ha: HomeAssistant) -> None:
     FEATURES = module("features").FEATURES
 ```
 
-An autouse fixture, `no_step_failed` in `tests/conftest.py`, fails any test in which a set-up step logged `Step <name> failed`: the guard in `lifecycle.py` keeps the entry loaded, so a step's bug would otherwise pass silently. A test that makes a step fail on purpose clears `caplog` once it has checked the log.
+An autouse fixture, `no_step_failed` in `tests/conftest.py`, fails any test in which a set-up step logged `Step <name> failed`: the guard in `setup/lifecycle.py` keeps the entry loaded, so a step's bug would otherwise pass silently. A test that makes a step fail on purpose clears `caplog` once it has checked the log.
 
 ## Helpers (`tests/helpers.py`)
 
@@ -76,7 +76,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_dashboard.py` | The dashboard's content, refreshes, and what keeps it from being created |
 | `test_events.py` | The two classes of events, their data, what isn't fired, renames and reloads |
 | `test_entity.py` | `reading()` |
-| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale; the core and the platforms import only what their layer allows; no module named after a platform HA preloads |
+| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale; the root holds only what HA looks up; the core and the platforms import only what their layer allows, and no folder imports a later layer; no module named after a platform HA preloads; the Develop pages' examples import modules that exist |
 | `test_release.py`, `test_fetch_hassfest.py` | The release and hassfest scripts |
 
 ## `test_code.py`: core's checks

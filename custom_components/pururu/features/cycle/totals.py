@@ -24,8 +24,8 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from ...entity import PururuEntity
-from ...feature import Device, Item
+from ...core.entity import PururuEntity
+from ...core.feature import Device, Item
 from . import Cycle, cycle_signal
 from .energy import kwh_now, kwh_used
 

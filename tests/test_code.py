@@ -63,9 +63,8 @@ def test_quality_scale_covers_every_rule() -> None:
         assert status.get("comment"), f"{rule}: {status['status']} without a comment"
 
 
-# The core (L0): contracts and shared helpers, importing nothing but each other
-CORE = {"const", "runtime", "feature", "vocabulary", "entity", "texts", "messages", "files",
-        "generated"}
+# The core (L0), core/: contracts and shared helpers, importing nothing but each other and const
+CORE = "core"
 PLATFORMS = {"sensor", "binary_sensor", "switch", "light"}
 
 
@@ -85,13 +84,36 @@ def imports_of(path: Path) -> set[str]:
 
 
 def test_the_core_imports_only_the_core() -> None:
-    for name in CORE:
-        assert imports_of(PROJECT / CODE / f"{name}.py") <= CORE, name
+    for path in (PROJECT / CODE / CORE).rglob("*.py"):
+        imported = imports_of(path)
+        assert all(name == "const" or name.startswith(f"{CORE}.") or name == CORE
+                   for name in imported), (path.name, imported)
+
+
+# Each folder never imports these, until B enforces the whole layer table
+NEVER = {
+    "features": {"device_keys", "outputs", "setup"},
+    "device_keys": {"outputs", "setup"},
+    "outputs": {"device_keys", "setup"},
+}
+
+
+def test_each_folder_imports_no_later_layer() -> None:
+    for folder, forbidden in NEVER.items():
+        for path in (PROJECT / CODE / folder).rglob("*.py"):
+            wrong = {name for name in imports_of(path) if name.split(".")[0] in forbidden}
+            assert not wrong, (str(path.relative_to(PROJECT / CODE)), wrong)
 
 
 def test_the_platforms_import_only_runtime() -> None:
     for name in PLATFORMS:
-        assert imports_of(PROJECT / CODE / f"{name}.py") <= {"runtime"}, name
+        assert imports_of(PROJECT / CODE / f"{name}.py") <= {f"{CORE}.runtime"}, name
+
+
+def test_the_root_holds_only_what_home_assistant_looks_up() -> None:
+    """The entry points, the config flow, the constants and the platforms; the rest lives in a layer's folder."""
+    root = {path.stem for path in (PROJECT / CODE).glob("*.py")}
+    assert root == {"__init__", "config_flow", "const", *PLATFORMS}
 
 
 def test_no_module_is_named_after_a_platform_ha_preloads() -> None:
@@ -101,3 +123,22 @@ def test_no_module_is_named_after_a_platform_ha_preloads() -> None:
     ours = {path.stem for path in root.glob("*.py")} | {
         path.parent.name for path in root.glob("*/__init__.py")}
     assert not (ours & set(BASE_PRELOAD_PLATFORMS)) - {"config_flow"}
+
+
+BLOCK = re.compile(r'```python title="([\w/]+\.py)"\n(.*?)```', re.DOTALL)
+RELATIVE = re.compile(r"^from (\.+)([\w.]*) import ", re.MULTILINE)
+
+
+def test_the_develop_docs_examples_import_what_exists() -> None:
+    """A relative import in a titled example resolves to a module of the package, or to another example."""
+    pages = sorted((PROJECT / "docs" / "develop").glob("*.mdx"))
+    blocks = [match.groups() for page in pages for match in BLOCK.finditer(page.read_text())]
+    examples = {title.removesuffix(".py").replace("/", ".") for title, _ in blocks}
+    for title, code in blocks:
+        package = title.removesuffix(".py").split("/")[:-1]
+        for dots, name in RELATIVE.findall(code):
+            base = package[:len(package) - (len(dots) - 1)]
+            target = ".".join([*base, *name.split(".")]) if name else ".".join(base)
+            path = PROJECT / CODE / target.replace(".", "/")
+            assert (target in examples or path.with_suffix(".py").exists()
+                    or (path / "__init__.py").exists()), f"{title}: from {dots}{name}"

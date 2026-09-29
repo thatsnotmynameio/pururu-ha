@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import DOMAIN, ENTITY_PREFIX
+from ..const import DOMAIN, ENTITY_PREFIX
 from .vocabulary import Condition
 
 if TYPE_CHECKING:  # entity.py imports Device from here

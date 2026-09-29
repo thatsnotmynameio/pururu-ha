@@ -13,10 +13,10 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
-from ..entity import PururuEntity
-from ..feature import ALERTS_KEY, PRIORITIES, Device, Feature, Preset
-from ..texts import Texts
-from ..vocabulary import Condition
+from ..core.entity import PururuEntity
+from ..core.feature import ALERTS_KEY, PRIORITIES, Device, Feature, Preset
+from ..core.texts import Texts
+from ..core.vocabulary import Condition
 from .alerts import NOTIFY, Alert, lights_group
 from .elapsed import ElapsedAlert
 

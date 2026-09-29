@@ -13,8 +13,8 @@ from homeassistant.const import STATE_OFF, STATE_ON, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
-from ...entity import PururuEntity
-from ...feature import Device, Feature, finite_float, preset_keys
+from ...core.entity import PururuEntity
+from ...core.feature import Device, Feature, finite_float, preset_keys
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal

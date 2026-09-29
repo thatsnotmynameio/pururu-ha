@@ -15,7 +15,7 @@ SWITCH = {"name": "Piscina", "switches": {"pump": {"entity": "switch.pool_pump",
 
 async def test_the_steps_run_in_order(ha: HomeAssistant) -> None:
     """Events, devices, the generated files, Alert2, the alert lights, the dashboard: as the spec's flow says."""
-    names = [name for name, _ in module("lifecycle").STEPS]
+    names = [name for name, _ in module("setup.lifecycle").STEPS]
     assert names == ["events", "devices", "generate", "alert2", "alert lights", "dashboard"]
 
 
@@ -23,7 +23,7 @@ async def test_a_step_that_raises_leaves_the_entry_loaded(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The dashboard raising doesn't fail the setup: logged, the entry loaded, a reload loads it again."""
-    with patch.object(module("dashboard"), "async_setup", side_effect=RuntimeError("boom")):
+    with patch.object(module("outputs.dashboard"), "async_setup", side_effect=RuntimeError("boom")):
         assert await setup(ha, {"pool": SWITCH})
         [entry] = ha.config_entries.async_entries(DOMAIN)
         assert entry.state is ConfigEntryState.LOADED
@@ -40,7 +40,7 @@ async def test_a_failing_first_step_leaves_the_others_and_the_listener(
 ) -> None:
     """The events failing first: the generated scripts, the dashboard and the rename rule still come."""
     clean = {"name": "Limpar", "sequence": [{"turn_on": "switch_pump"}]}
-    with patch.object(module("events"), "async_setup", side_effect=RuntimeError("boom")):
+    with patch.object(module("outputs.events"), "async_setup", side_effect=RuntimeError("boom")):
         assert await setup(ha, {"pool": {**SWITCH, "programs": {"clean": clean}}})
     assert "Step events failed" in caplog.text
     caplog.clear()  # expected: the autouse fixture would fail on it

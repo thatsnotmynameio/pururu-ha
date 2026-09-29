@@ -14,8 +14,8 @@ from homeassistant.const import Platform, UnitOfEnergy, UnitOfTime
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from ...entity import PururuEntity
-from ...feature import Device, Item
+from ...core.entity import PururuEntity
+from ...core.feature import Device, Item
 from . import Cycle, cycle_signal, end_signal
 
 

@@ -1,10 +1,10 @@
-"""Sensors of the configured devices, built by the entry (see lifecycle.py)."""
+"""Sensors of the configured devices, built by the entry (see setup/lifecycle.py)."""
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .runtime import PururuConfigEntry
+from .core.runtime import PururuConfigEntry
 
 # Nothing polls: every entity reacts to state changes and timers
 PARALLEL_UPDATES = 0

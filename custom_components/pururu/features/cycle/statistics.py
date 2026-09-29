@@ -18,8 +18,8 @@ from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 
 from ...const import DOMAIN
-from ...entity import PururuEntity
-from ...feature import Device, Item, item_key
+from ...core.entity import PururuEntity
+from ...core.feature import Device, Item, item_key
 
 # A period's name in the configuration and in entity IDs -> utility_meter's cycle
 PERIODS: dict[str, str] = {

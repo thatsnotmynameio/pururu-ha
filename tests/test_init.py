@@ -45,8 +45,8 @@ TAGS = {"first": {"name": "First"}, "second": {"name": "Second"}}
 @pytest.fixture(autouse=True)
 def demo(ha: HomeAssistant) -> Iterator[None]:
     """Put `gauge` and `echo` in FEATURES for the test."""
-    feature = module("feature")
-    entity = module("entity")
+    feature = module("core.feature")
+    entity = module("core.entity")
     features = module("features").FEATURES
 
     class Level(entity.PururuEntity, SensorEntity):
@@ -450,7 +450,7 @@ async def test_a_second_import_aborts(ha: HomeAssistant) -> None:
 
 async def test_reload_sets_up_a_failed_entry_again(ha: HomeAssistant) -> None:
     """A reload must not skip an entry that isn't LOADED (e.g. after a SETUP_ERROR)."""
-    feature = module("feature")
+    feature = module("core.feature")
     features = module("features").FEATURES
     original = features["gauge"]
     calls = {"n": 0}

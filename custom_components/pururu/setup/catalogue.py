@@ -5,9 +5,9 @@ from typing import Any
 
 from homeassistant.const import CONF_NAME, Platform
 
-from .device_keys import DEVICE_KEYS
-from .feature import Device, Feature, qualified
-from .features import FEATURES
+from ..core.feature import Device, Feature, qualified
+from ..device_keys import DEVICE_KEYS
+from ..features import FEATURES
 
 
 def builders() -> dict[str, Feature]:

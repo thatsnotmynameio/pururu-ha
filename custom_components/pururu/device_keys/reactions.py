@@ -28,12 +28,20 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 
-from . import messages
-from .const import CONF_AUTOMATIONS, CONF_MESSAGE, CONF_NOTIFY, ENTITY_PREFIX
-from .entity import PururuEntity
-from .feature import TEXT, Device, Feature, Item, finite_float, qualified, state_text
-from .features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
-from .generated import Kind, period
+from ..const import CONF_AUTOMATIONS, CONF_MESSAGE, CONF_NOTIFY, ENTITY_PREFIX
+from ..core import messages
+from ..core.entity import PururuEntity
+from ..core.feature import (
+    TEXT,
+    Device,
+    Feature,
+    Item,
+    finite_float,
+    qualified,
+    state_text,
+)
+from ..core.generated import Kind, period
+from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
 
 # The namespace of every reaction's automation ID
 NAMESPACE = "reaction"

@@ -244,7 +244,7 @@ async def test_a_changed_lovelace_api_is_an_error_and_no_dashboard(
 async def test_a_dashboard_that_cannot_be_built_is_an_error_and_leaves_no_panel(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, appliance: dict[str, Any]) -> None:
     """A LovelaceConfig that changed (e.g. a new abstract method): the devices are still created."""
-    dashboard = module("dashboard")
+    dashboard = module("outputs.dashboard")
     with patch.object(dashboard.PururuDashboard, "__init__",
                       side_effect=TypeError("abstract method async_new")):
         assert await setup(ha, devices(appliance, washer="Washer"))

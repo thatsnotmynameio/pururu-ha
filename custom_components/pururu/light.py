@@ -1,10 +1,10 @@
-"""Lights of the configured devices, built by the entry (see lifecycle.py)."""
+"""Lights of the configured devices, built by the entry (see setup/lifecycle.py)."""
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .runtime import PururuConfigEntry
+from .core.runtime import PururuConfigEntry
 
 # Nothing polls, and a command goes straight on to the real light
 PARALLEL_UPDATES = 0

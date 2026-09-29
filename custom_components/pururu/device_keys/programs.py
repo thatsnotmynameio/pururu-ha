@@ -25,14 +25,14 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import CONF_SCRIPTS, ENTITY_PREFIX
-from .entity import PururuEntity
-from .feature import Device, Feature, Item, qualified
-from .features.cycle import Cycle, cycle_signal, end_signal
-from .features.cycle.last import LAST_CYCLE, LastCycleValue
-from .features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
-from .features.cycle.totals import CyclesTotal, RuntimeTotal
-from .generated import Kind, period
+from ..const import CONF_SCRIPTS, ENTITY_PREFIX
+from ..core.entity import PururuEntity
+from ..core.feature import Device, Feature, Item, qualified
+from ..core.generated import Kind, period
+from ..features.cycle import Cycle, cycle_signal, end_signal
+from ..features.cycle.last import LAST_CYCLE, LastCycleValue
+from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
+from ..features.cycle.totals import CyclesTotal, RuntimeTotal
 
 # The namespace of every program's script ID
 NAMESPACE = "program"

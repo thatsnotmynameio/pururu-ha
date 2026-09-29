@@ -29,8 +29,8 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 
-from ...entity import PururuEntity
-from ...feature import Device
+from ...core.entity import PururuEntity
+from ...core.feature import Device
 from ..cycle import Cycle, CycleStart, cycle_signal, end_signal
 from .events import OPENING, Fired, Source, described_signal
 

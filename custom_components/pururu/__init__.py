@@ -1,19 +1,19 @@
 """pururu: floors, areas and devices configured in YAML, which the integration creates.
 
-`pururu: floors:` and `areas:` map an ID to a floor or an area (places.py).
+`pururu: floors:` and `areas:` map an ID to a floor or an area (outputs/places.py).
 `pururu: devices:` maps a device key to its name and features (features/).
 From the real entities and settings in a feature's block, the feature creates
 the device's entities. One config entry owns every floor, area, device and entity.
 
-This module holds HA's entry points only; what they do is in lifecycle.py.
+This module holds HA's entry points only; what they do is in setup/lifecycle.py.
 """
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
-from . import lifecycle
-from .runtime import PururuConfigEntry
-from .schema import CONFIG_SCHEMA as CONFIG_SCHEMA
+from .core.runtime import PururuConfigEntry
+from .setup import lifecycle
+from .setup.schema import CONFIG_SCHEMA as CONFIG_SCHEMA
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
