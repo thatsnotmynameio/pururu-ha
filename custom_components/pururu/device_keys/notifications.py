@@ -20,7 +20,6 @@ from homeassistant.helpers import config_validation as cv
 from ..const import CONF_MESSAGE, CONF_NOTIFICATIONS, CONF_NOTIFY, ENTITY_PREFIX
 from ..core import generated, messages
 from ..core.feature import TEXT, Device, Feature, Happening, happenings_of, qualified
-from ..features import FEATURES
 from . import reactions
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,14 +71,14 @@ def schema(
 
 
 def enabled(
-    device: Mapping[str, Any],
+    device: Mapping[str, Any], builders: Mapping[str, Feature]
 ) -> Iterator[tuple[str, Feature, str, Mapping[str, Any]]]:
     """(feature key, feature, name, settings) of each ready-made notification the device's blocks enable.
 
     Only a feature offering them has them: a configured feature (alerts,
     switches) may have an item keyed `notifications`.
     """
-    for key, feature in FEATURES.items():
+    for key, feature in builders.items():
         if not happenings_of(feature) or key not in device:
             continue
         for name, settings in device[key].get(CONF_NOTIFICATIONS, {}).items():
@@ -116,6 +115,7 @@ def automation(
 
 def plan(
     hass: HomeAssistant,
+    builders: Mapping[str, Feature],
     devices: Mapping[str, Mapping[str, Any]],
     created: Collection[str],
     texts: Mapping[str, str],
@@ -128,7 +128,7 @@ def plan(
     """
     found: list[generated.Item] = []
     for key, config in devices.items():
-        for _, feature, notification, settings in enabled(config):
+        for _, feature, notification, settings in enabled(config, builders):
             device = Device(
                 key=key, name=config[CONF_NAME], namespace=feature.namespace
             )

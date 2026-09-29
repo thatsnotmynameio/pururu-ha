@@ -75,5 +75,7 @@ async def async_step(
     await generated.async_sync(
         hass, entry, reactions.KIND, automations.items, automations.held
     )
-    notified = notifications.plan(hass, devices, built.created, built.texts, notify)
+    notified = notifications.plan(
+        hass, built.builders, devices, built.created, built.texts, notify
+    )
     await generated.async_sync(hass, entry, notifications.KIND, notified.items)

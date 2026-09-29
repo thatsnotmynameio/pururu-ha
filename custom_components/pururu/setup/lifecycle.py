@@ -123,7 +123,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     index = catalogue.index(devices)
     for key, config in devices.items():
         for entity in build.creatable(
-            hass, registry, *build.build(hass, key, config, index[key], texts, owned)
+            hass, registry, *build.build(hass, key, config, index, texts, owned)
         ):
             entities[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
             created_by[key].append(entity)

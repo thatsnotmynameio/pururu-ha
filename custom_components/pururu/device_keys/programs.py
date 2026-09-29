@@ -238,7 +238,7 @@ STATISTICS = Feature(
 
 def check(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse a step on what isn't another feature's entity key of the device taking its action (a schema check)."""
     for key, device in house[CONF_DEVICES].items():
         for program_key, program in device.get(CONF_PROGRAMS, {}).items():
@@ -246,15 +246,17 @@ def check(
             for action, entity_key in targets(program):
                 target = find(index, key, Ref(None, entity_key))
                 if target is None:
-                    raise vol.Invalid(
+                    yield vol.Invalid(
                         f"programs: {entity_key} is not an entity key of another "
                         "feature of this device",
                         path=path,
                     )
+                    break
                 if action not in target.actions:
-                    raise vol.Invalid(
+                    yield vol.Invalid(
                         f"programs: {entity_key} does not take {action}", path=path
                     )
+                    break
 
 
 def plan(

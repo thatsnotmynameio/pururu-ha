@@ -17,11 +17,9 @@ from ..const import DOMAIN, ENTITY_PREFIX
 from .roles import Happenings, Presets, Role
 from .vocabulary import Condition
 
-if (
-    TYPE_CHECKING
-):  # entity.py imports Device from here, roles.py Item, Preset and Happening
+# entity.py imports Device from here
+if TYPE_CHECKING:
     from .entity import PururuEntity
-    from .roles import Role
 
 
 def finite_float(value: Any) -> float:

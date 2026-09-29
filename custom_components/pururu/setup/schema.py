@@ -1,6 +1,6 @@
 """The pururu: block's schema: each device, then the rules over the whole house."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from functools import partial
 from typing import Any
 
@@ -79,8 +79,10 @@ def _feature_block(feature: Feature, key: str, value: Any) -> Any:
 
 # The rules over the whole house, each in its owner's module: each gets the
 # validated block, the index of what each device can create and the builders,
-# and refuses with a path (vol.Invalid(..., path=[devices, key, ...]))
-type Check = Callable[[Mapping[str, Any], Index, Mapping[str, Feature]], None]
+# and yields each refusal with a path (vol.Invalid(..., path=[devices, key, ...]))
+type Check = Callable[
+    [Mapping[str, Any], Index, Mapping[str, Feature]], Iterable[vol.Invalid]
+]
 CHECKS: tuple[Check, ...] = (
     checks.references,
     checks.real_entities_distinct,
@@ -96,11 +98,13 @@ CHECKS: tuple[Check, ...] = (
 
 
 def _checked(house: dict[str, Any]) -> dict[str, Any]:
-    """The house, once every check passes over one index of it."""
+    """The house, once every check passes over one index of it; every refusal told at once."""
     builders = catalogue.builders()
     index = catalogue.index(house[CONF_DEVICES])
-    for check in CHECKS:
-        check(house, index, builders)
+    if refused := [
+        error for check in CHECKS for error in check(house, index, builders)
+    ]:
+        raise vol.MultipleInvalid(refused)
     return house
 
 

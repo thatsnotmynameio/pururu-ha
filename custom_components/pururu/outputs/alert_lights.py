@@ -600,57 +600,66 @@ async def async_step(
 
 def check(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse a group's light that isn't a device's, or an alert's group that isn't one (a schema check)."""
     groups = house[CONF_CONFIG][CONF_ALERTS][CONF_LIGHTS][GROUPS]
     for group, members in groups.items():
-        _group_resolved(house[CONF_DEVICES], index, group, members)
+        if (
+            refused := _group_refused(house[CONF_DEVICES], index, group, members)
+        ) is not None:
+            yield refused
     for key, device in house[CONF_DEVICES].items():
-        for where, group in _groups_asked(device, builders):
+        for where, path, group in _groups_asked(device, builders):
             if group in groups:
                 continue
             if group == DEFAULT_ALERT_LIGHTS:
-                raise vol.Invalid(
+                yield vol.Invalid(
                     f"device {key}: {where}: there is no default group in "
                     "config.alerts.lights.groups",
-                    path=[CONF_DEVICES, key],
+                    path=[CONF_DEVICES, key, *path],
                 )
-            raise vol.Invalid(
+                continue
+            yield vol.Invalid(
                 f"device {key}: {where}: {group} is not a group of "
                 "config.alerts.lights.groups",
-                path=[CONF_DEVICES, key],
+                path=[CONF_DEVICES, key, *path],
             )
 
 
-def _group_resolved(
+def _group_refused(
     devices: Mapping[str, Any],
     index: Index,
     group: str,
     members: Mapping[str, list[str]],
-) -> None:
-    """Refuse a light of this group that isn't a device's."""
+) -> vol.Invalid | None:
+    """Why this group can't be: a light of it that isn't a device's; None when it can."""
     where = f"config.alerts.lights.groups: {group}"
     path: list[Hashable] = [CONF_CONFIG, CONF_ALERTS, CONF_LIGHTS, GROUPS, group]
     for key, lights in members.items():
         if key not in devices:
-            raise vol.Invalid(f"{where}: device {key} is not in devices", path=path)
+            return vol.Invalid(f"{where}: device {key} is not in devices", path=path)
         for light in lights:
             if find(index, key, Ref(key, qualified(LIGHTS.namespace, light))) is None:
-                raise vol.Invalid(
+                return vol.Invalid(
                     f"{where}: device {key} has no light {light}", path=path
                 )
+    return None
 
 
 def _groups_asked(
     device: Mapping[str, Any], builders: Mapping[str, Feature]
-) -> Iterator[tuple[str, str]]:
-    """(where, group) of each of the device's alerts with lights, hand-written or ready-made."""
+) -> Iterator[tuple[str, list[Hashable], str]]:
+    """(where, its path in the device, group) of each of the device's alerts with lights, hand-written or ready-made."""
     for alert_key, alert in device.get(CONF_ALERTS, {}).items():
         if (group := alert.get(CONF_LIGHTS)) is not None:
-            yield f"{CONF_ALERTS}: {alert_key}", group
+            yield f"{CONF_ALERTS}: {alert_key}", [CONF_ALERTS, alert_key], group
     for name, feature in builders.items():
         if not presets_of(feature) or name not in device:
             continue
         for preset, settings in device[name].get(ALERTS_KEY, {}).items():
             if (group := settings.get(CONF_LIGHTS)) is not None:
-                yield f"{name}: {ALERTS_KEY}: {preset}", group
+                yield (
+                    f"{name}: {ALERTS_KEY}: {preset}",
+                    [name, ALERTS_KEY, preset],
+                    group,
+                )

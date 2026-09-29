@@ -10,7 +10,7 @@ try skipped once the occurrence ran. Each reaction's triggers are counted:
 sensors of its device (STATISTICS).
 """
 
-from collections.abc import Collection, Hashable, Mapping, Sequence
+from collections.abc import Collection, Hashable, Iterator, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import logging
@@ -449,7 +449,7 @@ STATISTICS = Feature(
 
 def check(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse a reaction's `when`, `device` or `then` it can't have (a schema check).
 
     `when` without `device` names an entity key of the device, and never one of
@@ -459,7 +459,10 @@ def check(
     devices = house[CONF_DEVICES]
     for key, device in devices.items():
         for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
-            _check(index, devices, key, reaction_key, reaction)
+            if (
+                refused := _refused(index, devices, key, reaction_key, reaction)
+            ) is not None:
+                yield refused
 
 
 def _own_statistic(target: Target | None, key: str, reaction_key: str) -> bool:
@@ -472,44 +475,46 @@ def _own_statistic(target: Target | None, key: str, reaction_key: str) -> bool:
     )
 
 
-def _check(
+def _refused(
     index: Index,
     devices: Mapping[str, Any],
     key: str,
     reaction_key: str,
     reaction: Mapping[str, Any],
-) -> None:
+) -> vol.Invalid | None:
+    """Why this reaction can't be, the first reason; None when it can."""
     path: list[Hashable] = [CONF_DEVICES, key, CONF_REACTIONS, reaction_key]
     when, other = reaction.get("when"), reaction.get("device")
     target = None if when is None else find(index, key, Ref(other, when))
     if other is None and _own_statistic(target, key, reaction_key):
-        raise vol.Invalid(
+        return vol.Invalid(
             f"reactions: {reaction_key}: {when} is its own statistic", path=path
         )
     then = reaction.get("then")
     if then is not None and then not in devices[key].get(CONF_PROGRAMS, {}):
-        raise vol.Invalid(
+        return vol.Invalid(
             f"reactions: {reaction_key}: {then} is not a program of this device",
             path=path,
         )
     if when is None:
-        return
+        return None
     if other is None:
         if target is None:
-            raise vol.Invalid(
+            return vol.Invalid(
                 f"reactions: {reaction_key}: {when} is not an entity key of this device",
                 path=path,
             )
-        return
+        return None
     where = f"device {key}: reactions: {reaction_key}"
     if other not in devices:
-        raise vol.Invalid(f"{where}: device {other} is not in devices", path=path)
+        return vol.Invalid(f"{where}: device {other} is not in devices", path=path)
     if _own_statistic(target, key, reaction_key):
-        raise vol.Invalid(f"{where}: {when} is its own statistic", path=path)
+        return vol.Invalid(f"{where}: {when} is its own statistic", path=path)
     if target is None:
-        raise vol.Invalid(
+        return vol.Invalid(
             f"{where}: {when} is not an entity key of device {other}", path=path
         )
+    return None
 
 
 def plan(

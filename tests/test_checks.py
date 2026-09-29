@@ -64,6 +64,12 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool",
         id="two devices' IDs"),
     pytest.param(
+        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_running", "is": "on",
+                                                    "lights": "porch"}})}},
+        ["devices", "washer", "alerts", "x"],
+        "device washer: alerts: x: porch is not a group of config.alerts.lights.groups",
+        id="an alert's missing group"),
+    pytest.param(
         {"devices": {"pool": {"name": "Pool", "switches": PUMP}},
          "config": {"alerts": {"lights": {"groups": {"porch": {"garagem": ["x"]}}}}}},
         ["config", "alerts", "lights", "groups", "porch"],
@@ -75,3 +81,13 @@ def test_a_check_says_where(ha: HomeAssistant, house: dict[str, Any], path: list
         module("setup.schema").CONFIG_SCHEMA({DOMAIN: house})
     assert refused.value.msg == message
     assert refused.value.path == [DOMAIN, *path]
+
+
+def test_every_refusal_is_told_at_once(ha: HomeAssistant) -> None:
+    """Two devices each refused by a check: both errors come back, not only the first."""
+    bad = {"x": {"name": "X", "when": "appliance_nothing", "is": "on"}}
+    house = {"devices": {"washer": washer(alerts=bad), "dryer": washer(alerts=bad)}}
+    with pytest.raises(vol.MultipleInvalid) as refused:
+        module("setup.schema").CONFIG_SCHEMA({DOMAIN: house})
+    assert sorted(error.path for error in refused.value.errors) == [
+        [DOMAIN, "devices", "dryer", "alerts"], [DOMAIN, "devices", "washer", "alerts"]]

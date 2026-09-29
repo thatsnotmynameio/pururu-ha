@@ -12,7 +12,7 @@ from homeassistant.helpers.entity import Entity
 from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
 from ..core.feature import Device, presets_of
-from ..core.resolve import Target
+from ..core.resolve import Index, find
 from ..core.roles import Generates, Provides, Refers, Requires
 from ..core.texts import Texts
 from ..features import FEATURES, presets
@@ -25,7 +25,7 @@ def build(
     hass: HomeAssistant,
     key: str,
     config: dict[str, Any],
-    found: Mapping[str, Target],
+    index: Index,
     texts: Texts,
     owned: Mapping[str, str],
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
@@ -34,17 +34,18 @@ def build(
     Each feature sees the device in its own namespace; what it takes through
     <capability>_from, or refers to, is in the owning feature's. Also the
     entity ID of each entity some entity watches (`follows`), by unique ID: the
-    settings may never build it, and then only this names it. `found` is what
-    the device can create (its part of the index); `owned` are the
+    settings may never build it, and then only this names it. `index` is what
+    each device can create; `owned` are the
     entity IDs of the scripts and automations the entry generates, by ID.
     """
+    found = index[key]
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
     for name, feature in catalogue.builders().items():
         if name not in config:
             continue
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
-        inputs, required = _inputs(hass, key, config, name, found, owned)
+        inputs, required = _inputs(hass, key, config, name, index, owned)
         # Only a feature offering ready-made alerts has them: a program or a
         # reaction may be keyed `alerts`
         ready_made = (
@@ -69,7 +70,7 @@ def _inputs(
     key: str,
     config: dict[str, Any],
     name: str,
-    found: Mapping[str, Target],
+    index: Index,
     owned: Mapping[str, str],
 ) -> tuple[dict[str, str], set[str]]:
     """What builder `name` gets in `inputs`, and the unique IDs of what it requires.
@@ -79,13 +80,13 @@ def _inputs(
     scripts or automations the entry owns, by ID: its statistics never watch
     one the entry doesn't.
     """
-    if (generates := catalogue.builders()[name].role(Generates)) is not None:
+    feature = catalogue.builders()[name]
+    if (generates := feature.role(Generates)) is not None:
         return {
             unique_id: owned[unique_id]
             for _, unique_id in generates.generates(key, config[name])
             if unique_id in owned
         }, set()
-    feature = FEATURES[name]
     inputs: dict[str, str] = {}
     required: set[str] = set()
     if (requires := feature.role(Requires)) is not None:
@@ -101,7 +102,9 @@ def _inputs(
         required.add(provider.object_id(entity_key))
     refers = feature.role(Refers)
     for ref in refers.refers(config[name]) if refers else ():
-        inputs[ref.text] = found[ref.key].current_entity_id(hass)
+        target = find(index, key, ref)
+        assert target is not None  # the schema checked it (checks.references)
+        inputs[ref.text] = target.current_entity_id(hass)
     return inputs, required
 
 

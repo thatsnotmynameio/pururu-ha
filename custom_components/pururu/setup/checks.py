@@ -49,7 +49,7 @@ def _provides(feature: Feature, capability: str) -> bool:
 
 def references(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse a reference that isn't another feature's entity key, or an alert watching an alert."""
     for key, device in house[CONF_DEVICES].items():
         for name, feature in builders.items():
@@ -58,13 +58,13 @@ def references(
             for ref in refers.refers(device[name]):
                 target = find(index, key, ref)
                 if target is None or target.builder == name:
-                    raise vol.Invalid(
+                    yield vol.Invalid(
                         f"{name}: {ref.key} is not an entity key of another feature "
                         "of this device",
                         path=[CONF_DEVICES, key, name],
                     )
-                if name == CONF_ALERTS and target.by == ALERTS_KEY:
-                    raise vol.Invalid(
+                elif name == CONF_ALERTS and target.by == ALERTS_KEY:
+                    yield vol.Invalid(
                         f"{CONF_ALERTS}: {ref.key} is an alert: an alert can't watch "
                         "another",
                         path=[CONF_DEVICES, key, name],
@@ -73,7 +73,7 @@ def references(
 
 def real_entities_distinct(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse a real entity in two configured features of a device: a relay is a switch or a light."""
     for key, device in house[CONF_DEVICES].items():
         owners: dict[str, str] = {}  # real entity -> the configured feature that has it
@@ -85,7 +85,7 @@ def real_entities_distinct(
                 if (entity := item.get("entity")) is None:
                     continue
                 if owners.setdefault(entity, name) != name:
-                    raise vol.Invalid(
+                    yield vol.Invalid(
                         f"{name}: {entity} is already in {owners[entity]}",
                         path=[CONF_DEVICES, key, name],
                     )
@@ -93,12 +93,12 @@ def real_entities_distinct(
 
 def areas_exist(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse a device in an area the configuration doesn't declare."""
     for key, device in house[CONF_DEVICES].items():
         area_id = device.get(CONF_AREA)
         if area_id is not None and area_id not in house[CONF_AREAS]:
-            raise vol.Invalid(
+            yield vol.Invalid(
                 f"device {key}: area {area_id} is not in areas",
                 path=[CONF_DEVICES, key, CONF_AREA],
             )
@@ -106,7 +106,7 @@ def areas_exist(
 
 def entity_ids_distinct(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse two devices whose entities would share an ID.
 
     Device `pool` with the switch `switch_pump` and device `pool_switch` with
@@ -116,11 +116,12 @@ def entity_ids_distinct(
     for key, targets in index.items():
         for target in targets.values():
             if (owner := owners.setdefault(target.unique_id, key)) != key:
-                raise vol.Invalid(
+                yield vol.Invalid(
                     f"device {key}: {target.unique_id} is already an entity of "
                     f"device {owner}",
                     path=[CONF_DEVICES, key],
                 )
+                break
 
 
 def _generated_ids(
@@ -131,7 +132,7 @@ def _generated_ids(
         if name in device and (generates := feature.role(Generates)) is not None:
             for domain, unique_id in generates.generates(key, device[name]):
                 yield domain, unique_id, generates.what
-    for _, feature, notification, _ in notifications.enabled(device):
+    for _, feature, notification, _ in notifications.enabled(device, builders):
         yield (
             notifications.KIND.domain,
             notifications.automation_id(key, feature.namespace, notification),
@@ -141,7 +142,7 @@ def _generated_ids(
 
 def generated_ids_distinct(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse two automations, or two scripts, that would share an ID.
 
     Device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b`
@@ -154,17 +155,18 @@ def generated_ids_distinct(
     for key, device in house[CONF_DEVICES].items():
         for domain, unique_id, what in _generated_ids(key, device, builders):
             if (owner := owners.get((domain, unique_id))) is not None:
-                raise vol.Invalid(
+                yield vol.Invalid(
                     f"device {key}: {domain}.{unique_id} is already a {owner[1]} "
                     f"of device {owner[0]}",
                     path=[CONF_DEVICES, key],
                 )
+                break
             owners[domain, unique_id] = (key, what)
 
 
 def messages_sent(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> None:
+) -> Iterator[vol.Invalid]:
     """Refuse a message that goes nowhere, a reaction's or a notification's.
 
     Neither a notify of its own nor one in config.notify.
@@ -174,14 +176,14 @@ def messages_sent(
     for key, device in house[CONF_DEVICES].items():
         for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
             if CONF_MESSAGE in reaction and CONF_NOTIFY not in reaction:
-                raise vol.Invalid(
+                yield vol.Invalid(
                     f"device {key}: reactions: {reaction_key}: message needs notify, "
                     "here or in config.notify",
                     path=[CONF_DEVICES, key, CONF_REACTIONS, reaction_key],
                 )
-        for name, _, notification, settings in notifications.enabled(device):
+        for name, _, notification, settings in notifications.enabled(device, builders):
             if CONF_NOTIFY not in settings:
-                raise vol.Invalid(
+                yield vol.Invalid(
                     f"device {key}: {name}: notifications: {notification} needs "
                     "notify, here or in config.notify",
                     path=[CONF_DEVICES, key, name, CONF_NOTIFICATIONS, notification],
