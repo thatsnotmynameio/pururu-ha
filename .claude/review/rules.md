@@ -19,8 +19,10 @@ should. "Could be" is not a finding.
 
 ## Never flag
 
-- What CI already enforces: ruff, ruff format, mypy strict, hassfest, the pytest suite,
-  docs.page's link check, SonarQube Cloud.
+- What the linters already report: ruff, ruff format, mypy strict, hassfest, docs.page's link
+  check, SonarQube Cloud's code smells. A real bug is still a finding when a test would catch it:
+  post it, and name the test in the scenario. You can't run the tests, so never skip a finding
+  because "CI will catch it".
 - Style, naming, wording, formatting, comment density, nits of any kind.
 - `docs/superpowers/` (specs and plans): only when the same PR's code contradicts it.
 - Lockfiles and generated files: `uv.lock`, `pnpm-lock.yaml`, `.hassfest/`.
