@@ -93,8 +93,8 @@ filled in:
 >
 > Return candidates only. Each: file and line in the head, severity per the rules, a one-line
 > title, and the concrete scenario (the configuration or state, what the code does, what it
-> should), with the file:line evidence you read. Nothing CI catches, no style. "None" is a good
-> answer.
+> should), with the file:line evidence you read. No lint, type or style issues; a real bug counts
+> even when a test would catch it (name the test). "None" is a good answer.
 
 ## Step 4: Verify (in parallel)
 
