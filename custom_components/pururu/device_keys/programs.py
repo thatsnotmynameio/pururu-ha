@@ -144,7 +144,7 @@ def script(
 
 
 class Runs(CyclesTotal, CycleSource):
-    """A program's finished runs, all time; it sends each one: its script on, then off.
+    """A program's finished runs, all time; it counts each one itself, then sends it: its script on, then off.
 
     The run's start is the `on` state's: a pururu reload while it runs keeps it.
     """
@@ -158,8 +158,12 @@ class Runs(CyclesTotal, CycleSource):
         self._cycle_signals(device, item)
 
     @override
+    def _watch(self) -> None:
+        """Nothing to watch: `_changed` counts a run itself, before sending its cycle."""
+
+    @override
     async def async_added_to_hass(self) -> None:
-        """Restore the count and count, then watch the script."""
+        """Restore the count, then watch the script."""
         await super().async_added_to_hass()
         if self._script is not None:
             self.async_on_remove(
@@ -175,6 +179,7 @@ class Runs(CyclesTotal, CycleSource):
             or (old.state, new.state) != (STATE_ON, STATE_OFF)
         ):
             return
+        self._cycles += 1
         run = Cycle(start=old.last_changed, end=new.last_changed, energy_kwh=None)
         self._send(run)
 

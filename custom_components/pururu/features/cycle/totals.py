@@ -65,6 +65,10 @@ class CyclesTotal(PururuEntity, RestoreSensor):
         last = await self.async_get_last_sensor_data()
         if last is not None and isinstance(last.native_value, int | float | Decimal):
             self._cycles = int(last.native_value)
+        self._watch()
+
+    def _watch(self) -> None:
+        """Count each cycle `self._signal` sends; `Runs` counts itself instead, before it sends."""
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._signal, self._count)
         )
