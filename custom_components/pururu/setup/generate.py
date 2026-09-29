@@ -55,7 +55,7 @@ async def async_step(
     generated scripts act on to `targets`: disabling one rebuilds the entry.
     """
     devices = built.house.get(CONF_DEVICES, {})
-    index = catalogue.index(devices)
+    index = built.index
     scripts = programs.plan(hass, devices, index, built.created)
     targets.update(scripts.targets)
     generated_scripts = await generated.async_sync(

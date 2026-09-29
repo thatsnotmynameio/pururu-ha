@@ -25,6 +25,7 @@ def build(
     hass: HomeAssistant,
     key: str,
     config: dict[str, Any],
+    found: Mapping[str, Target],
     texts: Texts,
     owned: Mapping[str, str],
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
@@ -33,10 +34,10 @@ def build(
     Each feature sees the device in its own namespace; what it takes through
     <capability>_from, or refers to, is in the owning feature's. Also the
     entity ID of each entity some entity watches (`follows`), by unique ID: the
-    settings may never build it, and then only this names it. `owned` are the
+    settings may never build it, and then only this names it. `found` is what
+    the device can create (its part of the index); `owned` are the
     entity IDs of the scripts and automations the entry generates, by ID.
     """
-    found = catalogue.targets(key, config)
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
     for name, feature in catalogue.builders().items():

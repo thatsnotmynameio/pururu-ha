@@ -31,7 +31,7 @@ from ..outputs import (
     events,
     places,
 )
-from . import build, generate, listener
+from . import build, catalogue, generate, listener
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,9 +120,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     created_by: dict[str, list[Entity]] = {key: [] for key in devices}
     texts = await async_texts(hass)
     owned = generate.owned(hass, entry, devices)
+    index = catalogue.index(devices)
     for key, config in devices.items():
         for entity in build.creatable(
-            hass, registry, *build.build(hass, key, config, texts, owned)
+            hass, registry, *build.build(hass, key, config, index[key], texts, owned)
         ):
             entities[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
             created_by[key].append(entity)
@@ -131,6 +132,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     # Once added, each entity has its current ID, renamed in the UI or not
     built = Built(
         house=configured,
+        builders=catalogue.builders(),
+        index=index,
         texts=texts,
         entities={platform: tuple(each) for platform, each in entities.items()},
         by_device={key: tuple(each) for key, each in created_by.items()},
