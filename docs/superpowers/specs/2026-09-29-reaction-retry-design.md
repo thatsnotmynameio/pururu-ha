@@ -78,14 +78,13 @@ Each try has `id: retry_<k>` and a trigger variable `since`, the window in secon
     - {trigger: time, at: "16:00:00", id: retry_3, variables: {since: 10860}}
   conditions:
     - condition: template
-      value_template: >-
-        {% set last = state_attr('script.pururu_garden_program_water', 'last_triggered') %}
-        {{ since is not defined or last is none or as_datetime(last) < now() - timedelta(seconds=since) }}
+      value_template: "{{ since is not defined or as_timestamp(state_attr('script.pururu_garden_program_water', 'last_triggered'), 0) < now().timestamp() - since }}"
   actions:
     - if: [{condition: state, entity_id: script.pururu_garden_program_water, state: "off"}]
       then: [{action: script.turn_on, target: {entity_id: script.pururu_garden_program_water}}]
 ```
 
+- Timestamps, not `as_datetime`: HA gives `last_triggered` as a `datetime`, which `as_datetime` refuses; `as_timestamp(…, 0)` takes it, and a script or automation that never ran (`none`) is 0.
 - With `then`, `last` is the script's `last_triggered`, by its **current** entity ID (a rename is followed, as the action's).
 - Without `then`, `last` is the automation's own: `this.attributes.last_triggered` (`this` is its state before this run).
 - The actions are unchanged: a try that passes starts the program unless it's running, as the occurrence does.

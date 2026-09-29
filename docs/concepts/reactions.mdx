@@ -122,6 +122,18 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
   Before (negative) or after the sun event: `{minutes: -30}` is half an hour before sunset. Only with `sun`.
 </Property>
 
+### Retry
+
+<Property name="retry.times" type="integer" optional>
+  How many more tries after the time or the sun event, at least 1. Only with `at` or `sun`. See [Trying again](#trying-again).
+</Property>
+
+---
+
+<Property name="retry.every" type="time period" optional>
+  The interval between tries, at least a minute: the first try is `every` after the occurrence, the second `2 × every`, and so on. `times × every` can't go over 12 hours.
+</Property>
+
 ### What it does
 
 <Property name="then" type="program key" optional>
@@ -164,6 +176,55 @@ A reaction with `then` starts its program's script, but only if it isn't running
 
 A reaction always runs its **own** device's program, even when it listens to another device (`device: laundry_washer`). Programs run one at a time for now: a program already running isn't started again, nor queued.
 
+## Trying again
+
+A reaction on a time or on the sun fires once a day. If it didn't run then (Home Assistant was restarting, the automation was off, its program was already running), `retry` tries again:
+
+```yaml title="configuration.yaml"
+reactions:
+  afternoon:
+    name: Tarde
+    at: "13:00"
+    then: water
+    retry: {times: 3, every: {hours: 1}}
+```
+
+The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try runs only if **nothing ran since 13:00**:
+
+- **With `then`**, running means the program started: from this reaction, the UI, a voice assistant, anything.
+- **Without `then`**, it means the automation fired, including a run by hand.
+
+```yaml title="pururu/automations/reactions.yaml"
+- id: pururu_garden_reaction_afternoon
+  alias: Jardim Tarde
+  triggers:
+    - {trigger: time, at: "13:00:00"}
+    - {trigger: time, at: "14:00:00", id: retry_1, variables: {since: 3660}}
+    - {trigger: time, at: "15:00:00", id: retry_2, variables: {since: 7260}}
+    - {trigger: time, at: "16:00:00", id: retry_3, variables: {since: 10860}}
+  conditions:
+    - condition: template
+      value_template: "{{ since is not defined or as_timestamp(state_attr('script.pururu_garden_program_water', 'last_triggered'), 0) < now().timestamp() - since }}"
+  actions: [...]
+```
+
+`since` is how far back a try looks, in seconds: the time since the occurrence, plus a minute.
+
+| When | What happens |
+|---|---|
+| It ran at 13:00 | Every try is skipped: its trace shows the condition failing |
+| Home Assistant was down at 13:00, back at 13:30 | 14:00 runs; 15:00 and 16:00 are skipped |
+| The automation was off at 13:00, turned on at 14:30 | 15:00 runs; 16:00 is skipped |
+| With `then`, the program was already running at 13:00 | 14:00 starts it if it has ended by then, or 15:00 tries |
+| With `then`, you started the program by hand at 13:20 | Every try is skipped |
+| Every try missed | Nothing more until tomorrow |
+
+- **A restart** doesn't lose it: Home Assistant keeps `last_triggered` of automations and scripts.
+- **Past midnight** is fine: `at: "23:00"` with three tries every hour tries at 00:00, 01:00 and 02:00.
+- **The sun:** a try is the same event with its offset moved: sunset, then sunset + 1 h, and so on.
+- **Daylight saving:** a chain across the clock change can be an hour off, and going back an hour a try may run once more.
+- **Only a time or the sun:** a reaction on an entity is an event. Home Assistant down when it happens never sees it, and a later try would miss it too. `retry` there is a configuration error: `a reaction's retry goes with at or sun`.
+
 ## When a reaction fires
 
 The automation follows Home Assistant's own triggers, so it behaves exactly like an automation you'd write yourself:
@@ -178,6 +239,7 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reaction_<reaction>_triggered_total`, named **Luzes da lavanderia Lavadora terminou triggers**. It survives restarts and is `total_increasing`. With `statistics.triggered`, one sensor per period: `…_triggered_month`.
 
 - **Every trigger counts**, including one whose program was already running and so didn't start.
+- **A try skipped** because the reaction already ran isn't a trigger: its condition failed. A try that runs counts.
 - **The automation turned off** in the UI doesn't fire, so it counts nothing.
 - **Renaming the automation** in the UI is followed: pururu reloads and counts under its new ID.
 - **An automation ID someone else holds**: the reaction isn't generated, and it counts nothing. It never counts an automation pururu doesn't manage.
