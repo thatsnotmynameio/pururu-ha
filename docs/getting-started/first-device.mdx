@@ -172,7 +172,21 @@ After a reload, Home Assistant has a floor **Térreo** with the ID `terreo`, and
 
 ## Step 5: "the laundry is done"
 
-`sensor.pururu_laundry_washer_appliance_last_cycle_end` changes once per finished cycle, and it's **written last**. By the time it changes, the cycle's start, duration and energy and `cycles_total` are already up to date, so an automation that triggers on it can read them:
+The shortest way is a [ready-made notification](/concepts/notifications): your phone is told **The cycle finished.** each time a wash ends.
+
+```yaml title="configuration.yaml"
+pururu:
+  config:
+    notify: notify.mobile_app_phone
+  devices:
+    laundry_washer:
+      # ... as above
+      notifications:
+        appliance:
+          finished:
+```
+
+For a message with the cycle's numbers, write the automation yourself. `sensor.pururu_laundry_washer_appliance_last_cycle_end` changes once per finished cycle, and it's **written last**. By the time it changes, the cycle's start, duration and energy and `cycles_total` are already up to date, so an automation that triggers on it can read them:
 
 ```yaml title="automations.yaml"
 - alias: Laundry is done

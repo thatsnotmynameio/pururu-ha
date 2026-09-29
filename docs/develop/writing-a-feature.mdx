@@ -189,9 +189,11 @@ The cycle code `appliance`, `modes`, `door`, `window` and the programs' statisti
 
 - `watches`: the entity key, in the feature's namespace, it watches.
 - `kind`: a `Condition`, as a hand-written alert's `is`/`above`/`below`, or an `Elapsed`: a state of the watched entity and a milestone, either an entity key whose state is a datetime (`since_key`) or an attribute of the watched entity (`since_attribute`), with `or_since_created` to count from the alert's creation until there's one. A condition alert is an `Alert`; an elapsed one an `ElapsedAlert` (`features/elapsed.py`), which survives restarts.
-- `priority`, `hold` (the default `for`, or `None` when the user must give it) and `lasts` (how long it stays on after its milestone; it then takes `lasts`, not `for`).
+- `priority` and `hold` (the default `for`, or `None` when the user must give it).
 
 Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity key `alert_<name>`, so ID collisions, names and icons are checked as for any entity key. Add its name and icon under `<namespace>_alert_<name>`, and its default texts under `<namespace>_alert_<name>_message` and `_done_message` in the translations' `common` block. `features/presets.py` validates the settings and builds the enabled alerts; nothing else is needed.
+
+**Ready-made notifications.** A feature can offer notifications for what happens to it, off until the device's `notifications` enables them. Set `notifications` to a mapping of name → `Happening` (`feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py` does. It creates no entity: `notifications.py` validates the device's block and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
 
 ## 6. What the contract test checks
 
@@ -213,6 +215,7 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 | `test_per_item_goes_with_items` | `items` is set exactly when `per_item` is, and the example's items are slugs |
 | `test_every_per_item_name_has_its_placeholder` | Every suffix's name has the `{<namespace>}` placeholder, in both languages |
 | `test_ready_made_alerts_line_up` | Every ready-made alert's key is in `entity_keys`, it watches (and counts from) its own feature's entity keys, has both default texts in both languages, and its settings validate |
+| `test_ready_made_notifications_line_up` | Every ready-made notification watches its own feature's entity key, has its name and message in both languages, and validates |
 
 The name, icon, platform and namespace checks above cover `per_item`'s suffixes too.
 

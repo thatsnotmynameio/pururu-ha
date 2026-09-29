@@ -3,7 +3,7 @@ title: Reactions
 description: How a device behaves. Each reaction listens to one thing, can start one of the device's programs, and becomes a Home Assistant automation.
 ---
 
-A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. When it fires, it can start one of the device's [programs](/concepts/programs): the reaction decides **when**, the program **what**. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
+A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. When it fires, it can start one of the device's [programs](/concepts/programs): the reaction decides **when**, the program **what**. It can also tell a [message](/concepts/notifications#a-reactions-message) to your phone. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
 
 ```yaml title="configuration.yaml"
 pururu:
@@ -127,6 +127,20 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 <Property name="then" type="program key" optional>
   A key of **this device's** [`programs`](/concepts/programs): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a script's entity ID or a list is a configuration error: `reactions: morning: clean is not a program of this device`.
 </Property>
+
+---
+
+<Property name="message" type="string" optional>
+  What to tell when the reaction fires: its device's name is the title. It can't be empty, and it's shown as you wrote it, not as a template. See [Notifications](/concepts/notifications#a-reactions-message).
+</Property>
+
+---
+
+<Property name="notify" type="notify action or list" optional>
+  Where this message goes, such as `notify.mobile_app_phone`, instead of `config.notify`. Only with `message`: `a reaction's notify goes with message`. A message with neither is a configuration error.
+</Property>
+
+With `then` and `message`, the program starts first, then the message is told.
 
 ---
 

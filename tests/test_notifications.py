@@ -1,6 +1,8 @@
 """Ready-made notifications: a made-up washer tells when its cycle finishes."""
 
 from collections.abc import AsyncIterator
+from pathlib import Path
+import re
 from typing import Any
 from unittest.mock import patch
 
@@ -10,7 +12,7 @@ from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
 
-from helpers import fake, generated, generated_notifications, reload, setup, tick
+from helpers import fake, generated, generated_notifications, module, reload, setup, tick
 
 KEY = "washer"
 POWER = "sensor.demo_plug_power"
@@ -235,3 +237,17 @@ async def test_removing_the_entry_empties_the_file(ha: HomeAssistant) -> None:
     await ha.config_entries.async_remove(entry.entry_id)
     await ha.async_block_till_done()
     assert generated_notifications(ha) == []
+
+
+# --- the docs ----------------------------------------------------------------------------
+
+PAGE = Path(__file__).resolve().parents[1] / "docs/concepts/notifications.mdx"
+
+
+def test_the_page_lists_every_ready_made_notification(ha: HomeAssistant) -> None:
+    page = PAGE.read_text(encoding="utf-8")
+    section = re.search(r"## Ready-made notifications\n(.*?)\n## ", page, re.DOTALL)
+    assert section is not None, "no Ready-made notifications section"
+    for name, feature in module("features").FEATURES.items():
+        for notification in feature.notifications:
+            assert f"`{name}: {notification}`" in section[1], notification
