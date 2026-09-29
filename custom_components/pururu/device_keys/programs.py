@@ -23,17 +23,16 @@ from homeassistant.core import (
     split_entity_id,
 )
 from homeassistant.helpers import config_validation as cv, entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 
 from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, CONF_SCRIPTS, ENTITY_PREFIX
-from ..core import generated
+from ..core import generated, vocabulary
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature, Item, qualified
-from ..core.generated import Kind, Planned, period
+from ..core.generated import Kind, Planned
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Generates, Items
-from ..features.cycle import Cycle, cycle_signal, end_signal
+from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..features.cycle.totals import CyclesTotal, RuntimeTotal
@@ -117,7 +116,7 @@ def _translated(
     """A step in HA's script syntax."""
     ((action, value),) = step.items()
     if action == DELAY:
-        return {DELAY: period(value)}
+        return {DELAY: vocabulary.period(value)}
     entity_id = entity_ids[value]
     return {
         "action": f"{split_entity_id(entity_id)[0]}.{action}",
@@ -144,8 +143,8 @@ def script(
     }
 
 
-class Runs(CyclesTotal):
-    """A program's finished runs, all time; it sends each one: its script on, then off.
+class Runs(CyclesTotal, CycleSource):
+    """A program's finished runs (its script on, then off), all time; it counts each run itself, then sends it as a cycle.
 
     The run's start is the `on` state's: a pururu reload while it runs keeps it.
     """
@@ -155,13 +154,17 @@ class Runs(CyclesTotal):
         super().__init__(device, source="cycles_total", item=item)
         # The script isn't pururu's: nothing of the device to wait for
         self.sources = ()
+        # It counts itself, so the inherited signal (only _watch reads it) goes unread
         self._script = script
-        # The end's own signal last, as a cycle's source sends them
-        self._signals = (cycle_signal(device, item), end_signal(device, item))
+        self._cycle_signals(device, item)
+
+    @override
+    def _watch(self) -> None:
+        """Nothing to watch: `_changed` counts a run itself, before sending its cycle."""
 
     @override
     async def async_added_to_hass(self) -> None:
-        """Restore the count and count, then watch the script."""
+        """Restore the count, then watch the script."""
         await super().async_added_to_hass()
         if self._script is not None:
             self.async_on_remove(
@@ -177,9 +180,9 @@ class Runs(CyclesTotal):
             or (old.state, new.state) != (STATE_ON, STATE_OFF)
         ):
             return
+        self._cycles += 1
         run = Cycle(start=old.last_changed, end=new.last_changed, energy_kwh=None)
-        for signal in self._signals:
-            async_dispatcher_send(self.hass, signal, run)
+        self._send(run)
 
 
 def _items(config: Mapping[str, Any]) -> list[Item]:

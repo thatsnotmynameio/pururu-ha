@@ -124,7 +124,7 @@ The same listener reloads the entry, once for a burst, when an entity a generate
 
 ## Restoring state
 
-Entities that must survive restarts are `RestoreEntity` or `RestoreSensor`:
+Entities that must survive restarts are `RestoreEntity` or `RestoreSensor`. The ones that send cycles are also a `CycleSource` (`features/cycle/`): it writes its state, then sends the finished cycle on its own signal, then on the end signal.
 
 - `running` keeps its state and, as extra data, the running cycle's start and energy reading (`CycleStart`, `features/cycle/`); `modes`' `current` keeps the running mode and the same `CycleStart`; a door's (window's) `open` keeps its state and the opening's start with whether an event described it (`OpeningStart`, a `CycleStart`, `features/opening/open.py`).
 - The `last_cycle_*` sensors, `cycles_total` and `runtime_total` restore their values.

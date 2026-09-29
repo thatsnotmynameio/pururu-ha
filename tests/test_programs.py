@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import patch
 
-from homeassistant.core import Context, Event, HomeAssistant
+from homeassistant.core import Context, Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     config_validation as cv,
@@ -13,6 +13,7 @@ from homeassistant.helpers import (
     entity_registry as er,
     issue_registry as ir,
 )
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 import pytest
@@ -617,6 +618,35 @@ async def test_a_run_is_a_cycle(pool: HomeAssistant, freezer: Any) -> None:
     assert dt_util.parse_datetime(value(pool, "last_cycle_start")) == started
     assert dt_util.parse_datetime(value(pool, "last_cycle_end")) == dt_util.utcnow()
     assert float(value(pool, "runtime_total")) == pytest.approx(2, abs=0.01)
+
+
+async def test_a_run_counts_itself_before_it_sends_its_cycle(
+    scripts: HomeAssistant, freezer: Any
+) -> None:
+    """cycles_total already carries the run when the cycle signal fires: Runs counts itself, then sends.
+
+    The probe connects to the signal before pururu's own setup does (a
+    dispatcher calls its listeners in the order they connected), so it runs
+    before anything Runs itself connects: a stale write, were `_send` still
+    to make one, would show here.
+    """
+    cycle = module("features.cycle")
+    device = module("core.feature").Device(key=KEY, name="Piscina", namespace="program")
+    item = module("core.feature").Item(slug="clean", name="Limpar")
+    seen: list[str | None] = []
+
+    @callback
+    def record(_cycle: Any) -> None:
+        state = scripts.states.get(STAT + "cycles_total")
+        seen.append(state.state if state is not None else None)
+
+    async_dispatcher_connect(scripts, cycle.cycle_signal(device, item), record)
+    await fake(scripts, REAL_PUMP, "off")
+    assert await setup(scripts, devices())
+    await start(scripts)
+    await tick(scripts, freezer, TWO_HOURS)
+    await scripts.async_block_till_done()
+    assert seen == ["1"]
 
 
 async def test_its_statistics_are_named_by_the_program(pool: HomeAssistant) -> None:

@@ -99,17 +99,6 @@ class Planned:
     targets: frozenset[str] = frozenset()
 
 
-def period(value: timedelta) -> str:
-    """A time period as HA reads it: [-]HH:MM:SS, and the fraction of a second if any."""
-    sign = "-" if value < timedelta(0) else ""
-    minutes, seconds = divmod(abs(value), timedelta(minutes=1))
-    hours, minutes = divmod(minutes, 60)
-    text = f"{sign}{hours:02}:{minutes:02}:{seconds.seconds:02}"
-    if seconds.microseconds:
-        text += f".{seconds.microseconds:06}"
-    return text
-
-
 def _holder(
     hass: HomeAssistant,
     registry: er.EntityRegistry,

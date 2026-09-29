@@ -14,15 +14,14 @@ from homeassistant.core import (
     State,
     callback,
 )
-from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 
-from ...core.entity import PururuEntity, reading
+from ...core.entity import reading
 from ...core.feature import Device, Item
-from ..cycle import Cycle, CycleStart, cycle_signal, end_signal
+from ..cycle import Cycle, CycleSource, CycleStart
 from ..cycle.energy import kwh_now, kwh_used
 
 # The state while no mode runs: no mode is named so
@@ -46,7 +45,7 @@ class Mode:
         )
 
 
-class Current(PururuEntity, SensorEntity, RestoreEntity):
+class Current(CycleSource, SensorEntity, RestoreEntity):
     """The running mode, or idle; each mode cycle that ends is sent on its mode's signals.
 
     One mode at a time: the bands don't overlap, and a mode whose on_delay
@@ -317,10 +316,5 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         self._running = None
         self._start = CycleStart()
         self._start_armed(dt_util.utcnow(), after=end)
-        self.async_write_ha_state()
-        item = self._modes[running].item
-        for signal in (
-            cycle_signal(self._device, item),
-            end_signal(self._device, item),
-        ):
-            async_dispatcher_send(self.hass, signal, cycle)
+        self._cycle_signals(self._device, self._modes[running].item)
+        self._send(cycle)

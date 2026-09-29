@@ -128,6 +128,46 @@ def test_capabilities_line_up(features: dict[str, Any]) -> None:
             assert f"{capability}_from" in feature.example, f"{name}'s example lacks {capability}_from"
 
 
+def test_a_capability_is_carried_by_a_cycle_source(
+    ha: HomeAssistant, features: dict[str, Any]
+) -> None:
+    """What a builder provides (appliance's running, door/window's open) sends its cycles as a CycleSource."""
+    cycle_source = module("features.cycle").CycleSource
+    device_cls = module("core.feature").Device
+    for name, feature in features.items():
+        if (provides := role(feature, "Provides")) is None:
+            continue
+        device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
+        config = feature.schema(dict(feature.example))
+        built = {entity.key: entity for entity in feature.build(ha, device, config, {})}
+        carrier = built[device.qualified(provides.key)]
+        assert isinstance(carrier, cycle_source), name
+
+
+def test_the_other_cycle_sources_are_pinned_too(
+    ha: HomeAssistant, features: dict[str, Any]
+) -> None:
+    """The modes' Current and the programs' Runs are CycleSource too, though no Provides names them."""
+    cycle_source = module("features.cycle").CycleSource
+    device_cls = module("core.feature").Device
+    current_cls = module("features.modes.current").Current
+    runs_cls = module("device_keys.programs").Runs
+
+    modes = features["modes"]
+    device = device_cls(key="dev", name="Dev", namespace=modes.namespace)
+    config = modes.schema(dict(modes.example))
+    built = modes.build(ha, device, config, {"cycle": "binary_sensor.demo_cycle"})
+    current = next(entity for entity in built if isinstance(entity, current_cls))
+    assert isinstance(current, cycle_source)
+
+    programs = features["programs"]
+    device = device_cls(key="dev", name="Dev", namespace=programs.namespace)
+    config = programs.schema(dict(programs.example))
+    built = programs.build(ha, device, config, {})
+    runs = next(entity for entity in built if isinstance(entity, runs_cls))
+    assert isinstance(runs, cycle_source)
+
+
 async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, features: dict[str, Any]) -> None:
     """A program's step calls <platform>.<action> on the entity: the platform must have that service."""
     for name, feature in features.items():

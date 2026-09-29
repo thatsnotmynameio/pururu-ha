@@ -185,6 +185,8 @@ For a feature that stands for real entities of one domain, build each entity on 
 
 The cycle code `appliance`, `modes`, `door`, `window` and the programs' statistics share (the last cycle's sensors, the totals, the meters, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
 
+A feature whose entity carries a cycle (`Provides`) builds it as a `CycleSource` (`features/cycle/__init__.py`): call `_cycle_signals(device, item)` once to set up its signals, and `_send(cycle)` when the cycle ends, which writes the state, then sends the cycle on its own signal, then on the end signal. `Running`, `Open` and `Runs` are the example; `modes`' `Current` calls `_cycle_signals` again for each item it sends. The contract test checks the entity a builder `Provides` is a `CycleSource`.
+
 **Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Add `Presets(<name → Preset>)` (`Preset` in `core/feature.py`), as `features/appliance/` does with `features/appliance/alerts.py`'s `PRESETS`:
 
 - `watches`: the entity key, in the feature's namespace, it watches.
@@ -221,6 +223,8 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 | `test_a_device_key_neither_provides_requires_nor_acts` | `programs` and `reactions` have no `Provides`, `Requires` or `Actions` |
 | `test_ready_made_watch_the_builders_keys` | What a ready-made alert or notification watches, or counts from, is one of its builder's entity keys |
 | `test_a_generating_builder_generates_from_its_example` | What `Generates` writes carries its device's pururu pattern |
+| `test_a_capability_is_carried_by_a_cycle_source` | What a builder `Provides` is a `CycleSource` |
+| `test_the_other_cycle_sources_are_pinned_too` | `modes`' `Current` and the programs' `Runs` are `CycleSource` too, though no `Provides` names them |
 
 The name, icon, platform and namespace checks above cover `Items`' suffixes too.
 

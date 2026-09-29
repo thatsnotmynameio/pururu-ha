@@ -15,18 +15,17 @@ from homeassistant.core import (
     State,
     callback,
 )
-from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
-from ...core.entity import PururuEntity, reading
+from ...core.entity import reading
 from ...core.feature import Device
-from ..cycle import Cycle, CycleStart, cycle_signal, end_signal
+from ..cycle import Cycle, CycleSource, CycleStart
 from ..cycle.energy import kwh_now, kwh_used
 
 
-class Running(PururuEntity, BinarySensorEntity, RestoreEntity):
+class Running(CycleSource, BinarySensorEntity, RestoreEntity):
     """On while the power stays above the threshold; holds while the plug has no value."""
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -43,7 +42,7 @@ class Running(PururuEntity, BinarySensorEntity, RestoreEntity):
     ) -> None:
         """Watch `power` against `threshold`; the delays ignore presses, pauses and tails."""
         self._identify(device, Platform.BINARY_SENSOR, "running")
-        self._signals = (cycle_signal(device), end_signal(device))
+        self._cycle_signals(device)
         self._power = power
         self._energy = energy
         self._threshold = threshold
@@ -152,6 +151,4 @@ class Running(PururuEntity, BinarySensorEntity, RestoreEntity):
         )
         self._data = CycleStart()
         self._attr_is_on = False
-        self.async_write_ha_state()
-        for signal in self._signals:  # the end's own signal last
-            async_dispatcher_send(self.hass, signal, cycle)
+        self._send(cycle)

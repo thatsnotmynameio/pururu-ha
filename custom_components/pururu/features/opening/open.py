@@ -29,9 +29,8 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 
-from ...core.entity import PururuEntity
 from ...core.feature import Device
-from ..cycle import Cycle, CycleStart, cycle_signal, end_signal
+from ..cycle import Cycle, CycleSource, CycleStart
 from .events import OPENING, Fired, Source, described_signal
 
 
@@ -58,7 +57,7 @@ class OpeningStart(CycleStart):
         )
 
 
-class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
+class Open(CycleSource, BinarySensorEntity, RestoreEntity):
     """On while the contact is open; holds while it has no state. Each opening is a cycle."""
 
     def __init__(
@@ -78,7 +77,7 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
         self._contact = contact
         self._events = events
         self._match = match
-        self._signals = (cycle_signal(device), end_signal(device))
+        self._cycle_signals(device)
         self._described_signal = described_signal(device)
         self._data = CycleStart()
         # False until HA has started: every entity of the door listens by then
@@ -155,9 +154,7 @@ class Open(PururuEntity, BinarySensorEntity, RestoreEntity):
             return
         cycle = Cycle(start=self._data.since, end=now, energy_kwh=None)
         self._data = CycleStart()
-        self.async_write_ha_state()
-        for signal in self._signals:  # the end's own signal last
-            async_dispatcher_send(self.hass, signal, cycle)
+        self._send(cycle)
 
     @callback
     def _opening_starts(self, now: datetime) -> None:
