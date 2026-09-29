@@ -96,6 +96,12 @@ def test_the_platforms_import_only_runtime() -> None:
         assert imports_of(PROJECT / CODE / f"{name}.py") <= {f"{CORE}.runtime"}, name
 
 
+def test_the_root_holds_only_what_home_assistant_looks_up() -> None:
+    """The entry points, the config flow, the constants and the platforms; the rest lives in a layer's folder."""
+    root = {path.stem for path in (PROJECT / CODE).glob("*.py")}
+    assert root == {"__init__", "config_flow", "const", *PLATFORMS}
+
+
 def test_no_module_is_named_after_a_platform_ha_preloads() -> None:
     """HA imports <integration>.condition, .repairs… itself: a module by that name would be taken for one."""
     from homeassistant.loader import BASE_PRELOAD_PLATFORMS  # noqa: PLC0415
