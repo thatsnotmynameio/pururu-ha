@@ -1,6 +1,6 @@
 # Claude review at Greptile's level — design
 
-Builds on the Claude Code Review workflow as fixed in #34 (the code-review plugin's tools, background tasks off) and #35 (actions pinned by SHA; drafts, forks and bots skipped). Only the review's own files change: the Claude workflows and the review's prompts and scripts. The integration's code, tests and docs don't.
+Builds on the Claude Code Review workflow as fixed in #34 (the tools the review needs, background tasks off) and #35 (actions pinned by SHA; drafts, forks and bots skipped). Only the review's own files change: its workflow and its prompts. The integration's code, tests and docs don't.
 
 ## Goal
 
@@ -9,7 +9,7 @@ A review of each pull request that reads like Greptile's on this repo:
 - A few inline findings, each confirmed and with a concrete failure scenario.
 - A re-review that looks only at the new commits and resolves the threads they fix.
 
-The review is made by Claude on the owner's subscription, and it says the same thing every time about how it posts. Today's plugin reviews once, decides alone what and how to post, and has passed green without posting (anthropics/claude-code-action#1646, #1087).
+All of it by Claude, on the owner's subscription, as `claude[bot]`.
 
 ## What Greptile does here
 
@@ -30,96 +30,54 @@ Greptile's reviews on this repo (PRs up to #33):
 
 | Question | Decision |
 |---|---|
-| Who writes, who posts | **Claude reads and answers; code posts.** Claude gets `Read`, `Grep`, `Glob` and subagents, no shell, no write tool. It returns one JSON object through the action's `--json-schema` (`structured_output`). A script turns that into the summary, the inline review and the resolved threads. The format, the cap on findings and the score's caps are code, not a request to the model. Rejected: Claude posting through the action's tools, which is how the plugin fails silently today. |
-| Identity | **`claude[bot]`**, as the `@claude` replies from `claude.yml`. The action revokes the Claude App token when its step ends, so `publish.py` gets its own the way the action does (`src/github/token.ts` at the pinned commit): a GitHub OIDC token with audience `claude-code-github-action`, POSTed as a bearer to `https://api.anthropic.com/api/github/github-app-token-exchange`, which answers `{token}` (or `{app_token}`). The token is revoked at the end (`DELETE /installation/token`). If the exchange fails, the review is posted with the job's `GITHUB_TOKEN`, as `github-actions[bot]`, and a warning says why. The exchange refuses a workflow that differs from main's. Accepted: the endpoint isn't documented. It is the one the pinned action uses, and the fallback keeps the review working if it changes. |
-| Claude's token | The action gets `github_token: ${{ github.token }}`: no OIDC exchange for the Claude step, and so no "workflow validation" skip. A PR that changes this workflow is reviewed too, by its own copy. Claude can't use the token: it has no shell and no network. |
-| Where the process lives | `.github/claude-review/` (scripts, schema) and `.claude/review/` (prompts), **taken from the base commit** by a sparse checkout, as the action already does with `.claude/`. A PR changes how it is reviewed only once merged. A base without them (the PR adding them, a stacked PR) ends with a job-summary note, not a failure. |
-| Model | Opus, `--max-turns` bounded, subagents in the foreground (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: 1`, the #1646 workaround). |
-| How it finds bugs | Parallel finders by lens, chosen by what changed: correctness; lifecycle (async, restore, reload, registries); configuration (schema, translations en + pt-BR, entity IDs); docs, tests and CI consistency. Then skeptical verifiers try to refute each candidate. Only CONFIRMED findings with a concrete scenario are returned. In an incremental review, one more finder sweeps the whole PR for P0/P1 only. |
-| What it never flags | What CI enforces (ruff, ruff format, mypy strict, hassfest, the tests, docs.page links, Sonar), style, nits, and `docs/superpowers/`. Lockfiles (`uv.lock`, `pnpm-lock.yaml`) are left out of the diffs. |
-| Severity | P0: breaks every user or loses data. P1: a real bug on a normal path. P2: a real but narrow bug, a contract or docs contradiction, at most one missing test per PR. Calibrated on Greptile's findings here. |
-| Caps, in code | At most 6 new findings per round, highest severity first; the rest are counted in the summary. Confidence is the model's, capped by the open findings: any P0 → at most 1; two or more P1 → at most 3; any P1 → at most 4. |
-| Anchoring | Each new finding is posted as its own review comment (`POST /pulls/{n}/comments`: no review body to fill, and its ID comes back at once) on RIGHT-side lines present in the PR's diff hunks (`line`, optional `start_line`). A finding outside the hunks, or one GitHub refuses, is listed in the summary with a link to the file line: the only fallback. A suggestion is kept only when it replaces exactly the anchored lines. |
-| State | In the summary comment itself, in a hidden marker: the last reviewed SHA and each finding's ID with its comment ID. No artifact, no database. The summary is found by its marker `<!-- pururu-review:summary -->` among comments by `claude[bot]` or `github-actions[bot]`. |
-| Incremental | When the marker's SHA is an ancestor of the head and no merge of the base came in since: review `last..head`, and judge each earlier finding as fixed, outstanding or withdrawn. Otherwise (a first review, a force-push, the base merged in): a full review, with the earlier findings still judged. A re-review with no new commit, or whose new commits only merge the base, runs no model. |
-| Threads | The earlier threads the model judges fixed or withdrawn are resolved (GraphQL `resolveReviewThread`; `main` requires every thread resolved); a failure only warns. A thread the owner resolved drops its finding. Outstanding ones stay listed in the summary. Replies to findings go through `@claude` (`claude.yml`), unchanged. |
-| Triggers | `opened`, `reopened`, `ready_for_review`: a full review. `labeled` with `claude-review`: a re-review (incremental when possible), drafts included; the label is removed afterwards. Every push (`synchronize`) is **not** on yet: the owner decides later, and it is one line in `on:`. |
+| Who posts | **Claude, through the action.** Inline findings go through the action's own tool (`mcp__github_inline_comment__create_inline_comment`, `confirmed: true`), which posts them as `claude[bot]`, as on #36. The summary, and the thread resolutions, go through `gh` with the action's Claude App token, so they are `claude[bot]` too. No script and no token of our own. Rejected: a publishing script that enforces the format in code. It works, but it is a few hundred lines of Python and tests for a repository with one author. If Claude's format drifts, that is the fallback. |
+| Where the process lives | `.claude/review/review.md` (how to review and post) and `.claude/review/rules.md` (this repo's rules). The action restores `.claude/` from the base branch before Claude starts, so a PR can't change its own review. The workflow's prompt only points at `review.md`. |
+| Model | Opus, `--max-turns` bounded, subagents in the foreground (`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: 1`, the anthropics/claude-code-action#1646 workaround). |
+| Tools | `Read`, `Grep`, `Glob`, subagents, the inline-comment tool, read-only `git` (`diff`, `log`, `show`, `merge-base`, `rev-parse`, `rev-list`), `gh pr view`, `gh pr diff`, `gh pr comment` and `gh api` (reading comments and threads, editing the summary, resolving threads). No edit or write tools. `gh api` can do more than that; accepted, since only the owner opens PRs here and forks and bots are skipped. |
+| How it finds bugs | Parallel finders by lens, chosen by what changed: correctness; lifecycle (async, restore, reload, registries); configuration (schema, translations en + pt-BR, entity IDs); docs, tests and CI consistency. Then skeptical verifiers try to refute each candidate. Only CONFIRMED findings with a concrete scenario are posted. In an incremental review, one more finder sweeps the whole PR for P0/P1 only. |
+| What it never flags | What CI enforces (ruff, ruff format, mypy strict, hassfest, the tests, docs.page links, Sonar), style, nits, `docs/superpowers/`, lockfiles. |
+| Severity | P0: breaks every user or loses data. P1: a real bug on a normal path. P2: a real but narrow bug, a contract or docs contradiction, at most one missing test per PR. |
+| Caps | At most 6 new findings per round, most severe first. Confidence capped by the open findings: any P0 → at most 1; two or more P1 → at most 3; any P1 → at most 4. The review follows them. They're in `review.md`, not in code. |
+| State | In the summary comment: a hidden line `<!-- pururu-review:state {"sha": "...", "findings": [...]} -->` with the last reviewed commit and the open findings (title, severity, the URL of each thread). The summary is found by its marker `<!-- pururu-review:summary -->` among `claude[bot]`'s comments. |
+| Incremental | When the state's commit is an ancestor of the head and no merge came in since, the review looks at `git diff <state sha>..HEAD`. It judges each earlier finding as fixed, outstanding or withdrawn. Otherwise it does a full review. A re-review with nothing new changes nothing and says so in the summary. |
+| Threads | Earlier findings judged fixed or withdrawn have their threads resolved (GraphQL `resolveReviewThread`; `main` requires every thread resolved). A thread the owner resolved drops its finding. Replies to findings stay with `@claude` (`claude.yml`), unchanged. |
+| Triggers | `opened`, `reopened`, `ready_for_review`: a full review. `labeled` with `claude-review`: a re-review, drafts included; a last step removes the label. Every push (`synchronize`) is **not** on yet: the owner decides later, and it is one line in `on:`. |
 | Skipped | Drafts (unless labeled), forks (no secret), PRs by bots (the action refuses bot actors). One review at a time per PR (`concurrency`, not cancelled). |
-| Failure | If Claude fails or returns nothing, the summary says so, with the run's link, and the job fails. |
+| A PR changing the workflow | Not reviewed. The action refuses to run a workflow that differs from main's, which is how #34 and #35 went. Accepted. |
 
 ## Files
 
 ```
-.github/workflows/claude-code-review.yml   one job: checkouts → context → Claude → publish
-.github/claude-review/
-  context.py      builds .pururu-review/ and the step outputs
-  publish.py      token, summary, review, resolved threads, label, job summary; --dry-run
-  schema.json     Claude's output contract, passed to --json-schema
-.claude/review/
-  review.md       the process: context, lenses, finders, verifiers, earlier findings, output
-  rules.md        this repo's severity, never-flag list, pointers into CLAUDE.md, score and risk rubric
+.github/workflows/claude-code-review.yml   one job: checkout (full history) → Claude → remove the label
+.claude/review/review.md                   the process: context, lenses, finders, verifiers, earlier findings, posting
+.claude/review/rules.md                    this repo's severity, never-flag list, pointers into CLAUDE.md, score and risk
 ```
 
 `claude.yml` is unchanged. The code-review plugin is no longer used.
 
-### `context.py`
+## Formats
 
-Standard library, `git` and `gh` (read-only `GH_TOKEN`). In the PR's checkout (full history), it writes `.pururu-review/`:
-- `pr.diff`: merge base to head;
-- `incremental.diff` in incremental mode;
-- `context.md`: mode, SHAs, title and body, commits, files, and the earlier findings still open, with the replies in their threads;
-- `state.json` for `publish.py`: the summary comment (ID, author, body), the last reviewed SHA and the earlier findings with their thread IDs.
-
-Step outputs: `ready`, `skip`, `mode`, and `schema` (compact `schema.json`, for `--json-schema`).
-
-### Claude's output (`schema.json`)
-
-```
-confidence   0-5
-risk         low | medium | high | critical
-verdict      one line
-summary      a paragraph
-files        [{path, note}]
-diagram      optional mermaid
-findings     [{severity P0|P1|P2, title, path, line, start_line?, scenario, suggestion?, fix_prompt}]   IDs are given by publish.py
-earlier      [{id, status fixed|outstanding|withdrawn, note}]
-```
-
-Flat, no `$ref`.
-
-### `publish.py`
-
-Standard library (`urllib`). It:
-1. gets the token;
-2. applies the caps;
-3. posts the new findings as one review (event `COMMENT`);
-4. upserts the summary. If the old one can't be edited, because the other identity wrote it, it posts a new one and leaves the old;
-5. resolves the fixed threads;
-6. removes the `claude-review` label;
-7. writes the job summary;
-8. revokes the token.
-
-`--dry-run` prints the payloads and calls nothing.
-
-### Summary format
+The summary:
 
 ```
 <h3>Confidence Score: 4/5</h3>
 
 **Medium risk** — one-line verdict
 
+One short paragraph on the change.
+
 <h3>Findings</h3>
-1. <kbd>P1</kbd> **Title** [→](thread link)
-2. <kbd>P2</kbd> **Title** (path:line, outside the diff)
+1. <kbd>P1</kbd> **Title** [→](thread URL)
+2. <kbd>P2</kbd> **Title** [→](thread URL) (still open)
 
 <details><summary>Important files changed</summary> table </details>
 optional mermaid diagram
 <sub>Last reviewed commit: abc1234 · Reviewed by Claude</sub>
 <!-- pururu-review:summary -->
-<!-- pururu-review:state {"sha": "...", "findings": {"id": comment_id}} -->
+<!-- pururu-review:state {...} -->
 ```
 
-Inline comment:
+An inline finding:
 
 ````
 <kbd>P1</kbd> **Title**
@@ -135,21 +93,15 @@ replacement lines
 
 ## Testing
 
-Nothing here runs in the repo's test suite: the scripts aren't the integration.
-- **Locally:**
-  - `actionlint` on the workflow and `py_compile` on the scripts;
-  - `context.py` on real merged PRs (#30, #33) in a clone: full mode, incremental mode (a fake earlier marker on an intermediate commit) and a base merge (back to full);
-  - `publish.py --dry-run` on sample outputs, checking:
-    - a clean PR;
-    - more than 6 findings, one outside the hunks;
-    - a re-review with fixed and outstanding findings.
+There is no unit test; the review's files are prompts and a workflow.
+- **Locally:** `actionlint` on the workflow.
 - **On GitHub, after merge:** a probe PR with a planted bug, as #36.
-  - The review runs, posts as `claude[bot]` and finds the bug.
-  - A fix commit plus the `claude-review` label gives an incremental review that resolves the thread.
+  - The review posts, as `claude[bot]`, a finding on the bug and the summary.
+  - A fix commit plus the `claude-review` label gives an incremental review that resolves the thread, edits the summary and removes the label.
 
 ## Out of scope
 
 - Answering replies in threads, since `@claude` already does.
 - Learning from reactions.
-- Defenses against third parties: only the owner opens PRs here, and forks and bots are skipped.
+- Defenses against third parties.
 - Reviewing every push, which is left to the owner's decision.
