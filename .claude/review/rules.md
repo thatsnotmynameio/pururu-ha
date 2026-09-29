@@ -64,7 +64,10 @@ at most 4.
 
 ## Risk
 
-How much can go wrong if this area is broken, whatever the findings:
+How much can go wrong if this change is wrong, whatever the findings: the area it touches,
+weighted by how much it changes behaviour there. A move, a rename or a refactor you traced as
+equivalent is one level below its area (a pure move of files is low, whatever they are); a
+change of behaviour takes its area's level.
 
 - low: docs, tests, a new optional feature nobody configures yet.
 - medium: a feature's entities, translations, the dashboard.
