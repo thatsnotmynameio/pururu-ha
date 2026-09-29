@@ -10,9 +10,10 @@ try skipped once the occurrence ran. Each reaction's triggers are counted:
 sensors of its device (STATISTICS).
 """
 
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Collection, Hashable, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+import logging
 from typing import Any, override
 
 import voluptuous as vol
@@ -26,7 +27,7 @@ from homeassistant.const import (
     Platform,
 )
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 
 from ..const import (
     CONF_AUTOMATIONS,
@@ -37,7 +38,7 @@ from ..const import (
     CONF_REACTIONS,
     ENTITY_PREFIX,
 )
-from ..core import messages
+from ..core import generated, messages
 from ..core.entity import PururuEntity
 from ..core.feature import (
     TEXT,
@@ -48,10 +49,13 @@ from ..core.feature import (
     qualified,
     state_text,
 )
-from ..core.generated import Kind, period
+from ..core.generated import Kind, Planned, period
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Generates, Items
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
+from . import programs
+
+_LOGGER = logging.getLogger(__name__)
 
 # The namespace of every reaction's automation ID
 NAMESPACE = "reaction"
@@ -506,3 +510,105 @@ def _check(
         raise vol.Invalid(
             f"{where}: {when} is not an entity key of device {other}", path=path
         )
+
+
+def plan(
+    hass: HomeAssistant,
+    devices: Mapping[str, Any],
+    index: Index,
+    created: Collection[str],
+    scripts: Collection[str],
+    held_scripts: Collection[str],
+    notify: Sequence[str],
+) -> Planned:
+    """An automation per reaction of every device; one that can't work is logged.
+
+    One watching an entity not created, or starting a program whose script
+    isn't generated (`scripts`: the IDs generated), isn't generated; held with
+    its program when that is. `notify` is config's: where a message without its
+    own goes.
+    """
+    registry = er.async_get(hass)
+    automations: list[generated.Item] = []
+    held: set[str] = set()
+    for key, config in devices.items():
+        for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
+            unique_id = automation_id(key, reaction_key)
+            watched, entity_id = _watched(
+                hass, index, key, unique_id, reaction, created
+            )
+            if not watched:
+                continue
+            startable, started = _started(registry, key, unique_id, reaction, scripts)
+            if not startable:
+                if programs.script_id(key, reaction["then"]) in held_scripts:
+                    held.add(unique_id)
+                continue
+            automations.append(
+                generated.Item(
+                    unique_id=unique_id,
+                    config=automation(
+                        key,
+                        config[CONF_NAME],
+                        reaction_key,
+                        reaction,
+                        entity_id,
+                        started,
+                        reaction.get(CONF_NOTIFY, notify),
+                    ),
+                )
+            )
+    return Planned(automations, frozenset(held))
+
+
+def _watched(
+    hass: HomeAssistant,
+    index: Index,
+    key: str,
+    unique_id: str,
+    reaction: Mapping[str, Any],
+    created: Collection[str],
+) -> tuple[bool, str | None]:
+    """Whether the reaction can watch what it names, and the entity ID it watches.
+
+    A pururu entity not created can't be, logged; `at` and `sun` watch none.
+    """
+    if (when := reaction.get("when")) is None:
+        return True, reaction.get("entity")
+    target = find(index, key, Ref(reaction.get("device"), when))
+    assert target is not None  # the schema checked it (check)
+    if target.unique_id not in created:
+        _LOGGER.error(
+            "automation.%s follows %s, which is not created; not generating it",
+            unique_id,
+            target.entity_id(),
+        )
+        return False, None
+    return True, target.current_entity_id(hass)
+
+
+def _started(
+    registry: er.EntityRegistry,
+    key: str,
+    unique_id: str,
+    reaction: Mapping[str, Any],
+    scripts: Collection[str],
+) -> tuple[bool, str | None]:
+    """Whether the reaction can start its program, and its script's current entity ID.
+
+    A script not generated can't be started, logged; without `then`, none is.
+    """
+    if (then := reaction.get("then")) is None:
+        return True, None
+    script = programs.script_id(key, then)
+    if script not in scripts:
+        _LOGGER.error(
+            "automation.%s runs script.%s, which is not generated; not generating it",
+            unique_id,
+            script,
+        )
+        return False, None
+    # Registered by the scripts' sync
+    return True, registry.async_get_entity_id(
+        programs.KIND.domain, programs.KIND.domain, script
+    )

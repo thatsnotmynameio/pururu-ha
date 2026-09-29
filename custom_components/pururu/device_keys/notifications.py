@@ -114,13 +114,13 @@ def automation(
     }
 
 
-def items(
+def plan(
     hass: HomeAssistant,
     devices: Mapping[str, Mapping[str, Any]],
     created: Collection[str],
     texts: Mapping[str, str],
     notify: Sequence[str],
-) -> list[generated.Item]:
+) -> generated.Planned:
     """An automation per enabled notification of every device; one on an entity not created is logged.
 
     `texts` are the common texts in HA's language (its name, its default
@@ -157,4 +157,4 @@ def items(
                     ),
                 )
             )
-    return found
+    return generated.Planned(found)

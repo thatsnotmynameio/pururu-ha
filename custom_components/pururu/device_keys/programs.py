@@ -8,7 +8,8 @@ can reach outside the device. Each run is a cycle: its statistics are sensors
 of its device (STATISTICS).
 """
 
-from collections.abc import Hashable, Iterator, Mapping
+from collections.abc import Collection, Hashable, Iterable, Iterator, Mapping
+import logging
 from typing import Any, override
 
 import voluptuous as vol
@@ -21,20 +22,23 @@ from homeassistant.core import (
     callback,
     split_entity_id,
 )
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 
-from ..const import CONF_DEVICES, CONF_PROGRAMS, CONF_SCRIPTS, ENTITY_PREFIX
+from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, CONF_SCRIPTS, ENTITY_PREFIX
+from ..core import generated
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature, Item, qualified
-from ..core.generated import Kind, period
-from ..core.resolve import Index, Ref, find
+from ..core.generated import Kind, Planned, period
+from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Generates, Items
 from ..features.cycle import Cycle, cycle_signal, end_signal
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..features.cycle.totals import CyclesTotal, RuntimeTotal
+
+_LOGGER = logging.getLogger(__name__)
 
 # The namespace of every program's script ID
 NAMESPACE = "program"
@@ -251,3 +255,86 @@ def check(
                     raise vol.Invalid(
                         f"programs: {entity_key} does not take {action}", path=path
                     )
+
+
+def plan(
+    hass: HomeAssistant,
+    devices: Mapping[str, Any],
+    index: Index,
+    created: Collection[str],
+) -> Planned:
+    """A script per program of every device, in the device's area; one that can't act is logged.
+
+    Held: the scripts whose entity is disabled (their registry entries stay, as
+    the user set them). Targets: the entity IDs the generated scripts act on.
+    """
+    registry = er.async_get(hass)
+    scripts: list[generated.Item] = []
+    held: set[str] = set()
+    targets_: set[str] = set()
+    for key, config in devices.items():
+        for program_key, program in config.get(CONF_PROGRAMS, {}).items():
+            unique_id = script_id(key, program_key)
+            entity_ids = _acted_on(hass, index[key], unique_id, program, created)
+            if entity_ids is None:
+                continue
+            if _disabled(registry, unique_id, entity_ids.values()):
+                held.add(unique_id)
+                continue
+            targets_.update(entity_ids.values())
+            scripts.append(
+                generated.Item(
+                    unique_id=unique_id,
+                    config=script(
+                        key, config[CONF_NAME], program_key, program, entity_ids
+                    ),
+                    area=config.get(CONF_AREA),
+                )
+            )
+    return Planned(scripts, frozenset(held), frozenset(targets_))
+
+
+def _acted_on(
+    hass: HomeAssistant,
+    found: Mapping[str, Target],
+    unique_id: str,
+    program: Mapping[str, Any],
+    created: Collection[str],
+) -> dict[str, str] | None:
+    """Each entity key the program acts on -> its current entity ID; None, logged, when one isn't created."""
+    entity_ids: dict[str, str] = {}
+    for _, key in targets(program):
+        target = found[key]
+        entity_id = target.current_entity_id(hass)
+        if target.unique_id not in created:
+            _LOGGER.error(
+                "script.%s follows %s, which is not created; not generating it",
+                unique_id,
+                entity_id,
+            )
+            return None
+        entity_ids[key] = entity_id
+    return entity_ids
+
+
+def _disabled(
+    registry: er.EntityRegistry, unique_id: str, entity_ids: Iterable[str]
+) -> bool:
+    """Whether one of them is disabled, logged: the program is held.
+
+    It comes back as the user set it once the entity is enabled again. The
+    entry is reloaded when an entity a generated script acts on is disabled
+    (pururu's registry listener), and when a disabled one is enabled again
+    (HA's own).
+    """
+    for entity_id in entity_ids:
+        if (registered := registry.async_get(entity_id)) is not None and (
+            registered.disabled
+        ):
+            _LOGGER.error(
+                "script.%s acts on %s, which is disabled; not generating it",
+                unique_id,
+                entity_id,
+            )
+            return True
+    return False

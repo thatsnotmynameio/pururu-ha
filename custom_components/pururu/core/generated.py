@@ -86,6 +86,19 @@ class Item:
     area: str | None = None
 
 
+@dataclass(frozen=True)
+class Planned:
+    """What a kind's plan() gives: the items for its file, the IDs held, the entity IDs they act on.
+
+    A held item is kept out of the file while an entity it needs is disabled;
+    its registry entry and tracked ID stay. Disabling a target rebuilds the entry.
+    """
+
+    items: list[Item]
+    held: frozenset[str] = frozenset()
+    targets: frozenset[str] = frozenset()
+
+
 def period(value: timedelta) -> str:
     """A time period as HA reads it: [-]HH:MM:SS, and the fraction of a second if any."""
     sign = "-" if value < timedelta(0) else ""
