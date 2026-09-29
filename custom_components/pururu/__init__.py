@@ -95,17 +95,15 @@ def _device(value: Any) -> dict[str, Any]:
     Every <capability>_from names a feature of this device that provides it,
     every entity key a feature refers to is another feature's, a program's step
     acts on another feature's entity key that takes the action, and a real
-    entity is in one configured feature of the device at most, and a
-    ready-made notification is of one of its features.
+    entity is in one configured feature of the device at most.
     """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
         vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
         vol.Optional(CONF_PROGRAMS): programs.SCHEMA,
-        vol.Optional(CONF_NOTIFICATIONS): notifications.validate,
         **{
-            vol.Optional(name): partial(presets.validate, feature, key=name)
+            vol.Optional(name): partial(_feature_block, feature, name)
             for name, feature in FEATURES.items()
         },
     }
@@ -121,8 +119,26 @@ def _device(value: Any) -> dict[str, Any]:
     _real_entities_distinct(device, names)
     _reactions_on_this_device(device)
     _programs_on_this_device(device)
-    _notifications_on_this_device(device)
     return device
+
+
+def _feature_block(feature: Feature, key: str, value: Any) -> Any:
+    """A feature's block, `key` in the device: its ready-made notifications (notifications.py), the rest as presets.validate says.
+
+    Only a feature offering them has them: a configured feature (alerts,
+    switches) may have an item keyed `notifications`.
+    """
+    if (
+        not feature.notifications
+        or not isinstance(value, dict)
+        or CONF_NOTIFICATIONS not in value
+    ):
+        return presets.validate(feature, value, key)
+    rest = {each: block for each, block in value.items() if each != CONF_NOTIFICATIONS}
+    enabled = vol.Schema(
+        {CONF_NOTIFICATIONS: notifications.schema(key, feature.notifications)}
+    )({CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]})
+    return {**presets.validate(feature, rest, key), **enabled}
 
 
 def _capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
@@ -240,13 +256,6 @@ def _programs_on_this_device(device: dict[str, Any]) -> None:
                 raise vol.Invalid(f"programs: {key} does not take {action}")
 
 
-def _notifications_on_this_device(device: dict[str, Any]) -> None:
-    """Refuse a ready-made notification of a feature the device doesn't have."""
-    for key in device.get(CONF_NOTIFICATIONS, {}):
-        if key not in device:
-            raise vol.Invalid(f"notifications: {key}: the device has no {key}")
-
-
 def _entity_keys(device: dict[str, Any]) -> Iterator[tuple[str, str, Platform]]:
     """(builder, entity key, platform) of every entity the device's features and device keys can create."""
     for name, feature in BUILDERS.items():
@@ -305,14 +314,12 @@ def _generated_ids(key: str, device: dict[str, Any]) -> Iterator[tuple[str, str,
             reactions.automation_id(key, reaction_key),
             "reaction",
         )
-    for name, enabled in device.get(CONF_NOTIFICATIONS, {}).items():
-        namespace = FEATURES[name].namespace
-        for notification in enabled:
-            yield (
-                notifications.KIND.domain,
-                notifications.automation_id(key, namespace, notification),
-                "notification",
-            )
+    for _, feature, notification, _ in notifications.enabled(device):
+        yield (
+            notifications.KIND.domain,
+            notifications.automation_id(key, feature.namespace, notification),
+            "notification",
+        )
     for program in device.get(CONF_PROGRAMS, {}):
         yield programs.KIND.domain, programs.script_id(key, program), "program"
 
@@ -381,13 +388,12 @@ def _messages_sent(config: dict[str, Any]) -> dict[str, Any]:
                     f"device {key}: reactions: {reaction_key}: message needs notify, "
                     "here or in config.notify"
                 )
-        for name, enabled in device.get(CONF_NOTIFICATIONS, {}).items():
-            for notification, settings in enabled.items():
-                if CONF_NOTIFY not in settings:
-                    raise vol.Invalid(
-                        f"device {key}: notifications: {name}: {notification} needs "
-                        "notify, here or in config.notify"
-                    )
+        for name, _, notification, settings in notifications.enabled(device):
+            if CONF_NOTIFY not in settings:
+                raise vol.Invalid(
+                    f"device {key}: {name}: notifications: {notification} needs "
+                    "notify, here or in config.notify"
+                )
     return config
 
 

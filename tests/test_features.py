@@ -194,6 +194,8 @@ def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:
             for translations in (en, pt):
                 assert translations["common"][f"{key}_name"], key
                 assert translations["common"][f"{key}_message"], key
-        validate = module("notifications").validate
-        assert validate({name: dict.fromkeys(feature.notifications)}) == {
-            name: {notification: {} for notification in feature.notifications}}
+        validate = module("notifications").schema(name, feature.notifications)
+        assert validate(dict.fromkeys(feature.notifications)) == {
+            notification: {} for notification in feature.notifications}
+        with pytest.raises(vol.Invalid):
+            validate({"not_a_notification": None})

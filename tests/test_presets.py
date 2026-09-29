@@ -63,7 +63,7 @@ async def test_finished_as_an_alert_says_where_it_went(ha: HomeAssistant,
                                                       caplog: pytest.LogCaptureFixture) -> None:
     """Upgrading from 0.1.21 with appliance: alerts: finished: the error says what to write."""
     assert not await setup(ha, devices({"offline": None, "finished": {"lasts": {"minutes": 30}}}))
-    assert "finished is now a notification: notifications: appliance: finished" in caplog.text
+    assert "finished is now a notification: appliance: notifications: finished" in caplog.text
 
 
 async def test_a_hand_written_alert_cannot_watch_a_ready_made_one(

@@ -1,5 +1,7 @@
 # Notifications
 
+> **Changed before release:** ready-made notifications are enabled in their feature's block, `appliance: notifications: finished`, as ready-made alerts are in `alerts`, not under a device key `notifications: appliance: finished`. What follows about the device key reads that way; the IDs, the file and the rest are as written.
+
 ## Goal
 
 Alerts and notifications got mixed up. An **alert** is something the owner finds critical: a problem that lasts (a door open that shouldn't be, a plug offline), a binary sensor Alert2 delivers with reminders, acknowledging and a done message. A **notification** is simple news, told once: the washer finished. It has no state, no "resolved", no reminder.

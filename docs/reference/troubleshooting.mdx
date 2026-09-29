@@ -23,8 +23,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - An alert with both `is` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
 - An alert's `notify` without `message` or `done_message`, with an empty one, or with another key.
 - A ready-made alert the feature doesn't offer (`nope is not a ready-made alert: offline, no_power, long_cycle, no_cycle`), `long_cycle` or `no_cycle` without `for`, or `lasts` (`'lasts' is an invalid option`).
-- `finished` in a feature's `alerts`: `finished is now a notification: notifications: appliance: finished`. See [Coming from the finished alert](/concepts/notifications#coming-from-the-finished-alert).
-- A ready-made notification the device can't have: `nope is not a feature`, `switches offers no ready-made notification`, `appliance: nope is not a ready-made notification of appliance: finished`, or `notifications: appliance: the device has no appliance`.
+- `finished` in a feature's `alerts`: `finished is now a notification: appliance: notifications: finished`. See [Coming from the finished alert](/concepts/notifications#coming-from-the-finished-alert).
+- A ready-made notification the feature doesn't offer: `nope is not a ready-made notification of appliance: finished`. A feature that offers none takes no `notifications` (`'notifications' is an invalid option`).
 - A message that goes nowhere: `device laundry_washer: reactions: door_open: message needs notify, here or in config.notify`. Add `config.notify`, or a `notify` to that reaction or notification. A reaction's `notify` without `message` is refused too, and so is a `notify` that isn't `notify.<name>`.
 - An alert whose `when` is a ready-made alert: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
 - A program step naming something that isn't an entity of another feature of the device: `programs: switch_pool_pump is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_pump`), not as an entity ID.

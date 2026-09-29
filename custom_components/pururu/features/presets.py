@@ -73,8 +73,8 @@ def validate(feature: Feature, value: Any, key: str = "") -> Any:
         for name in given:
             if name in feature.notifications and name not in feature.alerts:
                 raise vol.Invalid(
-                    f"{name} is now a notification: notifications: "
-                    f"{key or feature.namespace}: {name}",
+                    f"{name} is now a notification: "
+                    f"{key or feature.namespace}: notifications: {name}",
                     path=[ALERTS_KEY, name],
                 )
     block = {each: setting for each, setting in value.items() if each != ALERTS_KEY}

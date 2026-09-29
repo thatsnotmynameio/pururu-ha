@@ -178,7 +178,17 @@ In Portuguese they read "A tomada está sem conexão.", "O ciclo terminou." and 
 
 ## Ready-made notifications
 
-`notifications: appliance: finished` tells your phone when a cycle ends, once. See [Notifications](/concepts/notifications#ready-made-notifications).
+An appliance offers one notification, off until you enable it in its `notifications`: `finished` tells your phone when a cycle ends, once.
+
+```yaml
+appliance:
+  power: sensor.washer_plug_power
+  running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+  notifications:
+    finished:
+```
+
+See [Notifications](/concepts/notifications#ready-made-notifications).
 
 ## Provides
 
