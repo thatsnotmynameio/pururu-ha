@@ -1,6 +1,8 @@
 name: Claude Code Review
 
-# Claude reviews the pull request and posts the review itself, as claude[bot].
+# Claude reviews the pull request and posts the review itself, as github-actions[bot].
+# Public repo: it reads only its own comments and the owner's replies, can't read the process
+# environment (/proc, git diff --no-index), and holds a token that can't push, tag or release.
 # How: .claude/review/review.md, which the action restores from the base branch.
 # Spec: docs/superpowers/specs/2026-09-29-claude-review-design.md
 on:
@@ -24,11 +26,12 @@ jobs:
       github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Claude posts with this job's token, never the Claude App's: in a public repo a prompt
+    # injection must not be able to push, tag or release (the App token can).
     permissions:
       contents: read
-      pull-requests: write # removing the label
-      issues: read
-      id-token: write # the action's Claude App token
+      pull-requests: write # comments, review threads, the label
+      issues: write # the summary comment
 
     steps:
       - name: Checkout the pull request
@@ -47,6 +50,7 @@ jobs:
           CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: 1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }} # posts as github-actions[bot]
           prompt: >-
             Review pull request #${{ github.event.pull_request.number }} of ${{ github.repository }}:
             base branch ${{ github.event.pull_request.base.ref }}, head commit ${{ github.event.pull_request.head.sha }}
@@ -54,8 +58,41 @@ jobs:
           claude_args: >-
             --model opus
             --max-turns 150
-            --allowedTools "Read,Grep,Glob,Agent,Task,Edit(//tmp/pururu-review/**),mcp__github_inline_comment__create_inline_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh api:*)"
-            --disallowedTools "NotebookEdit,WebFetch,WebSearch"
+            --allowedTools "Read,Grep,Glob,Agent,Task,Edit(//tmp/pururu-review/**),mcp__github_inline_comment__create_inline_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*)"
+            --disallowedTools "NotebookEdit,WebFetch,WebSearch,Read(//proc/**),Read(//sys/**),Bash(git diff --no-index:*),Bash(git diff * --no-index:*),Bash(gh *@*),Bash(gh *--input*),Bash(gh *--body-file*),Bash(gh * -X *),Bash(gh *--method*),Bash(gh *mutation*),Bash(gh *--comments*),Bash(gh pr comment:*)"
+
+      # Claude's gh only reads (it can't write, read local files or show comments), so the summary
+      # and the thread resolutions are posted here, from the files Claude wrote. The summary is
+      # found by its marker and only this review's threads are resolved: nothing trusts Claude's IDs.
+      - name: Publish the summary and resolve fixed threads
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          THREADS: 'query($owner:String!,$name:String!,$pr:Int!){repository(owner:$owner,name:$name){pullRequest(number:$pr){reviewThreads(first:100){nodes{id comments(first:1){nodes{author{login}}}}}}}}'
+          RESOLVE: 'mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}'
+        run: |
+          dir=/tmp/pururu-review
+          if [ ! -s "$dir/summary.md" ]; then
+            echo "::warning::Claude wrote no summary."
+            exit 0
+          fi
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- pururu-review:summary -->")) | .id' | tail -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F "body=@$dir/summary.md" > /dev/null
+          else
+            gh pr comment "$PR" --repo "$REPO" --body-file "$dir/summary.md"
+          fi
+          ours=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F pr="$PR" -f query="$THREADS" \
+            --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].author.login == "github-actions" or .comments.nodes[0].author.login == "claude") | .id')
+          touch "$dir/resolve.txt"
+          while read -r thread; do
+            if [ -n "$thread" ] && grep -qxF "$thread" <<< "$ours"; then
+              gh api graphql -f id="$thread" -f query="$RESOLVE" > /dev/null \
+                || echo "::warning::Thread $thread not resolved."
+            fi
+          done < "$dir/resolve.txt"
 
       - name: Remove the claude-review label
         if: always() && github.event.action == 'labeled'
