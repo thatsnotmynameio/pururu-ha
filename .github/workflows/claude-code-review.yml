@@ -126,4 +126,7 @@ jobs:
         if: always() && github.event.action == 'labeled'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api -X DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/claude-review
+        # A label added twice runs two reviews; the first one to finish removes it.
+        run: |
+          gh api -X DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/claude-review \
+            || echo "::notice::The claude-review label was already removed."
