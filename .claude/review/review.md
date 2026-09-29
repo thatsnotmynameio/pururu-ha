@@ -28,8 +28,9 @@ are a bad one.
   `gh` can't write, read local files or show comments (`@`, `--input`, `--body-file`, `-X`,
   `--method`, `mutation`, `--comments` are refused). Never edit the repository's files, push,
   approve, merge, or change the pull request itself.
-- Run one command per call, without `$(...)` and without heredocs: when a command needs another's
-  output, run the first, then paste its result.
+- Run one command per call, without `$(...)`, heredocs or pipes: when a command needs another's
+  output, run the first, then paste its result. Read files with `Read`, `Grep` and `Glob`, never
+  with `cat`, `grep`, `find`, `ls` or other shell commands (refused). You can't run the tests.
 
 ## Step 1: Find the earlier review
 
@@ -71,7 +72,10 @@ feature four.
 
 - **correctness**: logic, conditions, off-by-ones, wrong values, error paths, types at runtime.
 - **lifecycle**: async order and races, setup and unload, restore after restart, reload, registry
-  listeners, tasks and timers, generated files and the domains they reload.
+  listeners, tasks and timers, generated files and the domains they reload. And partial failure:
+  when something raises midway (a guarded step, a loop over devices, a sync of several files),
+  what is left half done, which returned values or listener targets are lost, and what the next
+  reload finds.
 - **configuration**: the voluptuous schema and its defaults, what the schema accepts but the code
   mishandles, entity IDs, translations in en and pt-BR, icons.
 - **consistency**: docs pages, docstrings and the pull request's `CLAUDE.md` against the code as
