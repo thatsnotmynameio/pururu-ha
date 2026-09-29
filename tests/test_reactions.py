@@ -273,6 +273,83 @@ def test_a_fraction_of_a_second_is_kept(ha: HomeAssistant) -> None:
     assert cv.time_period(offset["offset"]) == timedelta(seconds=-0.5)
 
 
+RETRY = {"times": 3, "every": {"hours": 1}}
+
+
+def test_retries_are_the_time_again(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "Tarde", "at": "13:00:30", "retry": RETRY}) == [
+        {"trigger": "time", "at": "13:00:30"},
+        {"trigger": "time", "at": "14:00:30", "id": "retry_1", "variables": {"since": 3660}},
+        {"trigger": "time", "at": "15:00:30", "id": "retry_2", "variables": {"since": 7260}},
+        {"trigger": "time", "at": "16:00:30", "id": "retry_3", "variables": {"since": 10860}},
+    ]
+
+
+def test_retries_wrap_past_midnight(ha: HomeAssistant) -> None:
+    triggers = translated(ha, {"name": "Noite", "at": "23:30",
+                               "retry": {"times": 2, "every": {"minutes": 45}}})
+    assert [t["at"] for t in triggers] == ["23:30:00", "00:15:00", "01:00:00"]
+
+
+def test_retries_of_the_sun_add_to_its_offset(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "X", "sun": "sunset", "offset": {"minutes": -30},
+                           "retry": {"times": 2, "every": {"minutes": 20}}}) == [
+        {"trigger": "sun", "event": "sunset", "offset": "-00:30:00"},
+        {"trigger": "sun", "event": "sunset", "offset": "-00:10:00", "id": "retry_1",
+         "variables": {"since": 1260}},
+        {"trigger": "sun", "event": "sunset", "offset": "00:10:00", "id": "retry_2",
+         "variables": {"since": 2460}},
+    ]
+
+
+def test_retries_of_the_sun_without_offset(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "X", "sun": "sunrise",
+                           "retry": {"times": 1, "every": {"hours": 1}}}) == [
+        {"trigger": "sun", "event": "sunrise"},
+        {"trigger": "sun", "event": "sunrise", "offset": "01:00:00", "id": "retry_1",
+         "variables": {"since": 3660}},
+    ]
+
+
+RAN = ("{{% set last = {} %}}{{{{ since is not defined or last is none"
+       " or as_datetime(last) < now() - timedelta(seconds=since) }}}}")
+
+
+def test_a_try_without_then_looks_at_the_automation(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY})
+    assert reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None)["conditions"] == [
+        {"condition": "template",
+         "value_template": RAN.format("this.attributes.last_triggered")}]
+
+
+def test_a_try_with_then_looks_at_the_program(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY,
+                                   "then": "clean"})
+    script = "script.pururu_lights_program_clean"
+    assert reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None,
+                                script)["conditions"] == [
+        {"condition": "template",
+         "value_template": RAN.format(f"state_attr('{script}', 'last_triggered')")}]
+
+
+def test_without_retry_there_are_no_conditions(ha: HomeAssistant) -> None:
+    """Every file written before retry is written again the same."""
+    reactions = module("reactions")
+    reaction = reactions.REACTION({"name": "Noite", "at": "22:00", "then": "clean"})
+    written = reactions.automation(LIGHTS, "Luzes", "night", reaction, None,
+                                   "script.pururu_lights_program_clean")
+    assert list(written) == ["id", "alias", "description", "triggers", "actions"]
+
+
+def test_conditions_come_before_actions(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY})
+    assert list(reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None)) == [
+        "id", "alias", "description", "triggers", "conditions", "actions"]
+
+
 def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
     reactions = module("reactions")
     assert reactions.automation(LIGHTS, "Luzes", "door", reactions.REACTION(DOOR_OPENS),
@@ -542,6 +619,18 @@ async def test_it_follows_the_script_renamed(ha: HomeAssistant, both: None) -> N
     await fake(ha, DOOR, "on")
     await settle()
     assert len(started) == 1
+
+
+async def test_the_condition_follows_the_script_renamed(ha: HomeAssistant) -> None:
+    """With the old ID, last_triggered would be none and every try would run."""
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={"name": "Tarde", "at": "13:00", "then": "clean",
+                                       "retry": {"times": 1, "every": {"hours": 1}}}))
+    er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+    await ha.async_block_till_done()
+    assert generated(ha)[0]["conditions"] == module("reactions").conditions(
+        {"retry": {"times": 1, "every": timedelta(hours=1)}}, "script.limpar_piscina")
+    assert "script.limpar_piscina" in generated(ha)[0]["conditions"][0]["value_template"]
 
 
 async def test_renaming_a_script_no_reaction_starts_still_reloads(ha: HomeAssistant) -> None:
