@@ -42,10 +42,11 @@ def end_signal(device: Device, item: Item | None = None) -> SignalType[Cycle]:
 
 @dataclass
 class CycleStart(ExtraStoredData):
-    """The running cycle's start, kept across restarts and reloads."""
+    """The running cycle's start, kept across restarts and reloads, and its end while off_delay runs."""
 
     since: datetime | None = None
     since_energy: float | None = None
+    until: datetime | None = None
 
     @override
     def as_dict(self) -> dict[str, Any]:
@@ -53,6 +54,7 @@ class CycleStart(ExtraStoredData):
         return {
             "since": self.since.isoformat() if self.since else None,
             "since_energy": self.since_energy,
+            "until": self.until.isoformat() if self.until else None,
         }
 
     @classmethod
@@ -60,7 +62,9 @@ class CycleStart(ExtraStoredData):
         """Read back what as_dict saved; anything else means no running cycle."""
         since = data.get("since")
         energy = data.get("since_energy")
+        until = data.get("until")
         return cls(
             since=dt_util.parse_datetime(since) if isinstance(since, str) else None,
             since_energy=float(energy) if isinstance(energy, int | float) else None,
+            until=dt_util.parse_datetime(until) if isinstance(until, str) else None,
         )

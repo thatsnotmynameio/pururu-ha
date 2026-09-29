@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import override
+from typing import Any, override
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import STATE_OFF, STATE_ON, Platform
@@ -50,9 +50,12 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
     """The running mode, or idle; each mode cycle that ends is sent on its mode's signals.
 
     One mode at a time: the bands don't overlap, and a mode whose on_delay
-    passed (armed) waits for the running one to end, then starts at that
-    instant. A mode starts only while the appliance's cycle is on (armed
-    before, it starts when the cycle does); the cycle turning off ends it.
+    passed (armed) waits for the running one to end, then starts from when it
+    was armed, or from the running one's end if later. A mode starts only while
+    the appliance's cycle is on (armed before, it starts when the cycle does);
+    the cycle turning off ends it. A mode cycle ends when the value left its
+    band, or when the appliance's cycle ended if earlier: off_delay only
+    confirms the end.
     """
 
     _attr_device_class = SensorDeviceClass.ENUM
@@ -76,11 +79,13 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         self._attr_options = [IDLE, *self._modes]
         self._running: str | None = None
         self._start = CycleStart()
-        # The mode whose band held for its on_delay, waiting for the cycle to be on
-        self._armed: str | None = None
+        # The mode whose band held for its on_delay, waiting for the cycle to be
+        # on, and since when
+        self._armed: tuple[str, datetime] | None = None
         # (the mode, cancel) while a mode's on_delay runs
         self._starting: tuple[str, CALLBACK_TYPE] | None = None
-        # Cancel, while the running mode's off_delay runs
+        # Cancel, while the running mode's off_delay runs (when the value left
+        # its band is the start's `until`)
         self._ending: CALLBACK_TYPE | None = None
 
     @property
@@ -92,8 +97,41 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
     @property
     @override
     def extra_restore_state_data(self) -> CycleStart:
-        """The running mode cycle's start."""
+        """The running mode cycle's start, and when its value left its band."""
         return self._start
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """The running mode cycle's start, and its end while an off_delay runs."""
+        if self._running is None:
+            return None
+        attributes: dict[str, Any] = {}
+        if self._start.since is not None:
+            attributes["cycle_start"] = self._start.since
+        if (end := self._end_so_far(self.hass.states.get(self._cycle))) is not None:
+            attributes["cycle_end"] = end
+        return attributes or None
+
+    def _end_so_far(self, cycle: State | None) -> datetime | None:
+        """The running mode cycle's end, should it end now; None while nothing ends it.
+
+        When its value left its band, or when the appliance's power went down
+        (`cycle`'s cycle_end) if earlier, but never before it started.
+        """
+        ends = [
+            end
+            for end in (
+                self._start.until,
+                None if cycle is None else cycle.attributes.get("cycle_end"),
+            )
+            if isinstance(end, datetime)
+        ]
+        if not ends:
+            return None
+        if self._start.since is None:
+            return min(ends)
+        return max(min(ends), self._start.since)
 
     @override
     async def async_added_to_hass(self) -> None:
@@ -133,30 +171,41 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
 
     @callback
     def _cycle_changed(self, event: Event[EventStateChangedData]) -> None:
-        self._gate(event.data["new_state"])
+        new, old = event.data["new_state"], event.data["old_state"]
+        # The appliance's power going down, or back up, moves the running mode's end
+        if (
+            self._running is not None
+            and new is not None
+            and new.state == STATE_ON
+            and self._end_so_far(new) != self._end_so_far(old)
+        ):
+            self.async_write_ha_state()
+        self._gate(new, old)
 
     @callback
-    def _gate(self, state: State | None) -> None:
+    def _gate(self, state: State | None, old: State | None = None) -> None:
         """The cycle on starts the armed mode; off ends the running one. Unknown does neither."""
         if state is None:
             return
+        now = dt_util.utcnow()
         if state.state == STATE_ON and self._running is None:
-            if self._start_armed(dt_util.utcnow()):
+            if self._start_armed(now):
                 self.async_write_ha_state()
         elif state.state == STATE_OFF and (running := self._running) is not None:
-            self._end(running, dt_util.utcnow())
+            self._end(running, self._end_so_far(old) or now)
             # Its band may hold still (a sensor other than the gate's plug): no
             # new reading will arm it again, so it's armed for the next cycle
             value = reading(self.hass.states.get(self._sensor))
             if value is not None and self._modes[running].contains(value):
-                self._armed = running
+                self._armed = (running, now)
 
     @callback
     def _take(self, state: State | None) -> None:
         """Schedule the start and the end a reading asks for; cancel those it no longer asks for.
 
         A reading without a value cancels both, as running's: they count again
-        from the next reading. The running mode and the armed one stay.
+        from the next reading. The running mode and the armed one stay, and so
+        does when the value left the running mode's band.
         """
         if (value := reading(state)) is None:
             self._cancel()
@@ -164,18 +213,12 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         inside = next(
             (slug for slug, mode in self._modes.items() if mode.contains(value)), None
         )
-        if self._armed != inside:
-            self._armed = None
+        armed = None if self._armed is None else self._armed[0]
+        if armed != inside:
+            self._armed = armed = None
         if self._running is not None:
-            if inside == self._running:
-                self._cancel_ending()
-            elif self._ending is None:
-                self._ending = async_call_later(
-                    self.hass,
-                    self._modes[self._running].off_delay,
-                    self._off_delay_passed,
-                )
-        if inside is None or inside in (self._running, self._armed):
+            self._follow_running(self._running, inside)
+        if inside is None or inside in (self._running, armed):
             self._cancel_starting()
         elif self._starting is None or self._starting[0] != inside:
             self._cancel_starting()
@@ -185,6 +228,22 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
                     self.hass, self._modes[inside].on_delay, self._on_delay_passed
                 ),
             )
+
+    @callback
+    def _follow_running(self, running: str, inside: str | None) -> None:
+        """Back in `running`'s band cancels its end; out of it, off_delay counts."""
+        left = self._start.until
+        if inside == running:
+            self._cancel_ending()
+            self._start.until = None
+        elif self._ending is None:
+            if left is None:
+                self._start.until = dt_util.utcnow()
+            self._ending = async_call_later(
+                self.hass, self._modes[running].off_delay, self._off_delay_passed
+            )
+        if self._start.until != left:
+            self.async_write_ha_state()
 
     @callback
     def _cancel_starting(self) -> None:
@@ -207,7 +266,7 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
     def _on_delay_passed(self, _now: datetime) -> None:
         if self._starting is None:
             return
-        self._armed = self._starting[0]
+        self._armed = (self._starting[0], dt_util.utcnow())
         self._starting = None
         if self._running is None and self._start_armed(dt_util.utcnow()):
             self.async_write_ha_state()
@@ -217,28 +276,31 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         if self._ending is None or self._running is None:
             return
         self._ending = None
-        self._end(self._running, dt_util.utcnow())
+        cycle = self.hass.states.get(self._cycle)
+        self._end(self._running, self._end_so_far(cycle) or dt_util.utcnow())
 
     @callback
-    def _start_armed(self, now: datetime) -> bool:
-        """The armed mode starts at `now` if there is one and the cycle is on; whether it did.
+    def _start_armed(self, now: datetime, after: datetime | None = None) -> bool:
+        """The armed mode starts if there is one and the cycle is on; whether it did.
 
-        No mode runs; the caller writes the state.
+        It starts at `now`, or, handed over, from when it was armed, but not
+        before `after` (the previous mode's end). No mode runs; the caller writes
+        the state.
         """
-        if (armed := self._armed) is None or not self.hass.states.is_state(
-            self._cycle, STATE_ON
-        ):
+        if self._armed is None or not self.hass.states.is_state(self._cycle, STATE_ON):
             return False
+        armed, since = self._armed
         self._armed = None
         self._running = armed
         self._start = CycleStart(
-            since=now, since_energy=kwh_now(self.hass, self._energy)
+            since=now if after is None else max(since, after),
+            since_energy=kwh_now(self.hass, self._energy),
         )
         return True
 
     @callback
-    def _end(self, running: str, now: datetime) -> None:
-        """`running`'s cycle ends at `now`, and the armed mode starts then if it can.
+    def _end(self, running: str, end: datetime) -> None:
+        """`running`'s cycle ends at `end`, and the armed mode starts if it can.
 
         The state is written once, the next mode or idle, never idle in between
         (an automation on idle would fire at every handover); then the cycle is
@@ -247,14 +309,14 @@ class Current(PururuEntity, SensorEntity, RestoreEntity):
         self._cancel_ending()
         cycle = Cycle(
             start=self._start.since,
-            end=now,
+            end=end,
             energy_kwh=kwh_used(
                 self._start.since_energy, kwh_now(self.hass, self._energy)
             ),
         )
         self._running = None
         self._start = CycleStart()
-        self._start_armed(now)
+        self._start_armed(dt_util.utcnow(), after=end)
         self.async_write_ha_state()
         item = self._modes[running].item
         for signal in (

@@ -90,9 +90,9 @@ stateDiagram-v2
 `running` turns on after `on_delay` and off after `off_delay`. That affects what the cycle records:
 
 - A cycle **starts** when `running` turns on, so `last_cycle_start` is `on_delay` after the power first went up.
-- A cycle **ends** when `running` turns off, so `last_cycle_end` and `last_cycle_duration` include `off_delay`.
-- While the plug has **no value** (`unknown`, `unavailable`, or not a number), `running` keeps its state, and a pending start or end is cancelled. It resumes from the next reading. A plug dropping off Wi-Fi for a minute doesn't split a cycle.
-- A **restart or reload** in the middle of a cycle doesn't lose it. `running` is restored, and the cycle keeps its original start and is counted once when it ends.
+- A cycle **ends** when the power went down for good: `off_delay` only confirms the end. `running` turns off `off_delay` later, and that's when the cycle is recorded, but `last_cycle_end` is the moment the power went down, and `last_cycle_duration` and `runtime` leave `off_delay` out. A pause shorter than `off_delay` stays part of the cycle.
+- While the plug has **no value** (`unknown`, `unavailable`, or not a number), `running` keeps its state, and a pending start or end is cancelled. It resumes from the next reading. A plug dropping off Wi-Fi for a minute doesn't split a cycle. An end keeps the moment the power went down: `off_delay` counts again from the next reading, and only the power back above the threshold cancels the end.
+- A **restart or reload** in the middle of a cycle doesn't lose it. `running` is restored, and the cycle keeps its original start and is counted once when it ends. During `off_delay`, the moment the power went down is restored too.
 
 ## Entities
 
@@ -102,7 +102,7 @@ stateDiagram-v2
 |---|---|---|
 | `sensor.pururu_<key>_appliance_power` | the plug's | The plug's power, with its unit and classes, inside this device |
 | `sensor.pururu_<key>_appliance_energy_total` | the plug's | The plug's energy counter, inside this device. *With `energy`.* |
-| `binary_sensor.pururu_<key>_appliance_running` | | On while a cycle runs. Device class `running`. Its attribute `cycle_start` is the running cycle's start, present while it runs. |
+| `binary_sensor.pururu_<key>_appliance_running` | | On while a cycle runs. Device class `running`. Its attribute `cycle_start` is the running cycle's start, present while it runs; `cycle_end`, while `off_delay` runs, is when the power went down. |
 | `binary_sensor.pururu_<key>_appliance_alert_<alert>` | | A [ready-made alert](#ready-made-alerts), for each one enabled. Device class `problem`. |
 | `sensor.pururu_<key>_appliance_last_cycle_start` | timestamp | When the last cycle started |
 | `sensor.pururu_<key>_appliance_last_cycle_end` | timestamp | When the last cycle ended. **Written last**: trigger on it. |
@@ -124,12 +124,12 @@ stateDiagram-v2
 ### Totals
 
 - `cycles_total` and `runtime_total` count from when the device was created and survive restarts. They're `total_increasing`, so Home Assistant keeps long-term statistics for them.
-- `runtime_total` is brought up to date **every minute** while running. A restart or reload during a cycle can lose up to a minute of it, and time while Home Assistant is down isn't counted.
+- `runtime_total` is brought up to date **every minute** while running. It stops when the power goes down and resumes if it comes back during `off_delay`, so the pause counts and `off_delay` doesn't: `runtime` is the cycles' durations added up. A restart or reload during a cycle can lose up to a minute of it, and time while Home Assistant is down isn't counted.
 
 ### Idle energy
 
 - `idle_energy_total` adds up how much the energy counter grows while `running` is **off**: the appliance's standby. It's `total_increasing`, in **kWh** whatever the counter's unit, and it survives restarts.
-- It splits the counter with the cycles at the same instants `running` turns on and off, so the energy of every cycle plus `idle_energy_total` is what the counter grew. The `on_delay` before a cycle counts as idle; the `off_delay` at its end belongs to the cycle.
+- It splits the counter with the cycles at the same instants `running` turns on and off, so the energy of every cycle plus `idle_energy_total` is what the counter grew. The `on_delay` before a cycle counts as idle; the `off_delay` at its end belongs to the cycle's energy, though not to its duration.
 - A counter without a value doesn't stop it: the next reading adds what it grew since the last one. If a cycle starts while the counter has no value, what it grew since the last reading is lost.
 - A counter going down (the plug re-paired) adds nothing, and it counts on from the lower reading.
 - After a restart or reload it counts from the counter's **next** reading. The reading already there may be from before Home Assistant was down, and a cycle that ran meanwhile would count as idle. So what the counter grew while Home Assistant was down isn't counted, and neither is its first step after a reload.
