@@ -22,19 +22,20 @@ are a bad one.
 - The working tree is the pull request's head: `{head}` is the head commit the prompt gives you.
   Use that sha everywhere below (never `HEAD`'s name in the state or links). `origin/{base}` is
   the base branch. History is complete.
-- You have read-only `git`, `gh pr view`, `gh pr diff`, `gh pr comment`, `gh api`, the
-  inline-comment tool, subagents, and `Write` only inside `/tmp/pururu-review/` (for the
-  summary's body). Never edit the repository's files, push, approve, merge, or change the pull
-  request itself.
+- You have read-only `git`, read-only `gh` (`gh pr view`, `gh pr diff`, `gh api` queries), the
+  inline-comment tool, subagents, and `Write` only inside `/tmp/pururu-review/`. You post the
+  inline findings; the workflow posts the summary and resolves threads from your files (Step 6).
+  `gh` can't write, read local files or show comments (`@`, `--input`, `--body-file`, `-X`,
+  `--method`, `mutation`, `--comments` are refused). Never edit the repository's files, push,
+  approve, merge, or change the pull request itself.
 - Run one command per call, without `$(...)` and without heredocs: when a command needs another's
-  output, run the first, then paste its result. Long text goes in a file under
-  `/tmp/pururu-review/`, passed to `gh` by its path (below).
+  output, run the first, then paste its result.
 
 ## Step 1: Find the earlier review
 
 1. The summary: the pull request's comments that carry the summary marker, by this review only
 
-       gh api repos/{repo}/issues/{pr}/comments --paginate --jq '.[] | select(.user.login == "github-actions[bot]" or .user.login == "claude[bot]") | select(.body | contains("<!-- pururu-review:summary -->")) | {id, author: .user.login, body}'
+       gh api repos/{repo}/issues/{pr}/comments --paginate --jq '.[] | select(.user.login == "github-actions[bot]" or (.user.login == "claude[bot]" and .created_at < "2026-09-30")) | select(.body | contains("<!-- pururu-review:summary -->")) | {id, author: .user.login, body}'
 
    The summary is the newest of them. Never touch any other comment (a `claude[bot]` comment
    without the marker is an `@claude` answer). Its last line,
@@ -123,11 +124,11 @@ the owner's replies in its thread (`owner_replies`):
 - **withdrawn**: it was wrong, or the owner's reply gives a reason the code bears out.
 - **outstanding**: still true.
 
-Resolve the threads of the fixed and withdrawn ones:
+List the thread `id`s of the fixed and withdrawn ones, one per line, in
+`/tmp/pururu-review/resolve.txt` (write an empty file when there are none). The workflow resolves
+them after you finish.
 
-    gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}' -f id={thread id}
-
-## Step 6: Post
+## Step 6: Post the findings, write the summary
 
 **Findings.** For each new finding, call `mcp__github_inline_comment__create_inline_comment`
 with `confirmed: true`, `commit_id: {head}`, the path, the head `line` (and `startLine` for a
@@ -195,17 +196,8 @@ Then query the review threads again (Step 1) to get each new thread's URL.
 - The state is one line of JSON. Inside a string, write the `>` of any `-->` as the JSON escape
   backslash, `u`, `003e`, so the HTML comment doesn't end early.
 
-Write the whole summary with `Write` to `/tmp/pururu-review/summary.md`, which keeps quotes,
-backticks and `$` as they are. Then, when the summary is by `github-actions[bot]`, edit it by its
-ID:
+Write the whole summary with `Write` to `/tmp/pururu-review/summary.md`. Don't post it: when you
+finish, the workflow edits this review's summary with it (or posts it, when there is none or the
+old one is `claude[bot]`'s), and resolves the threads in `resolve.txt`.
 
-    gh api -X PATCH repos/{repo}/issues/comments/{id} -F body=@/tmp/pururu-review/summary.md
-
-When there is no summary yet, or it is by `claude[bot]` (you can't edit that one), post a new one:
-
-    gh pr comment {pr} --repo {repo} --body-file /tmp/pururu-review/summary.md
-
-Never pass the body inline or through a heredoc (the command is refused), and never use
-`--edit-last`: the last comment may be someone else's.
-
-End with one line: the mode, the number of new findings, the threads resolved, and the confidence.
+End with one line: the mode, the number of new findings, the threads to resolve, and the confidence.
