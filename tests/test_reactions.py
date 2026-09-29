@@ -130,6 +130,8 @@ PATH = "'pururu->devices->lights->reactions->it"
                   "retry": {"times": 1, "every": {"hours": 1}, "until": "on"}},
                  f"'until' is an invalid option for 'pururu', check: {PATH[1:]}->retry->until",
                  id="unknown key in retry"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 1, "every": {"seconds": 90.5}}},
+                 "a reaction's retry every must be whole seconds", id="retry every fractional"),
 ])
 async def test_invalid_reaction_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
                                            reaction: dict[str, Any], reason: str) -> None:

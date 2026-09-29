@@ -131,7 +131,7 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 ---
 
 <Property name="retry.every" type="time period" optional>
-  The interval between tries, at least a minute: the first try is `every` after the occurrence, the second `2 × every`, and so on. `times × every` can't go over 12 hours.
+  The interval between tries, at least a minute, in whole seconds: the first try is `every` after the occurrence, the second `2 × every`, and so on. `times × every` can't go over 12 hours.
 </Property>
 
 ### What it does
@@ -219,10 +219,11 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
 | With `then`, you started the program by hand at 13:20 | Every try is skipped |
 | Every try missed | Nothing more until tomorrow |
 
-- **A restart** doesn't lose it: Home Assistant keeps `last_triggered` of automations and scripts.
+- **A restart** doesn't lose it: Home Assistant keeps `last_triggered` of automations and scripts. It saves them every 15 minutes and when it stops cleanly, though: if it stopped abruptly (a crash, a power cut) less than 15 minutes after a run, that run can be forgotten, and a try runs it again.
+- **A new reaction** has never run: added at 20:30 with `at: "19:00"` and hourly tries, it runs at the 21:00 try, the same day. So does one whose program has never run.
 - **Past midnight** is fine: `at: "23:00"` with three tries every hour tries at 00:00, 01:00 and 02:00.
 - **The sun:** a try is the same event with its offset moved: sunset, then sunset + 1 h, and so on.
-- **Daylight saving:** a chain across the clock change can be an hour off, and going back an hour a try may run once more.
+- **Daylight saving:** a try at a time the clock skips doesn't run that day. Going back an hour, Home Assistant fires a repeated time twice, the occurrence's as any automation's, and a try may run once more.
 - **Only a time or the sun:** a reaction on an entity is an event. Home Assistant down when it happens never sees it, and a later try would miss it too. `retry` there is a configuration error: `a reaction's retry goes with at or sun`.
 
 ## When a reaction fires

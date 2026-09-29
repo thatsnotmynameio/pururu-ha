@@ -54,11 +54,22 @@ SLACK = timedelta(minutes=1)
 # window. as_timestamp takes last_triggered as HA restores it (a datetime) and
 # as none (never run: 0); as_datetime refuses a datetime
 RAN = "{{{{ since is not defined or as_timestamp({last}, 0) < now().timestamp() - since }}}}"
+
+
+def _whole_seconds(value: timedelta) -> timedelta:
+    """A try's time is HH:MM:SS: HA's time trigger refuses a fraction of a second."""
+    if value.microseconds:
+        raise vol.Invalid("a reaction's retry every must be whole seconds")
+    return value
+
+
 RETRY = vol.Schema(
     {
         vol.Required("times"): vol.All(vol.Coerce(int), vol.Range(min=1)),
         vol.Required("every"): vol.All(
-            cv.positive_time_period, vol.Range(min=timedelta(minutes=1))
+            cv.positive_time_period,
+            vol.Range(min=timedelta(minutes=1)),
+            _whole_seconds,
         ),
     }
 )
