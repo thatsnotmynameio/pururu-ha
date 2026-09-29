@@ -190,14 +190,16 @@ async def test_the_phone_is_told_when_a_cycle_finishes(ha: HomeAssistant, freeze
     assert [call.data for call in calls] == [{"title": "Máquina", "message": "The cycle finished."}]
 
 
-async def test_a_plug_reconnecting_tells_nobody(ha: HomeAssistant, freezer: Any,
+async def test_a_reload_while_idle_tells_nobody(ha: HomeAssistant, freezer: Any,
                                                automations: None) -> None:
+    """A reload takes running away and brings it back off: no cycle ended."""
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, POWER, "0")
     assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
-    await fake(ha, POWER, "unavailable")
-    await fake(ha, POWER, "0")
+    assert ha.states.get(RUNNING).state == "off"
+    await reload(ha, devices(ENABLED), config={"notify": PHONE})
     await tick(ha, freezer, 180)
+    assert ha.states.get(RUNNING).state == "off"
     assert calls == []
 
 
