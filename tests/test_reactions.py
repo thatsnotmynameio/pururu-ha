@@ -11,6 +11,7 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from homeassistant.util.file import WriteError
+from pytest_homeassistant_custom_component.common import mock_restore_cache
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
 import voluptuous as vol
@@ -51,6 +52,12 @@ def devices(**reactions: dict[str, Any]) -> dict[str, Any]:
     pytest.param({"name": "Anoitecer", "sun": "sunset", "offset": {"minutes": -30}}, id="sun"),
     pytest.param({"name": "Mês", "device": WASHER, "when": "appliance_runtime_month", "to": "1"},
                  id="an entity the settings don't build"),
+    pytest.param({"name": "Tarde", "at": "13:00", "retry": {"times": 3, "every": {"hours": 1}}},
+                 id="retry on a time"),
+    pytest.param({"name": "Anoitecer", "sun": "sunset", "offset": {"minutes": -30},
+                  "retry": {"times": 1, "every": {"minutes": 1}}}, id="retry on the sun"),
+    pytest.param({"name": "Tarde", "at": "13:00", "retry": {"times": 12, "every": {"hours": 1}}},
+                 id="retries ending at 12 hours"),
 ])
 async def test_valid_reaction_is_accepted(ha: HomeAssistant, reaction: dict[str, Any]) -> None:
     assert await setup(ha, devices(it=reaction))
@@ -105,6 +112,31 @@ PATH = "'pururu->devices->lights->reactions->it"
     pytest.param({"name": "X", "device": WASHER, "when": "light_teto", "to": "on"},
                  "device lights: reactions: it: light_teto is not an entity key of device washer",
                  id="when not of that device"),
+    pytest.param({**DOOR_OPENS, "retry": {"times": 1, "every": {"hours": 1}}},
+                 "a reaction's retry goes with at or sun", id="retry on an entity"),
+    pytest.param({"name": "X", "when": "light_teto", "to": "on",
+                  "retry": {"times": 1, "every": {"hours": 1}}},
+                 "a reaction's retry goes with at or sun", id="retry on when"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 0, "every": {"hours": 1}}},
+                 "value must be at least 1", id="no retry"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 1, "every": {"seconds": 59}}},
+                 "value must be at least 0:01:00", id="retry every under a minute"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 13, "every": {"hours": 1}}},
+                 "a reaction's retries must end within 12 hours", id="retries over 12 hours"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"every": {"hours": 1}}},
+                 "required key 'times' not provided", id="retry without times"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 1}},
+                 "required key 'every' not provided", id="retry without every"),
+    pytest.param({"name": "X", "at": "13:00",
+                  "retry": {"times": 1, "every": {"hours": 1}, "until": "on"}},
+                 f"'until' is an invalid option for 'pururu', check: {PATH[1:]}->retry->until",
+                 id="unknown key in retry"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 1, "every": {"seconds": 90.5}}},
+                 "a reaction's retry every must be whole seconds", id="retry every fractional"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": 2.9, "every": {"hours": 1}}},
+                 "a reaction's retry times must be a whole number", id="retry times fractional"),
+    pytest.param({"name": "X", "at": "13:00", "retry": {"times": True, "every": {"hours": 1}}},
+                 "a reaction's retry times must be a whole number", id="retry times a boolean"),
 ])
 async def test_invalid_reaction_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
                                            reaction: dict[str, Any], reason: str) -> None:
@@ -281,6 +313,82 @@ def test_a_fraction_of_a_second_is_kept(ha: HomeAssistant) -> None:
     offset = translated(ha, {"name": "X", "sun": "sunset", "offset": {"seconds": -0.5}})[0]
     assert offset["offset"] == "-00:00:00.500000"
     assert cv.time_period(offset["offset"]) == timedelta(seconds=-0.5)
+
+
+RETRY = {"times": 3, "every": {"hours": 1}}
+
+
+def test_retries_are_the_time_again(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "Tarde", "at": "13:00:30", "retry": RETRY}) == [
+        {"trigger": "time", "at": "13:00:30"},
+        {"trigger": "time", "at": "14:00:30", "id": "retry_1", "variables": {"since": 3660}},
+        {"trigger": "time", "at": "15:00:30", "id": "retry_2", "variables": {"since": 7260}},
+        {"trigger": "time", "at": "16:00:30", "id": "retry_3", "variables": {"since": 10860}},
+    ]
+
+
+def test_retries_wrap_past_midnight(ha: HomeAssistant) -> None:
+    triggers = translated(ha, {"name": "Noite", "at": "23:30",
+                               "retry": {"times": 2, "every": {"minutes": 45}}})
+    assert [t["at"] for t in triggers] == ["23:30:00", "00:15:00", "01:00:00"]
+
+
+def test_retries_of_the_sun_add_to_its_offset(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "X", "sun": "sunset", "offset": {"minutes": -30},
+                           "retry": {"times": 2, "every": {"minutes": 20}}}) == [
+        {"trigger": "sun", "event": "sunset", "offset": "-00:30:00"},
+        {"trigger": "sun", "event": "sunset", "offset": "-00:10:00", "id": "retry_1",
+         "variables": {"since": 1260}},
+        {"trigger": "sun", "event": "sunset", "offset": "00:10:00", "id": "retry_2",
+         "variables": {"since": 2460}},
+    ]
+
+
+def test_retries_of_the_sun_without_offset(ha: HomeAssistant) -> None:
+    assert translated(ha, {"name": "X", "sun": "sunrise",
+                           "retry": {"times": 1, "every": {"hours": 1}}}) == [
+        {"trigger": "sun", "event": "sunrise"},
+        {"trigger": "sun", "event": "sunrise", "offset": "01:00:00", "id": "retry_1",
+         "variables": {"since": 3660}},
+    ]
+
+
+RAN = "{{{{ since is not defined or as_timestamp({}, 0) < now().timestamp() - since }}}}"
+
+
+def test_a_try_without_then_looks_at_the_automation(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY})
+    assert reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None)["conditions"] == [
+        {"condition": "template",
+         "value_template": RAN.format("this.attributes.last_triggered")}]
+
+
+def test_a_try_with_then_looks_at_the_program(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY,
+                                   "then": "clean"})
+    script = "script.pururu_lights_program_clean"
+    assert reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None,
+                                script)["conditions"] == [
+        {"condition": "template",
+         "value_template": RAN.format(f"state_attr('{script}', 'last_triggered')")}]
+
+
+def test_without_retry_there_are_no_conditions(ha: HomeAssistant) -> None:
+    """Every file written before retry is written again the same."""
+    reactions = module("reactions")
+    reaction = reactions.REACTION({"name": "Noite", "at": "22:00", "then": "clean"})
+    written = reactions.automation(LIGHTS, "Luzes", "night", reaction, None,
+                                   "script.pururu_lights_program_clean")
+    assert list(written) == ["id", "alias", "description", "triggers", "actions"]
+
+
+def test_conditions_come_before_actions(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY})
+    assert list(reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None)) == [
+        "id", "alias", "description", "triggers", "conditions", "actions"]
 
 
 def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
@@ -614,6 +722,18 @@ async def test_it_follows_the_script_renamed(ha: HomeAssistant, both: None) -> N
     assert len(started) == 1
 
 
+async def test_the_condition_follows_the_script_renamed(ha: HomeAssistant) -> None:
+    """With the old ID, last_triggered would be none and every try would run."""
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={"name": "Tarde", "at": "13:00", "then": "clean",
+                                       "retry": {"times": 1, "every": {"hours": 1}}}))
+    er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+    await ha.async_block_till_done()
+    assert generated(ha)[0]["conditions"] == module("reactions").conditions(
+        {"retry": {"times": 1, "every": timedelta(hours=1)}}, "script.limpar_piscina")
+    assert "script.limpar_piscina" in generated(ha)[0]["conditions"][0]["value_template"]
+
+
 async def test_renaming_a_script_no_reaction_starts_still_reloads(ha: HomeAssistant) -> None:
     """Its statistics watch it: they follow the new ID."""
     assert await setup(ha, pool(night={"name": "Noite", "at": "22:00"}))
@@ -756,3 +876,194 @@ async def test_a_count_never_follows_an_automation_pururu_does_not_generate(
                       {"entity_id": "automation.pururu_pool_reaction_clean"})
     await ha.async_block_till_done()
     assert count(ha) == "0"
+
+
+# --- retry --------------------------------------------------------------------------------
+
+SOON = {"name": "Logo", "at": "10:05", "retry": {"times": 2, "every": {"minutes": 10}}}
+CLEANING_AUTOMATION = "automation.pururu_pool_reaction_clean"
+
+
+def runs(events: list[Any], entity_id: str) -> int:
+    """How many times the automation ran (its conditions passed)."""
+    return sum(1 for e in events if e.data["entity_id"] == entity_id)
+
+
+async def switch(ha: HomeAssistant, entity_id: str, on: bool) -> None:
+    await ha.services.async_call("automation", "turn_on" if on else "turn_off",
+                                 {"entity_id": entity_id}, blocking=True)
+
+
+async def restarted(ha: HomeAssistant, *, scripts: bool = False) -> None:
+    """HA's automations (and scripts) set up after pururu, from the restore cache seeded first.
+
+    Seeded before pururu's setup: seeding it later replaces the data its
+    entities registered in, and their removal at teardown fails.
+    """
+    def included(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"automation pururu": generated(ha), "script pururu": generated_scripts(ha)}
+
+    with patch("homeassistant.config.load_yaml_config_file", side_effect=included):
+        if scripts:
+            assert await async_setup_component(ha, "script",
+                                               {"script pururu": generated_scripts(ha)})
+        assert await async_setup_component(ha, "automation",
+                                           {"automation pururu": generated(ha)})
+    await ha.async_block_till_done()
+
+
+async def test_the_occurrence_run_skips_the_tries(ha: HomeAssistant, freezer: Any,
+                                                  automations: None) -> None:
+    assert await setup(ha, devices(soon=SOON))
+    triggered = capture(ha, "automation_triggered")
+    await tick(ha, freezer, 300)    # 10:05, the occurrence
+    assert runs(triggered, automation("soon")) == 1
+    await tick(ha, freezer, 600)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert runs(triggered, automation("soon")) == 1
+
+
+async def test_a_missed_occurrence_is_tried_again_once(ha: HomeAssistant, freezer: Any,
+                                                       automations: None) -> None:
+    assert await setup(ha, devices(soon=SOON))
+    triggered = capture(ha, "automation_triggered")
+    await switch(ha, automation("soon"), on=False)
+    await tick(ha, freezer, 360)    # 10:06, off at 10:05
+    await switch(ha, automation("soon"), on=True)
+    assert runs(triggered, automation("soon")) == 0
+    await tick(ha, freezer, 540)    # 10:15, the first try runs
+    assert runs(triggered, automation("soon")) == 1
+    await tick(ha, freezer, 600)    # 10:25, skipped
+    assert runs(triggered, automation("soon")) == 1
+
+
+async def test_a_run_by_hand_skips_the_tries(ha: HomeAssistant, freezer: Any,
+                                             automations: None) -> None:
+    assert await setup(ha, devices(soon=SOON))
+    triggered = capture(ha, "automation_triggered")
+    await switch(ha, automation("soon"), on=False)
+    await tick(ha, freezer, 360)    # 10:06, off at 10:05
+    await switch(ha, automation("soon"), on=True)
+    assert runs(triggered, automation("soon")) == 0
+    await ha.services.async_call("automation", "trigger",
+                                 {"entity_id": automation("soon")}, blocking=True)
+    assert runs(triggered, automation("soon")) == 1
+    await tick(ha, freezer, 540)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert runs(triggered, automation("soon")) == 1
+
+
+def ran(minutes: float) -> dict[str, str]:
+    """Restored attributes: last triggered `minutes` after now (the test's start, 10:00)."""
+    return {"last_triggered": (dt_util.utcnow() + timedelta(minutes=minutes)).isoformat()}
+
+
+async def test_a_restart_keeps_the_occurrences_run(ha: HomeAssistant, freezer: Any) -> None:
+    """HA restores last_triggered: after a restart, a try still sees the occurrence's run."""
+    mock_restore_cache(ha, [State(automation("soon"), "on", ran(5))])
+    assert await setup(ha, devices(soon=SOON))
+    await tick(ha, freezer, 360)    # 10:06: the occurrence ran at 10:05, then HA restarted
+    await restarted(ha)
+    triggered = capture(ha, "automation_triggered")
+    await tick(ha, freezer, 540)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert runs(triggered, automation("soon")) == 0
+
+
+async def test_a_restart_without_a_run_tries_again(ha: HomeAssistant, freezer: Any) -> None:
+    """The counterpart: restored with no run since 10:05, the first try runs."""
+    mock_restore_cache(ha, [State(automation("soon"), "on", ran(-24 * 60))])
+    assert await setup(ha, devices(soon=SOON))
+    await tick(ha, freezer, 360)    # 10:06: HA was down at 10:05
+    await restarted(ha)
+    triggered = capture(ha, "automation_triggered")
+    await tick(ha, freezer, 540)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert runs(triggered, automation("soon")) == 1
+
+
+async def test_a_restart_keeps_the_programs_start(ha: HomeAssistant, freezer: Any) -> None:
+    """With then, the try reads the script's restored last_triggered, not the automation's."""
+    await fake(ha, REAL_PUMP, "off")
+    mock_restore_cache(ha, [State(CLEAN, "off", ran(5))])
+    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+                                       "retry": {"times": 2, "every": {"minutes": 10}}}))
+    await tick(ha, freezer, 360)    # 10:06: the program started at 10:05, then HA restarted
+    await restarted(ha, scripts=True)
+    triggered = capture(ha, "automation_triggered")
+    started = capture(ha, "script_started")
+    await tick(ha, freezer, 540)    # 10:15
+    await tick(ha, freezer, 600)    # 10:25
+    assert (len(triggered), len(started)) == (0, 0)
+
+
+async def test_a_busy_program_is_started_by_a_try(ha: HomeAssistant, freezer: Any,
+                                                  both: None) -> None:
+    """Started by hand at 10:00, it runs 2 hours: 10:05 and 11:05 find it running, 12:05 starts it."""
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+                                       "retry": {"times": 3, "every": {"hours": 1}}}))
+    await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+    triggered = capture(ha, "automation_triggered")
+    started = capture(ha, "script_started")
+    await tick(ha, freezer, 300)    # 10:05, busy
+    await tick(ha, freezer, 3600)   # 11:05, a try: nothing started since, still busy
+    await settle()
+    assert (len(triggered), len(started)) == (2, 0)
+    await tick(ha, freezer, 3360)   # 12:01: the program ended at 12:00
+    await settle()
+    await tick(ha, freezer, 240)    # 12:05, a try
+    await settle()
+    assert (len(triggered), len(started)) == (3, 1)
+
+
+async def test_a_busy_programs_message_is_told_once(ha: HomeAssistant, freezer: Any,
+                                                    both: None) -> None:
+    """Told at 10:05, when the program was busy; the tries that find it busy or start it don't tell it again."""
+    calls = async_mock_service(ha, "notify", "phone")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+                                       "message": "Limpando", "notify": PHONE,
+                                       "retry": {"times": 3, "every": {"hours": 1}}}))
+    await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+    started = capture(ha, "script_started")
+    await tick(ha, freezer, 300)    # 10:05, busy: told
+    await tick(ha, freezer, 3600)   # 11:05, a try, still busy
+    await tick(ha, freezer, 3360)   # 12:01: the program ended at 12:00
+    await settle()
+    await tick(ha, freezer, 240)    # 12:05, a try starts it
+    await settle()
+    assert len(started) == 1
+    assert [call.data for call in calls] == [{"title": "Piscina", "message": "Limpando"}]
+
+
+async def test_a_program_started_after_the_occurrence_skips_the_tries(
+        ha: HomeAssistant, freezer: Any, both: None) -> None:
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+                                       "retry": {"times": 2, "every": {"hours": 3}}}))
+    triggered = capture(ha, "automation_triggered")
+    await switch(ha, CLEANING_AUTOMATION, on=False)
+    await tick(ha, freezer, 360)    # 10:06, off at 10:05
+    await switch(ha, CLEANING_AUTOMATION, on=True)
+    await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
+    await settle()                  # started by hand at 10:06, ends at 12:06
+    await tick(ha, freezer, 3 * 3600)   # 13:05
+    await tick(ha, freezer, 3 * 3600)   # 16:05
+    assert len(triggered) == 0
+
+
+async def test_the_sun_is_tried_again(ha: HomeAssistant, freezer: Any,
+                                      automations: None) -> None:
+    assert await setup(ha, devices(dusk={"name": "Anoitecer", "sun": "sunset",
+                                         "retry": {"times": 1, "every": {"minutes": 10}}}))
+    triggered = capture(ha, "automation_triggered")
+    await switch(ha, automation("dusk"), on=False)
+    sunset = get_astral_event_next(ha, "sunset")
+    await tick(ha, freezer, (sunset - dt_util.utcnow()).total_seconds() + 60)
+    await switch(ha, automation("dusk"), on=True)
+    assert runs(triggered, automation("dusk")) == 0
+    await tick(ha, freezer, 540)
+    assert runs(triggered, automation("dusk")) == 1

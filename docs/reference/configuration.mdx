@@ -189,7 +189,7 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 ---
 
 <Property name="reactions" type="map" optional>
-  A map of **reaction key → reaction**, each one a Home Assistant automation. It isn't a feature. A reaction's `then` names one of the device's `programs`, started when it fires, and its `message` is told to its `notify` or `config.notify`. See [Reactions](/concepts/reactions#settings).
+  A map of **reaction key → reaction**, each one a Home Assistant automation. It isn't a feature. A reaction's `then` names one of the device's `programs`, started when it fires, its `message` is told to its `notify` or `config.notify`, and a reaction on `at` or `sun` can `retry`. See [Reactions](/concepts/reactions#settings).
 </Property>
 
 ---
