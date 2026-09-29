@@ -79,7 +79,10 @@ feature four.
 - **configuration**: the voluptuous schema and its defaults, what the schema accepts but the code
   mishandles, entity IDs, translations in en and pt-BR, icons.
 - **consistency**: docs pages, docstrings and the pull request's `CLAUDE.md` against the code as
-  changed; tests that claim to cover something they don't; CI and release rules.
+  changed; tests that claim to cover something they don't; CI and release rules. And siblings:
+  when the pull request sets a pattern (every refusal gives its path, every step returns its
+  targets, every builder declares its role), find every instance with `Grep` and check each one
+  follows it; the one that doesn't is the finding.
 - **sweep** (incremental only): the whole pull request's diff, P0 and P1 only.
 
 Launch one `review-reader` subagent per lens, all in the same message. Give each this brief,
@@ -113,11 +116,15 @@ most five; group the rest), all in one message:
 >
 > Answer CONFIRMED only if you can trace the failure from a reachable input or state to the wrong
 > outcome, citing file:line for each step. A race is confirmed by naming the two await points or
-> callbacks and the order that breaks it. Otherwise answer REFUTED or UNCERTAIN, with the reason.
-> Check the severity against the rules and give the exact head lines the finding belongs on.
+> callbacks and the order that breaks it. A P2 contract, docs or sibling inconsistency is
+> confirmed by quoting both sides (the pattern and the instance that breaks it, or the docs and
+> the code), file:line each; it needs no failure trace. Otherwise answer REFUTED or UNCERTAIN,
+> with the reason. Check the severity against the rules and give the exact head lines the finding
+> belongs on.
 
 Keep only CONFIRMED findings, most severe first, at most 6. If there are more, count the rest for
-the summary.
+the summary. Anything worth knowing that you didn't keep (a narrowed check no configuration can
+reach today, a doubtful candidate) goes in the summary's paragraph, in one sentence.
 
 ## Step 5: Judge the earlier findings
 
