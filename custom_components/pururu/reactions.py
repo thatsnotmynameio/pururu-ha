@@ -86,6 +86,17 @@ KIND = Kind(
 )
 
 
+def _retry_consistent(reaction: dict[str, Any], source: str) -> None:
+    """A retry only on a time or the sun, its tries within RETRY_LIMIT."""
+    if "retry" not in reaction:
+        return
+    if source not in ("at", "sun"):
+        raise vol.Invalid("a reaction's retry goes with at or sun")
+    retry = reaction["retry"]
+    if retry["times"] * retry["every"] > RETRY_LIMIT:
+        raise vol.Invalid("a reaction's retries must end within 12 hours")
+
+
 def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
     """One source, and the keys that go with it."""
     sources = [key for key in SOURCES if key in reaction]
@@ -95,12 +106,7 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
         raise vol.Invalid("a reaction's device goes with when")
     if "offset" in reaction and "sun" not in reaction:
         raise vol.Invalid("a reaction's offset goes with sun")
-    if "retry" in reaction:
-        if sources[0] not in ("at", "sun"):
-            raise vol.Invalid("a reaction's retry goes with at or sun")
-        retry = reaction["retry"]
-        if retry["times"] * retry["every"] > RETRY_LIMIT:
-            raise vol.Invalid("a reaction's retries must end within 12 hours")
+    _retry_consistent(reaction, sources[0])
     if sources[0] in ("at", "sun"):
         if any(key in reaction for key in STATE_KEYS):
             raise vol.Invalid(
