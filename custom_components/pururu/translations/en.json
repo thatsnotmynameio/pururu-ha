@@ -25,13 +25,17 @@
     "appliance_alert_long_cycle_done_message": "The cycle ended.",
     "appliance_alert_no_cycle_message": "It hasn't run in a while.",
     "appliance_alert_no_cycle_done_message": "It's running again.",
-    "appliance_alert_finished_message": "The cycle finished.",
-    "appliance_alert_finished_done_message": "Done."
+    "appliance_notification_finished_name": "Finished",
+    "appliance_notification_finished_message": "The cycle finished."
   },
   "issues": {
     "automations_not_included": {
       "title": "The reactions' automations aren't loaded",
       "description": "pururu writes an automation for each reaction to `{file}`, but Home Assistant hasn't loaded them. Add this line to `configuration.yaml`:\n\n`{include}`\n\nThen reload automations in **Developer tools → YAML → Automations**, or restart Home Assistant."
+    },
+    "notifications_not_included": {
+      "title": "The notifications' automations aren't loaded",
+      "description": "pururu writes an automation for each ready-made notification to `{file}`, but Home Assistant hasn't loaded them. Add this line to `configuration.yaml`:\n\n`{include}`\n\nThen reload automations in **Developer tools → YAML → Automations**, or restart Home Assistant."
     },
     "scripts_not_included": {
       "title": "The programs' scripts aren't loaded",
@@ -49,7 +53,6 @@
       "appliance_alert_no_power": {"name": "No power"},
       "appliance_alert_long_cycle": {"name": "Long cycle"},
       "appliance_alert_no_cycle": {"name": "No cycle"},
-      "appliance_alert_finished": {"name": "Finished"},
       "door_open": {"name": "Open"},
       "window_open": {"name": "Open"}
     },

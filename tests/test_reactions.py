@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.file import WriteError
 from pytest_homeassistant_custom_component.common import mock_restore_cache
 import pytest
+from pytest_homeassistant_custom_component.common import async_mock_service
 import voluptuous as vol
 
 from helpers import capture, fake, generated, generated_scripts, module, reload, settle, setup, tick
@@ -149,6 +150,40 @@ async def test_an_empty_block_is_refused(ha: HomeAssistant) -> None:
     config = devices()
     config[LIGHTS]["reactions"] = {}
     assert not await setup(ha, config)
+
+
+PHONE = "notify.phone"
+TOLD = {**DOOR_OPENS, "message": "A porta abriu."}
+
+
+@pytest.mark.parametrize(("reaction", "config"), [
+    pytest.param(TOLD, {"notify": PHONE}, id="the default"),
+    pytest.param({**TOLD, "notify": PHONE}, None, id="its own"),
+    pytest.param({**TOLD, "notify": [PHONE, "notify.tablet"]}, {"notify": "notify.x"}, id="its own list"),
+])
+async def test_a_message_that_goes_somewhere_is_accepted(
+        ha: HomeAssistant, reaction: dict[str, Any], config: dict[str, Any] | None) -> None:
+    assert await setup(ha, devices(it=reaction), config=config)
+
+
+@pytest.mark.parametrize(("reaction", "reason"), [
+    pytest.param({**DOOR_OPENS, "message": " "}, "length of value must be at least 1", id="blank message"),
+    pytest.param({**DOOR_OPENS, "notify": PHONE}, "a reaction's notify goes with message",
+                 id="notify without message"),
+    pytest.param({**TOLD, "notify": "phone"}, "a notify action is notify.<name>", id="not a notify action"),
+    pytest.param(TOLD, "device lights: reactions: it: message needs notify, here or in config.notify",
+                 id="nowhere to go"),
+])
+async def test_a_message_that_cant_go_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                                 reaction: dict[str, Any], reason: str) -> None:
+    assert not await setup(ha, devices(it=reaction))
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any(reason in message for message in errors), errors
+
+
+async def test_config_notify_is_a_notify_action(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    assert not await setup(ha, devices(it=TOLD), config={"notify": "phone"})
+    assert "a notify action is notify.<name>" in caplog.text
 
 
 async def test_reactions_alone_are_not_a_feature(ha: HomeAssistant,
@@ -378,6 +413,25 @@ def test_then_starts_its_program_unless_it_runs(ha: HomeAssistant) -> None:
     }]
 
 
+def test_a_message_is_told_after_its_program_starts(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION({**TOLD, "then": "clean"})
+    script = "script.pururu_lights_program_clean"
+    actions = reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, script,
+                                   ["notify.a", "notify.b"])["actions"]
+    assert actions[0]["then"] == [{"action": "script.turn_on", "target": {"entity_id": script}}]
+    assert actions[1:] == [{"parallel": [
+        {"action": target, "data": {"title": "Luzes", "message": "A porta abriu."}, "continue_on_error": True}
+        for target in ("notify.a", "notify.b")
+    ]}]
+
+
+def test_without_a_message_nobody_is_told(ha: HomeAssistant) -> None:
+    reactions = module("reactions")
+    reaction = reactions.REACTION(DOOR_OPENS)
+    assert reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, None, ["notify.a"])["actions"] == []
+
+
 @pytest.mark.parametrize("then", [["clean"], "script.pururu_lights_program_clean"])
 def test_then_is_a_slug(ha: HomeAssistant, then: Any) -> None:
     reaction = module("reactions").REACTION
@@ -448,6 +502,36 @@ async def test_a_state_reaction_fires(ha: HomeAssistant, automations: None) -> N
     assert not fired(ha, "door")
     await fake(ha, DOOR, "on")
     assert fired(ha, "door")
+
+
+async def test_the_default_or_its_own_notify(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices(door=TOLD, mine={**TOLD, "notify": "notify.tablet"}),
+                       config={"notify": [PHONE]})
+    told = {a["id"]: [action["action"] for action in a["actions"][0]["parallel"]] for a in generated(ha)}
+    assert told == {"pururu_lights_reaction_door": [PHONE],
+                    "pururu_lights_reaction_mine": ["notify.tablet"]}
+
+
+async def test_a_message_is_text(ha: HomeAssistant, automations: None) -> None:
+    """Through HA's own automation: the phone gets the message as written."""
+    calls = async_mock_service(ha, "notify", "phone")
+    await fake(ha, DOOR, "off")
+    assert await setup(ha, devices(door={**TOLD, "message": "Porta {{ aberta }} {% raw %}"}),
+                       config={"notify": PHONE})
+    await fake(ha, DOOR, "on")
+    await ha.async_block_till_done()
+    assert [call.data for call in calls] == [{"title": "Luzes", "message": "Porta {{ aberta }} {% raw %}"}]
+
+
+async def test_a_phone_gone_does_not_keep_the_next_from_being_told(ha: HomeAssistant,
+                                                                   automations: None) -> None:
+    """An unpaired phone's notify action doesn't exist: HA stops a sequence on it, whatever continue_on_error."""
+    calls = async_mock_service(ha, "notify", "phone")
+    await fake(ha, DOOR, "off")
+    assert await setup(ha, devices(door=TOLD), config={"notify": ["notify.gone", PHONE]})
+    await fake(ha, DOOR, "on")
+    await ha.async_block_till_done()
+    assert [call.data for call in calls] == [{"title": "Luzes", "message": "A porta abriu."}]
 
 
 async def test_for_waits(ha: HomeAssistant, freezer: Any, automations: None) -> None:
@@ -557,6 +641,17 @@ async def test_the_reaction_starts_its_program(ha: HomeAssistant, both: None) ->
     assert script_state(ha) == "on"
     assert [e.data["service"] for e in calls
             if REAL_PUMP in cv.ensure_list(e.data["service_data"].get("entity_id"))] == ["turn_on"]
+
+
+async def test_a_missing_notify_action_does_not_keep_the_program_from_starting(
+        ha: HomeAssistant, both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={**DOOR_OPENS, "then": "clean", "message": "Limpando",
+                                       "notify": "notify.nobody"}))
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert script_state(ha) == "on"
 
 
 async def test_a_trigger_while_the_program_runs_does_nothing(ha: HomeAssistant,
@@ -921,6 +1016,27 @@ async def test_a_busy_program_is_started_by_a_try(ha: HomeAssistant, freezer: An
     await tick(ha, freezer, 240)    # 12:05, a try
     await settle()
     assert (len(triggered), len(started)) == (3, 1)
+
+
+async def test_a_busy_programs_message_is_told_once(ha: HomeAssistant, freezer: Any,
+                                                    both: None) -> None:
+    """Told at 10:05, when the program was busy; the tries that find it busy or start it don't tell it again."""
+    calls = async_mock_service(ha, "notify", "phone")
+    await fake(ha, REAL_PUMP, "off")
+    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+                                       "message": "Limpando", "notify": PHONE,
+                                       "retry": {"times": 3, "every": {"hours": 1}}}))
+    await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+    started = capture(ha, "script_started")
+    await tick(ha, freezer, 300)    # 10:05, busy: told
+    await tick(ha, freezer, 3600)   # 11:05, a try, still busy
+    await tick(ha, freezer, 3360)   # 12:01: the program ended at 12:00
+    await settle()
+    await tick(ha, freezer, 240)    # 12:05, a try starts it
+    await settle()
+    assert len(started) == 1
+    assert [call.data for call in calls] == [{"title": "Piscina", "message": "Limpando"}]
 
 
 async def test_a_program_started_after_the_occurrence_skips_the_tries(

@@ -6,6 +6,7 @@ description: Every key of the pururu block on one page.
 ```yaml title="configuration.yaml"
 pururu:
   config:
+    notify: notify.mobile_app_phone     # where every message goes
     alerts:
       lights:
         groups:
@@ -38,7 +39,8 @@ pururu:
           cycles: [today, week, month, year]
         alerts:
           offline:
-          finished: {lasts: {minutes: 30}}
+        notifications:
+          finished:
       phases:
         cycle_from: appliance
         sensor: sensor.washer_plug_power
@@ -78,7 +80,7 @@ pururu:
         abajur: {entity: switch.sonoff_abajur, name: Abajur}
       reactions:
         washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off"}
-        night: {name: Noite, at: "22:00"}
+        night: {name: Noite, at: "22:00", message: Hora de apagar as luzes.}
 
 automation pururu: !include_dir_merge_list pururu/automations
 script pururu: !include_dir_merge_named pururu/scripts
@@ -92,6 +94,7 @@ alert2:                          # alerts with notify: see alerts
 - `pururu:` has five optional keys: `config`, `floors`, `areas`, `devices` and `events`. Any other key is an error.
 - Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a program, is a **slug**: lowercase letters, digits and `_`.
 - A feature's own `alerts` enables its ready-made alerts, one key each: see the [appliance's](/features/appliance#ready-made-alerts). The device's `alerts` is for alerts you write.
+- A feature's own `notifications` enables its ready-made notifications the same way: see [Notifications](/concepts/notifications#ready-made-notifications).
 - An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_pump`). See [alerts](/features/alerts#settings).
 - A program's steps name entity keys of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/concepts/programs#steps).
 - No two devices give an entity the same ID. Device `pool` with the switch `switch_pump` and device `pool_switch` with the switch `pump` would both have `switch.pururu_pool_switch_switch_pump`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `pool` with the switch `appliance_energy_total` is refused next to a device `pool_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
@@ -102,6 +105,12 @@ alert2:                          # alerts with notify: see alerts
 ## config
 
 Settings of the whole house, not of a device.
+
+<Property name="notify" type="notify action or list" optional>
+  Where every message goes, a reaction's or a ready-made notification's, unless its own `notify` says: `notify.mobile_app_phone`, or a list of them. See [Notifications](/concepts/notifications#where-a-message-goes).
+</Property>
+
+---
 
 <Property name="alerts.lights" type="map" optional>
   The alert lights: `groups` of lights that alerts borrow with `lights`, and what a light shows for each priority (`high`, `medium`, `low`) and once its alerts ended (`resolved`). See [Alert lights](/concepts/alert-lights#settings).
@@ -180,7 +189,7 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 ---
 
 <Property name="reactions" type="map" optional>
-  A map of **reaction key → reaction**, each one a Home Assistant automation. It isn't a feature. A reaction's `then` names one of the device's `programs`, started when it fires, and a reaction on `at` or `sun` can `retry`. See [Reactions](/concepts/reactions#settings).
+  A map of **reaction key → reaction**, each one a Home Assistant automation. It isn't a feature. A reaction's `then` names one of the device's `programs`, started when it fires, its `message` is told to its `notify` or `config.notify`, and a reaction on `at` or `sun` can `retry`. See [Reactions](/concepts/reactions#settings).
 </Property>
 
 ---

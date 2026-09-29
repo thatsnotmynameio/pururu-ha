@@ -1,0 +1,99 @@
+---
+title: Notifications
+description: Simple news, told once to your phone. How it differs from an alert, and how a device tells it.
+---
+
+An **alert** is something you find critical: a problem that lasts, such as a door open that shouldn't be or a plug gone offline. It's a binary sensor, on while the problem lasts, and [Alert2](/features/alerts#getting-notified) tells you about it with reminders until it's resolved.
+
+A **notification** is simple news, told **once**: the washer finished. It has no state, nothing to resolve, no reminder. pururu tells it through Home Assistant's `notify` actions, from an automation it generates.
+
+```yaml title="configuration.yaml"
+pururu:
+  config:
+    notify: notify.mobile_app_phone          # where every message goes
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      appliance:
+        power: sensor.washer_plug_power
+        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+        notifications:
+          finished:                           # "The cycle finished."
+      reactions:
+        door_open:
+          name: Porta aberta
+          entity: binary_sensor.porta_lavanderia
+          to: "on"
+          message: A porta da lavanderia abriu.
+
+automation pururu: !include_dir_merge_list pururu/automations
+```
+
+Your phone gets **Máquina de lavar** / **The cycle finished.** when a wash ends, and **Máquina de lavar** / **A porta da lavanderia abriu.** when the door opens.
+
+## Where a message goes
+
+<Property name="config.notify" type="notify action or list" optional>
+  Where every message goes: a `notify` action such as `notify.mobile_app_phone`, or a list of them. A reaction's or a notification's own `notify` replaces it.
+</Property>
+
+A message with no `notify` of its own and no `config.notify` is a configuration error: `device laundry_washer: reactions: door_open: message needs notify, here or in config.notify`.
+
+- The title is always the device's name.
+- The message is shown **as you wrote it**: a `{` isn't a template.
+- Whether the action exists is Home Assistant's to say when it runs: the automation's trace and the log show a `notify` action that doesn't exist.
+
+## A reaction's message
+
+Any [reaction](/concepts/reactions) can tell something when it fires:
+
+<Property name="message" type="string" optional>
+  What to tell. It can't be empty.
+</Property>
+
+---
+
+<Property name="notify" type="notify action or list" optional>
+  Where this message goes, instead of `config.notify`. Only with `message`.
+</Property>
+
+With `then`, the program starts first, then the message is told. Every phone is told, even when one of them can't be, such as a phone no longer paired: its `notify` action is gone, and the log says so.
+
+## Ready-made notifications
+
+A feature may offer notifications for what happens to it. Enable one with one key under its block's `notifications`, as you enable its [ready-made alerts](/features/appliance#ready-made-alerts) under `alerts`:
+
+| Notification | Told when | Name | Default message |
+|---|---|---|---|
+| `appliance: notifications: finished` | a cycle ends (`appliance_running` goes from `on` to `off`) | Finished / Terminou | The cycle finished. / O ciclo terminou. |
+
+Each one takes `message`, which replaces its text, and `notify`, which replaces `config.notify`. `finished:` alone, with nothing after it, is every default.
+
+```yaml
+appliance:
+  power: sensor.washer_plug_power
+  running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+  notifications:
+    finished: {message: Roupa pronta!, notify: notify.mobile_app_tablet}
+```
+
+- Each one is `automation.pururu_<key>_<feature namespace>_notification_<notification>`, shown as the device's name and its own: `automation.pururu_laundry_washer_appliance_notification_finished`, **Máquina de lavar Finished** (in your Home Assistant's language).
+- A reload tells nobody: `finished` needs `running` to go from `on` straight to `off`.
+- If the entity it watches isn't created, it isn't generated either, and the log says why.
+- A name the feature doesn't offer is refused: `nope is not a ready-made notification of appliance: finished`. A feature that offers none takes no `notifications`.
+
+## The file and the include
+
+pururu writes the ready-made notifications' automations to `pururu/automations/notifications.yaml`, next to the reactions' `reactions.yaml`. The same line of `configuration.yaml` includes both:
+
+```yaml title="configuration.yaml"
+automation pururu: !include_dir_merge_list pururu/automations
+```
+
+Until it's there, **Settings → Repairs** shows **The notifications' automations aren't loaded**. See [Reactions: the include](/concepts/reactions#the-include).
+
+## Coming from the `finished` alert
+
+pururu 0.1.21 and earlier had a ready-made alert `finished`. It's a notification now: move `finished` from the appliance's `alerts` to its `notifications`, and drop `lasts`. Left in `alerts`, it's refused with `finished is now a notification: appliance: notifications: finished`. Its binary sensor `binary_sensor.pururu_<key>_appliance_alert_finished` and its Alert2 alert go away.
+
+A reaction or an automation of yours on that binary sensor goes with it: a reaction with `when: appliance_alert_finished` is refused (`appliance_alert_finished is not an entity key of this device`). React to `appliance_running` going from `on` to `off` instead, or let the notification tell you.

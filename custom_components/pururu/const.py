@@ -17,6 +17,11 @@ CONF_ALIASES: Final = "aliases"
 CONF_AREA: Final = "area"
 # A device's reactions: each one an automation pururu generates
 CONF_REACTIONS: Final = "reactions"
+# A reaction's message, and where messages go (a reaction's, a notification's, config's)
+CONF_MESSAGE: Final = "message"
+CONF_NOTIFY: Final = "notify"
+# A device's ready-made notifications: feature key -> name -> settings
+CONF_NOTIFICATIONS: Final = "notifications"
 # A device's alerts: the feature whose alerts with notify Alert2 delivers
 CONF_ALERTS: Final = "alerts"
 # The key of the entry's data holding the IDs of the automations it generated

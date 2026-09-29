@@ -35,11 +35,4 @@ PRESETS: dict[str, Preset] = {
         priority="medium",
         hold=None,
     ),
-    "finished": Preset(
-        watches="running",
-        kind=Elapsed(state=STATE_OFF, since_key="last_cycle_end"),
-        priority="low",
-        hold=timedelta(0),
-        lasts=timedelta(hours=1),
-    ),
 }

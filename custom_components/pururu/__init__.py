@@ -7,7 +7,7 @@ the device's entities. One config entry owns every floor, area, device and entit
 """
 
 from collections import ChainMap
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from functools import partial
 import logging
 from typing import Any, Literal
@@ -46,6 +46,8 @@ from . import (
     dashboard,
     events,
     generated,
+    messages,
+    notifications,
     places,
     programs,
     reactions,
@@ -58,6 +60,9 @@ from .const import (
     CONF_DEVICES,
     CONF_FLOORS,
     CONF_LIGHTS,
+    CONF_MESSAGE,
+    CONF_NOTIFICATIONS,
+    CONF_NOTIFY,
     CONF_PROGRAMS,
     CONF_REACTIONS,
     DATA_CONFIG,
@@ -98,7 +103,7 @@ def _device(value: Any) -> dict[str, Any]:
         vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
         vol.Optional(CONF_PROGRAMS): programs.SCHEMA,
         **{
-            vol.Optional(name): partial(presets.validate, feature)
+            vol.Optional(name): partial(_feature_block, feature, name)
             for name, feature in FEATURES.items()
         },
     }
@@ -115,6 +120,25 @@ def _device(value: Any) -> dict[str, Any]:
     _reactions_on_this_device(device)
     _programs_on_this_device(device)
     return device
+
+
+def _feature_block(feature: Feature, key: str, value: Any) -> Any:
+    """A feature's block, `key` in the device: its ready-made notifications (notifications.py), the rest as presets.validate says.
+
+    Only a feature offering them has them: a configured feature (alerts,
+    switches) may have an item keyed `notifications`.
+    """
+    if (
+        not feature.notifications
+        or not isinstance(value, dict)
+        or CONF_NOTIFICATIONS not in value
+    ):
+        return presets.validate(feature, value, key)
+    rest = {each: block for each, block in value.items() if each != CONF_NOTIFICATIONS}
+    enabled = vol.Schema(
+        {CONF_NOTIFICATIONS: notifications.schema(key, feature.notifications)}
+    )({CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]})
+    return {**presets.validate(feature, rest, key), **enabled}
 
 
 def _capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
@@ -282,27 +306,42 @@ def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _generated_ids(key: str, device: dict[str, Any]) -> Iterator[tuple[str, str, str]]:
+    """(domain, ID, what) of every automation and script the device generates."""
+    for reaction_key in device.get(CONF_REACTIONS, {}):
+        yield (
+            reactions.KIND.domain,
+            reactions.automation_id(key, reaction_key),
+            "reaction",
+        )
+    for _, feature, notification, _ in notifications.enabled(device):
+        yield (
+            notifications.KIND.domain,
+            notifications.automation_id(key, feature.namespace, notification),
+            "notification",
+        )
+    for program in device.get(CONF_PROGRAMS, {}):
+        yield programs.KIND.domain, programs.script_id(key, program), "program"
+
+
 def _generated_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
-    """Refuse two reactions, or two programs, whose automations or scripts would share an ID.
+    """Refuse two automations, or two scripts, that would share an ID.
 
     Device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b`
-    with the reaction `c` would both have pururu_lights_reaction_b_reaction_c.
+    with the reaction `c` would both have pururu_lights_reaction_b_reaction_c; a
+    reaction's and a notification's may meet the same way.
     """
-    blocks = (
-        (CONF_REACTIONS, reactions.KIND, reactions.automation_id, "reaction"),
-        (CONF_PROGRAMS, programs.KIND, programs.script_id, "program"),
-    )
-    for block, kind, id_of, what in blocks:
-        owners: dict[str, str] = {}  # ID -> the device that has it
-        for key, device in config[CONF_DEVICES].items():
-            for item_key in device.get(block, {}):
-                unique_id = id_of(key, item_key)
-                if unique_id in owners:
-                    raise vol.Invalid(
-                        f"device {key}: {kind.domain}.{unique_id} is already a {what} "
-                        f"of device {owners[unique_id]}"
-                    )
-                owners[unique_id] = key
+    owners: dict[
+        tuple[str, str], tuple[str, str]
+    ] = {}  # (domain, ID) -> (device, what)
+    for key, device in config[CONF_DEVICES].items():
+        for domain, unique_id, what in _generated_ids(key, device):
+            if (owner := owners.get((domain, unique_id))) is not None:
+                raise vol.Invalid(
+                    f"device {key}: {domain}.{unique_id} is already a {owner[1]} "
+                    f"of device {owner[0]}"
+                )
+            owners[domain, unique_id] = (key, what)
     return config
 
 
@@ -333,6 +372,29 @@ def _reaction_resolved(
         raise vol.Invalid(
             f"{where}: {reaction['when']} is not an entity key of device {other}"
         )
+
+
+def _messages_sent(config: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a message that goes nowhere, a reaction's or a notification's.
+
+    Neither a notify of its own nor one in config.notify.
+    """
+    if config[CONF_CONFIG].get(CONF_NOTIFY):
+        return config
+    for key, device in config[CONF_DEVICES].items():
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
+            if CONF_MESSAGE in reaction and CONF_NOTIFY not in reaction:
+                raise vol.Invalid(
+                    f"device {key}: reactions: {reaction_key}: message needs notify, "
+                    "here or in config.notify"
+                )
+        for name, _, notification, settings in notifications.enabled(device):
+            if CONF_NOTIFY not in settings:
+                raise vol.Invalid(
+                    f"device {key}: {name}: notifications: {notification} needs "
+                    "notify, here or in config.notify"
+                )
+    return config
 
 
 def _referable(
@@ -421,13 +483,15 @@ CONFIG_SCHEMA = vol.Schema(
                     # Settings of the whole house; schemas of their own, so a typo is refused
                     vol.Optional(CONF_CONFIG, default={}): vol.Schema(
                         {
+                            # Where every message goes, unless its own notify says
+                            vol.Optional(CONF_NOTIFY): messages.TARGETS,
                             vol.Optional(CONF_ALERTS, default={}): vol.Schema(
                                 {
                                     vol.Optional(
                                         CONF_LIGHTS, default={}
                                     ): alert_lights.SCHEMA
                                 }
-                            )
+                            ),
                         }
                     ),
                 }
@@ -438,6 +502,7 @@ CONFIG_SCHEMA = vol.Schema(
             _entity_ids_distinct,
             _reactions_resolved,
             _alert_lights_resolved,
+            _messages_sent,
         )
     },
     extra=vol.ALLOW_EXTRA,
@@ -492,8 +557,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     """Make floors and areas follow the configuration, then build every device.
 
     Floors and areas come first: devices will be placed in them. The reactions'
-    automations, the programs' scripts and Alert2's alerts come after the
-    entities: they watch and act on the ones created. The programs' scripts come
+    and the ready-made notifications' automations, the programs' scripts and
+    Alert2's alerts come after the entities: they watch and act on the ones
+    created. The programs' scripts come
     before the reactions' automations: a reaction starts one. The alert lights start
     after them: their alerts and lights are created. The dashboard comes last:
     it shows them all. The events are set up once the entities are added: they
@@ -536,11 +602,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     generated_scripts = await generated.async_sync(
         hass, entry, programs.KIND, scripts, held
     )
+    # Where a message goes without a notify of its own
+    notify = configured.get(CONF_CONFIG, {}).get(CONF_NOTIFY, [])
     automations, held_automations = _automations(
-        hass, devices, created, generated_scripts, held
+        hass, devices, created, generated_scripts, held, notify
     )
     await generated.async_sync(
         hass, entry, reactions.KIND, automations, held_automations
+    )
+    await generated.async_sync(
+        hass,
+        entry,
+        notifications.KIND,
+        notifications.items(hass, devices, created, texts, notify),
     )
     watched = _watched_items(devices)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
@@ -668,9 +742,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
-    """Delete the floors and areas the entry managed, its reactions' automations, programs' scripts and Alert2 alerts."""
+    """Delete the floors and areas the entry managed, its reactions' and notifications' automations, programs' scripts and Alert2 alerts."""
     places.async_remove(hass, entry.data)
     await generated.async_remove(hass, entry, reactions.KIND)
+    await generated.async_remove(hass, entry, notifications.KIND)
     await generated.async_remove(hass, entry, programs.KIND)
     await alert2_alerts.async_remove(hass)
 
@@ -894,12 +969,13 @@ def _automations(
     created: set[str],
     scripts: Collection[str],
     held_scripts: Collection[str],
+    notify: Sequence[str],
 ) -> tuple[list[generated.Item], set[str]]:
     """An automation per reaction of every device; one that can't work is logged.
 
     One watching an entity not created, or starting a program whose script
     isn't generated, isn't generated. Also the IDs of those held with their
-    program.
+    program. `notify` is config's: where a message without its own goes.
     """
     registry = er.async_get(hass)
     automations: list[generated.Item] = []
@@ -929,6 +1005,7 @@ def _automations(
                         reaction,
                         entity_id,
                         script,
+                        reaction.get(CONF_NOTIFY, notify),
                     ),
                 )
             )

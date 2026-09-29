@@ -19,6 +19,7 @@ from homeassistant.util.hass_dict import HassKey
 
 from . import files
 from .const import DOMAIN, ENTITY_PREFIX
+from .messages import escaped
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,19 +38,6 @@ ISSUE = "alert2_not_included"
 DATA_PENDING: HassKey[bool] = HassKey(f"{DOMAIN}_alert2_pending")
 
 
-def _text(text: str) -> str:
-    """`text` as Alert2 shows it: every template delimiter starts with {.
-
-    In a raw block, as Alert2's own jinja2Escape does: each {% in the text
-    (an {% endraw %} would end the block) leaves it, is written as a string,
-    and opens it again.
-    """
-    if "{" not in text:
-        return text
-    escaped = text.replace("{%", '{% endraw %}{{ "{%" }}{% raw %}')
-    return f"{{% raw %}}{escaped}{{% endraw %}}"
-
-
 def alert(
     object_id: str,
     entity_id: str,
@@ -66,12 +54,12 @@ def alert(
     return {
         "domain": DOMAIN,
         "name": object_id.removeprefix(f"{ENTITY_PREFIX}_"),
-        "friendly_name": _text(friendly_name),
+        "friendly_name": escaped(friendly_name),
         "condition_on": f"{{{{ is_state('{entity_id}', 'on') }}}}",
         "condition_off": f"{{{{ is_state('{entity_id}', 'off') }}}}",
         "priority": priority,
-        "message": _text(notify["message"]),
-        "done_message": _text(notify["done_message"]),
+        "message": escaped(notify["message"]),
+        "done_message": escaped(notify["done_message"]),
     }
 
 

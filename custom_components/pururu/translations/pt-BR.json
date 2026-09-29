@@ -25,13 +25,17 @@
     "appliance_alert_long_cycle_done_message": "O ciclo terminou.",
     "appliance_alert_no_cycle_message": "Não roda há um tempo.",
     "appliance_alert_no_cycle_done_message": "Voltou a rodar.",
-    "appliance_alert_finished_message": "O ciclo terminou.",
-    "appliance_alert_finished_done_message": "Pronto."
+    "appliance_notification_finished_name": "Terminou",
+    "appliance_notification_finished_message": "O ciclo terminou."
   },
   "issues": {
     "automations_not_included": {
       "title": "As automações das reações não estão carregadas",
       "description": "O pururu escreve uma automação para cada reação em `{file}`, mas o Home Assistant não as carregou. Adicione esta linha ao `configuration.yaml`:\n\n`{include}`\n\nDepois recarregue as automações em **Ferramentas de desenvolvedor → YAML → Automações**, ou reinicie o Home Assistant."
+    },
+    "notifications_not_included": {
+      "title": "As automações das notificações não estão carregadas",
+      "description": "O pururu escreve uma automação para cada notificação pronta em `{file}`, mas o Home Assistant não as carregou. Adicione esta linha ao `configuration.yaml`:\n\n`{include}`\n\nDepois recarregue as automações em **Ferramentas de desenvolvedor → YAML → Automações**, ou reinicie o Home Assistant."
     },
     "scripts_not_included": {
       "title": "Os scripts dos programas não estão carregados",
@@ -49,7 +53,6 @@
       "appliance_alert_no_power": {"name": "Sem energia"},
       "appliance_alert_long_cycle": {"name": "Ciclo longo"},
       "appliance_alert_no_cycle": {"name": "Sem ciclo"},
-      "appliance_alert_finished": {"name": "Terminou"},
       "door_open": {"name": "Aberta"},
       "window_open": {"name": "Aberta"}
     },

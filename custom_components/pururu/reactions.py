@@ -3,13 +3,14 @@
 A reaction is one source (an entity of a device, a real entity, a time of day,
 the sun) and, for an entity, a condition. Each becomes an automation in
 pururu/automations/reactions.yaml, whose folder configuration.yaml includes
-(generated.py). It starts one of its device's programs (then), or does nothing:
-it fires, and its trace shows when and why. An at or sun reaction can retry:
-its automation triggers again, each try skipped once the occurrence ran. Each
-reaction's triggers are counted: sensors of its device (STATISTICS).
+(generated.py). It starts one of its device's programs (then), tells its
+message (message, notify), or does nothing: it fires, and its trace shows when
+and why. An at or sun reaction can retry: its automation triggers again, each
+try skipped once the occurrence ran. Each reaction's triggers are counted:
+sensors of its device (STATISTICS).
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, override
@@ -27,7 +28,8 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 
-from .const import CONF_AUTOMATIONS, ENTITY_PREFIX
+from . import messages
+from .const import CONF_AUTOMATIONS, CONF_MESSAGE, CONF_NOTIFY, ENTITY_PREFIX
 from .entity import PururuEntity
 from .feature import TEXT, Device, Feature, Item, finite_float, qualified, state_text
 from .features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
@@ -109,6 +111,8 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
     sources = [key for key in SOURCES if key in reaction]
     if len(sources) != 1:
         raise vol.Invalid("a reaction needs one source: when, entity, at or sun")
+    if CONF_NOTIFY in reaction and CONF_MESSAGE not in reaction:
+        raise vol.Invalid("a reaction's notify goes with message")
     if "device" in reaction and "when" not in reaction:
         raise vol.Invalid("a reaction's device goes with when")
     if "offset" in reaction and "sun" not in reaction:
@@ -120,6 +124,12 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
                 "a reaction on at or sun takes no to, from, above, below or for"
             )
         return reaction
+    _state_consistent(reaction)
+    return reaction
+
+
+def _state_consistent(reaction: dict[str, Any]) -> None:
+    """A reaction on an entity's state: to, or above and/or below, and what goes with them."""
     if ("to" in reaction) == ("above" in reaction or "below" in reaction):
         raise vol.Invalid(
             "a reaction on a state needs to, or above and/or below, not both"
@@ -132,7 +142,6 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
         and reaction["above"] >= reaction["below"]
     ):
         raise vol.Invalid("a reaction's above must be lower than its below")
-    return reaction
 
 
 REACTION = vol.All(
@@ -155,6 +164,9 @@ REACTION = vol.All(
             vol.Optional("retry"): RETRY,
             # A program of this device, started when the reaction fires
             vol.Optional("then"): cv.slug,
+            # Told when the reaction fires, to its own notify or config's
+            vol.Optional(CONF_MESSAGE): TEXT,
+            vol.Optional(CONF_NOTIFY): messages.TARGETS,
             vol.Optional("statistics", default={}): vol.Schema(
                 {vol.Optional("triggered", default=[]): PERIOD_LIST}
             ),
@@ -260,6 +272,33 @@ def actions(script: str | None) -> list[dict[str, Any]]:
     ]
 
 
+def told(
+    reaction: Mapping[str, Any],
+    device_name: str,
+    notify: Sequence[str],
+    script: str | None,
+) -> list[dict[str, Any]]:
+    """Tell the reaction's message to `notify`; nothing without one.
+
+    Once per occurrence: with retry and a program, a try runs while the program
+    hasn't started, even when the occurrence ran and told it (the program was
+    busy). So a try tells it only if the automation hasn't run since the
+    occurrence (`this`: its state before this run), as when HA was down then.
+    """
+    if CONF_MESSAGE not in reaction:
+        return []
+    actions = messages.actions(notify, device_name, reaction[CONF_MESSAGE])
+    if "retry" not in reaction or script is None:
+        return actions
+    ran = RAN.format(last="this.attributes.last_triggered")
+    return [
+        {
+            "if": [{"condition": "template", "value_template": ran}],
+            "then": actions,
+        }
+    ]
+
+
 def automation(
     device_key: str,
     device_name: str,
@@ -267,8 +306,14 @@ def automation(
     reaction: Mapping[str, Any],
     entity_id: str | None,
     script: str | None = None,
+    notify: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """The automation of a reaction; `script` is the current entity ID of its program's."""
+    """The automation of a reaction; `script` is the current entity ID of its program's.
+
+    `notify` is where its message goes, its own or config's; the program starts
+    first: a notify action that doesn't exist fails the run, whatever
+    continue_on_error says.
+    """
     written: dict[str, Any] = {
         "id": automation_id(device_key, reaction_key),
         "alias": f"{device_name} {reaction[CONF_NAME]}",
@@ -277,7 +322,10 @@ def automation(
     }
     if checks := conditions(reaction, script):
         written["conditions"] = checks
-    written["actions"] = actions(script)
+    written["actions"] = [
+        *actions(script),
+        *told(reaction, device_name, notify, script),
+    ]
     return written
 
 

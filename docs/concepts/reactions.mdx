@@ -3,7 +3,7 @@ title: Reactions
 description: How a device behaves. Each reaction listens to one thing, can start one of the device's programs, and becomes a Home Assistant automation.
 ---
 
-A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. When it fires, it can start one of the device's [programs](/concepts/programs): the reaction decides **when**, the program **what**. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
+A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. When it fires, it can start one of the device's [programs](/concepts/programs): the reaction decides **when**, the program **what**. It can also tell a [message](/concepts/notifications#a-reactions-message) to your phone. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
 
 ```yaml title="configuration.yaml"
 pururu:
@@ -142,6 +142,20 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 
 ---
 
+<Property name="message" type="string" optional>
+  What to tell when the reaction fires: its device's name is the title. It can't be empty, and it's shown as you wrote it, not as a template. See [Notifications](/concepts/notifications#a-reactions-message).
+</Property>
+
+---
+
+<Property name="notify" type="notify action or list" optional>
+  Where this message goes, such as `notify.mobile_app_phone`, instead of `config.notify`. Only with `message`: `a reaction's notify goes with message`. A message with neither is a configuration error.
+</Property>
+
+With `then` and `message`, the program starts first, then the message is told.
+
+---
+
 <Property name="statistics.triggered" type="list of periods" optional>
   For each period, a sensor with the reaction's triggers in the current period: `today`, `week`, `month`, `year`, each once. See [Statistics](#statistics).
 </Property>
@@ -225,6 +239,7 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
 - **Past midnight** is fine: `at: "23:00"` with three tries every hour tries at 00:00, 01:00 and 02:00.
 - **The sun:** a try is the same event with its offset moved: sunset, then sunset + 1 h, and so on.
 - **Daylight saving:** a try at a time the clock skips doesn't run that day. Going back an hour, Home Assistant fires a repeated time twice, the occurrence's as any automation's, and a try may run once more.
+- **A message is told once per occurrence:** with `then` and `message`, a try that starts a program that was busy at the occurrence doesn't tell the message again. The occurrence told it. A try tells it only when the occurrence didn't run, as when Home Assistant was down.
 - **Only a time or the sun:** a reaction on an entity is an event. Home Assistant down when it happens never sees it, and a later try would miss it too. `retry` there is a configuration error: `a reaction's retry goes with at or sun`.
 
 ## When a reaction fires

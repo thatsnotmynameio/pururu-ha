@@ -171,7 +171,7 @@ class Condition:
 
 @dataclass(frozen=True, kw_only=True)
 class Elapsed:
-    """On while the watched entity is `state` and the time since a milestone is in [for, for + lasts).
+    """On while the watched entity is `state` and the time since a milestone is longer than `for`.
 
     The milestone is the state (a datetime) of `since_key`, an entity key of the
     feature, or the watched entity's attribute `since_attribute`: exactly one.
@@ -192,10 +192,8 @@ class Preset:
     watches: str
     kind: Condition | Elapsed
     priority: str
-    # The default `for`; None: the user gives it. An alert with `lasts` takes no `for`
+    # The default `for`; None: the user gives it
     hold: timedelta | None
-    # How long it stays on after its milestone; the user may change it
-    lasts: timedelta | None = None
 
 
 # The key of a feature's block that enables its ready-made alerts
@@ -205,6 +203,20 @@ ALERTS_KEY = "alerts"
 def preset_keys(presets: Mapping[str, Preset]) -> dict[str, Platform]:
     """The entity keys of a feature's ready-made alerts: alert_<name>, binary sensors."""
     return {f"alert_{name}": Platform.BINARY_SENSOR for name in presets}
+
+
+@dataclass(frozen=True, kw_only=True)
+class Happening:
+    """A ready-made notification of a feature: what happens, as a reaction's trigger.
+
+    Off until the device's `notifications` enables it; it creates no entity.
+    """
+
+    # The entity key, in the feature's namespace, it watches
+    watches: str
+    # The state it goes to, and from: a reaction's to and from
+    to: str
+    from_: str | None = None
 
 
 type Build = Callable[
@@ -251,3 +263,6 @@ class Feature:
     # alert_<name> (put preset_keys in entity_keys), enabled in its block's
     # `alerts` (presets.validate)
     alerts: Mapping[str, Preset] = field(default_factory=dict)
+    # Ready-made notifications it offers, by name: each enabled one, in the
+    # device's `notifications`, is an automation (notifications.py)
+    notifications: Mapping[str, Happening] = field(default_factory=dict)

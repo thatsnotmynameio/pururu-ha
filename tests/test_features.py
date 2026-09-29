@@ -172,8 +172,30 @@ def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
             for translations in (en, pt):
                 assert translations["common"][f"{key}_message"], key
                 assert translations["common"][f"{key}_done_message"], key
-            settings[alert] = {} if preset.hold is not None or preset.lasts else {"for": {"hours": 1}}
+            settings[alert] = {} if preset.hold is not None else {"for": {"hours": 1}}
         validate = module("features.presets").validate
         validate(feature, {**feature.example, "alerts": settings})
         with pytest.raises(vol.Invalid):
             validate(feature, {**feature.example, "alerts": {"not_an_alert": None}})
+
+
+def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:
+    """Every ready-made notification watches its own feature's entity key and has both texts."""
+    feature_module = module("feature")
+    en, pt = load("translations/en.json"), load("translations/pt-BR.json")
+    offering = [name for name, feature in features.items() if feature.notifications]
+    assert offering, "no feature offers ready-made notifications"
+    for name in offering:
+        feature = features[name]
+        for notification, happening in feature.notifications.items():
+            assert cv.slug(notification) == notification, name
+            assert happening.watches in feature.entity_keys, f"{name}: {notification}"
+            key = feature_module.qualified(feature.namespace, f"notification_{notification}")
+            for translations in (en, pt):
+                assert translations["common"][f"{key}_name"], key
+                assert translations["common"][f"{key}_message"], key
+        validate = module("notifications").schema(name, feature.notifications)
+        assert validate(dict.fromkeys(feature.notifications)) == {
+            notification: {} for notification in feature.notifications}
+        with pytest.raises(vol.Invalid):
+            validate({"not_a_notification": None})

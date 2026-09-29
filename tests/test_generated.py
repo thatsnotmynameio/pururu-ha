@@ -314,6 +314,20 @@ async def test_a_dropped_item_leaves_the_file_and_the_registry(
     assert entry_data(ha, case) == [case.unique_id("night")]
 
 
+async def test_the_last_item_dropped_while_disabled_is_reloaded_away(
+        ha: HomeAssistant, case: Case, included: None) -> None:
+    """A disabled item doesn't run, yet HA holds its config: the emptied file must be reloaded."""
+    assert await setup(ha, case.devices("door"))
+    er.async_get(ha).async_update_entity(case.entity_id("door"),
+                                         disabled_by=er.RegistryEntryDisabler.USER)
+    await ha.async_block_till_done()
+    calls = capture(ha, "call_service")
+    await reload(ha, case.devices())
+    assert ids(ha, case) == []
+    assert len(reloads(calls, case)) == 1
+    assert er.async_get(ha).async_get(case.entity_id("door")) is None
+
+
 # --- the include ---------------------------------------------------------------------------
 
 
