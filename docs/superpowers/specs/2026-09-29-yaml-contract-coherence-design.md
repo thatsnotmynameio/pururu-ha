@@ -843,7 +843,10 @@ Each leaves the whole suite green. Before merging A1, which bumps the version, c
 | A2a | The lifecycle: entry points only in `__init__`, `lifecycle.py`, `listener.py`, `Built`, `STEPS` and their guard, the one rename rule | stays 0.2.0 |
 | A2-layout | Move the modules into one folder per layer (D21), nothing else | stays 0.2.0 |
 | A2b | The model: roles, `resolve.py` and the `Index`, `CHECKS` at the domain level, `Planned` and each `plan()` in its owner | stays 0.2.0 |
-| B | Part 1: the aspects | stays 0.2.0 |
+| B1 | `CycleSource`; `trigger` to the vocabulary | stays 0.2.0 |
+| B2 | The statistics aspect: `Aspect`, `mount`, `Counters` | stays 0.2.0 |
+| B3 | The alerts aspect; `alerts` becomes a device key | stays 0.2.0 |
+| B4 | The notifications aspect; one automations kind; the whole layer table | stays 0.2.0 |
 | D | Part 4: programs | stays 0.2.0 |
 | C | Part 2: the vocabulary | stays 0.2.0 |
 
@@ -877,7 +880,7 @@ custom_components/pururu/
 
 **A2b, the model.** `roles.py` and `Feature` with roles; `resolve.py`, `Index`, `Target`, with `Ref` built from 0.1.23's syntax (a reaction's `device:` + `when:`, a light group's `{device: [key]}`), so the old resolvers go now and C only changes the parsing; `CHECKS` at the domain level with paths (error texts and their order may change); `Planned`, and each `plan()` in its owner (`programs.py`, `reactions.py`, `notifications.py`); `Built` gains `builders` and `index`. Docs: `writing-a-feature.mdx`, `testing.mdx`.
 
-**B, the aspects.** `aspects/` (statistics, alerts with the `ALERTS` device key, notifications); `features/presets.py`, `features/alerts.py`, `features/elapsed.py`, `features/cycle/statistics.py` and `notifications.py` move there; generic `mount`; `alerts` from `FEATURES` to `DEVICE_KEYS`; one automations kind, and `programs.KIND` moved to `generate.SCRIPTS` next to it (`tests/test_generated.py` reads both from `generate`); the statistics translations owned by the aspect (`<counter>_<period>`, `item_<counter>_<period>` with `{item}`), written so the names shown don't change; `CycleSource`; the contract test's role and aspect rules; the import test's full table; `trigger()` moved to `vocabulary.py`; `presets.validate`'s redirect "{name} is now a notification" goes (D13). Docs: `docs/features/alerts.mdx` to `docs/concepts/alerts.mdx`, a statistics concept page, `docs.json`, `configuration.mdx`.
+**B, the aspects**, in four PRs (B1 to B4 above), split by concern when B started: each is smaller to review and merges on its own, and the owner updates only once 0.2.0 is finished, so the steps between don't matter to them. `aspects/` (statistics, alerts with the `ALERTS` device key, notifications); `features/presets.py`, `features/alerts.py`, `features/elapsed.py`, `features/cycle/statistics.py` and `notifications.py` move there; generic `mount`; `alerts` from `FEATURES` to `DEVICE_KEYS`; one automations kind, and `programs.KIND` moved to `generate.SCRIPTS` next to it (`tests/test_generated.py` reads both from `generate`); the statistics translations owned by the aspect (`<counter>_<period>`, `item_<counter>_<period>` with `{item}`), written so the names shown don't change; `CycleSource`; the contract test's role and aspect rules; the import test's full table; `trigger()` moved to `vocabulary.py`; `presets.validate`'s redirect "{name} is now a notification" goes (D13). Docs: `docs/features/alerts.mdx` to `docs/concepts/alerts.mdx`, a statistics concept page, `docs.json`, `configuration.mdx`.
 
 The manual step, in the PR's text: before updating, remove every `notifications:` block and reload pururu (their automations and registry entries go; the new kind would otherwise find them registered under the old data key and treat them as the user's). Update, delete `pururu/automations/reactions.yaml` and `pururu/automations/notifications.yaml` (HA loads every file in the folder, and they'd repeat `automations.yaml`'s IDs), restart. Put the `notifications:` blocks back and reload.
 

@@ -26,6 +26,17 @@ The YAML users write doesn't change, and neither do entity IDs, unique IDs or th
 
 **Base:** `main` after A2b merges.
 
+**Four PRs** (decided while Task 1 ran; the spec's PRs table lists B1 to B4). Each PR is its tasks, then its own Task 7: its docs, per-function coverage, the final whole-branch review on opus with every finding fixed, and the PR, opened with the `greptile` label. Each PR is stacked on the previous one and retargeted to `main` once that merges.
+
+| PR | Tasks | Branch |
+|---|---|---|
+| B1 | 1 (`CycleSource`), 2 (`vocabulary.trigger`) | `refactor/b1-cycle-source` |
+| B2 | 3 (the statistics aspect) | `refactor/b2-statistics` |
+| B3 | 4 (the alerts aspect, `alerts` a device key) | `refactor/b3-alerts` |
+| B4 | 5 (the notifications aspect, one automations kind), 6 (the whole layer table) | `refactor/b4-notifications` |
+
+The manual step (Task 5) goes in B4's PR text, and in the final "Updating to 0.2.0" guide (PR C).
+
 ## Global Constraints
 
 - Version stays `0.2.0`.
