@@ -8,7 +8,7 @@ the last cycle's end). Each event carries its device's states when it is fired:
 a cycle's end (last_cycle_end, written last) comes with that cycle's values.
 """
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -31,7 +31,8 @@ from homeassistant.helpers.json import json_bytes
 from homeassistant.util.json import json_loads_object
 from homeassistant.util.ulid import ulid_now
 
-from .const import DOMAIN, ENTITY_PREFIX
+from .const import CONF_DEVICES, DOMAIN, ENTITY_PREFIX
+from .runtime import Built, PururuConfigEntry
 
 CONF_EVENTS: Final = "events"
 STATE_CHANGED: Final = "state_changed"
@@ -135,7 +136,7 @@ def _data(
 
 
 def watched(
-    devices: dict[str, dict[str, Any]], created_by: Mapping[str, list[Entity]]
+    devices: Mapping[str, Mapping[str, Any]], created_by: Mapping[str, Sequence[Entity]]
 ) -> list[Watched]:
     """Each device with its created entities: current entity ID → key, its unique ID after pururu_<device>_."""
     return [
@@ -151,3 +152,16 @@ def watched(
         )
         for key, created in created_by.items()
     ]
+
+
+async def async_step(
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
+) -> frozenset[str]:
+    """Fire the enabled classes' events for the created entities, each by the device that built it."""
+    async_setup(
+        hass,
+        entry,
+        built.house.get(CONF_EVENTS, []),
+        watched(built.house.get(CONF_DEVICES, {}), built.by_device),
+    )
+    return frozenset()

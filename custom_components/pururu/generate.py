@@ -8,10 +8,17 @@ from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from . import catalogue, generated, programs, reactions
-from .const import CONF_AREA, CONF_NOTIFY, CONF_PROGRAMS, CONF_REACTIONS
+from . import catalogue, generated, notifications, programs, reactions
+from .const import (
+    CONF_AREA,
+    CONF_CONFIG,
+    CONF_DEVICES,
+    CONF_NOTIFY,
+    CONF_PROGRAMS,
+    CONF_REACTIONS,
+)
 from .feature import Device
-from .runtime import PururuConfigEntry
+from .runtime import Built, PururuConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -234,3 +241,34 @@ def _started(
     return True, registry.async_get_entity_id(
         programs.KIND.domain, programs.KIND.domain, script_id
     )
+
+
+async def async_step(
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
+) -> frozenset[str]:
+    """The programs' scripts, then the reactions' and the ready-made notifications' automations.
+
+    The scripts come first: a reaction starts one. Returns the entity IDs the
+    generated scripts act on: disabling one rebuilds the entry.
+    """
+    devices = built.house.get(CONF_DEVICES, {})
+    created = set(built.created)
+    items, held, targets = scripts(hass, devices, created)
+    generated_scripts = await generated.async_sync(
+        hass, entry, programs.KIND, items, held
+    )
+    # Where a message goes without a notify of its own
+    notify = built.house.get(CONF_CONFIG, {}).get(CONF_NOTIFY, [])
+    reactions_items, held_automations = automations(
+        hass, devices, created, generated_scripts, held, notify
+    )
+    await generated.async_sync(
+        hass, entry, reactions.KIND, reactions_items, held_automations
+    )
+    await generated.async_sync(
+        hass,
+        entry,
+        notifications.KIND,
+        notifications.items(hass, devices, created, built.texts, notify),
+    )
+    return frozenset(targets)

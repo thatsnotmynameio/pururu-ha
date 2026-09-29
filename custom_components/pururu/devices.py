@@ -10,8 +10,8 @@ from homeassistant.helpers import (
     entity_registry as er,
 )
 
-from .const import CONF_AREA, DOMAIN
-from .runtime import PururuConfigEntry
+from .const import CONF_AREA, CONF_DEVICES, DOMAIN
+from .runtime import Built, PururuConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,3 +58,13 @@ def remove_stale(hass: HomeAssistant, entry: PururuConfigEntry, keys: set[str]) 
             domain == DOMAIN and key in keys for domain, key in device.identifiers
         ):
             devices.async_remove_device(device.id)
+
+
+async def async_step(
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
+) -> frozenset[str]:
+    """Put each device in its area, then remove what the configuration no longer builds."""
+    devices = built.house.get(CONF_DEVICES, {})
+    place(hass, entry, devices)
+    remove_stale(hass, entry, set(devices))
+    return frozenset()

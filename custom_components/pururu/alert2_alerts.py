@@ -5,7 +5,7 @@ includes its folder as its alerts. Alert2 renders these fields as templates:
 what the user wrote is kept as text.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 import logging
 from typing import Any
 
@@ -27,6 +27,7 @@ from . import files
 from .const import ALERT2, DOMAIN, ENTITY_PREFIX
 from .features.alerts import ProblemAlert
 from .messages import escaped
+from .runtime import Built, PururuConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ async def async_remove(hass: HomeAssistant) -> None:
 
 
 def items(
-    hass: HomeAssistant, built: dict[Platform, list[Entity]]
+    hass: HomeAssistant, built: Mapping[Platform, Sequence[Entity]]
 ) -> list[dict[str, Any]]:
     """An Alert2 alert per created alert with notify, hand-written or ready-made.
 
@@ -219,3 +220,11 @@ def items(
             )
         )
     return alerts
+
+
+async def async_step(
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
+) -> frozenset[str]:
+    """Write Alert2's alerts: one per created alert with notify."""
+    await async_sync(hass, entry, items(hass, built.entities))
+    return frozenset()

@@ -24,20 +24,22 @@ from . import (
     programs,
     reactions,
 )
-from .const import (
-    CONF_AREAS,
-    CONF_CONFIG,
-    CONF_DEVICES,
-    CONF_FLOORS,
-    CONF_NOTIFY,
-    DATA_CONFIG,
-    DOMAIN,
-    PLATFORMS,
-)
-from .features.alerts import ProblemAlert
-from .features.lights import Borrowable
-from .runtime import PururuConfigEntry
+from .const import CONF_AREAS, CONF_DEVICES, CONF_FLOORS, DATA_CONFIG, DOMAIN, PLATFORMS
+from .runtime import Built, PururuConfigEntry, Step
 from .texts import async_texts
+
+# The outputs after the platforms, in order: the events once the entities have their
+# IDs; the devices placed and what is stale removed; the scripts before the
+# automations that start them; Alert2 and the alert lights once their alerts and
+# lights are created; the dashboard last, as it shows them all
+STEPS: tuple[tuple[str, Step], ...] = (
+    ("events", events.async_step),
+    ("devices", device_steps.async_step),
+    ("generate", generate.async_step),
+    ("alert2", alert2_alerts.async_step),
+    ("alert lights", alert_lights.async_step),
+    ("dashboard", dashboard.async_step),
+)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -106,7 +108,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     hass.config_entries.async_update_entry(entry, data={**entry.data, **managed})
     registry = er.async_get(hass)
     devices = configured.get(CONF_DEVICES, {})
-    built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
+    entities: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
     # Each device's created entities: an entity's key comes from the device that built it
     created_by: dict[str, list[Entity]] = {key: [] for key in devices}
     texts = await async_texts(hass)
@@ -115,55 +117,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
         for entity in build.creatable(
             hass, registry, *build.build(hass, key, config, texts, owned)
         ):
-            built[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
+            entities[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
             created_by[key].append(entity)
-    entry.runtime_data = built
+    entry.runtime_data = entities
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Once added, each entity has its current ID, renamed in the UI or not
-    events.async_setup(
-        hass,
-        entry,
-        configured.get(events.CONF_EVENTS, []),
-        events.watched(devices, created_by),
+    built = Built(
+        house=configured,
+        texts=texts,
+        entities={platform: tuple(each) for platform, each in entities.items()},
+        by_device={key: tuple(each) for key, each in created_by.items()},
+        created=frozenset(
+            str(entity.unique_id) for each in entities.values() for entity in each
+        ),
     )
-    device_steps.place(hass, entry, devices)
-    device_steps.remove_stale(hass, entry, set(devices))
-    created = {str(entity.unique_id) for each in built.values() for entity in each}
-    scripts, held, targets = generate.scripts(hass, devices, created)
-    generated_scripts = await generated.async_sync(
-        hass, entry, programs.KIND, scripts, held
-    )
-    # Where a message goes without a notify of its own
-    notify = configured.get(CONF_CONFIG, {}).get(CONF_NOTIFY, [])
-    automations, held_automations = generate.automations(
-        hass, devices, created, generated_scripts, held, notify
-    )
-    await generated.async_sync(
-        hass, entry, reactions.KIND, automations, held_automations
-    )
-    await generated.async_sync(
-        hass,
-        entry,
-        notifications.KIND,
-        notifications.items(hass, devices, created, texts, notify),
-    )
-    watched = generate.watched_items(devices)
-    await alert2_alerts.async_sync(hass, entry, alert2_alerts.items(hass, built))
-    lights_settings = alert_lights.settings(configured)
-    lent = alert_lights.async_setup(
-        hass,
-        entry,
-        lights_settings,
-        alert_lights.light_ids(lights_settings, devices),
-        [
-            entity
-            for entity in built[Platform.BINARY_SENSOR]
-            if isinstance(entity, ProblemAlert)
-        ],
-        [entity for entity in built[Platform.LIGHT] if isinstance(entity, Borrowable)],
-    )
-    dashboard.async_setup(hass, entry)
-    listener.async_listen(hass, entry, watched, targets | lent)
+    targets: set[str] = set()
+    for _, step in STEPS:
+        targets |= await step(hass, entry, built)
+    listener.async_listen(hass, entry, generate.watched_items(devices), targets)
     return True
 
 
