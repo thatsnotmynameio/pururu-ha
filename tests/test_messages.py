@@ -27,8 +27,9 @@ def test_targets_are_a_list_of_notify_actions(ha: HomeAssistant, value: Any, exp
     pytest.param(None, id="null"),
 ])
 def test_anything_else_is_refused(ha: HomeAssistant, value: Any) -> None:
+    targets = module("messages").TARGETS
     with pytest.raises(vol.Invalid):
-        module("messages").TARGETS(value)
+        targets(value)
 
 
 @pytest.mark.parametrize("text", [

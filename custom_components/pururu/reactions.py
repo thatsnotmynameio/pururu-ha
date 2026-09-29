@@ -75,6 +75,12 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
                 "a reaction on at or sun takes no to, from, above, below or for"
             )
         return reaction
+    _state_consistent(reaction)
+    return reaction
+
+
+def _state_consistent(reaction: dict[str, Any]) -> None:
+    """A reaction on an entity's state: to, or above and/or below, and what goes with them."""
     if ("to" in reaction) == ("above" in reaction or "below" in reaction):
         raise vol.Invalid(
             "a reaction on a state needs to, or above and/or below, not both"
@@ -87,7 +93,6 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
         and reaction["above"] >= reaction["below"]
     ):
         raise vol.Invalid("a reaction's above must be lower than its below")
-    return reaction
 
 
 REACTION = vol.All(
