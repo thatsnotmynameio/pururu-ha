@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 import pytest
 
@@ -63,6 +63,8 @@ def _order(
     seen: list[tuple[str, str]] = []
 
     def listen(name: str, signal: Any) -> None:
+        # A callback runs during the send, so it sees the state as the signal finds it
+        @callback
         def record(_cycle: Any) -> None:
             seen.append((name, ha_state(hass, entity_id)))
 
