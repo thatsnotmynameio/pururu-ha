@@ -367,8 +367,8 @@ async def _finish(
 ) -> None:
     """Once HA has started: apply the file, drop what HA no longer runs, check the include.
 
-    HA reloads when the file changed, and also when it doesn't run the file as
-    written (a reload that failed, the include added since): the reload is
+    HA reloads when the file changed and holds items, and also when it doesn't
+    run the file as written (a reload that failed, the include added since): the reload is
     retried, and so is one that didn't take a held item out. A dropped item HA
     still runs keeps its entity ID, and stays tracked, until a reload drops it;
     a held one stays tracked anyway. The reload is blocking: the include is
@@ -377,7 +377,8 @@ async def _finish(
     """
     registry = er.async_get(hass)
     if (
-        changed
+        # A file of no items loads nothing: what HA ran of it is in stale or held
+        (changed and ids)
         or _missing(hass, registry, kind, checker.checked)
         or any(_runs(hass, registry, kind, unique_id) for unique_id in stale)
         or any(_runs(hass, registry, kind, unique_id) for unique_id in held)

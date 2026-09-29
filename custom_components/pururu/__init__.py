@@ -551,8 +551,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     """Make floors and areas follow the configuration, then build every device.
 
     Floors and areas come first: devices will be placed in them. The reactions'
-    automations, the programs' scripts and Alert2's alerts come after the
-    entities: they watch and act on the ones created. The programs' scripts come
+    and the ready-made notifications' automations, the programs' scripts and
+    Alert2's alerts come after the entities: they watch and act on the ones
+    created. The programs' scripts come
     before the reactions' automations: a reaction starts one. The alert lights start
     after them: their alerts and lights are created. The dashboard comes last:
     it shows them all. The events are set up once the entities are added: they
@@ -602,6 +603,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     )
     await generated.async_sync(
         hass, entry, reactions.KIND, automations, held_automations
+    )
+    await generated.async_sync(
+        hass,
+        entry,
+        notifications.KIND,
+        notifications.items(hass, devices, created, texts, notify),
     )
     watched = _watched_items(devices)
     await alert2_alerts.async_sync(hass, entry, _alert2_alerts(hass, built))
@@ -729,9 +736,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
-    """Delete the floors and areas the entry managed, its reactions' automations, programs' scripts and Alert2 alerts."""
+    """Delete the floors and areas the entry managed, its reactions' and notifications' automations, programs' scripts and Alert2 alerts."""
     places.async_remove(hass, entry.data)
     await generated.async_remove(hass, entry, reactions.KIND)
+    await generated.async_remove(hass, entry, notifications.KIND)
     await generated.async_remove(hass, entry, programs.KIND)
     await alert2_alerts.async_remove(hass)
 

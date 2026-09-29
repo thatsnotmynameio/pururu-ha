@@ -35,6 +35,10 @@
       "title": "The reactions' automations aren't loaded",
       "description": "pururu writes an automation for each reaction to `{file}`, but Home Assistant hasn't loaded them. Add this line to `configuration.yaml`:\n\n`{include}`\n\nThen reload automations in **Developer tools → YAML → Automations**, or restart Home Assistant."
     },
+    "notifications_not_included": {
+      "title": "The notifications' automations aren't loaded",
+      "description": "pururu writes an automation for each ready-made notification to `{file}`, but Home Assistant hasn't loaded them. Add this line to `configuration.yaml`:\n\n`{include}`\n\nThen reload automations in **Developer tools → YAML → Automations**, or restart Home Assistant."
+    },
     "scripts_not_included": {
       "title": "The programs' scripts aren't loaded",
       "description": "pururu writes a script for each program to `{file}`, but Home Assistant hasn't loaded them. Add this line to `configuration.yaml`:\n\n`{include}`\n\nThen reload scripts in **Developer tools → YAML → Scripts**, or restart Home Assistant."
