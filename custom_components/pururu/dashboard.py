@@ -281,8 +281,7 @@ def _async_refresh(hass: HomeAssistant) -> None:
 
 
 async def async_step(
-    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
-) -> frozenset[str]:
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
     """Show the entry's dashboard: it lists everything the steps before it made."""
     async_setup(hass, entry)
-    return frozenset()

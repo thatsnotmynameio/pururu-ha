@@ -244,16 +244,17 @@ def _started(
 
 
 async def async_step(
-    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
-) -> frozenset[str]:
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
     """The programs' scripts, then the reactions' and the ready-made notifications' automations.
 
-    The scripts come first: a reaction starts one. Returns the entity IDs the
-    generated scripts act on: disabling one rebuilds the entry.
+    The scripts come first: a reaction starts one. Adds the entity IDs the
+    generated scripts act on to `targets`: disabling one rebuilds the entry.
     """
     devices = built.house.get(CONF_DEVICES, {})
     created = set(built.created)
-    items, held, targets = scripts(hass, devices, created)
+    items, held, acted_on = scripts(hass, devices, created)
+    targets |= acted_on
     generated_scripts = await generated.async_sync(
         hass, entry, programs.KIND, items, held
     )
@@ -271,4 +272,3 @@ async def async_step(
         notifications.KIND,
         notifications.items(hass, devices, created, built.texts, notify),
     )
-    return frozenset(targets)

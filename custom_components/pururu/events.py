@@ -155,8 +155,8 @@ def watched(
 
 
 async def async_step(
-    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
-) -> frozenset[str]:
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
     """Fire the enabled classes' events for the created entities, each by the device that built it."""
     async_setup(
         hass,
@@ -164,4 +164,3 @@ async def async_step(
         built.house.get(CONF_EVENTS, []),
         watched(built.house.get(CONF_DEVICES, {}), built.by_device),
     )
-    return frozenset()

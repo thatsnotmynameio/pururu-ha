@@ -218,8 +218,7 @@ def items(
 
 
 async def async_step(
-    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
-) -> frozenset[str]:
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
     """Write Alert2's alerts: one per created alert with notify."""
     await async_sync(hass, entry, items(hass, built.entities))
-    return frozenset()

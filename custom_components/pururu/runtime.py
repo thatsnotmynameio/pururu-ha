@@ -28,7 +28,8 @@ class Built:
     created: frozenset[str]
 
 
-# An output after the platforms; it returns the entity IDs whose disabling rebuilds the entry
+# An output after the platforms; it adds to `targets` the entity IDs whose disabling
+# rebuilds the entry, as soon as it knows them: a later failure keeps them
 type Step = Callable[
-    [HomeAssistant, PururuConfigEntry, Built], Awaitable[frozenset[str]]
+    [HomeAssistant, PururuConfigEntry, Built, set[str]], Awaitable[None]
 ]

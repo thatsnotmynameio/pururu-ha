@@ -138,7 +138,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     targets: set[str] = set()
     for name, step in STEPS:
         try:
-            targets |= await step(hass, entry, built)
+            await step(hass, entry, built, targets)
         except Exception:
             # Failing after the platforms would leave the entry stuck until a
             # restart: HA unloads a non-loaded entry without async_unload_entry

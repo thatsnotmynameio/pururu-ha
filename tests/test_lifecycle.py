@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -32,6 +33,26 @@ async def test_a_step_that_raises_leaves_the_entry_loaded(
         await ha.async_block_till_done()
         assert entry.state is ConfigEntryState.LOADED
     caplog.clear()  # expected: the autouse fixture would fail on it
+
+
+async def test_a_failing_first_step_leaves_the_others_and_the_listener(
+    ha: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The events failing first: the generated scripts, the dashboard and the rename rule still come."""
+    clean = {"name": "Limpar", "sequence": [{"turn_on": "switch_pump"}]}
+    with patch.object(module("events"), "async_setup", side_effect=RuntimeError("boom")):
+        assert await setup(ha, {"pool": {**SWITCH, "programs": {"clean": clean}}})
+    assert "Step events failed" in caplog.text
+    caplog.clear()  # expected: the autouse fixture would fail on it
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    assert entry.data["scripts"] == ["pururu_pool_program_clean"]
+    assert "pururu" in ha.data[LOVELACE_DATA].dashboards
+    with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
+        er.async_get(ha).async_update_entity(
+            "script.pururu_pool_program_clean", new_entity_id="script.limpar"
+        )
+        await ha.async_block_till_done()
+    reloading.assert_called_once()
 
 
 async def test_renaming_a_ready_made_notification_reloads(ha: HomeAssistant) -> None:

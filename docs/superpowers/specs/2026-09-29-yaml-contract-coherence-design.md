@@ -475,8 +475,9 @@ class Built:
     by_device: Mapping[str, tuple[PururuEntity, ...]]
     created: frozenset[str]                             # unique IDs created
 
-type Step = Callable[[HomeAssistant, PururuConfigEntry, Built], Awaitable[frozenset[str]]]
-# returns the entity IDs whose disabling reloads the entry
+type Step = Callable[[HomeAssistant, PururuConfigEntry, Built, set[str]], Awaitable[None]]
+# adds to the set the entity IDs whose disabling reloads the entry, as soon as it knows
+# them: a step that fails partway keeps what it added
 
 # generated.py: deletes the sentinel `dict[str, str] | Literal["held"] | None` of today's _acted_on
 @dataclass(frozen=True)
@@ -529,12 +530,12 @@ As Terraform's plan/apply: the plan is a value; validation never touches `hass`.
    |---|---|
    | events | follows state changes; `event_name` is `entity.reference` |
    | devices | `_place`, `_remove_stale` |
-   | generate | `programs.plan` → `pururu/scripts/programs.yaml` (unchanged); `reactions.plan(…, scripts)` and `notifications.plan` → `automations.yaml`; returns the programs' targets. `scripts` maps `(device key, program key)` to the script's current entity ID, or to `None` when the program is held or not generated; `generate.py` builds it from `programs.plan`'s result, so `reactions` never imports `programs` |
+   | generate | `programs.plan` → `pururu/scripts/programs.yaml` (unchanged); `reactions.plan(…, scripts)` and `notifications.plan` → `automations.yaml`; adds the programs' targets once the scripts are planned, before the automations. `scripts` maps `(device key, program key)` to the script's current entity ID, or to `None` when the program is held or not generated; `generate.py` builds it from `programs.plan`'s result, so `reactions` never imports `programs` |
    | Alert2 | the `ProblemAlert`s with a message |
    | alert lights | lends and hands back lights |
    | dashboard | `/pururu` |
 
-6. **Listener.** Reloads the entry when one of its entities is renamed; when a script or automation whose `(platform, unique_id)` is tracked in `entry.data[kind.data_key]` is renamed (one rule for every generated kind, instead of today's `_watched_items`, which lists reactions and programs only: nothing refers to a notification's automation, so its rename needs no rebuild, but one rule is simpler than a rule with an exception); when an ID a step returned is disabled (once per burst).
+6. **Listener.** Reloads the entry when one of its entities is renamed; when a script or automation whose `(platform, unique_id)` is tracked in `entry.data[kind.data_key]` is renamed (one rule for every generated kind, instead of today's `_watched_items`, which lists reactions and programs only: nothing refers to a notification's automation, so its rename needs no rebuild, but one rule is simpler than a rule with an exception); when an ID a step added to the targets is disabled (once per burst).
 
 ### What `__init__.py` becomes
 

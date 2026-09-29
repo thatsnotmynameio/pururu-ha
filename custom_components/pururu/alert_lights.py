@@ -565,11 +565,11 @@ def _enabled(registry: er.EntityRegistry, light: Borrowable) -> bool:
 
 
 async def async_step(
-    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
-) -> frozenset[str]:
-    """Lend the created lights to the created alerts; returns the lights and alerts it follows."""
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
+    """Lend the created lights to the created alerts; adds the lights and alerts it follows to `targets`."""
     lights_settings = settings(built.house)
-    lent = async_setup(
+    targets |= async_setup(
         hass,
         entry,
         lights_settings,
@@ -585,4 +585,3 @@ async def async_step(
             if isinstance(entity, Borrowable)
         ],
     )
-    return frozenset(lent)

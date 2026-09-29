@@ -61,10 +61,9 @@ def remove_stale(hass: HomeAssistant, entry: PururuConfigEntry, keys: set[str]) 
 
 
 async def async_step(
-    hass: HomeAssistant, entry: PururuConfigEntry, built: Built
-) -> frozenset[str]:
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
     """Put each device in its area, then remove what the configuration no longer builds."""
     devices = built.house.get(CONF_DEVICES, {})
     place(hass, entry, devices)
     remove_stale(hass, entry, set(devices))
-    return frozenset()
