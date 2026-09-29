@@ -40,7 +40,7 @@ class Configured:
 class Actions:
     """Services its entities take on their own platform: what a program's step may call."""
 
-    actions: tuple[str, ...]
+    services: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,7 @@ class Items:
     """
 
     keys: Mapping[str, Platform]
-    items: Callable[[Any], Iterable[Item]]
+    of: Callable[[Any], Iterable[Item]]
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,7 @@ class Refers:
     `inputs`, by each reference as written (Ref.text).
     """
 
-    refers: Callable[[Any], Iterable[Ref]]
+    of: Callable[[Any], Iterable[Ref]]
 
 
 @dataclass(frozen=True)
@@ -73,14 +73,14 @@ class Presets:
     Enabled in its block's `alerts` (presets.validate); preset_keys goes in its entity_keys.
     """
 
-    presets: Mapping[str, Preset]
+    offered: Mapping[str, Preset]
 
 
 @dataclass(frozen=True)
 class Happenings:
     """Ready-made notifications, by name: each enabled one, in its block's `notifications`, is an automation."""
 
-    happenings: Mapping[str, Happening]
+    offered: Mapping[str, Happening]
 
 
 @dataclass(frozen=True)
@@ -91,7 +91,7 @@ class Generates:
     """
 
     what: str
-    generates: Callable[[str, Any], Iterable[tuple[str, str]]]
+    ids: Callable[[str, Any], Iterable[tuple[str, str]]]
 
 
 type Role = (

@@ -236,9 +236,7 @@ STATISTICS = Feature(
 )
 
 
-def check(
-    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> Iterator[vol.Invalid]:
+def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
     """Refuse a step on what isn't another feature's entity key of the device taking its action (a schema check)."""
     for key, device in house[CONF_DEVICES].items():
         for program_key, program in device.get(CONF_PROGRAMS, {}).items():

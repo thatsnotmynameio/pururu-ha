@@ -42,7 +42,7 @@ def watched_items(devices: dict[str, dict[str, Any]]) -> set[tuple[str, str]]:
         for key, config in devices.items()
         for name, feature in catalogue.builders().items()
         if name in config and (generates := feature.role(Generates)) is not None
-        for generated_item in generates.generates(key, config[name])
+        for generated_item in generates.ids(key, config[name])
     }
 
 

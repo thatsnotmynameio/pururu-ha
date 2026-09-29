@@ -50,7 +50,7 @@ def keys(
         if (items := feature.role(Items)) is not None:
             yield from (
                 (name, item.key(suffix), platform, None, item.slug)
-                for item in items.items(device[name])
+                for item in items.of(device[name])
                 for suffix, platform in items.keys.items()
             )
 
@@ -69,7 +69,7 @@ def targets(key: str, config: dict[str, Any]) -> dict[str, Target]:
             builder=name,
             by=by,
             item=item,
-            actions=actions.actions if actions else (),
+            actions=actions.services if actions else (),
         )
     return found
 

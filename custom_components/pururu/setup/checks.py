@@ -4,7 +4,7 @@ Each is a Check (schema.CHECKS). The rules a block owns live in its module:
 reactions.check, programs.check, alert_lights.check, places.floors_exist.
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -21,7 +21,7 @@ from ..const import (
     CONF_REACTIONS,
 )
 from ..core.feature import ALERTS_KEY, Feature
-from ..core.resolve import Index, find
+from ..core.resolve import Index, Ref, find
 from ..core.roles import Configured, Generates, Provides, Refers, Requires
 from ..device_keys import notifications
 from ..features import FEATURES
@@ -53,22 +53,27 @@ def references(
     """Refuse a reference that isn't another feature's entity key, or an alert watching an alert."""
     for key, device in house[CONF_DEVICES].items():
         for name, feature in builders.items():
-            if name not in device or (refers := feature.role(Refers)) is None:
-                continue
-            for ref in refers.refers(device[name]):
-                target = find(index, key, ref)
-                if target is None or target.builder == name:
-                    yield vol.Invalid(
-                        f"{name}: {ref.key} is not an entity key of another feature "
-                        "of this device",
-                        path=[CONF_DEVICES, key, name],
-                    )
-                elif name == CONF_ALERTS and target.by == ALERTS_KEY:
-                    yield vol.Invalid(
-                        f"{CONF_ALERTS}: {ref.key} is an alert: an alert can't watch "
-                        "another",
-                        path=[CONF_DEVICES, key, name],
-                    )
+            if name in device and (refers := feature.role(Refers)) is not None:
+                yield from _refused_refs(index, key, name, refers.of(device[name]))
+
+
+def _refused_refs(
+    index: Index, key: str, name: str, refs: Iterable[Ref]
+) -> Iterator[vol.Invalid]:
+    """Builder `name`'s references on device `key` that it can't have: one refusal each."""
+    for ref in refs:
+        target = find(index, key, ref)
+        if target is None or target.builder == name:
+            yield vol.Invalid(
+                f"{name}: {ref.key} is not an entity key of another feature "
+                "of this device",
+                path=[CONF_DEVICES, key, name],
+            )
+        elif name == CONF_ALERTS and target.by == ALERTS_KEY:
+            yield vol.Invalid(
+                f"{CONF_ALERTS}: {ref.key} is an alert: an alert can't watch another",
+                path=[CONF_DEVICES, key, name],
+            )
 
 
 def real_entities_distinct(
@@ -76,19 +81,26 @@ def real_entities_distinct(
 ) -> Iterator[vol.Invalid]:
     """Refuse a real entity in two configured features of a device: a relay is a switch or a light."""
     for key, device in house[CONF_DEVICES].items():
-        owners: dict[str, str] = {}  # real entity -> the configured feature that has it
-        for name, feature in builders.items():
-            if name not in device or feature.role(Configured) is None:
-                continue
-            for item in device[name].values():
-                # A configured key need not stand for a real entity (an alert)
-                if (entity := item.get("entity")) is None:
-                    continue
-                if owners.setdefault(entity, name) != name:
-                    yield vol.Invalid(
-                        f"{name}: {entity} is already in {owners[entity]}",
-                        path=[CONF_DEVICES, key, name],
-                    )
+        yield from _shared_real_entities(key, device, builders)
+
+
+def _shared_real_entities(
+    key: str, device: Mapping[str, Any], builders: Mapping[str, Feature]
+) -> Iterator[vol.Invalid]:
+    """Device `key`'s real entities already in another of its configured features."""
+    owners: dict[str, str] = {}  # real entity -> the configured feature that has it
+    for name, feature in builders.items():
+        if name not in device or feature.role(Configured) is None:
+            continue
+        # A configured key need not stand for a real entity (an alert)
+        for entity in filter(
+            None, (item.get("entity") for item in device[name].values())
+        ):
+            if owners.setdefault(entity, name) != name:
+                yield vol.Invalid(
+                    f"{name}: {entity} is already in {owners[entity]}",
+                    path=[CONF_DEVICES, key, name],
+                )
 
 
 def areas_exist(
@@ -130,7 +142,7 @@ def _generated_ids(
     """(domain, ID, what) of every automation and script the device generates."""
     for name, feature in builders.items():
         if name in device and (generates := feature.role(Generates)) is not None:
-            for domain, unique_id in generates.generates(key, device[name]):
+            for domain, unique_id in generates.ids(key, device[name]):
                 yield domain, unique_id, generates.what
     for _, feature, notification, _ in notifications.enabled(device, builders):
         yield (

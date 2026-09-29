@@ -73,7 +73,7 @@ def test_refers_names_entity_keys_as_in_an_entity_id(features: dict[str, Any]) -
     """What a feature refers to is a qualified entity key, such as appliance_running: a slug."""
     for name, feature in features.items():
         if (refers := role(feature, "Refers")) is not None:
-            for ref in refers.refers(feature.schema(dict(feature.example))):
+            for ref in refers.of(feature.schema(dict(feature.example))):
                 assert cv.slug(ref.key) == ref.key, name
 
 
@@ -136,13 +136,13 @@ async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, feat
         configured = role(feature, "Configured")
         assert configured is not None, f"{name} takes actions: its entities must be on one platform"
         assert await async_setup_component(ha, configured.platform, {})
-        for action in actions.actions:
+        for action in actions.services:
             assert ha.services.has_service(configured.platform, action), f"{name}: {configured.platform}.{action}"
 
 
 @pytest.mark.parametrize("name", ["switches", "lights"])
 def test_it_takes_turn_on_turn_off_and_toggle(features: dict[str, Any], name: str) -> None:
-    assert role(features[name], "Actions").actions == ("turn_on", "turn_off", "toggle")
+    assert role(features[name], "Actions").services == ("turn_on", "turn_off", "toggle")
 
 
 def test_items_have_suffixes_and_slugs(features: dict[str, Any]) -> None:
@@ -150,7 +150,7 @@ def test_items_have_suffixes_and_slugs(features: dict[str, Any]) -> None:
     for name, feature in features.items():
         if (items := role(feature, "Items")) is not None:
             assert items.keys, name
-            for item in items.items(feature.schema(dict(feature.example))):
+            for item in items.of(feature.schema(dict(feature.example))):
                 assert cv.slug(item.slug) == item.slug, name
 
 
@@ -173,7 +173,7 @@ def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
     assert offering, "no feature offers ready-made alerts"
     for name in offering:
         feature = features[name]
-        presets = role(feature, "Presets").presets
+        presets = role(feature, "Presets").offered
         assert feature_module.preset_keys(presets).items() <= feature.entity_keys.items(), name
         settings = {}
         for alert, preset in presets.items():
@@ -200,7 +200,7 @@ def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:
     assert offering, "no feature offers ready-made notifications"
     for name in offering:
         feature = features[name]
-        happenings = role(feature, "Happenings").happenings
+        happenings = role(feature, "Happenings").offered
         for notification, happening in happenings.items():
             assert cv.slug(notification) == notification, name
             assert happening.watches in feature.entity_keys, f"{name}: {notification}"
@@ -236,12 +236,12 @@ def test_ready_made_watch_the_builders_keys(features: dict[str, Any]) -> None:
     elapsed = module("core.feature").Elapsed
     for name, feature in features.items():
         presets = role(feature, "Presets")
-        for alert, preset in (presets.presets if presets else {}).items():
+        for alert, preset in (presets.offered if presets else {}).items():
             assert preset.watches in feature.entity_keys, f"{name}: {alert}"
             if isinstance(preset.kind, elapsed) and preset.kind.since_key:
                 assert preset.kind.since_key in feature.entity_keys, f"{name}: {alert}"
         happenings = role(feature, "Happenings")
-        for notification, happening in (happenings.happenings if happenings else {}).items():
+        for notification, happening in (happenings.offered if happenings else {}).items():
             assert happening.watches in feature.entity_keys, f"{name}: {notification}"
 
 
@@ -251,7 +251,7 @@ def test_a_generating_builder_generates_from_its_example(features: dict[str, Any
     assert set(generating) == {"programs", "reactions"}
     for name in generating:
         feature = features[name]
-        generated = list(role(feature, "Generates").generates("dev", feature.schema(dict(feature.example))))
+        generated = list(role(feature, "Generates").ids("dev", feature.schema(dict(feature.example))))
         assert generated, name
         for domain, unique_id in generated:
             assert domain in ("script", "automation"), name

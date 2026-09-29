@@ -68,12 +68,12 @@ A builder is its roles (the Extension Object pattern), so `Feature` never gains 
 | `Provides(capability, key)` | Others take this capability through `<capability>_from`; its entity key `key` carries it |
 | `Requires(capability)` | It takes a capability through `<capability>_from` |
 | `Configured(platform)` | Its entity keys are its block's keys, on this platform, named by each block's `name` |
-| `Actions(actions)` | Services its entities take on their platform (`turn_on`, `turn_off`, `toggle` for `switches` and `lights`), which a program can call |
-| `Items(keys, items)` | Its block is a map of items, each with the entity keys `<slug>_<suffix>` |
-| `Refers(refers)` | Given its block, the `Ref`s it names: entity keys of other features of the device |
-| `Presets(presets)` | Ready-made alerts it offers |
-| `Happenings(happenings)` | Ready-made notifications it offers |
-| `Generates(what, generates)` | The scripts or automations it writes (`programs`, `reactions`) |
+| `Actions(services)` | Services its entities take on their platform (`turn_on`, `turn_off`, `toggle` for `switches` and `lights`), which a program can call |
+| `Items(keys, of)` | Its block is a map of items, each with the entity keys `<slug>_<suffix>` |
+| `Refers(of)` | Given its block, the `Ref`s it names: entity keys of other features of the device |
+| `Presets(offered)` | Ready-made alerts it offers |
+| `Happenings(offered)` | Ready-made notifications it offers |
+| `Generates(what, ids)` | The scripts or automations it writes (`programs`, `reactions`) |
 
 The contract test holds the rules between roles: each at most once, `Configured` and `Items` never together, no device key `Provides`, `Requires` or has `Actions`.
 

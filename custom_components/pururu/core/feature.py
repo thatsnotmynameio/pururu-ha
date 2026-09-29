@@ -151,12 +151,12 @@ ALERTS_KEY = "alerts"
 
 def presets_of(feature: Feature) -> Mapping[str, Preset]:
     """The ready-made alerts the builder offers; none without Presets."""
-    return role.presets if (role := feature.role(Presets)) else {}
+    return role.offered if (role := feature.role(Presets)) else {}
 
 
 def happenings_of(feature: Feature) -> Mapping[str, Happening]:
     """The ready-made notifications the builder offers; none without Happenings."""
-    return role.happenings if (role := feature.role(Happenings)) else {}
+    return role.offered if (role := feature.role(Happenings)) else {}
 
 
 def preset_keys(presets: Mapping[str, Preset]) -> dict[str, Platform]:

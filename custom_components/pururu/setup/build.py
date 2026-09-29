@@ -84,7 +84,7 @@ def _inputs(
     if (generates := feature.role(Generates)) is not None:
         return {
             unique_id: owned[unique_id]
-            for _, unique_id in generates.generates(key, config[name])
+            for _, unique_id in generates.ids(key, config[name])
             if unique_id in owned
         }, set()
     inputs: dict[str, str] = {}
@@ -101,7 +101,7 @@ def _inputs(
         )
         required.add(provider.object_id(entity_key))
     refers = feature.role(Refers)
-    for ref in refers.refers(config[name]) if refers else ():
+    for ref in refers.of(config[name]) if refers else ():
         target = find(index, key, ref)
         assert target is not None  # the schema checked it (checks.references)
         inputs[ref.text] = target.current_entity_id(hass)

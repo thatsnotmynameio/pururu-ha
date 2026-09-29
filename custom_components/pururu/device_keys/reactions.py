@@ -447,9 +447,7 @@ STATISTICS = Feature(
 )
 
 
-def check(
-    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
-) -> Iterator[vol.Invalid]:
+def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
     """Refuse a reaction's `when`, `device` or `then` it can't have (a schema check).
 
     `when` without `device` names an entity key of the device, and never one of
