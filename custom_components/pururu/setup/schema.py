@@ -1,5 +1,6 @@
 """The pururu: block's schema: each device, then the rules over the whole house."""
 
+from collections.abc import Callable, Iterable, Mapping
 from functools import partial
 from typing import Any
 
@@ -23,33 +24,19 @@ from ..const import (
     DOMAIN,
 )
 from ..core import messages
-from ..core.feature import Feature
+from ..core.feature import Feature, happenings_of
+from ..core.resolve import Index
 from ..device_keys import notifications, programs, reactions
 from ..features import FEATURES, presets
 from ..outputs import alert_lights, events, places
-from .checks import (
-    alert_lights_resolved,
-    areas_exist,
-    capabilities_provided,
-    entity_ids_distinct,
-    generated_ids_distinct,
-    messages_sent,
-    no_alert_watches_an_alert,
-    programs_on_this_device,
-    reactions_on_this_device,
-    reactions_resolved,
-    real_entities_distinct,
-    references_resolved,
-)
+from . import catalogue, checks
 
 
 def _device(value: Any) -> dict[str, Any]:
-    """A device: a name, maybe an area, at least one feature, every reference resolved.
+    """A device: a name, maybe an area, at least one feature.
 
-    Every <capability>_from names a feature of this device that provides it,
-    every entity key a feature refers to is another feature's, a program's step
-    acts on another feature's entity key that takes the action, and a real
-    entity is in one configured feature of the device at most.
+    Every <capability>_from names a feature of this device that provides it.
+    What its blocks refer to is checked over the whole house (CHECKS).
     """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
@@ -67,12 +54,7 @@ def _device(value: Any) -> dict[str, Any]:
         raise vol.Invalid(
             f"a device needs at least one feature ({', '.join(FEATURES)})"
         )
-    capabilities_provided(device, names)
-    references_resolved(device, names)
-    no_alert_watches_an_alert(device, names)
-    real_entities_distinct(device, names)
-    reactions_on_this_device(device)
-    programs_on_this_device(device)
+    checks.capabilities_provided(device, names)
     return device
 
 
@@ -83,16 +65,47 @@ def _feature_block(feature: Feature, key: str, value: Any) -> Any:
     switches) may have an item keyed `notifications`.
     """
     if (
-        not feature.notifications
+        not (happenings := happenings_of(feature))
         or not isinstance(value, dict)
         or CONF_NOTIFICATIONS not in value
     ):
         return presets.validate(feature, value, key)
     rest = {each: block for each, block in value.items() if each != CONF_NOTIFICATIONS}
-    enabled = vol.Schema(
-        {CONF_NOTIFICATIONS: notifications.schema(key, feature.notifications)}
-    )({CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]})
+    enabled = vol.Schema({CONF_NOTIFICATIONS: notifications.schema(key, happenings)})(
+        {CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]}
+    )
     return {**presets.validate(feature, rest, key), **enabled}
+
+
+# The rules over the whole house, each in its owner's module: each gets the
+# validated block, the index of what each device can create and the builders,
+# and yields each refusal with a path (vol.Invalid(..., path=[devices, key, ...]))
+type Check = Callable[
+    [Mapping[str, Any], Index, Mapping[str, Feature]], Iterable[vol.Invalid]
+]
+CHECKS: tuple[Check, ...] = (
+    checks.references,
+    checks.real_entities_distinct,
+    reactions.check,
+    programs.check,
+    places.floors_exist,
+    checks.areas_exist,
+    checks.generated_ids_distinct,
+    checks.entity_ids_distinct,
+    alert_lights.check,
+    checks.messages_sent,
+)
+
+
+def _checked(house: dict[str, Any]) -> dict[str, Any]:
+    """The house, once every check passes over one index of it; every refusal told at once."""
+    builders = catalogue.builders()
+    index = catalogue.index(house[CONF_DEVICES])
+    if refused := [
+        error for check in CHECKS for error in check(house, index, builders)
+    ]:
+        raise vol.MultipleInvalid(refused)
+    return house
 
 
 # The features are read when a configuration is validated, not at import
@@ -128,13 +141,7 @@ CONFIG_SCHEMA = vol.Schema(
                     ),
                 }
             ),
-            places.floors_exist,
-            areas_exist,
-            generated_ids_distinct,
-            entity_ids_distinct,
-            reactions_resolved,
-            alert_lights_resolved,
-            messages_sent,
+            _checked,
         )
     },
     extra=vol.ALLOW_EXTRA,

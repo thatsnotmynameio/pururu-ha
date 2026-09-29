@@ -9,6 +9,9 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
+from .feature import Feature
+from .resolve import Index
+
 type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
 
 
@@ -18,6 +21,10 @@ class Built:
 
     # The validated pururu: block
     house: Mapping[str, Any]
+    # Every builder of a device: its features, then the device keys
+    builders: Mapping[str, Feature]
+    # What each device can create, by device key
+    index: Index
     # The translations' common texts
     texts: Mapping[str, str]
     # What the platforms added, by platform

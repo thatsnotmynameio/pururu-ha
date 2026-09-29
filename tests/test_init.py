@@ -46,6 +46,7 @@ TAGS = {"first": {"name": "First"}, "second": {"name": "Second"}}
 def demo(ha: HomeAssistant) -> Iterator[None]:
     """Put `gauge` and `echo` in FEATURES for the test."""
     feature = module("core.feature")
+    roles = module("core.roles")
     entity = module("core.entity")
     features = module("features").FEATURES
 
@@ -71,10 +72,13 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             self._attr_native_value = entity_key
 
     class Seen(entity.PururuEntity, SensorEntity):
-        def __init__(self, device: Any, of: str, watched: str) -> None:
+        def __init__(self, device: Any, of: str, watched: str, *, here: bool) -> None:
             self._identify(device, Platform.SENSOR, "seen")
-            self.follows = (of,)
+            self.follows = (of,) if here else ()
             self._attr_native_value = watched
+
+    def watched(config: dict[str, Any]) -> Any:
+        return module("core.resolve").Ref(config.get("device"), config["of"])
 
     added = {
         "gauge": feature.Feature(
@@ -85,7 +89,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             build=lambda hass, device, config, inputs: [Level(device, config["source"]),
                                                         Active(device)],
             example=GAUGE,
-            provides={"activity": "active"},
+            roles=(roles.Provides("activity", "active"),),
         ),
         "echo": feature.Feature(
             schema=vol.Schema({vol.Required("activity_from"): cv.slug}),
@@ -93,7 +97,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             entity_keys={"echo": Platform.SENSOR},
             build=lambda hass, device, config, inputs: [Echo(device, inputs["activity"])],
             example={"activity_from": "gauge"},
-            requires=("activity",),
+            roles=(roles.Requires("activity"),),
         ),
         "tags": feature.Feature(
             schema=vol.All(vol.Schema({cv.slug: vol.Schema({vol.Required("name"): cv.string})}),
@@ -103,16 +107,16 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             build=lambda hass, device, config, inputs: [Tag(device, key, tag["name"])
                                                         for key, tag in config.items()],
             example={"first": {"name": "First"}},
-            configured=Platform.SENSOR,
+            roles=(roles.Configured(Platform.SENSOR),),
         ),
         "watch": feature.Feature(
-            schema=vol.Schema({vol.Required("of"): cv.slug}),
+            schema=vol.Schema({vol.Required("of"): cv.slug, vol.Optional("device"): cv.slug}),
             namespace="watch",
             entity_keys={"seen": Platform.SENSOR},
-            build=lambda hass, device, config, inputs: [Seen(device, config["of"],
-                                                             inputs[config["of"]])],
+            build=lambda hass, device, config, inputs: [
+                Seen(device, config["of"], inputs[watched(config).text], here="device" not in config)],
             example={"of": "gauge_level"},
-            refers=lambda config: [config["of"]],
+            roles=(roles.Refers(lambda config: [watched(config)]),),
         ),
     }
     features.update(added)
@@ -194,6 +198,28 @@ async def test_a_feature_gets_the_entity_key_it_refers_to(ha: HomeAssistant) -> 
     assert await setup(ha, {"demo_widget": {**WIDGET, "watch": {"of": "gauge_active"}}})
     assert ha.states.get(SEEN).state == ACTIVE
     assert held(ha, "demo_widget") == {LEVEL, ACTIVE, SEEN}
+
+
+async def test_a_reference_to_another_device_gets_that_devices_entity(ha: HomeAssistant) -> None:
+    """A Ref with a device resolves on that device, not on the referrer's own."""
+    widget = {**WIDGET, "watch": {"of": "gauge_active", "device": "demo_panel"}}
+    assert await setup(ha, {"demo_widget": widget, "demo_panel": PANEL})
+    assert ha.states.get(SEEN).state == "binary_sensor.pururu_demo_panel_gauge_active"
+
+
+async def test_a_device_key_without_generates_builds(ha: HomeAssistant) -> None:
+    """A device key is a builder like any other: its inputs don't assume Generates."""
+    device_keys = module("device_keys").DEVICE_KEYS
+    device_keys["extra"] = module("features").FEATURES["tags"]
+    try:
+        build = module("setup.build")
+        config = {"name": "Widget", "extra": TAGS}
+        index = module("setup.catalogue").index({"demo_widget": config})
+        built, _ = build.build(ha, "demo_widget", config, index, {}, {})
+        assert {entity.entity_id for entity, _ in built} == {
+            "sensor.pururu_demo_widget_tags_first", "sensor.pururu_demo_widget_tags_second"}
+    finally:
+        del device_keys["extra"]
 
 
 async def test_it_can_refer_to_a_configured_entity_key(ha: HomeAssistant) -> None:
@@ -463,7 +489,7 @@ async def test_reload_sets_up_a_failed_entry_again(ha: HomeAssistant) -> None:
 
     features["gauge"] = feature.Feature(
         schema=original.schema, namespace=original.namespace, entity_keys=original.entity_keys,
-        build=flaky_build, example=original.example, provides=original.provides,
+        build=flaky_build, example=original.example, roles=original.roles,
     )
     assert await setup(ha, {"demo_widget": WIDGET})
     [entry] = ha.config_entries.async_entries(DOMAIN)

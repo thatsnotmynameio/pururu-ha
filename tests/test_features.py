@@ -26,9 +26,20 @@ def paths(tree: Any, prefix: str = "") -> set[str]:
     return {path for key, value in tree.items() for path in paths(value, f"{prefix}/{key}")}
 
 
+def role(feature: Any, name: str) -> Any:
+    """The feature's role of that class (roles.py), or None."""
+    return feature.role(getattr(module("core.roles"), name))
+
+
+def per_item(feature: Any) -> dict[str, Any]:
+    """The entity keys it repeats per item, by suffix; none without Items."""
+    items = role(feature, "Items")
+    return dict(items.keys) if items else {}
+
+
 def named_keys(feature: Any) -> dict[str, Any]:
     """Every key a feature's translations name: its entity keys and its per-item suffixes."""
-    return {**feature.entity_keys, **feature.per_item}
+    return {**feature.entity_keys, **per_item(feature)}
 
 
 @pytest.fixture
@@ -61,9 +72,9 @@ def test_no_entity_key_repeats_its_namespace(features: dict[str, Any]) -> None:
 def test_refers_names_entity_keys_as_in_an_entity_id(features: dict[str, Any]) -> None:
     """What a feature refers to is a qualified entity key, such as appliance_running: a slug."""
     for name, feature in features.items():
-        if feature.refers is not None:
-            for key in feature.refers(feature.schema(dict(feature.example))):
-                assert cv.slug(key) == key, name
+        if (refers := role(feature, "Refers")) is not None:
+            for ref in refers.of(feature.schema(dict(feature.example))):
+                assert cv.slug(ref.key) == ref.key, name
 
 
 def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> None:
@@ -100,19 +111,19 @@ def test_every_platform_is_set_up(features: dict[str, Any]) -> None:
     for name, feature in features.items():
         for entity_key, platform in named_keys(feature).items():
             assert platform in platforms, f"{name}'s {entity_key} is on {platform}, not in PLATFORMS"
-        if feature.configured is not None:
-            assert feature.configured in platforms, (
-                f"{name}'s configured entities are on {feature.configured}, not in PLATFORMS")
+        if (configured := role(feature, "Configured")) is not None:
+            assert configured.platform in platforms, (
+                f"{name}'s configured entities are on {configured.platform}, not in PLATFORMS")
 
 
 def test_capabilities_line_up(features: dict[str, Any]) -> None:
-    provided = {capability for feature in features.values() for capability in feature.provides}
+    provided = {p.capability for feature in features.values() if (p := role(feature, "Provides"))}
     for name, feature in features.items():
-        for capability, entity_key in feature.provides.items():
-            assert entity_key in feature.entity_keys, f"{name} provides {capability} by unknown {entity_key}"
-        if feature.configured is not None:
-            assert not feature.provides, f"{name} is configured: its entity keys can't carry a capability"
-        for capability in feature.requires:
+        if (provides := role(feature, "Provides")) is not None:
+            assert provides.key in feature.entity_keys, f"{name} provides {provides.capability} by unknown {provides.key}"
+            assert role(feature, "Configured") is None, f"{name} is configured: its entity keys can't carry a capability"
+        if (requires := role(feature, "Requires")) is not None:
+            capability = requires.capability
             assert capability in provided, f"{name} requires {capability}, nobody provides it"
             assert f"{capability}_from" in feature.example, f"{name}'s example lacks {capability}_from"
 
@@ -120,25 +131,26 @@ def test_capabilities_line_up(features: dict[str, Any]) -> None:
 async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, features: dict[str, Any]) -> None:
     """A program's step calls <platform>.<action> on the entity: the platform must have that service."""
     for name, feature in features.items():
-        if not feature.actions:
+        if (actions := role(feature, "Actions")) is None:
             continue
-        assert feature.configured is not None, f"{name} takes actions: its entities must be on one platform"
-        assert await async_setup_component(ha, feature.configured, {})
-        for action in feature.actions:
-            assert ha.services.has_service(feature.configured, action), f"{name}: {feature.configured}.{action}"
+        configured = role(feature, "Configured")
+        assert configured is not None, f"{name} takes actions: its entities must be on one platform"
+        assert await async_setup_component(ha, configured.platform, {})
+        for action in actions.services:
+            assert ha.services.has_service(configured.platform, action), f"{name}: {configured.platform}.{action}"
 
 
 @pytest.mark.parametrize("name", ["switches", "lights"])
 def test_it_takes_turn_on_turn_off_and_toggle(features: dict[str, Any], name: str) -> None:
-    assert features[name].actions == ("turn_on", "turn_off", "toggle")
+    assert role(features[name], "Actions").services == ("turn_on", "turn_off", "toggle")
 
 
-def test_per_item_goes_with_items(features: dict[str, Any]) -> None:
-    """Suffixes need items to repeat for, and items need suffixes."""
+def test_items_have_suffixes_and_slugs(features: dict[str, Any]) -> None:
+    """Items need suffixes to repeat, and each item is a slug."""
     for name, feature in features.items():
-        assert (feature.items is None) == (not feature.per_item), name
-        if feature.items is not None:
-            for item in feature.items(feature.schema(dict(feature.example))):
+        if (items := role(feature, "Items")) is not None:
+            assert items.keys, name
+            for item in items.of(feature.schema(dict(feature.example))):
                 assert cv.slug(item.slug) == item.slug, name
 
 
@@ -147,7 +159,7 @@ def test_every_per_item_name_has_its_placeholder(features: dict[str, Any]) -> No
     qualified = module("core.feature").qualified
     for translations in (load("translations/en.json"), load("translations/pt-BR.json")):
         for feature in features.values():
-            for suffix, platform in feature.per_item.items():
+            for suffix, platform in per_item(feature).items():
                 key = qualified(feature.namespace, suffix)
                 name = translations["entity"][platform][key]["name"]
                 assert f"{{{feature.namespace}}}" in name, key
@@ -157,13 +169,14 @@ def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
     """Every ready-made alert is an entity key, watches its own feature's, has both texts, validates."""
     feature_module = module("core.feature")
     en, pt = load("translations/en.json"), load("translations/pt-BR.json")
-    offering = [name for name, feature in features.items() if feature.alerts]
+    offering = [name for name, feature in features.items() if role(feature, "Presets")]
     assert offering, "no feature offers ready-made alerts"
     for name in offering:
         feature = features[name]
-        assert feature_module.preset_keys(feature.alerts).items() <= feature.entity_keys.items(), name
+        presets = role(feature, "Presets").offered
+        assert feature_module.preset_keys(presets).items() <= feature.entity_keys.items(), name
         settings = {}
-        for alert, preset in feature.alerts.items():
+        for alert, preset in presets.items():
             assert cv.slug(alert) == alert, name
             assert preset.watches in feature.entity_keys, f"{name}: {alert}"
             if isinstance(preset.kind, feature_module.Elapsed) and preset.kind.since_key:
@@ -183,19 +196,63 @@ def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:
     """Every ready-made notification watches its own feature's entity key and has both texts."""
     feature_module = module("core.feature")
     en, pt = load("translations/en.json"), load("translations/pt-BR.json")
-    offering = [name for name, feature in features.items() if feature.notifications]
+    offering = [name for name, feature in features.items() if role(feature, "Happenings")]
     assert offering, "no feature offers ready-made notifications"
     for name in offering:
         feature = features[name]
-        for notification, happening in feature.notifications.items():
+        happenings = role(feature, "Happenings").offered
+        for notification, happening in happenings.items():
             assert cv.slug(notification) == notification, name
             assert happening.watches in feature.entity_keys, f"{name}: {notification}"
             key = feature_module.qualified(feature.namespace, f"notification_{notification}")
             for translations in (en, pt):
                 assert translations["common"][f"{key}_name"], key
                 assert translations["common"][f"{key}_message"], key
-        validate = module("device_keys.notifications").schema(name, feature.notifications)
-        assert validate(dict.fromkeys(feature.notifications)) == {
-            notification: {} for notification in feature.notifications}
+        validate = module("device_keys.notifications").schema(name, happenings)
+        assert validate(dict.fromkeys(happenings)) == {notification: {} for notification in happenings}
         with pytest.raises(vol.Invalid):
             validate({"not_a_notification": None})
+
+
+def test_each_role_at_most_once(features: dict[str, Any]) -> None:
+    for name, feature in features.items():
+        assert len({type(each) for each in feature.roles}) == len(feature.roles), name
+
+
+def test_configured_and_items_never_together(features: dict[str, Any]) -> None:
+    """A configured block's keys are its entity keys; an item block's keys are items: not both."""
+    for name, feature in features.items():
+        assert not (role(feature, "Configured") and role(feature, "Items")), name
+
+
+def test_a_device_key_neither_provides_requires_nor_acts(ha: HomeAssistant) -> None:
+    for name, feature in module("device_keys").DEVICE_KEYS.items():
+        for kind in ("Provides", "Requires", "Actions"):
+            assert role(feature, kind) is None, f"{name} has {kind}"
+
+
+def test_ready_made_watch_the_builders_keys(features: dict[str, Any]) -> None:
+    """What a ready-made alert or notification watches, or counts from, is one of its builder's keys."""
+    elapsed = module("core.feature").Elapsed
+    for name, feature in features.items():
+        presets = role(feature, "Presets")
+        for alert, preset in (presets.offered if presets else {}).items():
+            assert preset.watches in feature.entity_keys, f"{name}: {alert}"
+            if isinstance(preset.kind, elapsed) and preset.kind.since_key:
+                assert preset.kind.since_key in feature.entity_keys, f"{name}: {alert}"
+        happenings = role(feature, "Happenings")
+        for notification, happening in (happenings.offered if happenings else {}).items():
+            assert happening.watches in feature.entity_keys, f"{name}: {notification}"
+
+
+def test_a_generating_builder_generates_from_its_example(features: dict[str, Any]) -> None:
+    """What a builder writes to a generated kind carries the pururu pattern of its device."""
+    generating = [name for name, feature in features.items() if role(feature, "Generates")]
+    assert set(generating) == {"programs", "reactions"}
+    for name in generating:
+        feature = features[name]
+        generated = list(role(feature, "Generates").ids("dev", feature.schema(dict(feature.example))))
+        assert generated, name
+        for domain, unique_id in generated:
+            assert domain in ("script", "automation"), name
+            assert unique_id.startswith("pururu_dev_"), name

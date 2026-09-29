@@ -322,5 +322,5 @@ def test_the_appliance_page_lists_every_ready_made_alert(ha: HomeAssistant) -> N
     page = APPLIANCE_PAGE.read_text(encoding="utf-8")
     section = re.search(r"## Ready-made alerts\n(.*?)\n## ", page, re.DOTALL)
     assert section is not None, "no Ready-made alerts section"
-    for name in module("features").FEATURES["appliance"].alerts:
+    for name in module("core.feature").presets_of(module("features").FEATURES["appliance"]):
         assert f"`{name}`" in section[1], name

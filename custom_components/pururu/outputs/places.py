@@ -6,7 +6,7 @@ then renamed. Whatever has a configured ID follows the configuration, whoever
 created it; what the entry managed and the configuration dropped is deleted.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 import logging
 from typing import Any
 
@@ -53,13 +53,15 @@ AREA_SCHEMA = vol.Schema(
 )
 
 
-def floors_exist(config: dict[str, Any]) -> dict[str, Any]:
-    """Refuse an area on a floor the configuration doesn't declare."""
-    for area_id, area in config[CONF_AREAS].items():
+def floors_exist(house: Mapping[str, Any], *_: Any) -> Iterator[vol.Invalid]:
+    """Refuse an area on a floor the configuration doesn't declare (a schema check)."""
+    for area_id, area in house[CONF_AREAS].items():
         floor_id = area.get(CONF_FLOOR)
-        if floor_id is not None and floor_id not in config[CONF_FLOORS]:
-            raise vol.Invalid(f"area {area_id}: floor {floor_id} is not in floors")
-    return config
+        if floor_id is not None and floor_id not in house[CONF_FLOORS]:
+            yield vol.Invalid(
+                f"area {area_id}: floor {floor_id} is not in floors",
+                path=[CONF_AREAS, area_id, CONF_FLOOR],
+            )
 
 
 @callback

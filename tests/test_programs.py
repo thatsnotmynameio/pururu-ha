@@ -464,7 +464,7 @@ async def test_a_target_is_followed_when_a_later_generated_kind_fails(
         scripts: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
     """The scripts are written before the notifications fail: disabling their target still rebuilds."""
     await fake(scripts, REAL_PUMP, "off")
-    with patch.object(module("device_keys.notifications"), "items", side_effect=RuntimeError("boom")):
+    with patch.object(module("device_keys.notifications"), "plan", side_effect=RuntimeError("boom")):
         assert await setup(scripts, devices())
     assert "Step generate failed" in caplog.text
     caplog.clear()  # expected: the autouse fixture would fail on it

@@ -4,16 +4,17 @@ from collections.abc import Mapping
 import logging
 from typing import Any
 
-from homeassistant.const import CONF_NAME, Platform
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 
 from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
-from ..core.feature import Device
+from ..core.feature import Device, presets_of
+from ..core.resolve import Index, find
+from ..core.roles import Generates, Provides, Refers, Requires
 from ..core.texts import Texts
-from ..device_keys import DEVICE_KEYS
 from ..features import FEATURES, presets
 from . import catalogue
 
@@ -24,6 +25,7 @@ def build(
     hass: HomeAssistant,
     key: str,
     config: dict[str, Any],
+    index: Index,
     texts: Texts,
     owned: Mapping[str, str],
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
@@ -32,30 +34,31 @@ def build(
     Each feature sees the device in its own namespace; what it takes through
     <capability>_from, or refers to, is in the owning feature's. Also the
     entity ID of each entity some entity watches (`follows`), by unique ID: the
-    settings may never build it, and then only this names it. `owned` are the
+    settings may never build it, and then only this names it. `index` is what
+    each device can create; `owned` are the
     entity IDs of the scripts and automations the entry generates, by ID.
     """
-    referable = catalogue.referable(key, config)
+    found = index[key]
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
     for name, feature in catalogue.builders().items():
         if name not in config:
             continue
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
-        inputs, required = _inputs(hass, key, config, name, referable, owned)
+        inputs, required = _inputs(hass, key, config, name, index, owned)
         # Only a feature offering ready-made alerts has them: a program or a
         # reaction may be keyed `alerts`
         ready_made = (
             presets.build(hass, device, feature, config[name], texts)
-            if feature.alerts
+            if presets_of(feature)
             else []
         )
         for entity in (*feature.build(hass, device, config[name], inputs), *ready_made):
             follows = set()
             for reference in entity.follows:
-                owner, entity_key, platform = referable[reference]
-                follows.add(unique_id := owner.object_id(entity_key))
-                watched[unique_id] = owner.current_entity_id(hass, platform, entity_key)
+                target = found[reference]
+                follows.add(target.unique_id)
+                watched[target.unique_id] = target.current_entity_id(hass)
             built.append(
                 (entity, {*map(device.object_id, entity.sources), *required, *follows})
             )
@@ -67,32 +70,41 @@ def _inputs(
     key: str,
     config: dict[str, Any],
     name: str,
-    referable: dict[str, tuple[Device, str, Platform]],
+    index: Index,
     owned: Mapping[str, str],
 ) -> tuple[dict[str, str], set[str]]:
     """What builder `name` gets in `inputs`, and the unique IDs of what it requires.
 
     A feature: the current entity IDs of what it takes through <capability>_from
-    and of what it refers to. A device key (DEVICE_KEYS): the entity IDs of the
-    scripts and automations the entry generates, by ID: its statistics never
-    watch one it doesn't.
+    and of what it refers to. A builder that Generates: the entity IDs of its
+    scripts or automations the entry owns, by ID: its statistics never watch
+    one the entry doesn't.
     """
-    if name in DEVICE_KEYS:
-        return dict(owned), set()
-    feature = FEATURES[name]
+    feature = catalogue.builders()[name]
+    if (generates := feature.role(Generates)) is not None:
+        return {
+            unique_id: owned[unique_id]
+            for _, unique_id in generates.ids(key, config[name])
+            if unique_id in owned
+        }, set()
     inputs: dict[str, str] = {}
     required: set[str] = set()
-    for capability in feature.requires:
+    if (requires := feature.role(Requires)) is not None:
+        capability = requires.capability
         source = FEATURES[config[name][f"{capability}_from"]]
         provider = Device(key=key, name=config[CONF_NAME], namespace=source.namespace)
-        entity_key = source.provides[capability]
+        provides = source.role(Provides)
+        assert provides is not None  # the schema checked it (capabilities_provided)
+        entity_key = provides.key
         inputs[capability] = provider.current_entity_id(
             hass, source.entity_keys[entity_key], entity_key
         )
         required.add(provider.object_id(entity_key))
-    for reference in feature.refers(config[name]) if feature.refers else ():
-        owner, entity_key, platform = referable[reference]
-        inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
+    refers = feature.role(Refers)
+    for ref in refers.of(config[name]) if refers else ():
+        target = find(index, key, ref)
+        assert target is not None  # the schema checked it (checks.references)
+        inputs[ref.text] = target.current_entity_id(hass)
     return inputs, required
 
 

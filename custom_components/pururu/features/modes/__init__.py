@@ -17,6 +17,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import TEXT, Device, Feature, Item, bounded, finite_float
+from ...core.roles import Items, Requires
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, EnergyTotal, RuntimeTotal
@@ -172,7 +173,8 @@ MODES = Feature(
         },
     },
     namespace="mode",
-    requires=("cycle",),
-    per_item=PER_MODE,
-    items=lambda config: (mode.item for mode in modes_of(config)),
+    roles=(
+        Requires("cycle"),
+        Items(PER_MODE, lambda config: (mode.item for mode in modes_of(config))),
+    ),
 )

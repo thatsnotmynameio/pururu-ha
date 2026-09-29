@@ -66,7 +66,7 @@ class PururuEntity(Entity):
         The name is `name` when given (an entity key from the configuration has
         no translation, even when the base class brings one, as LightGroup's
         "light"), else the translation of the key in its namespace. With `item`,
-        `entity_key` is a suffix (Feature.per_item): the entity key is the
+        `entity_key` is a suffix (roles.Items): the entity key is the
         item's, and its name the suffix's translation, the item's name as the
         placeholder named after the namespace ({mode}).
         """

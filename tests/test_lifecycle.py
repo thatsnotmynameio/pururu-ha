@@ -1,5 +1,6 @@
 """The entry's life: the steps after the platforms, their guard, the listener."""
 
+from typing import Any
 from unittest.mock import patch
 
 from homeassistant.components.lovelace.const import LOVELACE_DATA
@@ -11,12 +12,29 @@ import pytest
 from helpers import DOMAIN, module, setup
 
 SWITCH = {"name": "Piscina", "switches": {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}}
+LIGHT = {"name": "Luzes", "lights": {"teto": {"entity": "light.teto", "name": "Teto"}}}
 
 
 async def test_the_steps_run_in_order(ha: HomeAssistant) -> None:
     """Events, devices, the generated files, Alert2, the alert lights, the dashboard: as the spec's flow says."""
     names = [name for name, _ in module("setup.lifecycle").STEPS]
     assert names == ["events", "devices", "generate", "alert2", "alert lights", "dashboard"]
+
+
+async def test_the_steps_read_the_builders_and_one_index(ha: HomeAssistant) -> None:
+    """Built carries every device's targets and the builders: no step builds them again."""
+    seen: list[Any] = []
+
+    async def step(hass: HomeAssistant, entry: Any, built: Any, targets: set[str]) -> None:
+        seen.append(built)
+
+    lifecycle = module("setup.lifecycle")
+    with patch.object(lifecycle, "STEPS", (("spy", step),)):
+        assert await setup(ha, {"pool": SWITCH, "lights": LIGHT})
+    [built] = seen
+    assert set(built.index) == {"pool", "lights"}
+    assert built.index["pool"]["switch_pump"].builder == "switches"
+    assert built.builders == module("setup.catalogue").builders()
 
 
 async def test_a_step_that_raises_leaves_the_entry_loaded(

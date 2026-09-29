@@ -1,6 +1,6 @@
 """Ready-made alerts: the settings that enable them, and the alerts they build.
 
-A feature offers them (Feature.alerts); its block's `alerts` enables each one
+A feature offers them (roles.Presets); its block's `alerts` enables each one
 with one key, its defaults and texts ready.
 """
 
@@ -14,7 +14,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from ..core.entity import PururuEntity
-from ..core.feature import ALERTS_KEY, PRIORITIES, Device, Feature, Preset
+from ..core.feature import (
+    ALERTS_KEY,
+    PRIORITIES,
+    Device,
+    Feature,
+    Preset,
+    happenings_of,
+    presets_of,
+)
 from ..core.texts import Texts
 from ..core.vocabulary import Condition
 from .alerts import NOTIFY, Alert, lights_group
@@ -67,18 +75,19 @@ def validate(feature: Feature, value: Any, key: str = "") -> Any:
     `key` is the feature's in the device: a ready-made alert that became a
     notification says where it went.
     """
-    if not feature.alerts or not isinstance(value, dict) or ALERTS_KEY not in value:
+    presets = presets_of(feature)
+    if not presets or not isinstance(value, dict) or ALERTS_KEY not in value:
         return feature.schema(value)
     if isinstance(given := value[ALERTS_KEY], dict):
         for name in given:
-            if name in feature.notifications and name not in feature.alerts:
+            if name in happenings_of(feature) and name not in presets:
                 raise vol.Invalid(
                     f"{name} is now a notification: "
                     f"{key or feature.namespace}: notifications: {name}",
                     path=[ALERTS_KEY, name],
                 )
     block = {each: setting for each, setting in value.items() if each != ALERTS_KEY}
-    enabled = vol.Schema({ALERTS_KEY: settings_schema(feature.alerts)})(
+    enabled = vol.Schema({ALERTS_KEY: settings_schema(presets)})(
         {ALERTS_KEY: value[ALERTS_KEY]}
     )
     return {**feature.schema(block), **enabled}
@@ -107,7 +116,7 @@ def build(
     """The block's enabled ready-made alerts, in the feature's namespace."""
     entities: list[PururuEntity] = []
     for name, settings in block.get(ALERTS_KEY, {}).items():
-        preset = feature.alerts[name]
+        preset = presets_of(feature)[name]
         entity_key = f"alert_{name}"
         watched = device.current_entity_id(
             hass, feature.entity_keys[preset.watches], preset.watches

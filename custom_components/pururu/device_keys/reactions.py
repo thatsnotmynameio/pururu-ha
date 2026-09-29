@@ -10,9 +10,10 @@ try skipped once the occurrence ran. Each reaction's triggers are counted:
 sensors of its device (STATISTICS).
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Hashable, Iterator, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+import logging
 from typing import Any, override
 
 import voluptuous as vol
@@ -26,10 +27,18 @@ from homeassistant.const import (
     Platform,
 )
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 
-from ..const import CONF_AUTOMATIONS, CONF_MESSAGE, CONF_NOTIFY, ENTITY_PREFIX
-from ..core import messages
+from ..const import (
+    CONF_AUTOMATIONS,
+    CONF_DEVICES,
+    CONF_MESSAGE,
+    CONF_NOTIFY,
+    CONF_PROGRAMS,
+    CONF_REACTIONS,
+    ENTITY_PREFIX,
+)
+from ..core import generated, messages
 from ..core.entity import PururuEntity
 from ..core.feature import (
     TEXT,
@@ -40,8 +49,13 @@ from ..core.feature import (
     qualified,
     state_text,
 )
-from ..core.generated import Kind, period
+from ..core.generated import Kind, Planned, period
+from ..core.resolve import Index, Ref, Target, find
+from ..core.roles import Generates, Items
 from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
+from . import programs
+
+_LOGGER = logging.getLogger(__name__)
 
 # The namespace of every reaction's automation ID
 NAMESPACE = "reaction"
@@ -423,6 +437,181 @@ STATISTICS = Feature(
     build=build,
     example={"night": {"name": "Night", "at": "22:00"}},
     namespace=NAMESPACE,
-    per_item=PER_REACTION,
-    items=_items,
+    roles=(
+        Items(PER_REACTION, _items),
+        Generates(
+            "reaction",
+            lambda key, config: ((KIND.domain, automation_id(key, r)) for r in config),
+        ),
+    ),
 )
+
+
+def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
+    """Refuse a reaction's `when`, `device` or `then` it can't have (a schema check).
+
+    `when` without `device` names an entity key of the device, and never one of
+    the reaction's own statistics; `device` names a device; `then` one of the
+    device's programs.
+    """
+    devices = house[CONF_DEVICES]
+    for key, device in devices.items():
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
+            if (
+                refused := _refused(index, devices, key, reaction_key, reaction)
+            ) is not None:
+                yield refused
+
+
+def _own_statistic(target: Target | None, key: str, reaction_key: str) -> bool:
+    """Whether it counts this reaction: watching it, the reaction would feed itself."""
+    return (
+        target is not None
+        and target.device.key == key
+        and target.builder == CONF_REACTIONS
+        and target.item == reaction_key
+    )
+
+
+def _refused(
+    index: Index,
+    devices: Mapping[str, Any],
+    key: str,
+    reaction_key: str,
+    reaction: Mapping[str, Any],
+) -> vol.Invalid | None:
+    """Why this reaction can't be, the first reason; None when it can."""
+    path: list[Hashable] = [CONF_DEVICES, key, CONF_REACTIONS, reaction_key]
+    when, other = reaction.get("when"), reaction.get("device")
+    target = None if when is None else find(index, key, Ref(other, when))
+    if other is None and _own_statistic(target, key, reaction_key):
+        return vol.Invalid(
+            f"reactions: {reaction_key}: {when} is its own statistic", path=path
+        )
+    then = reaction.get("then")
+    if then is not None and then not in devices[key].get(CONF_PROGRAMS, {}):
+        return vol.Invalid(
+            f"reactions: {reaction_key}: {then} is not a program of this device",
+            path=path,
+        )
+    if when is None:
+        return None
+    if other is None:
+        if target is None:
+            return vol.Invalid(
+                f"reactions: {reaction_key}: {when} is not an entity key of this device",
+                path=path,
+            )
+        return None
+    where = f"device {key}: reactions: {reaction_key}"
+    if other not in devices:
+        return vol.Invalid(f"{where}: device {other} is not in devices", path=path)
+    if _own_statistic(target, key, reaction_key):
+        return vol.Invalid(f"{where}: {when} is its own statistic", path=path)
+    if target is None:
+        return vol.Invalid(
+            f"{where}: {when} is not an entity key of device {other}", path=path
+        )
+    return None
+
+
+def plan(
+    hass: HomeAssistant,
+    devices: Mapping[str, Any],
+    index: Index,
+    created: Collection[str],
+    scripts: Collection[str],
+    held_scripts: Collection[str],
+    notify: Sequence[str],
+) -> Planned:
+    """An automation per reaction of every device; one that can't work is logged.
+
+    One watching an entity not created, or starting a program whose script
+    isn't generated (`scripts`: the IDs generated), isn't generated; held with
+    its program when that is. `notify` is config's: where a message without its
+    own goes.
+    """
+    registry = er.async_get(hass)
+    automations: list[generated.Item] = []
+    held: set[str] = set()
+    for key, config in devices.items():
+        for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
+            unique_id = automation_id(key, reaction_key)
+            watched, entity_id = _watched(
+                hass, index, key, unique_id, reaction, created
+            )
+            if not watched:
+                continue
+            startable, started = _started(registry, key, unique_id, reaction, scripts)
+            if not startable:
+                if programs.script_id(key, reaction["then"]) in held_scripts:
+                    held.add(unique_id)
+                continue
+            automations.append(
+                generated.Item(
+                    unique_id=unique_id,
+                    config=automation(
+                        key,
+                        config[CONF_NAME],
+                        reaction_key,
+                        reaction,
+                        entity_id,
+                        started,
+                        reaction.get(CONF_NOTIFY, notify),
+                    ),
+                )
+            )
+    return Planned(automations, frozenset(held))
+
+
+def _watched(
+    hass: HomeAssistant,
+    index: Index,
+    key: str,
+    unique_id: str,
+    reaction: Mapping[str, Any],
+    created: Collection[str],
+) -> tuple[bool, str | None]:
+    """Whether the reaction can watch what it names, and the entity ID it watches.
+
+    A pururu entity not created can't be, logged; `at` and `sun` watch none.
+    """
+    if (when := reaction.get("when")) is None:
+        return True, reaction.get("entity")
+    target = find(index, key, Ref(reaction.get("device"), when))
+    assert target is not None  # the schema checked it (check)
+    if target.unique_id not in created:
+        _LOGGER.error(
+            "automation.%s follows %s, which is not created; not generating it",
+            unique_id,
+            target.entity_id(),
+        )
+        return False, None
+    return True, target.current_entity_id(hass)
+
+
+def _started(
+    registry: er.EntityRegistry,
+    key: str,
+    unique_id: str,
+    reaction: Mapping[str, Any],
+    scripts: Collection[str],
+) -> tuple[bool, str | None]:
+    """Whether the reaction can start its program, and its script's current entity ID.
+
+    A script not generated can't be started, logged; without `then`, none is.
+    """
+    if (then := reaction.get("then")) is None:
+        return True, None
+    script = programs.script_id(key, then)
+    if script not in scripts:
+        _LOGGER.error(
+            "automation.%s runs script.%s, which is not generated; not generating it",
+            unique_id,
+            script,
+        )
+        return False, None
+    # Registered by the scripts' sync
+    return True, registry.async_get_entity_id(
+        programs.KIND.domain, programs.KIND.domain, script
+    )

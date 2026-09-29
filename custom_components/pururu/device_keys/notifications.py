@@ -1,7 +1,7 @@
 """Ready-made notifications: what a device's features offer to tell, as automations pururu generates.
 
 A device's `notifications` enables them, by feature and name: each is a
-Happening of the feature (Feature.notifications), told once through HA's notify
+Happening of the feature (roles.Happenings), told once through HA's notify
 actions (messages.py). Each becomes an automation in
 pururu/automations/notifications.yaml, next to the reactions' in the folder
 configuration.yaml includes (generated.py).
@@ -19,8 +19,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ..const import CONF_MESSAGE, CONF_NOTIFICATIONS, CONF_NOTIFY, ENTITY_PREFIX
 from ..core import generated, messages
-from ..core.feature import TEXT, Device, Feature, Happening, qualified
-from ..features import FEATURES
+from ..core.feature import TEXT, Device, Feature, Happening, happenings_of, qualified
 from . import reactions
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,15 +71,15 @@ def schema(
 
 
 def enabled(
-    device: Mapping[str, Any],
+    device: Mapping[str, Any], builders: Mapping[str, Feature]
 ) -> Iterator[tuple[str, Feature, str, Mapping[str, Any]]]:
     """(feature key, feature, name, settings) of each ready-made notification the device's blocks enable.
 
     Only a feature offering them has them: a configured feature (alerts,
     switches) may have an item keyed `notifications`.
     """
-    for key, feature in FEATURES.items():
-        if not feature.notifications or key not in device:
+    for key, feature in builders.items():
+        if not happenings_of(feature) or key not in device:
             continue
         for name, settings in device[key].get(CONF_NOTIFICATIONS, {}).items():
             yield key, feature, name, settings
@@ -114,13 +113,14 @@ def automation(
     }
 
 
-def items(
+def plan(
     hass: HomeAssistant,
+    builders: Mapping[str, Feature],
     devices: Mapping[str, Mapping[str, Any]],
     created: Collection[str],
     texts: Mapping[str, str],
     notify: Sequence[str],
-) -> list[generated.Item]:
+) -> generated.Planned:
     """An automation per enabled notification of every device; one on an entity not created is logged.
 
     `texts` are the common texts in HA's language (its name, its default
@@ -128,11 +128,11 @@ def items(
     """
     found: list[generated.Item] = []
     for key, config in devices.items():
-        for _, feature, notification, settings in enabled(config):
+        for _, feature, notification, settings in enabled(config, builders):
             device = Device(
                 key=key, name=config[CONF_NAME], namespace=feature.namespace
             )
-            happening = feature.notifications[notification]
+            happening = happenings_of(feature)[notification]
             platform = feature.entity_keys[happening.watches]
             unique_id = automation_id(key, feature.namespace, notification)
             if device.object_id(happening.watches) not in created:
@@ -157,4 +157,4 @@ def items(
                     ),
                 )
             )
-    return found
+    return generated.Planned(found)

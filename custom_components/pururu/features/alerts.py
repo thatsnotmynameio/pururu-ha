@@ -33,6 +33,8 @@ from homeassistant.helpers.start import async_at_started
 from ..const import ALERT2, DEFAULT_ALERT_LIGHTS
 from ..core.entity import PururuEntity
 from ..core.feature import PRIORITIES, TEXT, Device, Feature, finite_float, state_text
+from ..core.resolve import Ref
+from ..core.roles import Configured, Refers
 from ..core.vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
@@ -259,9 +261,9 @@ def build(
     ]
 
 
-def _refers(config: dict[str, Any]) -> set[str]:
-    """The entity keys the alerts watch."""
-    return {alert["when"] for alert in config.values()}
+def _refers(config: dict[str, Any]) -> set[Ref]:
+    """The entity keys the alerts watch, on this device."""
+    return {Ref(None, alert["when"]) for alert in config.values()}
 
 
 ALERTS = Feature(
@@ -270,6 +272,5 @@ ALERTS = Feature(
     build=build,
     example={"too_long": {"name": "Too long", "when": "appliance_running", "is": "on"}},
     namespace="alert",
-    configured=Platform.BINARY_SENSOR,
-    refers=_refers,
+    roles=(Configured(Platform.BINARY_SENSOR), Refers(_refers)),
 )

@@ -20,6 +20,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Build, Device, Feature
+from ...core.roles import Provides
 from .. import standing
 from ..cycle.last import LastCycleDescription, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
@@ -146,7 +147,7 @@ def _opening(namespace: str, device_class: BinarySensorDeviceClass) -> Feature:
         build=_builder(device_class),
         example={"contact": f"binary_sensor.demo_{namespace}_contact"},
         namespace=namespace,
-        provides={"cycle": "open"},
+        roles=(Provides("cycle", "open"),),
     )
 
 

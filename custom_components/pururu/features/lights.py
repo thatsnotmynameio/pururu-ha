@@ -30,6 +30,7 @@ from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature
+from ..core.roles import Actions, Configured
 from . import standing
 
 _LOGGER = logging.getLogger(__name__)
@@ -219,6 +220,5 @@ LIGHTS = Feature(
     build=build,
     example={"ceiling": {"entity": "light.demo_ceiling", "name": "Ceiling"}},
     namespace="light",
-    configured=Platform.LIGHT,
-    actions=("turn_on", "turn_off", "toggle"),
+    roles=(Configured(Platform.LIGHT), Actions(("turn_on", "turn_off", "toggle"))),
 )

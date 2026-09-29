@@ -1,7 +1,7 @@
 """What a device and a feature are: the contract every module in features/ fulfils."""
 
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import timedelta
 import math
 from typing import TYPE_CHECKING, Any
@@ -14,9 +14,11 @@ from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..const import DOMAIN, ENTITY_PREFIX
+from .roles import Happenings, Presets, Role
 from .vocabulary import Condition
 
-if TYPE_CHECKING:  # entity.py imports Device from here
+# entity.py imports Device from here
+if TYPE_CHECKING:
     from .entity import PururuEntity
 
 
@@ -66,7 +68,7 @@ def qualified(namespace: str, entity_key: str) -> str:
 
 @dataclass(frozen=True, kw_only=True)
 class Item:
-    """An item of a feature's block with entity keys of its own (Feature.per_item): a mode."""
+    """An item of a feature's block with entity keys of its own (roles.Items): a mode."""
 
     slug: str
     name: str
@@ -147,6 +149,16 @@ class Preset:
 ALERTS_KEY = "alerts"
 
 
+def presets_of(feature: Feature) -> Mapping[str, Preset]:
+    """The ready-made alerts the builder offers; none without Presets."""
+    return role.offered if (role := feature.role(Presets)) else {}
+
+
+def happenings_of(feature: Feature) -> Mapping[str, Happening]:
+    """The ready-made notifications the builder offers; none without Happenings."""
+    return role.offered if (role := feature.role(Happenings)) else {}
+
+
 def preset_keys(presets: Mapping[str, Preset]) -> dict[str, Platform]:
     """The entity keys of a feature's ready-made alerts: alert_<name>, binary sensors."""
     return {f"alert_{name}": Platform.BINARY_SENSOR for name in presets}
@@ -185,31 +197,9 @@ class Feature:
     example: Mapping[str, Any]
     # Every entity key it creates is in it, so no two features' entity IDs meet
     namespace: str
-    # capability -> the entity key whose entity carries it; others take it with <capability>_from
-    provides: Mapping[str, str] = field(default_factory=dict)
-    # capabilities it takes through <capability>_from: build() gets their current
-    # entity IDs, and its entities aren't created when those entities aren't
-    requires: tuple[str, ...] = ()
-    # Its entity keys are the keys of its block, all on this platform, named by
-    # their block's `name`; None: they are entity_keys, named by the translations
-    configured: Platform | None = None
-    # Entity keys of other features of the device, in their namespace
-    # (appliance_running), that its validated block names: validated against the
-    # device, and build() gets their current entity IDs in `inputs`, by that key
-    refers: Callable[[Any], Iterable[str]] | None = None
-    # Services its entities take, on their own platform (turn_on → switch.turn_on
-    # for a switch): a program's step can call them (programs.py)
-    actions: tuple[str, ...] = ()
-    # Entity keys repeated for every item of its block: suffix -> platform. An
-    # item's entity key is <slug>_<suffix>, named by the suffix's translation
-    # with the item's name as the placeholder named after the namespace ({mode})
-    per_item: Mapping[str, Platform] = field(default_factory=dict)
-    # The items of its validated block, when it has per_item
-    items: Callable[[Any], Iterable[Item]] | None = None
-    # Ready-made alerts it offers, by name: each enabled one is the entity key
-    # alert_<name> (put preset_keys in entity_keys), enabled in its block's
-    # `alerts` (presets.validate)
-    alerts: Mapping[str, Preset] = field(default_factory=dict)
-    # Ready-made notifications it offers, by name: each enabled one, in the
-    # device's `notifications`, is an automation (notifications.py)
-    notifications: Mapping[str, Happening] = field(default_factory=dict)
+    # What it is beyond these fields (roles.py), asked for by type
+    roles: tuple[Role, ...] = ()
+
+    def role[R: Role](self, kind: type[R]) -> R | None:
+        """Its role of that type, if it has one."""
+        return next((each for each in self.roles if isinstance(each, kind)), None)

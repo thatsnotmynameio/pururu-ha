@@ -15,6 +15,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Device, Feature, finite_float, preset_keys
+from ...core.roles import Happenings, Presets, Provides
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal
@@ -126,7 +127,5 @@ APPLIANCE = Feature(
         },
     },
     namespace="appliance",
-    provides={"cycle": "running"},
-    alerts=PRESETS,
-    notifications=HAPPENINGS,
+    roles=(Provides("cycle", "running"), Presets(PRESETS), Happenings(HAPPENINGS)),
 )

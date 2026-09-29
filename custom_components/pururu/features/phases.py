@@ -24,6 +24,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from ..core.entity import PururuEntity, reading
 from ..core.feature import Device, Feature, bounded, finite_float
+from ..core.roles import Requires
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -260,5 +261,5 @@ PHASES = Feature(
         "bands": {"heating": {"above": 1000}},
     },
     namespace="phase",
-    requires=("cycle",),
+    roles=(Requires("cycle"),),
 )
