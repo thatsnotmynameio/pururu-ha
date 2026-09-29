@@ -105,7 +105,7 @@ def _device(value: Any) -> dict[str, Any]:
         vol.Optional(CONF_PROGRAMS): programs.SCHEMA,
         vol.Optional(CONF_NOTIFICATIONS): notifications.validate,
         **{
-            vol.Optional(name): partial(presets.validate, feature)
+            vol.Optional(name): partial(presets.validate, feature, key=name)
             for name, feature in FEATURES.items()
         },
     }

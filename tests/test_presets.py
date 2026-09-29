@@ -34,8 +34,7 @@ def devices(enabled: Any, **device: Any) -> dict[str, Any]:
                               "notify": {"message": "m", "done_message": "d"}}}, id="all set"),
     pytest.param({"long_cycle": {"for": {"hours": 3}}}, id="required for"),
     pytest.param({"no_cycle": {"for": {"days": 2}}}, id="no_cycle"),
-    pytest.param({"finished": None, "no_power": None}, id="finished and no_power"),
-    pytest.param({"finished": {"lasts": {"minutes": 30}}}, id="lasts"),
+    pytest.param({"no_power": None}, id="no_power"),
 ])
 async def test_valid_alerts_are_accepted(ha: HomeAssistant, alerts: Any) -> None:
     assert await setup(ha, devices(alerts))
@@ -43,12 +42,10 @@ async def test_valid_alerts_are_accepted(ha: HomeAssistant, alerts: Any) -> None
 
 @pytest.mark.parametrize(("alerts", "reason"), [
     pytest.param({"nope": None}, "nope is not a ready-made alert: offline, no_power, "
-                 "long_cycle, no_cycle, finished", id="unknown alert"),
+                 "long_cycle, no_cycle", id="unknown alert"),
     pytest.param({"long_cycle": None}, "required key 'for' not provided", id="for missing"),
     pytest.param({"offline": {"lasts": {"minutes": 1}}}, "'lasts' is an invalid option",
                  id="lasts on offline"),
-    pytest.param({"finished": {"for": {"minutes": 1}}}, "'for' is an invalid option",
-                 id="for on finished"),
     pytest.param({"offline": {"priority": "urgent"}}, "value must be one of",
                  id="unknown priority"),
     pytest.param({"offline": {"notify": {"message": "m"}}}, "required key 'done_message'",
@@ -60,6 +57,13 @@ async def test_invalid_alerts_are_refused(ha: HomeAssistant, caplog: pytest.LogC
                                           alerts: Any, reason: str) -> None:
     assert not await setup(ha, devices(alerts))
     assert reason in caplog.text
+
+
+async def test_finished_as_an_alert_says_where_it_went(ha: HomeAssistant,
+                                                      caplog: pytest.LogCaptureFixture) -> None:
+    """Upgrading from 0.1.21 with appliance: alerts: finished: the error says what to write."""
+    assert not await setup(ha, devices({"offline": None, "finished": {"lasts": {"minutes": 30}}}))
+    assert "finished is now a notification: notifications: appliance: finished" in caplog.text
 
 
 async def test_a_hand_written_alert_cannot_watch_a_ready_made_one(
@@ -266,57 +270,15 @@ async def test_no_cycle_counts_across_a_restart(ha: HomeAssistant, freezer: Any)
     assert state(ha, alert("no_cycle")) == "on"
 
 
-async def test_finished_turns_on_at_the_end_and_off_after_lasts(
-        ha: HomeAssistant, freezer: Any) -> None:
-    await idle(ha, freezer, {"finished": {"lasts": {"minutes": 30}}})
-    assert state(ha, alert("finished")) == "off"
-    await start_cycle(ha, freezer)
-    await end_cycle(ha, freezer)
-    assert state(ha, alert("finished")) == "on"
-    await tick(ha, freezer, 1799)
-    assert state(ha, alert("finished")) == "on"
-    await tick(ha, freezer, 1)
-    assert state(ha, alert("finished")) == "off"
-
-
-async def test_finished_turns_off_when_a_new_cycle_starts(ha: HomeAssistant, freezer: Any) -> None:
-    await idle(ha, freezer, {"finished": None})
-    await start_cycle(ha, freezer)
-    await end_cycle(ha, freezer)
-    await start_cycle(ha, freezer)
-    assert state(ha, alert("finished")) == "off"
-
-
-async def test_finished_still_turns_off_at_lasts_without_a_reading(
-        ha: HomeAssistant, freezer: Any) -> None:
-    """Its end is a known time: losing running's reading mustn't keep it on."""
-    await idle(ha, freezer, {"finished": {"lasts": {"minutes": 30}}})
-    await start_cycle(ha, freezer)
-    await end_cycle(ha, freezer)
-    assert state(ha, alert("finished")) == "on"
-    await fake(ha, RUNNING, "unavailable")
-    await tick(ha, freezer, 1799)
-    assert state(ha, alert("finished")) == "on"
-    await tick(ha, freezer, 1)
-    assert state(ha, alert("finished")) == "off"
-
-
-async def test_a_plug_reconnecting_is_no_finished_cycle(ha: HomeAssistant, freezer: Any) -> None:
-    await idle(ha, freezer, {"finished": None})
-    ha.states.async_set(RUNNING, "unavailable")
-    await fake(ha, RUNNING, "off")
-    assert state(ha, alert("finished")) == "off"
-
-
 async def test_time_alerts_watch_running_and_are_alert2_alerts(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices({"finished": None}))
-    found = ha.states.get(alert("finished"))
+    assert await setup(ha, devices({"no_cycle": {"for": {"days": 2}}}))
+    found = ha.states.get(alert("no_cycle"))
     assert found.attributes["watches"] == RUNNING
-    assert found.attributes["priority"] == "low"
-    assert found.attributes["message"] == "The cycle finished."
+    assert found.attributes["priority"] == "medium"
+    assert found.attributes["message"] == "It hasn't run in a while."
     path = Path(ha.config.path("pururu/alert2/alerts.yaml"))
     [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert entry["name"] == "demo_washer_appliance_alert_finished"
+    assert entry["name"] == "demo_washer_appliance_alert_no_cycle"
 
 
 async def test_no_cycle_does_not_flicker_at_a_reload(ha: HomeAssistant, freezer: Any) -> None:

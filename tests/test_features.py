@@ -172,7 +172,7 @@ def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
             for translations in (en, pt):
                 assert translations["common"][f"{key}_message"], key
                 assert translations["common"][f"{key}_done_message"], key
-            settings[alert] = {} if preset.hold is not None or preset.lasts else {"for": {"hours": 1}}
+            settings[alert] = {} if preset.hold is not None else {"for": {"hours": 1}}
         validate = module("features.presets").validate
         validate(feature, {**feature.example, "alerts": settings})
         with pytest.raises(vol.Invalid):

@@ -171,7 +171,7 @@ class Condition:
 
 @dataclass(frozen=True, kw_only=True)
 class Elapsed:
-    """On while the watched entity is `state` and the time since a milestone is in [for, for + lasts).
+    """On while the watched entity is `state` and the time since a milestone is longer than `for`.
 
     The milestone is the state (a datetime) of `since_key`, an entity key of the
     feature, or the watched entity's attribute `since_attribute`: exactly one.
@@ -192,10 +192,8 @@ class Preset:
     watches: str
     kind: Condition | Elapsed
     priority: str
-    # The default `for`; None: the user gives it. An alert with `lasts` takes no `for`
+    # The default `for`; None: the user gives it
     hold: timedelta | None
-    # How long it stays on after its milestone; the user may change it
-    lasts: timedelta | None = None
 
 
 # The key of a feature's block that enables its ready-made alerts

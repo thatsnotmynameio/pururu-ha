@@ -9,7 +9,6 @@
       "appliance_alert_no_power": {"default": "mdi:flash-off-outline"},
       "appliance_alert_long_cycle": {"default": "mdi:timer-alert-outline"},
       "appliance_alert_no_cycle": {"default": "mdi:sleep"},
-      "appliance_alert_finished": {"default": "mdi:check-circle-outline"},
       "door_open": {"default": "mdi:door-closed", "state": {"on": "mdi:door-open"}},
       "window_open": {"default": "mdi:window-closed", "state": {"on": "mdi:window-open"}}
     },

@@ -22,14 +22,12 @@ from .elapsed import ElapsedAlert
 
 
 def _settings(preset: Preset) -> vol.Schema:
-    """What one alert takes: for (or lasts), priority, notify."""
-    timing: dict[Any, Any]
-    if preset.lasts is not None:
-        timing = {vol.Optional("lasts", default=preset.lasts): cv.positive_time_period}
-    elif preset.hold is None:
-        timing = {vol.Required("for"): cv.positive_time_period}
-    else:
-        timing = {vol.Optional("for", default=preset.hold): cv.positive_time_period}
+    """What one alert takes: for, priority, notify, lights."""
+    timing: dict[Any, Any] = (
+        {vol.Required("for"): cv.positive_time_period}
+        if preset.hold is None
+        else {vol.Optional("for", default=preset.hold): cv.positive_time_period}
+    )
     return vol.Schema(
         {
             **timing,
@@ -63,11 +61,23 @@ def settings_schema(
     return validate
 
 
-def validate(feature: Feature, value: Any) -> Any:
-    """A feature's block: its schema, and `alerts` when it offers ready-made alerts."""
+def validate(feature: Feature, value: Any, key: str = "") -> Any:
+    """A feature's block: its schema, and `alerts` when it offers ready-made alerts.
+
+    `key` is the feature's in the device: a ready-made alert that became a
+    notification says where it went.
+    """
     if not feature.alerts or not isinstance(value, dict) or ALERTS_KEY not in value:
         return feature.schema(value)
-    block = {key: each for key, each in value.items() if key != ALERTS_KEY}
+    if isinstance(given := value[ALERTS_KEY], dict):
+        for name in given:
+            if name in feature.notifications and name not in feature.alerts:
+                raise vol.Invalid(
+                    f"{name} is now a notification: notifications: "
+                    f"{key or feature.namespace}: {name}",
+                    path=[ALERTS_KEY, name],
+                )
+    block = {each: setting for each, setting in value.items() if each != ALERTS_KEY}
     enabled = vol.Schema({ALERTS_KEY: settings_schema(feature.alerts)})(
         {ALERTS_KEY: value[ALERTS_KEY]}
     )
@@ -153,7 +163,6 @@ def build(
                 milestone=milestone,
                 elapsed=kind,
                 hold=settings.get("for", preset.hold or timedelta(0)),
-                lasts=settings.get("lasts"),
                 priority=settings["priority"],
                 notify=notify,
                 sources=(
