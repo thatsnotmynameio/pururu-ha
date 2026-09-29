@@ -18,13 +18,11 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.util.hass_dict import HassKey
 
 from . import files
-from .const import DOMAIN, ENTITY_PREFIX
+from .const import ALERT2, DOMAIN, ENTITY_PREFIX
 from .messages import escaped
 
 _LOGGER = logging.getLogger(__name__)
 
-# Alert2 (HACS) delivers what an alert's notify says
-ALERT2 = "alert2"
 # Relative to HA's configuration folder, as the alert2: block's include names it
 FOLDER = "pururu/alert2"
 FILE = f"{FOLDER}/alerts.yaml"

@@ -48,9 +48,10 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.util.color import color_name_to_rgb
 
 from .const import CONF_ALERTS, CONF_CONFIG, CONF_LIGHTS, EVENT_ALERT_LIGHTS_RELEASED
-from .feature import NO_READING, Device
-from .features.alerts import PRIORITIES, ProblemAlert
+from .feature import PRIORITIES, Device
+from .features.alerts import ProblemAlert
 from .features.lights import LIGHTS, Borrowable
+from .vocabulary import NO_READING
 
 _LOGGER = logging.getLogger(__name__)
 

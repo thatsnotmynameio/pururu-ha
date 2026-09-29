@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 import voluptuous as vol
 
-from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntryState
 from homeassistant.const import (
     ATTR_FRIENDLY_NAME,
     ATTR_RESTORED,
@@ -77,10 +77,10 @@ from .feature import ALERTS_KEY, Device, Feature, preset_keys, qualified
 from .features import FEATURES, presets
 from .features.alerts import ProblemAlert
 from .features.lights import Borrowable
+from .runtime import PururuConfigEntry
+from .texts import Texts, async_texts
 
 _LOGGER = logging.getLogger(__name__)
-
-type PururuConfigEntry = ConfigEntry[dict[Platform, list[Entity]]]
 
 # Everything that builds entities of a device: its features, then the device keys
 # creating some (their statistics). Only FEATURES count as a device's feature. A
@@ -578,7 +578,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     built: dict[Platform, list[Entity]] = {platform: [] for platform in PLATFORMS}
     # Each device's created entities: an entity's key comes from the device that built it
     created_by: dict[str, list[Entity]] = {key: [] for key in devices}
-    texts = await presets.async_texts(hass)
+    texts = await async_texts(hass)
     owned = _owned(hass, entry, devices)
     for key, config in devices.items():
         for entity in _creatable(
@@ -773,7 +773,7 @@ def _build(
     hass: HomeAssistant,
     key: str,
     config: dict[str, Any],
-    texts: presets.Texts,
+    texts: Texts,
     owned: Mapping[str, str],
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.

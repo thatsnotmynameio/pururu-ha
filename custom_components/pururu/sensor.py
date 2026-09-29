@@ -4,7 +4,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import PururuConfigEntry
+from .runtime import PururuConfigEntry
 
 # Nothing polls: every entity reacts to state changes and timers
 PARALLEL_UPDATES = 0

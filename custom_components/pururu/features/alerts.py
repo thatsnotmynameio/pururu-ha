@@ -30,14 +30,12 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.start import async_at_started
 
-from ..alert2_alerts import ALERT2
-from ..const import DEFAULT_ALERT_LIGHTS
+from ..const import ALERT2, DEFAULT_ALERT_LIGHTS
 from ..entity import PururuEntity
-from ..feature import TEXT, Condition, Device, Feature, finite_float, state_text
+from ..feature import PRIORITIES, TEXT, Device, Feature, finite_float, state_text
+from ..vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
-
-PRIORITIES = ("low", "medium", "high")
 
 
 def _state(value: Any) -> str | float:

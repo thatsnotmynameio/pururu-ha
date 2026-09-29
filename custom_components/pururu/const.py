@@ -30,6 +30,8 @@ CONF_AUTOMATIONS: Final = "automations"
 CONF_PROGRAMS: Final = "programs"
 # The key of the entry's data holding the IDs of the scripts it generated
 CONF_SCRIPTS: Final = "scripts"
+# Alert2 (HACS) delivers what an alert's notify says
+ALERT2: Final = "alert2"
 # Every entity ID is <platform>.pururu_<device key>_<namespace>_<entity key>
 ENTITY_PREFIX: Final = "pururu"
 PLATFORMS: Final = [
