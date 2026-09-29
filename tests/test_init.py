@@ -113,7 +113,7 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             build=lambda hass, device, config, inputs: [Seen(device, config["of"],
                                                              inputs[config["of"]])],
             example={"of": "gauge_level"},
-            roles=(roles.Refers(lambda config: [config["of"]]),),
+            roles=(roles.Refers(lambda config: [module("core.resolve").Ref(None, config["of"])]),),
         ),
     }
     features.update(added)

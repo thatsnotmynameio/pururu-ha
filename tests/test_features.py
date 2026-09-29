@@ -73,8 +73,8 @@ def test_refers_names_entity_keys_as_in_an_entity_id(features: dict[str, Any]) -
     """What a feature refers to is a qualified entity key, such as appliance_running: a slug."""
     for name, feature in features.items():
         if (refers := role(feature, "Refers")) is not None:
-            for key in refers.refers(feature.schema(dict(feature.example))):
-                assert cv.slug(key) == key, name
+            for ref in refers.refers(feature.schema(dict(feature.example))):
+                assert cv.slug(ref.key) == ref.key, name
 
 
 def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> None:

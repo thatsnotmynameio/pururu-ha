@@ -8,6 +8,7 @@ from homeassistant.const import Platform
 
 if TYPE_CHECKING:  # feature.py imports this module
     from .feature import Happening, Item, Preset
+    from .resolve import Ref
 
 
 @dataclass(frozen=True)
@@ -56,13 +57,13 @@ class Items:
 
 @dataclass(frozen=True)
 class Refers:
-    """Entity keys of other features of the device its validated block names.
+    """Entity keys of other features its validated block names.
 
     Validated against the device; build() gets their current entity IDs in
-    `inputs`, by that key.
+    `inputs`, by each reference as written (Ref.text).
     """
 
-    refers: Callable[[Any], Iterable[str]]
+    refers: Callable[[Any], Iterable[Ref]]
 
 
 @dataclass(frozen=True)

@@ -5,8 +5,6 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_NAME
-
 from ..const import (
     CONF_ALERTS,
     CONF_AREA,
@@ -20,19 +18,12 @@ from ..const import (
     CONF_REACTIONS,
     DEFAULT_ALERT_LIGHTS,
 )
-from ..core.feature import (
-    ALERTS_KEY,
-    Device,
-    Feature,
-    preset_keys,
-    presets_of,
-    qualified,
-)
+from ..core.feature import ALERTS_KEY, Feature, preset_keys, presets_of, qualified
 from ..core.roles import Actions, Configured, Provides, Refers, Requires
 from ..device_keys import notifications, programs, reactions
 from ..features import FEATURES
 from ..outputs import alert_lights
-from .catalogue import builders, entity_keys, referable
+from .catalogue import builders, keys, targets
 
 
 def capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
@@ -74,12 +65,12 @@ def references_resolved(device: dict[str, Any], names: list[str]) -> None:
     # Every entity key the device can create, in its namespace -> its feature
     owners = {
         qualified(builders()[name].namespace, entity_key): name
-        for name, entity_key, _ in entity_keys(device)
+        for name, entity_key, *_ in keys(device)
     }
     for name in names:
         if (refers := FEATURES[name].role(Refers)) is None:
             continue
-        for key in refers.refers(device[name]):
+        for key in (ref.key for ref in refers.refers(device[name])):
             if owners.get(key, name) == name:
                 raise vol.Invalid(
                     f"{name}: {key} is not an entity key of another feature "
@@ -97,7 +88,7 @@ def no_alert_watches_an_alert(device: dict[str, Any], names: list[str]) -> None:
         for name in names
         for alert in preset_keys(presets_of(FEATURES[name]))
     }
-    for key in refers.refers(device[CONF_ALERTS]):
+    for key in (ref.key for ref in refers.refers(device[CONF_ALERTS])):
         if key in ready_made:
             raise vol.Invalid(
                 f"{CONF_ALERTS}: {key} is an alert: an alert can't watch another"
@@ -118,9 +109,9 @@ def reactions_on_this_device(device: dict[str, Any]) -> None:
     `when` without `device` names an entity key of the device, and `then` one of
     its programs.
     """
-    keys = {
+    own = {
         qualified(builders()[name].namespace, entity_key)
-        for name, entity_key, _ in entity_keys(device)
+        for name, entity_key, *_ in keys(device)
     }
     for key, reaction in device.get(CONF_REACTIONS, {}).items():
         if "device" not in reaction and reaction.get("when") in _own_statistics(key):
@@ -134,7 +125,7 @@ def reactions_on_this_device(device: dict[str, Any]) -> None:
             )
         if "device" in reaction or (when := reaction.get("when")) is None:
             continue
-        if when not in keys:
+        if when not in own:
             raise vol.Invalid(
                 f"reactions: {key}: {when} is not an entity key of this device"
             )
@@ -144,7 +135,7 @@ def programs_on_this_device(device: dict[str, Any]) -> None:
     """Refuse a step on what isn't a feature's entity key of the device taking its action."""
     owners = {
         qualified(builders()[name].namespace, entity_key): name
-        for name, entity_key, _ in entity_keys(device)
+        for name, entity_key, *_ in keys(device)
     }
     for program in device.get(CONF_PROGRAMS, {}).values():
         for action, key in programs.targets(program):
@@ -175,11 +166,8 @@ def entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     """
     owners: dict[str, str] = {}  # object ID -> the device that has it
     for key, device in config[CONF_DEVICES].items():
-        for name, entity_key, _ in entity_keys(device):
-            identity = Device(
-                key=key, name=device[CONF_NAME], namespace=builders()[name].namespace
-            )
-            object_id = identity.object_id(entity_key)
+        for target in targets(key, device).values():
+            object_id = target.unique_id
             if object_id in owners:
                 raise vol.Invalid(
                     f"device {key}: {object_id} is already an entity of device "
@@ -251,7 +239,7 @@ def _reaction_resolved(
         raise vol.Invalid(f"{where}: device {other} is not in devices")
     if other == key and reaction["when"] in _own_statistics(reaction_key):
         raise vol.Invalid(f"{where}: {reaction['when']} is its own statistic")
-    if reaction["when"] not in referable(other, devices[other]):
+    if reaction["when"] not in targets(other, devices[other]):
         raise vol.Invalid(
             f"{where}: {reaction['when']} is not an entity key of device {other}"
         )

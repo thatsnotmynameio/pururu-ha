@@ -4,7 +4,7 @@ from collections.abc import Mapping
 import logging
 from typing import Any
 
-from homeassistant.const import CONF_NAME, Platform
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
@@ -12,6 +12,7 @@ from homeassistant.helpers.entity import Entity
 from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
 from ..core.feature import Device, presets_of
+from ..core.resolve import Target
 from ..core.roles import Provides, Refers, Requires
 from ..core.texts import Texts
 from ..device_keys import DEVICE_KEYS
@@ -36,14 +37,14 @@ def build(
     settings may never build it, and then only this names it. `owned` are the
     entity IDs of the scripts and automations the entry generates, by ID.
     """
-    referable = catalogue.referable(key, config)
+    found = catalogue.targets(key, config)
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
     for name, feature in catalogue.builders().items():
         if name not in config:
             continue
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
-        inputs, required = _inputs(hass, key, config, name, referable, owned)
+        inputs, required = _inputs(hass, key, config, name, found, owned)
         # Only a feature offering ready-made alerts has them: a program or a
         # reaction may be keyed `alerts`
         ready_made = (
@@ -54,9 +55,9 @@ def build(
         for entity in (*feature.build(hass, device, config[name], inputs), *ready_made):
             follows = set()
             for reference in entity.follows:
-                owner, entity_key, platform = referable[reference]
-                follows.add(unique_id := owner.object_id(entity_key))
-                watched[unique_id] = owner.current_entity_id(hass, platform, entity_key)
+                target = found[reference]
+                follows.add(target.unique_id)
+                watched[target.unique_id] = target.current_entity_id(hass)
             built.append(
                 (entity, {*map(device.object_id, entity.sources), *required, *follows})
             )
@@ -68,7 +69,7 @@ def _inputs(
     key: str,
     config: dict[str, Any],
     name: str,
-    referable: dict[str, tuple[Device, str, Platform]],
+    found: Mapping[str, Target],
     owned: Mapping[str, str],
 ) -> tuple[dict[str, str], set[str]]:
     """What builder `name` gets in `inputs`, and the unique IDs of what it requires.
@@ -95,9 +96,8 @@ def _inputs(
         )
         required.add(provider.object_id(entity_key))
     refers = feature.role(Refers)
-    for reference in refers.refers(config[name]) if refers else ():
-        owner, entity_key, platform = referable[reference]
-        inputs[reference] = owner.current_entity_id(hass, platform, entity_key)
+    for ref in refers.refers(config[name]) if refers else ():
+        inputs[ref.text] = found[ref.key].current_entity_id(hass)
     return inputs, required
 
 

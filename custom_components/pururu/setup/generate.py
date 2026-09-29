@@ -1,10 +1,10 @@
 """The scripts and automations the entry generates: what each holds, and what it watches."""
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 import logging
 from typing import Any, Literal
 
-from homeassistant.const import CONF_NAME, Platform
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -17,7 +17,7 @@ from ..const import (
     CONF_REACTIONS,
 )
 from ..core import generated
-from ..core.feature import Device
+from ..core.resolve import Target
 from ..core.runtime import Built, PururuConfigEntry
 from ..device_keys import notifications, programs, reactions
 from . import catalogue
@@ -75,12 +75,10 @@ def scripts(
     held: set[str] = set()
     targets: set[str] = set()
     for key, config in devices.items():
-        referable = catalogue.referable(key, config)
+        found = catalogue.targets(key, config)
         for program_key, program in config.get(CONF_PROGRAMS, {}).items():
             script_id = programs.script_id(key, program_key)
-            entity_ids = _acted_on(
-                hass, registry, referable, script_id, program, created
-            )
+            entity_ids = _acted_on(hass, registry, found, script_id, program, created)
             if entity_ids == "held":
                 held.add(script_id)
                 continue
@@ -102,7 +100,7 @@ def scripts(
 def _acted_on(
     hass: HomeAssistant,
     registry: er.EntityRegistry,
-    referable: dict[str, tuple[Device, str, Platform]],
+    found: Mapping[str, Target],
     script_id: str,
     program: dict[str, Any],
     created: set[str],
@@ -118,9 +116,9 @@ def _acted_on(
     """
     entity_ids: dict[str, str] = {}
     for _, key in programs.targets(program):
-        owner, entity_key, platform = referable[key]
-        entity_id = owner.current_entity_id(hass, platform, entity_key)
-        if owner.object_id(entity_key) not in created:
+        target = found[key]
+        entity_id = target.current_entity_id(hass)
+        if target.unique_id not in created:
             _LOGGER.error(
                 "script.%s follows %s, which is not created; not generating it",
                 script_id,
@@ -205,17 +203,15 @@ def _watched(
     if (when := reaction.get("when")) is None:
         return True, reaction.get("entity")
     owner_key = reaction.get("device", key)
-    owner, entity_key, platform = catalogue.referable(owner_key, devices[owner_key])[
-        when
-    ]
-    if owner.object_id(entity_key) not in created:
+    target = catalogue.targets(owner_key, devices[owner_key])[when]
+    if target.unique_id not in created:
         _LOGGER.error(
             "automation.%s follows %s, which is not created; not generating it",
             automation_id,
-            owner.entity_id(platform, entity_key),
+            target.entity_id(),
         )
         return False, None
-    return True, owner.current_entity_id(hass, platform, entity_key)
+    return True, target.current_entity_id(hass)
 
 
 def _started(
