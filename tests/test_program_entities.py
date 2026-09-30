@@ -481,20 +481,61 @@ async def test_a_disabled_carrier_leaves_the_phases_idle(detecting: HomeAssistan
     assert detecting.states.get(CURRENT).attributes["running"] == []
 
 
-async def test_an_entry_failing_after_its_platforms_still_runs_the_carrier(
-        detecting: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The setup raises once the platforms are added: the entry is SETUP_ERROR, HA keeps the entities, and the carrier follows the reading."""
-    entries = detecting.config_entries
+def forward_then_fail(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The setup raises once the platforms are added."""
+    entries = hass.config_entries
     forward = entries.async_forward_entry_setups
 
-    async def forward_then_fail(entry: Any, platforms: Any) -> None:
+    async def forwarded(entry: Any, platforms: Any) -> None:
         await forward(entry, platforms)
         raise RuntimeError("after the platforms")
 
-    monkeypatch.setattr(entries, "async_forward_entry_setups", forward_then_fail)
-    assert await setup(detecting, DEVICES)
-    [entry] = entries.async_entries("pururu")
+    monkeypatch.setattr(entries, "async_forward_entry_setups", forwarded)
+
+
+async def test_an_entry_failing_after_its_platforms_drops_the_waiting_carrier(
+        detecting: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The platforms unloaded: the carrier, removed while it waits, never starts; a reload brings it back, following the reading."""
+    started: list[Any] = []
+    carrier = module("features.cycle.program.entities").Carrier
+    start = carrier._start
+
+    def spy(self: Any) -> None:
+        started.append(self)
+        start(self)
+
+    monkeypatch.setattr(carrier, "_start", spy)
+    with monkeypatch.context() as failing:
+        forward_then_fail(detecting, failing)
+        assert await setup(detecting, DEVICES)
+    [entry] = detecting.config_entries.async_entries("pururu")
     assert entry.state is ConfigEntryState.SETUP_ERROR
+    removed = detecting.states.get(RUNNING)
+    assert removed is not None
+    assert removed.state == "unavailable"
+    assert removed.attributes["restored"]  # HA's placeholder: the entity is gone
+    assert not started
+    await reload(detecting, DEVICES)
+    assert started
+    assert entry.state is ConfigEntryState.LOADED
+    assert state(detecting, RUNNING) == "off"
+    await cool(detecting, freezer)
+
+
+async def test_an_entry_failing_after_its_platforms_kept_still_runs_the_carrier(
+        detecting: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture) -> None:
+    """The platforms not unloaded either: SETUP_ERROR, HA keeps the entities, and the carrier follows the reading."""
+    forward_then_fail(detecting, monkeypatch)
+
+    async def not_unloaded(entry: Any, platforms: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(detecting.config_entries, "async_unload_platforms", not_unloaded)
+    assert await setup(detecting, DEVICES)
+    [entry] = detecting.config_entries.async_entries("pururu")
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert "Unloading the platforms of a failed setup failed" in caplog.text
     assert state(detecting, RUNNING) == "off"
     await cool(detecting, freezer)
 

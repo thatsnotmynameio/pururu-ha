@@ -138,9 +138,10 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
 
         A step at add could end a restored phase before its entities listen
         (on this platform, added after the carrier; on another, maybe not
-        added yet), and its cycle would be lost. Over whatever it gave: HA
-        keeps the entities of an entry that failed after its platforms
-        (SETUP_ERROR), and removing them unsubscribes the wait.
+        added yet), and its cycle would be lost. Over whatever it gave: a
+        setup failing after its platforms unloads them, and removing the
+        carrier unsubscribes the wait; if that unload fails too, HA keeps the
+        entities of the SETUP_ERROR entry, and the carrier runs them.
         """
         await super().async_added_to_hass()
         if (extra := await self.async_get_last_extra_data()) is not None:

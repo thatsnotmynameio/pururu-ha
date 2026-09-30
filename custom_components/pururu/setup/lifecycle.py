@@ -103,7 +103,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     after them: their alerts and lights are created. The dashboard comes last:
     it shows them all. The events are set up once the entities are added: they
     fire their changes. The registry listener comes after the steps, guarded
-    as one.
+    as one. Before the steps, a failure from the platforms on unloads them,
+    then raises: the entry is SETUP_ERROR without them, and a reload sets it
+    up again.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -128,35 +130,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
             entities[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
             created_by[key].append(entity)
     entry.runtime_data = entities
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # Once added, each entity has its current ID, renamed in the UI or not
-    built = Built(
-        house=configured,
-        builders=catalogue.builders(),
-        index=index,
-        texts=texts,
-        entities={platform: tuple(each) for platform, each in entities.items()},
-        by_device={key: tuple(each) for key, each in created_by.items()},
-        created=frozenset(
-            str(entity.unique_id) for each in entities.values() for entity in each
-        ),
-    )
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Once added, each entity has its current ID, renamed in the UI or not
+        built = Built(
+            house=configured,
+            builders=catalogue.builders(),
+            index=index,
+            texts=texts,
+            entities={platform: tuple(each) for platform, each in entities.items()},
+            by_device={key: tuple(each) for key, each in created_by.items()},
+            created=frozenset(
+                str(entity.unique_id) for each in entities.values() for entity in each
+            ),
+        )
+    except Exception:
+        # HA unloads a non-loaded entry without async_unload_entry: platforms
+        # left set up would refuse the entry at every reload
+        await _async_unload_platforms(hass, entry)
+        raise
     targets: set[str] = set()
     for name, step in STEPS:
         try:
             await step(hass, entry, built, targets)
         except Exception:
-            # Failing after the platforms would leave the entry stuck until a
-            # restart: HA unloads a non-loaded entry without async_unload_entry
+            # Guarded, not raised: the entry stays loaded with its entities
             _LOGGER.exception("Step %s failed", name)
     try:
         listener.async_listen(
             hass, entry, (generated.SCRIPTS, generated.AUTOMATIONS), targets
         )
     except Exception:
-        # Guarded as a step: its failure would leave the entry stuck too
+        # Guarded as a step
         _LOGGER.exception("Listener failed")
     return True
+
+
+async def _async_unload_platforms(
+    hass: HomeAssistant, entry: PururuConfigEntry
+) -> None:
+    """Take back the platforms of a setup that failed after forwarding them; never raises.
+
+    HA unloads each platform on its own, so a partial forward is fine: a
+    platform HA never loaded counts as unloaded; one loaded without the
+    entry is logged by HA and counts as not unloaded.
+    """
+    try:
+        unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    except Exception:
+        _LOGGER.exception("Unloading the platforms of a failed setup failed")
+        return
+    if not unloaded:
+        _LOGGER.error("Unloading the platforms of a failed setup failed")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bool:
