@@ -96,7 +96,7 @@ A phase's key is a slug. `idle` (the state while none runs) and `other` (the bui
 | Entity | What it is |
 |---|---|
 | `binary_sensor.pururu_<key>_appliance_running` | The program: on while the appliance runs (see [`appliance`](/features/appliance#entities)) |
-| `sensor.pururu_<key>_appliance_phase_current` | The running phase that started last, or `idle`. Device class `enum`. Attributes: `name` (the shown phase's `name`; `other`'s is translated, "Other phase"; none while `idle`), `running` (the running phases, in the configuration's order) and `seen` (the phases of the current or last cycle, `other` included, cleared when a cycle starts) |
+| `sensor.pururu_<key>_appliance_phase_current` | The running phase that started last, or `idle`. Device class `enum`. Attributes: `name` (a configured phase's `name`; none for `idle` and `other`, whose state is translated), `running` (the running phases, in the configuration's order) and `seen` (the phases of the current or last cycle, `other` included, cleared when a cycle starts) |
 | `sensor.pururu_<key>_appliance_phase_last` | The phase of the last phase cycle that ended; `enum`, kept across restarts, `unknown` until the first |
 | `binary_sensor.pururu_<key>_appliance_phase_<phase>` | On while the phase runs, named by its `name` (`other`: "Other phase"). Attributes `cycle_start`, and `cycle_end` while its `off_delay` runs |
 | `sensor.pururu_<key>_appliance_phase_<phase>_last_cycle_start`, `_end`, `_duration`, `_energy` | The phase's last cycle, as the appliance's own (`_end` written last; `_energy` *with `energy`*) |

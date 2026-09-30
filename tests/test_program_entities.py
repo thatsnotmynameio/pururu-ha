@@ -297,10 +297,10 @@ async def test_other_is_a_phase_with_its_entities(purifier: HomeAssistant, freez
     assert state(purifier, LAST) == "other"
 
 
-@pytest.mark.parametrize(("language", "other"), [("en", "Other phase"), ("pt-BR", "Outra fase")])
+@pytest.mark.parametrize("language", ["en", "pt-BR"])
 async def test_the_current_phase_names_its_phase(
-        ha: HomeAssistant, freezer: Any, language: str, other: str) -> None:
-    """Its `name` attribute: a configured phase's `name` in every language, other's translation, none while idle."""
+        ha: HomeAssistant, freezer: Any, language: str) -> None:
+    """Its `name` attribute: a configured phase's `name` in every language; none for idle and other, whose state is translated."""
     ha.config.language = language
     assert await setup(ha, DEVICES)
     await watts(ha, IDLE_W)
@@ -314,7 +314,7 @@ async def test_the_current_phase_names_its_phase(
     assert named() == ("resfriar", "Resfriar")
     await watts(ha, 300)
     await tick(ha, freezer, 35)
-    assert named() == ("other", other)
+    assert named() == ("other", None)
     await watts(ha, 1000)
     await tick(ha, freezer, 10)
     assert named() == ("quente", "Água quente")

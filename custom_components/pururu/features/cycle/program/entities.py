@@ -314,12 +314,11 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
     """The phase that started last among those running, or idle; its name, and those running and seen, as attributes.
 
     Its state is the phase's key, translated only for idle and other; its
-    `name` attribute is the phase's as its binary sensor shows it: a
-    configured phase's `name`, other's translation, none while idle. Until the
-    carrier restored the detector (another platform may add it first), it
-    shows its own restored state and attributes, named as that phase is now. A
-    disabled carrier never runs the detector: it shows idle, as every phase
-    shows off.
+    `name` attribute is a configured phase's `name`, None for idle and other
+    (their state is translated already). Until the carrier restored the
+    detector (another platform may add it first), it shows its own restored
+    state and attributes, named as that phase is now. A disabled carrier
+    never runs the detector: it shows idle, as every phase shows off.
     """
 
     _attr_device_class = SensorDeviceClass.ENUM
@@ -333,7 +332,7 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
         self._carrier = carrier
         phases = carrier.detector.program.phases
         self._phases = [phase.key for phase in phases]
-        # other's name is its translation's, read once added (`_name`)
+        # Only a configured phase's: idle's and other's state is translated already
         self._names = {phase.key: phase.name for phase in phases if not phase.other}
         self._options = [IDLE, *self._phases]
         self._attr_options = self._options
@@ -357,15 +356,7 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
         else:
             detector = self._carrier.detector
             phases = {"running": detector.running, "seen": detector.seen}
-        return {"name": self._name(self.native_value), **phases}
-
-    def _name(self, key: str) -> str | None:
-        """Phase `key`'s name: a configured phase's own, other's translation (none without one), none for idle."""
-        if key == OTHER:
-            return self.platform_data.platform_translations.get(
-                f"component.{DOMAIN}.entity.{Platform.BINARY_SENSOR}.{PHASE}_{OTHER}.name"
-            )
-        return self._names.get(key)
+        return {"name": self._names.get(self.native_value), **phases}
 
     @override
     async def async_added_to_hass(self) -> None:
