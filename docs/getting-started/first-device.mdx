@@ -13,16 +13,16 @@ This tutorial turns a washing machine on a smart plug into a pururu device. Each
 
 ## Step 1: when is it running?
 
-pururu decides that the washer is running from the plug's power. Above a **threshold** it's running, and at or below it, it's not. Two delays keep that decision steady:
+pururu decides that the washer is running from the plug's power: above `above` it's running, and at or below it, it's not. Two delays keep that decision steady:
 
-- **`on_delay`**: how long the power must stay above the threshold before a cycle starts. It ignores short spikes, such as the display waking up when you press a button.
-- **`off_delay`**: how long the power must stay at or below the threshold before the cycle ends. It carries the cycle through pauses, such as when the drum rests or clothes soak between phases.
+- **`on_delay`**: how long the power must stay above `above` before a cycle starts. It ignores short spikes, such as the display waking up when you press a button.
+- **`off_delay`**: how long the power must stay at or below `above` before the cycle ends. It carries the cycle through pauses, such as when the drum rests or clothes soak between phases.
 
 ### Picking the numbers
 
 Open the plug's power sensor in **History** and look at a full wash:
 
-1. **Threshold**: find what the washer draws while it's idle or off, often 0 to 2 W. Then find the lowest it draws while working, outside the pauses. Pick a number between the two. A few watts above standby is usually right.
+1. **`above`**: find what the washer draws while it's idle or off, often 0 to 2 W. Then find the lowest it draws while working, outside the pauses. Pick a number between the two. A few watts above standby is usually right.
 2. **`on_delay`**: longer than any spike you see while the washer is idle. One minute is a safe start.
 3. **`off_delay`**: longer than the longest pause in the middle of a wash. A pause longer than `off_delay` ends the cycle early, and the rest of the wash then starts a second one. If your washer soaks for 5 minutes, use 6 or more.
 
@@ -89,7 +89,7 @@ Each period restarts on its own: `today` at midnight, `week` on Monday, `month` 
 
 ## Step 3: the phase of the wash
 
-A washer draws very different power as it works. Warming the water takes a lot, wringing takes some, and tumbling takes little. The [`phases`](/features/phases) feature turns those levels into a named phase:
+A washer draws very different power as it works. Warming the water takes a lot, wringing takes some, and tumbling takes little. `running_program`'s **phases** turn those levels into a named phase of the cycle:
 
 ```yaml title="configuration.yaml"
 pururu:
@@ -106,24 +106,17 @@ pururu:
           statistics:
             runtime: [week, month]
             cycles: [month, year]
-      phases:
-        cycle_from: appliance         # follow the cycle of this device's appliance feature
-        sensor: sensor.washer_plug_power
-        defaults:
-          stopped: idle               # the phase when no cycle runs
-          running: soaking            # the phase in a cycle when no band holds
-        bands:
-          warming: {above: 1000}
-          wringing: {above: 50, below: 1000, for: {minutes: 3}}
+          phases:
+            warming: {name: Aquecendo, above: 1000}
+            wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
 ```
 
-- `cycle_from: appliance` says whose cycle to follow: this device's `appliance` feature. Phases only change while that cycle runs.
-- Each **band** is a range of the sensor's value. `warming` holds as soon as the power goes above 1000 W. `wringing` holds once the power has stayed between 50 and 1000 W for 3 minutes.
-- When several bands hold, **the first one listed wins**. When none holds, the phase is `running`'s default, `soaking`.
+- Each **phase** is a band of the same power sensor. `warming` holds as soon as the power goes above 1000 W. `wringing` holds once the power has stayed between 50 and 1000 W for 3 minutes (`on_delay`, as the program's own).
+- **Bands may overlap**, and when both hold at once, both phases run: nothing picks a winner. When neither holds, the phase is `other`, the built-in phase for the program's band outside every one you named. Outside a cycle, the phase is `idle`.
 
-You now have `sensor.pururu_clothes_washer_phase_current`. It shows `idle` outside a cycle and `soaking`, `warming` or `wringing` during one. Its `seen` attribute lists the bands the current (or last) cycle went through.
+You now have `sensor.pururu_clothes_washer_appliance_phase_current`. It shows `idle` outside a cycle, `warming` or `wringing` while one of those holds, and `other` in between. Its `seen` attribute lists the phases the current (or last) cycle went through, and `binary_sensor.pururu_clothes_washer_appliance_phase_warming` is on while `warming` runs.
 
-Watch a wash in **History** and tune the bands to your machine. Any name works: `idle` is translated, and a name the translations don't know, such as `soaking`, is shown as written.
+Watch a wash in **History** and tune the bands to your machine. [Detected programs and phases](/concepts/detected-programs) covers overlapping bands, dips and idle gaps in full.
 
 ## Step 4: put it in a room
 
@@ -153,15 +146,9 @@ pururu:
           statistics:
             runtime: [week, month]
             cycles: [month, year]
-      phases:
-        cycle_from: appliance
-        sensor: sensor.washer_plug_power
-        defaults:
-          stopped: idle
-          running: soaking
-        bands:
-          warming: {above: 1000}
-          wringing: {above: 50, below: 1000, for: {minutes: 3}}
+          phases:
+            warming: {name: Aquecendo, above: 1000}
+            wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
 ```
 
 After a reload, Home Assistant has a floor **Térreo** with the ID `terreo`, and an area **Despensa** with the ID `despensa` on it. The washer is in that area.
@@ -218,6 +205,6 @@ A **Tanquinho** device in the **Despensa** area. It knows when it runs, which ph
 
 Next:
 
-- [`appliance`](/features/appliance) and [`phases`](/features/phases) list every setting and entity.
+- [`appliance`](/features/appliance) lists every setting and entity; [Detected programs and phases](/concepts/detected-programs) covers `running_program` in full.
 - [Devices and features](/concepts/devices-and-features) explains how a device is put together.
 - [Troubleshooting](/reference/troubleshooting) covers what to do when something doesn't appear.

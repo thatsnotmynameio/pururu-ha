@@ -9,12 +9,15 @@ pururu reports problems in **Settings → System → Logs**, under the **Pururu*
 
 The configuration is probably invalid. Home Assistant logs the reason as `Invalid config for 'pururu'`, and pururu keeps everything as it was. Common causes:
 
-- A typo in a key, such as `floor:` for `floors:` or `treshold:` for `threshold:`.
+- A typo in a key, such as `floor:` for `floors:` or `running:` for `running_program:` (an old key is `extra keys not allowed`).
 - A key that isn't a slug, such as `Laundry Washer:` instead of `clothes_washer:`.
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
 - A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
-- `cycle_from` naming a feature that isn't on the same device.
-- A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
+- A `running_program` with a `name` (`running_program takes no name: it is the appliance running`), or with neither `above` nor `below` (`a program needs above, below or both`).
+- A phase without `name`, keyed `idle` or `other` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's, `other`'s or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
+- `other:` without `phases` (`other is the program outside every phase: it needs phases`).
+- Two entities of one device with one unique ID, such as a phase's key and another phase's meter (`device clothes_washer: pururu_clothes_washer_appliance_phase_resfriar_cycles_today would be two entities`).
+- `statistics.energy` on a phase without the appliance's `energy` (`statistics.energy needs energy`).
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
 - A door or window whose `contact` isn't a `binary_sensor.*` entity (`sensor.x is not a binary_sensor`) or is a pururu binary sensor (`binary_sensor.pururu_… is a pururu binary_sensor: name the real one`); an event whose `entity` isn't an `event.*` entity, whose `types` is empty or means something other than `opening`, `denied` or `ring`, or whose `fields` names something other than `who`, `how` or `direction`.
 - A light whose `entity` isn't a `light.*` or `switch.*` entity (`sensor.x is not a light or switch`), is a pururu light or switch, or has no `name` or an empty one.
@@ -95,7 +98,7 @@ Another integration's entity, or an entity without a unique ID, already has that
 ### `… follows …, which is not created; not creating it`
 
 ```
-sensor.pururu_clothes_washer_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it
+sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it
 ```
 
 This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. A [program](/concepts/programs) acting on a switch that isn't created isn't created either.
@@ -221,8 +224,8 @@ Turning a borrowed light on or off failed: its integration refused the call. Fol
 ### The cycle ends too early, or never starts
 
 - **Ends in the middle of a wash:** the appliance paused for longer than `off_delay`. Increase `off_delay`.
-- **Never starts:** the power never stays above `threshold` for `on_delay`. Check the power sensor's history, and lower the threshold or shorten `on_delay`.
-- **Starts on its own:** standby spikes last longer than `on_delay`, or the threshold is below the standby power.
+- **Never starts:** the power never stays above `above` for `on_delay`. Check the power sensor's history, and lower `above` or shorten `on_delay`.
+- **Starts on its own:** standby spikes last longer than `on_delay`, or `above` is below the standby power.
 
 See [Picking the numbers](/getting-started/first-device#picking-the-numbers).
 

@@ -34,13 +34,9 @@ pururu:
           off_delay: {minutes: 2}
           statistics:
             cycles: [month]
-      phases:
-        cycle_from: appliance
-        sensor: sensor.washer_plug_power
-        defaults: {stopped: idle, running: soaking}
-        bands:
-          warming: {above: 1000}
-          wringing: {above: 50, below: 1000, for: {minutes: 3}}
+          phases:
+            warming: {name: Aquecendo, above: 1000}
+            wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
 ```
 
 and you get a device called **Tanquinho** with these entities:
@@ -48,7 +44,7 @@ and you get a device called **Tanquinho** with these entities:
 | Entity | What it tells you |
 |---|---|
 | `binary_sensor.pururu_clothes_washer_appliance_running` | Whether the washer is running a cycle right now |
-| `sensor.pururu_clothes_washer_phase_current` | `idle`, `soaking`, `warming` or `wringing` |
+| `sensor.pururu_clothes_washer_appliance_phase_current` | `idle`, `warming`, `wringing` or `other` |
 | `sensor.pururu_clothes_washer_appliance_last_cycle_end` | When the last wash finished: trigger your "laundry is done" automation on it |
 | `sensor.pururu_clothes_washer_appliance_last_cycle_duration` | How long it took, in minutes |
 | `sensor.pururu_clothes_washer_appliance_last_cycle_energy` | How much energy it used, in kWh |
@@ -60,7 +56,7 @@ Change the YAML, reload, and the device follows.
 ## What pururu creates
 
 - **Floors and areas**, with the IDs you choose. See [Floors and areas](/concepts/floors-and-areas).
-- **Devices**, each one a name plus one or more **features**. A feature is a ready-made piece of behaviour, such as [`appliance`](/features/appliance) (an appliance on a power-measuring plug), [`phases`](/features/phases) (which phase its cycle is in), [`switches`](/features/switches) (real switches inside the device) or [`lights`](/features/lights) (real lights inside the device). See [Devices and features](/concepts/devices-and-features).
+- **Devices**, each one a name plus one or more **features**. A feature is a ready-made piece of behaviour, such as [`appliance`](/features/appliance) (an appliance on a power-measuring plug, its phases part of it), [`door`](/features/door) or [`window`](/features/window) (from a contact sensor), [`switches`](/features/switches) (real switches inside the device) or [`lights`](/features/lights) (real lights inside the device). See [Devices and features](/concepts/devices-and-features).
 - **Entities** inside each device, with predictable IDs. See [Entity IDs](/concepts/entity-ids).
 - **A dashboard** in the sidebar that lists what pururu manages. See [Dashboard](/concepts/dashboard).
 

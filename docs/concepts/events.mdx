@@ -21,7 +21,7 @@ pururu:
 
 | Class | Event type | Which changes |
 |---|---|---|
-| `state_changed` | `pururu_state_changed` | Entities **without** a `state_class`: facts such as `running`, a mode, a phase, an alert, a door, `last_opened_by`, the last cycle's values, switches, lights. |
+| `state_changed` | `pururu_state_changed` | Entities **without** a `state_class`: facts such as `running`, a phase, an alert, a door, `last_opened_by`, the last cycle's values, switches, lights. |
 | `reading` | `pururu_reading` | Entities **with** a `state_class`: series such as the power and energy mirrors, totals and per-period meters. They can change every few seconds. |
 
 `events` lists the classes to fire, each once. Leave it out (the default) and pururu fires nothing. A class you don't list is never fired. **Developer tools → YAML → Pururu** applies a change.
@@ -67,7 +67,7 @@ A change is fired when the state itself changes. pururu doesn't fire:
 | `event_class` | `state_changed` or `reading`, since a webhook gets the data without the event type. |
 | `entity_id` | The entity's current ID. |
 | `device`, `device_name` | The device's key and its `name`. |
-| `key` | The entity key, as it ends the entity ID pururu creates: `appliance_running`, `mode_warming_cycles_total`. It stays the same when you rename the entity. |
+| `key` | The entity key, as it ends the entity ID pururu creates: `appliance_running`, `appliance_phase_warming_cycles_total`. It stays the same when you rename the entity. |
 | `old`, `new` | The states, as Home Assistant's text. |
 | `time` | When the state changed. |
 | `attributes` | The new state's attributes, as JSON: a time is ISO text. |

@@ -3,6 +3,8 @@ title: Programs
 description: Sequences of actions on a device's own entities, each one a Home Assistant script.
 ---
 
+These are programs pururu **runs**, things a device knows how to do. The ones it **tells** from a reading, such as an appliance running or a wash's phases, are [Detected programs](/concepts/detected-programs).
+
 `programs` gives a device things it knows how to do, such as a greenhouse's cleaning: turn the sprinkler on, wait two hours, turn it off. pururu writes each program as a Home Assistant **script**, and Home Assistant runs it. Its steps act on that device's own entities only.
 
 ```yaml

@@ -18,10 +18,9 @@ Every entity pururu creates has the ID
 
 | Feature or device key | Namespace | Example |
 |---|---|---|
-| [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_clothes_washer_appliance_running` |
+| [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_clothes_washer_appliance_running`, `sensor.pururu_clothes_washer_appliance_phase_warming_cycles_total` |
 | [`door`](/features/door) | `door` | `binary_sensor.pururu_porta_cercado_frente_door_open` |
 | [`window`](/features/window) | `window` | `binary_sensor.pururu_janela_quarto_window_open` |
-| [`phases`](/features/phases) | `phase` | `sensor.pururu_clothes_washer_phase_current` |
 | [`lights`](/features/lights) | `light` | `light.pururu_biblioteca_light_teto` |
 | [`switches`](/features/switches) | `switch` | `switch.pururu_greenhouse_switch_sprinkler` |
 | [`alerts`](/concepts/alerts) | `alert` | `binary_sensor.pururu_clothes_washer_alert_long_cycle` |
@@ -49,7 +48,7 @@ A [switch](/features/switches)'s, a [light](/features/lights)'s, or an [alert](/
 You can change an entity ID in the UI, as with any entity. pururu handles it this way:
 
 - The entity **stays in its device** and keeps its history.
-- Everything that reads it **follows the new ID**. For example, `phases` reads `running`, and a monthly counter reads its total. pururu reloads itself when you rename one of its entities, so this happens straight away.
+- Everything that reads it **follows the new ID**. For example, a phase's runtime reads its binary sensor, and a monthly counter reads its total. pururu reloads itself when you rename one of its entities, so this happens straight away.
 - The rename **survives restarts and reloads**. pururu finds the entity by its unique ID, not by its ID.
 
 <Info>
@@ -62,7 +61,7 @@ pururu **never** creates an entity whose ID already belongs to someone else, whe
 
 1. The log shows an error: `sensor.pururu_clothes_washer_appliance_power is already taken by the template integration; not creating it`.
 2. The entity isn't created.
-3. Anything that depends on it isn't created either, each with its own error: `… follows …, which is not created; not creating it`. For example, if `running` can't be created, the whole cycle goes with it: the last cycle sensors, the counters and `phase`.
+3. Anything that depends on it isn't created either, each with its own error: `… follows …, which is not created; not creating it`. For example, if `running` can't be created, the whole cycle goes with it: the last cycle sensors, the counters and the phases.
 
 The rest of the device is still created. To fix it, free the ID (rename or delete the other entity) and reload pururu.
 

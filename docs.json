@@ -28,6 +28,7 @@
         { "title": "Floors and areas", "href": "/concepts/floors-and-areas" },
         { "title": "Reactions", "href": "/concepts/reactions" },
         { "title": "Notifications", "href": "/concepts/notifications" },
+        { "title": "Detected programs", "href": "/concepts/detected-programs" },
         { "title": "Programs", "href": "/concepts/programs" },
         { "title": "Statistics", "href": "/concepts/statistics" },
         { "title": "Alerts", "href": "/concepts/alerts" },
@@ -44,8 +45,6 @@
         { "title": "door", "href": "/features/door" },
         { "title": "window", "href": "/features/window" },
         { "title": "lights", "href": "/features/lights" },
-        { "title": "phases", "href": "/features/phases" },
-        { "title": "modes", "href": "/features/modes" },
         { "title": "switches", "href": "/features/switches" }
       ]
     },
