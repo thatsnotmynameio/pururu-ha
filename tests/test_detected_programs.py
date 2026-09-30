@@ -390,8 +390,9 @@ def test_a_key_a_later_setting_would_create_is_refused_now(
     match, path = refusal(key)
     assert match == f"^{re.escape(f'{key} {message}')}"
     for running, detected in (now, later):
+        config = house(running, {**detected, key: PLAIN})
         with pytest.raises(vol.Invalid, match=match) as refused:
-            schema(house(running, {**detected, key: PLAIN}))
+            schema(config)
         assert path in paths(refused.value)
 
 
@@ -406,14 +407,44 @@ def test_a_key_a_later_setting_would_create_is_refused_now(
 def test_a_key_a_later_setting_creates_is_listed_already(ha: HomeAssistant, key: str) -> None:
     """Every other key a setting adds is listed whatever the settings (catalogue.keys): refused already, as two entities."""
     schema = module("setup.schema").CONFIG_SCHEMA
+    config = house({}, {"cotton": PLAIN, key: PLAIN})
     with pytest.raises(vol.Invalid, match="would be two entities"):
-        schema(house({}, {"cotton": PLAIN, key: PLAIN}))
+        schema(config)
 
 
 @pytest.mark.parametrize("key", ["phases", "phaser", "cotton_phases", "rinse_phase", "rinse_phase_warming"])
 def test_a_key_no_phase_can_take_passes(ha: HomeAssistant, key: str) -> None:
     """Only phase[_…] and a present program's <program>_phase[_…] are reserved; rinse is no program here."""
     module("setup.schema").CONFIG_SCHEMA(house(PHASES, {"cotton": PHASED_ONLY, key: PLAIN}))
+
+
+# The refusal of a phase keyed as the built-in other's keys begin
+OTHERS = "is reserved for the built-in phase other (other, other_…): name the phase otherwise"
+
+
+@pytest.mark.parametrize(("of", "key"), [
+    pytest.param(None, "other_cycles_today", id="the running program's phase, as other's cycles today"),
+    pytest.param(None, "other_energy_month", id="the running program's phase, as other's energy this month"),
+    pytest.param("cotton", "other_runtime_week", id="cotton's phase, as its other's runtime this week"),
+])
+def test_a_phase_key_other_would_take_later_is_refused_now(ha: HomeAssistant, of: str | None, key: str) -> None:
+    """A phase keyed as one of other's meters is refused before `other:` is set.
+
+    other's meters are listed only once `other:` is written: were the key
+    accepted without it, writing `other:` would refuse the configuration then
+    (… would be two entities).
+    """
+    schema = module("setup.schema").CONFIG_SCHEMA
+    phases = {"phases": {"warming": WARMING, key: WARMING}}
+    where = (["running_program"] if of is None else ["programs", "detected", of]) + ["phases", key]
+    for other in ({}, {"other": {}}):
+        if of is None:
+            config = house({**phases, **other}, {"cotton": PLAIN})
+        else:
+            config = house({}, {of: {**PLAIN, **phases, **other}})
+        with pytest.raises(vol.Invalid, match=f"^{re.escape(f'{key} {OTHERS}')}") as refused:
+            schema(config)
+        assert [DOMAIN, "devices", KEY, "appliance", *where] in paths(refused.value)
 
 
 # --- its phases ---------------------------------------------------------------------

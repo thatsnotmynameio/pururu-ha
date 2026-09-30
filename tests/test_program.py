@@ -6,6 +6,7 @@ later (see washer()): the same cycles, starts and ends.
 """
 
 import csv
+import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -105,13 +106,29 @@ def test_invalid_program_is_refused(ha: HomeAssistant, block: dict[str, Any]) ->
         schema(block)
 
 
-def test_a_phase_creating_one_of_others_is_the_one_named(ha: HomeAssistant) -> None:
-    """The user's key is the culprit, not the built-in other."""
+# The refusal of a phase keyed as the built-in other's keys begin
+OTHERS = "is reserved for the built-in phase other (other, other_…): name the phase otherwise"
+
+
+@pytest.mark.parametrize("key", [
+    "other",
+    # One of other's cycle entities, and of its meters (listed only once `other:` is set)
+    "other_cycles_total", "other_cycles_today", "other_runtime_week", "other_energy_month",
+])
+def test_a_phase_keyed_as_others_keys_begin_is_the_one_named(ha: HomeAssistant, key: str) -> None:
+    """The user's key is the culprit, not the built-in other: refused whether `other:` is set or not."""
     schema = module("features.cycle.program").SCHEMA
-    block = {**PROGRAM, "phases": {"other_cycles_total": RESFRIAR}}
-    with pytest.raises(vol.Invalid, match="phase other_cycles_total would create "
-                                          "phase_other_cycles_total, phase other's"):
-        schema(block)
+    for block in ({**PROGRAM, "phases": {key: RESFRIAR}},
+                  {**PROGRAM, "phases": {key: RESFRIAR}, "other": {}}):
+        with pytest.raises(vol.Invalid, match=f"^{re.escape(f'{key} {OTHERS}')}") as refused:
+            schema(block)
+        assert refused.value.path == ["phases", key]
+
+
+@pytest.mark.parametrize("key", ["others", "another", "heat_other", "idle_heat", "current_heat"])
+def test_a_phase_key_other_cannot_take_passes(ha: HomeAssistant, key: str) -> None:
+    """Only other and other_… are other's; idle creates no entity; the detector's own keys are current and last."""
+    module("features.cycle.program").SCHEMA({**PROGRAM, "phases": {key: RESFRIAR}, "other": {}})
 
 
 def test_a_program_takes_what_the_spec_says(ha: HomeAssistant) -> None:

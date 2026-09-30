@@ -187,22 +187,32 @@ def keys_of(config: Mapping[str, Any], of: str | None = None) -> dict[str, Platf
 
 
 def _reserved(phases: dict[str, Any]) -> dict[str, Any]:
-    """Refuse idle (the current phase while none runs) and other (the built-in phase) as keys."""
-    for key in (IDLE, OTHER):
-        if key in phases:
+    """Refuse idle (the current phase while none runs), and other or other_… (the built-in phase's).
+
+    A phase keyed other_… meets other's keys: its cycle entities (listed with
+    the first phase), and its meters (listed only once `other:` is written).
+    Were only today's refused, writing `other:` would refuse the configuration
+    then; so the whole form is other's, the user's key the one named.
+    """
+    if IDLE in phases:
+        raise vol.Invalid(f"{IDLE} is a reserved phase key: name the phase otherwise")
+    for key in phases:
+        if key == OTHER or key.startswith(f"{OTHER}_"):
             raise vol.Invalid(
-                f"{key} is a reserved phase key: name the phase otherwise"
+                f"{key} is reserved for the built-in phase {OTHER} "
+                f"({OTHER}, {OTHER}_…): name the phase otherwise",
+                path=[key],
             )
     return phases
 
 
 def _apart(phases: dict[str, Any]) -> dict[str, Any]:
-    """Refuse a phase whose entity key another phase, other or the detector already creates.
+    """Refuse a phase whose entity key another phase or the detector already creates.
 
-    other's keys are claimed first: a configured phase colliding with them is the one named.
+    other's can't meet a configured phase's: other and other_… are refused before (_reserved).
     """
     owners = dict.fromkeys(FIXED, "")
-    for key in (OTHER, *phases):
+    for key in phases:
         for entity_key in phase_keys(key):
             owner = owners.setdefault(entity_key, key)
             if owner != key:
