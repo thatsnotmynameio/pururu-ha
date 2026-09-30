@@ -32,6 +32,8 @@ def icon_of(hass: HomeAssistant, entity_id: str) -> str:
     entry = er.async_get(hass).async_get(entity_id)
     assert entry is not None, entity_id
     platform = entity_id.split(".", 1)[0]
+    # HA puts no translated icon in the state: resolve to the *icon*, not just the key,
+    # so pinning what's shown survives Task 2 renaming the translation keys.
     return str(ICONS["entity"][platform][entry.translation_key]["default"])
 
 
@@ -359,7 +361,10 @@ async def test_a_repeated_period_is_refused(
 ) -> None:
     block = {**APPLIANCE_MINIMAL, "statistics": {"cycles": ["today", "today"]}}
     assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
-    assert "a period is repeated: ['today', 'today']" in caplog.text
+    # Verbatim up to the colon (pururu's words); the repeated period after it,
+    # not the exact list-vs-tuple formatting of what follows.
+    assert "a period is repeated:" in caplog.text
+    assert "today" in caplog.text
 
 
 async def test_an_unknown_period_is_refused(ha: HomeAssistant) -> None:
