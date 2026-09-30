@@ -31,6 +31,8 @@ def build(
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
+    A builder's own entities, then its ready-made alerts', then those of the
+    aspects it offers (the meters of its totals), all in its namespace.
     Each feature sees the device in its own namespace; what it takes through
     <capability>_from, or refers to, is in the owning feature's. Also the
     entity ID of each entity some entity watches (`follows`), by unique ID: the
@@ -53,7 +55,16 @@ def build(
             if presets_of(feature)
             else []
         )
-        for entity in (*feature.build(hass, device, config[name], inputs), *ready_made):
+        aspects = (
+            entity
+            for aspect in catalogue.aspects_of(feature)
+            for entity in aspect.build(hass, device, feature, config[name], texts)
+        )
+        for entity in (
+            *feature.build(hass, device, config[name], inputs),
+            *ready_made,
+            *aspects,
+        ):
             follows = set()
             for reference in entity.follows:
                 target = found[reference]

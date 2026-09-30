@@ -92,6 +92,15 @@ async def test_a_when_of_no_entity_key_names_it(
             in caplog.text)
 
 
+async def test_an_alert_may_watch_a_meter(ha: HomeAssistant) -> None:
+    """A meter the statistics aspect adds is another feature's entity key: an alert watches it."""
+    long_day = {"name": "Long day", "when": "appliance_runtime_today", "above": 5}
+    metered = {**APPLIANCE, "statistics": {"runtime": ["today"]}}
+    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": metered,
+                                  "alerts": {"long_day": long_day}}})
+    assert ha.states.get(alert("long_day")) is not None
+
+
 NOTIFY = {"message": "Overload!", "done_message": "Back to normal."}
 NOTIFY_PATH = "pururu->devices->demo_washer->alerts->overload->notify"
 

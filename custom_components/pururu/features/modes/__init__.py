@@ -17,23 +17,19 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import TEXT, Device, Feature, Item, bounded, finite_float
-from ...core.roles import Items, Requires
+from ...core.roles import Counters, Items, Requires
 from ..cycle.last import LAST_CYCLE, LastCycleValue
-from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, EnergyTotal, RuntimeTotal
 from .current import IDLE, Current, Mode
 from .last import Last
 
-COUNTERS = ("runtime", "cycles", "energy")
+# Every mode's totals, <slug>_<counter>_total; the statistics aspect meters
+# them, `statistics:` in the block and the meters per mode. Energy needs `energy`
+COUNTERS = Counters({"runtime": None, "cycles": None, "energy": "energy"})
 # Every mode's entity keys: <slug>_<suffix>
 PER_MODE: dict[str, Platform] = {
     **{description.key: Platform.SENSOR for description in LAST_CYCLE},
-    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS},
-    **{
-        f"{counter}_{period}": Platform.SENSOR
-        for counter in COUNTERS
-        for period in PERIODS
-    },
+    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS.needs},
 }
 
 
@@ -58,12 +54,6 @@ def _apart(modes: dict[str, Any]) -> dict[str, Any]:
     return modes
 
 
-def _energy_counted(config: dict[str, Any]) -> dict[str, Any]:
-    if config["statistics"]["energy"] and "energy" not in config:
-        raise vol.Invalid("statistics.energy needs energy")
-    return config
-
-
 MODE = vol.All(
     vol.Schema(
         {
@@ -76,26 +66,16 @@ MODE = vol.All(
     ),
     bounded("mode"),
 )
-SCHEMA = vol.All(
-    vol.Schema(
-        {
-            vol.Required("cycle_from"): cv.slug,
-            vol.Required("sensor"): cv.entity_id,
-            vol.Optional("energy"): cv.entity_id,
-            # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
-            vol.Required("modes"): vol.All(
-                vol.Schema({cv.slug: MODE}), vol.Length(min=1), _not_idle, _apart
-            ),
-            vol.Optional("statistics", default={}): vol.Schema(
-                {
-                    vol.Optional("runtime", default=[]): PERIOD_LIST,
-                    vol.Optional("cycles", default=[]): PERIOD_LIST,
-                    vol.Optional("energy", default=[]): PERIOD_LIST,
-                }
-            ),
-        }
-    ),
-    _energy_counted,
+SCHEMA = vol.Schema(
+    {
+        vol.Required("cycle_from"): cv.slug,
+        vol.Required("sensor"): cv.entity_id,
+        vol.Optional("energy"): cv.entity_id,
+        # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
+        vol.Required("modes"): vol.All(
+            vol.Schema({cv.slug: MODE}), vol.Length(min=1), _not_idle, _apart
+        ),
+    }
 )
 
 
@@ -119,7 +99,7 @@ def build(
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """The running mode, the last one, and each mode's cycles, totals and meters."""
+    """The running mode, the last one, and each mode's cycles and totals."""
     modes = modes_of(config)
     energy: str | None = config.get("energy")
     entities: list[PururuEntity] = [
@@ -146,13 +126,6 @@ def build(
         )
         if energy is not None:
             entities.append(EnergyTotal(device, source="current", item=item))
-        for counter in COUNTERS:
-            total = f"{counter}_total"
-            source = device.current_entity_id(hass, Platform.SENSOR, item.key(total))
-            entities.extend(
-                Meter(device, f"{counter}_{period}", total, source, period, item=item)
-                for period in config["statistics"][counter]
-            )
     return entities
 
 
@@ -176,5 +149,6 @@ MODES = Feature(
     roles=(
         Requires("cycle"),
         Items(PER_MODE, lambda config: (mode.item for mode in modes_of(config))),
+        COUNTERS,
     ),
 )

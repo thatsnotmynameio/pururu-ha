@@ -63,6 +63,19 @@ def test_an_items_key_knows_its_item(index: Any) -> None:
     assert (target.builder, target.item) == ("programs", "clean")
 
 
+def test_a_meter_is_by_statistics(index: Any) -> None:
+    """The statistics aspect's keys are in the index whatever the settings, as the builder's own."""
+    target = find(index, "washer", None, "appliance_runtime_today")
+    assert (target.builder, target.by, target.item) == ("appliance", "statistics", None)
+    assert target.platform is Platform.SENSOR
+    assert target.unique_id == "pururu_washer_appliance_runtime_today"
+
+
+def test_an_items_meter_knows_its_item(index: Any) -> None:
+    target = find(index, "washer", None, "program_clean_cycles_year")
+    assert (target.builder, target.by, target.item) == ("programs", "statistics", "clean")
+
+
 def test_another_devices_key(index: Any) -> None:
     target = find(index, "washer", "lights", "light_teto")
     assert (target.device.key, target.builder, target.actions) == ("lights", "lights", SWITCH_ACTIONS)

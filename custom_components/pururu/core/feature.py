@@ -15,6 +15,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..const import DOMAIN, ENTITY_PREFIX
 from .roles import Happenings, Presets, Role
+from .texts import Texts
 from .vocabulary import Condition
 
 # entity.py imports Device from here
@@ -203,3 +204,28 @@ class Feature:
     def role[R: Role](self, kind: type[R]) -> R | None:
         """Its role of that type, if it has one."""
         return next((each for each in self.roles if isinstance(each, kind)), None)
+
+
+# hass, the device in the builder's namespace, the builder, its validated block
+# (the aspect's value in it, or in each item), the common texts
+type AspectBuild = Callable[
+    [HomeAssistant, Device, Feature, Any, Texts], list[PururuEntity]
+]
+
+
+@dataclass(frozen=True, kw_only=True)
+class Aspect:
+    """A concern written once, mounted in the block (or each item) of every builder offering it."""
+
+    # The block key it mounts: "statistics"
+    key: str
+    # Whether this builder offers it: it has the role the aspect needs
+    offered: Callable[[Feature], bool]
+    # Validates the aspect's value, for this builder
+    schema: Callable[[Feature], Callable[[Any], Any]]
+    # The local entity keys it adds: suffixes for an Items builder
+    keys: Callable[[Feature], Mapping[str, Platform]]
+    # A valid value, for the contract test
+    example: Callable[[Feature], Any]
+    # Its entities, from the builder's validated block
+    build: AspectBuild

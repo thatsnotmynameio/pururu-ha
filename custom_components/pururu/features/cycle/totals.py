@@ -34,7 +34,7 @@ UPDATE_EVERY = timedelta(minutes=1)
 
 
 class CyclesTotal(PururuEntity, RestoreSensor):
-    """Finished cycles, all time; the cycle meters (statistics.py) measure it."""
+    """Finished cycles, all time; the cycle meters (aspects/statistics.py) measure it."""
 
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
@@ -122,7 +122,7 @@ class EnergyTotal(PururuEntity, RestoreSensor):
 
 
 class RuntimeTotal(PururuEntity, RestoreSensor):
-    """Hours `watched` has been in `state`, all time; the runtime meters (statistics.py) measure it.
+    """Hours `watched` has been in `state`, all time; the runtime meters (aspects/statistics.py) measure it.
 
     A cycle's source says when its cycle started (`cycle_start`, when it enters
     `state`) and, while its off_delay runs, when it ended (`cycle_end`): the time

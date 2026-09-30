@@ -15,41 +15,24 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Device, Feature, finite_float, preset_keys
-from ...core.roles import Happenings, Presets, Provides
+from ...core.roles import Counters, Happenings, Presets, Provides
 from ..cycle.last import LAST_CYCLE, LastCycleValue
-from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal
 from .alerts import PRESETS
 from .mirrors import Mirror
 from .notifications import HAPPENINGS
 from .running import Running
 
-# The totals measured per period, each with its statistics key
-COUNTERS = ("runtime", "cycles", "idle_energy")
-
-
-def _energy_counted(config: dict[str, Any]) -> dict[str, Any]:
-    if config["statistics"]["idle_energy"] and "energy" not in config:
-        raise vol.Invalid("statistics.idle_energy needs energy")
-    return config
-
-
-SCHEMA = vol.All(
-    vol.Schema(
-        {
-            vol.Required("power"): cv.entity_id,
-            vol.Optional("energy"): cv.entity_id,
-            vol.Required("running"): {
-                vol.Required("threshold"): finite_float,
-                vol.Required("on_delay"): cv.positive_time_period,
-                vol.Required("off_delay"): cv.positive_time_period,
-            },
-            vol.Optional("statistics", default={}): {
-                vol.Optional(counter, default=[]): PERIOD_LIST for counter in COUNTERS
-            },
-        }
-    ),
-    _energy_counted,
+SCHEMA = vol.Schema(
+    {
+        vol.Required("power"): cv.entity_id,
+        vol.Optional("energy"): cv.entity_id,
+        vol.Required("running"): {
+            vol.Required("threshold"): finite_float,
+            vol.Required("on_delay"): cv.positive_time_period,
+            vol.Required("off_delay"): cv.positive_time_period,
+        },
+    }
 )
 
 ENTITY_KEYS: dict[str, Platform] = {
@@ -63,11 +46,6 @@ ENTITY_KEYS: dict[str, Platform] = {
     "cycles_total": Platform.SENSOR,
     "runtime_total": Platform.SENSOR,
     "idle_energy_total": Platform.SENSOR,
-    **{
-        f"{counter}_{period}": Platform.SENSOR
-        for counter in COUNTERS
-        for period in PERIODS
-    },
 }
 
 
@@ -104,13 +82,6 @@ def build(
         entities.append(
             IdleEnergyTotal(device, running, STATE_OFF, energy, source="running")
         )
-    for counter in COUNTERS:
-        total = f"{counter}_total"
-        source = device.current_entity_id(hass, Platform.SENSOR, total)
-        entities.extend(
-            Meter(device, f"{counter}_{period}", total, source, period)
-            for period in config["statistics"][counter]
-        )
     return entities
 
 
@@ -127,5 +98,11 @@ APPLIANCE = Feature(
         },
     },
     namespace="appliance",
-    roles=(Provides("cycle", "running"), Presets(PRESETS), Happenings(HAPPENINGS)),
+    roles=(
+        Provides("cycle", "running"),
+        # Metered by the statistics aspect; idle energy needs the plug's energy
+        Counters({"runtime": None, "cycles": None, "idle_energy": "energy"}),
+        Presets(PRESETS),
+        Happenings(HAPPENINGS),
+    ),
 )

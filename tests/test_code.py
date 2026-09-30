@@ -92,7 +92,8 @@ def test_the_core_imports_only_the_core() -> None:
 
 # Each folder never imports these, until B enforces the whole layer table
 NEVER = {
-    "features": {"device_keys", "outputs", "setup"},
+    "features": {"aspects", "device_keys", "outputs", "setup"},
+    "aspects": {"device_keys", "outputs", "setup"},
     "device_keys": {"outputs", "setup"},
     "outputs": {"device_keys", "setup"},
 }
@@ -103,6 +104,31 @@ def test_each_folder_imports_no_later_layer() -> None:
         for path in (PROJECT / CODE / folder).rglob("*.py"):
             wrong = {name for name in imports_of(path) if name.split(".")[0] in forbidden}
             assert not wrong, (str(path.relative_to(PROJECT / CODE)), wrong)
+
+
+UTILITY_METER = "homeassistant.components.utility_meter"
+
+
+def absolute_imports_of(path: Path) -> set[str]:
+    """The modules outside the integration a file imports, dotted (homeassistant.core)."""
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            found.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            found.add(node.module)
+    return found
+
+
+def test_only_the_statistics_aspect_imports_utility_meter() -> None:
+    """The meters are written once: HA's utility meter is the statistics aspect's alone."""
+    importing = {
+        str(path.relative_to(PROJECT / CODE))
+        for path in (PROJECT / CODE).rglob("*.py")
+        if any(name == UTILITY_METER or name.startswith(f"{UTILITY_METER}.")
+               for name in absolute_imports_of(path))
+    }
+    assert importing == {"aspects/statistics.py"}, importing
 
 
 def test_the_platforms_import_only_runtime() -> None:

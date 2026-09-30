@@ -45,8 +45,7 @@ from ..core.feature import (
 )
 from ..core.generated import Kind, Planned
 from ..core.resolve import Index, Ref, Target, find
-from ..core.roles import Generates, Items
-from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
+from ..core.roles import Counters, Generates, Items
 from . import programs
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,10 +56,9 @@ SOURCES = ("when", "entity", "at", "sun")
 # HA's event when an automation runs (its conditions passed), naming it in its
 # data. A string, not automation's constant: pururu doesn't depend on it
 AUTOMATION_TRIGGERED = "automation_triggered"
-PER_REACTION: dict[str, Platform] = {
-    "triggered_total": Platform.SENSOR,
-    **{f"triggered_{period}": Platform.SENSOR for period in PERIODS},
-}
+PER_REACTION: dict[str, Platform] = {"triggered_total": Platform.SENSOR}
+# The statistics aspect meters it, `statistics:` in each reaction
+COUNTERS = Counters({"triggered": None}, mount="item")
 # Keys that only a reaction on an entity's state takes
 STATE_KEYS = ("to", "from", "above", "below", "for")
 # How late a reaction's last try may be, after its occurrence: a chain never
@@ -183,9 +181,6 @@ REACTION = vol.All(
             # Told when the reaction fires, to its own notify or config's
             vol.Optional(CONF_MESSAGE): TEXT,
             vol.Optional(CONF_NOTIFY): messages.TARGETS,
-            vol.Optional("statistics", default={}): vol.Schema(
-                {vol.Optional("triggered", default=[]): PERIOD_LIST}
-            ),
         }
     ),
     _consistent,
@@ -382,30 +377,17 @@ def build(
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """Each reaction's trigger count, and the meters asked for.
+    """Each reaction's trigger count.
 
     `inputs` are the entity IDs of the automations the entry generates, by ID:
     a reaction whose automation ID someone else holds counts nothing.
     """
-    entities: list[PururuEntity] = []
-    for item in _items(config):
-        automation = inputs.get(automation_id(device.key, item.slug))
-        entities.append(TriggersTotal(device, automation, item=item))
-        source = device.current_entity_id(
-            hass, Platform.SENSOR, item.key("triggered_total")
+    return [
+        TriggersTotal(
+            device, inputs.get(automation_id(device.key, item.slug)), item=item
         )
-        entities.extend(
-            Meter(
-                device,
-                f"triggered_{period}",
-                "triggered_total",
-                source,
-                period,
-                item=item,
-            )
-            for period in config[item.slug]["statistics"]["triggered"]
-        )
-    return entities
+        for item in _items(config)
+    ]
 
 
 # Not a device's feature: its reactions' statistics, built as a Feature's entities
@@ -417,6 +399,7 @@ STATISTICS = Feature(
     namespace=NAMESPACE,
     roles=(
         Items(PER_REACTION, _items),
+        COUNTERS,
         Generates(
             "reaction",
             lambda key, config: ((KIND.domain, automation_id(key, r)) for r in config),

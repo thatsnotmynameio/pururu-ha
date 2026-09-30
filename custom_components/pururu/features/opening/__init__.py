@@ -20,25 +20,21 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Build, Device, Feature
-from ...core.roles import Provides
+from ...core.roles import Counters, Provides
 from .. import standing
 from ..cycle.last import LastCycleDescription, LastCycleValue
-from ..cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..cycle.totals import CyclesTotal, RuntimeTotal
 from . import events
 from .open import Open
 
 _LOGGER = logging.getLogger(__name__)
 
-# A counter in statistics -> its total is <counter>_total, its meters <counter>_<period>
-COUNTERS = ("openings", "open_time")
+# Its totals, <counter>_total; the statistics aspect meters them
+COUNTERS = Counters({"openings": None, "open_time": None})
 
 SCHEMA = vol.Schema(
     {
         vol.Required("contact"): standing.real_entity(Platform.BINARY_SENSOR),
-        vol.Optional("statistics", default={}): vol.Schema(
-            {vol.Optional(counter, default=[]): PERIOD_LIST for counter in COUNTERS}
-        ),
         # How far from an opening's start an opening event may be, before or after
         vol.Optional("match", default=timedelta(seconds=5)): cv.positive_time_period,
         vol.Optional("events"): vol.All([events.SCHEMA], vol.Length(min=1)),
@@ -73,12 +69,7 @@ LAST_OPENING: tuple[LastCycleDescription, ...] = (
 ENTITY_KEYS: dict[str, Platform] = {
     "open": Platform.BINARY_SENSOR,
     **{description.key: Platform.SENSOR for description in LAST_OPENING},
-    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS},
-    **{
-        f"{counter}_{period}": Platform.SENSOR
-        for counter in COUNTERS
-        for period in PERIODS
-    },
+    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS.needs},
     **events.ENTITY_KEYS,
 }
 
@@ -126,13 +117,6 @@ def _builder(device_class: BinarySensorDeviceClass) -> Build:
                 device, watched, STATE_ON, source="open", entity_key="open_time_total"
             ),
         ]
-        for counter in COUNTERS:
-            total = f"{counter}_total"
-            source = device.current_entity_id(hass, Platform.SENSOR, total)
-            entities.extend(
-                Meter(device, f"{counter}_{period}", total, source, period)
-                for period in config["statistics"][counter]
-            )
         entities.extend(events.entities(device, sources))
         return entities
 
@@ -147,7 +131,7 @@ def _opening(namespace: str, device_class: BinarySensorDeviceClass) -> Feature:
         build=_builder(device_class),
         example={"contact": f"binary_sensor.demo_{namespace}_contact"},
         namespace=namespace,
-        roles=(Provides("cycle", "open"),),
+        roles=(Provides("cycle", "open"), COUNTERS),
     )
 
 

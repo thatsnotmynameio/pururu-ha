@@ -38,8 +38,36 @@ def per_item(feature: Any) -> dict[str, Any]:
 
 
 def named_keys(feature: Any) -> dict[str, Any]:
-    """Every key a feature's translations name: its entity keys and its per-item suffixes."""
+    """Every key a feature's translations name in its namespace: its entity keys and its per-item suffixes.
+
+    An aspect's keys (the meters) are named once, outside every namespace (aspect_groups).
+    """
     return {**feature.entity_keys, **per_item(feature)}
+
+
+def offered(features: dict[str, Any]) -> list[tuple[Any, str, Any]]:
+    """(aspect, builder's key, builder) for every aspect a builder offers."""
+    return [(aspect, name, feature) for aspect in module("aspects").ASPECTS
+            for name, feature in features.items() if aspect.offered(feature)]
+
+
+def aspect_groups(aspect: Any, feature: Any) -> dict[str, Any]:
+    """Where the aspect's keys for this builder are named: <key>, or item_<key> for an Items builder."""
+    prefix = "item_" if role(feature, "Items") else ""
+    return {f"{prefix}{key}": platform for key, platform in aspect.keys(feature).items()}
+
+
+def in_items(feature: Any) -> bool:
+    """Whether an aspect sits in each item of the block (Counters(mount="item")), not in the block."""
+    counters = role(feature, "Counters")
+    return counters is not None and counters.mount == "item"
+
+
+def placed(feature: Any, key: str, value: Any, block: Any) -> dict[str, Any]:
+    """`block` with `value` under `key` where the builder takes its aspects: the block, or each item."""
+    if in_items(feature):
+        return {each: {**item, key: value} for each, item in block.items()}
+    return {**block, key: value}
 
 
 @pytest.fixture
@@ -94,6 +122,8 @@ def test_every_translated_entity_key_is_created(features: dict[str, Any]) -> Non
     created = {(str(platform), qualified(feature.namespace, entity_key))
                for feature in features.values()
                for entity_key, platform in named_keys(feature).items()}
+    created |= {(str(platform), group) for aspect, _, feature in offered(features)
+                for group, platform in aspect_groups(aspect, feature).items()}
     for name in ("translations/en.json", "icons.json"):
         listed = {(platform, key) for platform, keys in load(name)["entity"].items() for key in keys}
         assert listed <= created, f"{name}: {sorted(listed - created)}"
@@ -296,3 +326,98 @@ def test_a_generating_builder_generates_from_its_example(features: dict[str, Any
         for domain, unique_id in generated:
             assert domain in ("script", "automation"), name
             assert unique_id.startswith("pururu_dev_"), name
+
+
+def test_an_aspects_keys_are_named_once(features: dict[str, Any]) -> None:
+    """Every key an aspect adds is named and has an icon once, outside every builder's namespace.
+
+    <key> for a block, item_<key> with the {item} placeholder for an Items builder.
+    """
+    qualified = module("core.feature").qualified
+    en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
+    pairs = offered(features)
+    assert pairs, "no builder offers an aspect"
+    for aspect, name, feature in pairs:
+        for group, platform in aspect_groups(aspect, feature).items():
+            for translations in (en, pt):
+                text = translations["entity"][platform][group]["name"]
+                assert text, (name, group)
+                if role(feature, "Items"):
+                    assert "{item}" in text, (name, group)
+            assert icons["entity"][platform][group]["default"].startswith("mdi:"), (name, group)
+        for key, platform in aspect.keys(feature).items():
+            for tree in (en, pt, icons):
+                assert qualified(feature.namespace, key) not in tree["entity"][platform], (name, key)
+
+
+def test_an_offered_aspect_validates_and_builds(
+    ha: HomeAssistant, features: dict[str, Any]
+) -> None:
+    """The builder's example with the aspect's goes through mount, and the aspect builds the keys it lists."""
+    catalogue = module("setup.catalogue")
+    device_cls = module("core.feature").Device
+    for aspect, name, feature in offered(features):
+        raw = placed(feature, aspect.key, aspect.example(feature), dict(feature.example))
+        block = catalogue.mount(feature, name, raw)
+        device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
+        built = aspect.build(ha, device, feature, block, {})
+        assert built, name
+        listed = {device.qualified(entity_key)
+                  for _, entity_key, _, by, _ in catalogue.keys({name: block}) if by == aspect.key}
+        assert {entity.key for entity in built} <= listed, name
+
+
+def test_a_builders_own_schema_refuses_an_aspects_key(features: dict[str, Any]) -> None:
+    """Only mount takes an aspect's key: the builder's schema refuses it where the aspect sits."""
+    for aspect, name, feature in offered(features):
+        example = dict(feature.example)
+        with pytest.raises(vol.Invalid):
+            feature.schema({**example, aspect.key: {}})
+        with pytest.raises(vol.Invalid):
+            feature.schema(placed(feature, aspect.key, {}, example))
+
+
+def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
+    """In a block of items, a key alike an aspect's is an item: a program keyed `statistics` is a program."""
+    mount = module("setup.catalogue").mount
+    for aspect in module("aspects").ASPECTS:
+        for name, feature in features.items():
+            if not (role(feature, "Configured") or in_items(feature)):
+                continue
+            item = next(iter(feature.example.values()))
+            block = mount(feature, name, {aspect.key: item})
+            assert set(block) == {aspect.key}, name
+
+
+def test_a_configured_builder_offers_no_block_aspect(features: dict[str, Any]) -> None:
+    """A configured block's keys are its entity keys: one keyed as an aspect is an entity."""
+    aspects_of = module("setup.catalogue").aspects_of
+    for name, feature in features.items():
+        if role(feature, "Configured") is not None:
+            assert not aspects_of(feature), name
+
+
+def test_a_counter_is_totalled(features: dict[str, Any]) -> None:
+    """Each counter's total, <counter>_total, is one of the builder's keys: its meters meter it."""
+    counting = [name for name, feature in features.items() if role(feature, "Counters")]
+    assert set(counting) == {"appliance", "door", "window", "modes", "programs", "reactions"}
+    for name in counting:
+        feature = features[name]
+        items = role(feature, "Items")
+        keys = items.keys if items else feature.entity_keys
+        for counter in role(feature, "Counters").needs:
+            assert f"{counter}_total" in keys, f"{name}: {counter}"
+
+
+def test_a_counter_without_its_setting_is_refused(features: dict[str, Any]) -> None:
+    """A counter needing a setting (energy) takes no period without it; asking none passes."""
+    mount = module("setup.catalogue").mount
+    needing = [(name, feature, counter, setting) for name, feature in features.items()
+               if (counters := role(feature, "Counters")) is not None
+               for counter, setting in counters.needs.items() if setting is not None]
+    assert needing, "no counter needs a setting"
+    for name, feature, counter, setting in needing:
+        example = {key: value for key, value in feature.example.items() if key != setting}
+        with pytest.raises(vol.Invalid, match=f"statistics.{counter} needs {setting}"):
+            mount(feature, name, placed(feature, "statistics", {counter: ["today"]}, example))
+        mount(feature, name, placed(feature, "statistics", {counter: []}, example))
