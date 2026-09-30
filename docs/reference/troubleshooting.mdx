@@ -3,7 +3,7 @@ title: Troubleshooting
 description: What each error pururu logs means, and what to do about it.
 ---
 
-pururu reports problems in **Settings → System → Logs**, under the **Pururu** integration. Only an invalid configuration, or a failure before the entities are created, stops it. Anything else is logged, and the rest of the configuration is still applied.
+pururu reports problems in **Settings → System → Logs**, under the **Pururu** integration. Only an invalid configuration, or a failure before its steps (while it builds and hands over the entities), stops it. Anything else is logged, and the rest of the configuration is still applied.
 
 ## The reload changed nothing
 
@@ -73,7 +73,12 @@ Home Assistant logs this when pururu fails before its steps: while it syncs the 
 
 **Fix:** this is a bug in pururu, or in something it relies on. [Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the traceback. Once the cause is fixed, run `pururu.reload` (**Developer tools → Actions**) or restart Home Assistant: the entry sets up again from scratch.
 
-If `Unloading the platforms of a failed setup failed` follows it, taking the entities back failed too: they stay, and only a restart sets the entry up again.
+Home Assistant logs `Setup of config entry 'Pururu' for pururu integration cancelled` instead when the setup was cancelled, for example a `pururu.reload` called by a script or automation that was stopped or restarted meanwhile. pururu takes the entities back all the same: run `pururu.reload` again.
+
+If `Unloading the platforms of a failed setup …` follows it, taking some entities back didn't work:
+
+- `… left some`, after Home Assistant's `Config entry was never loaded!` errors: those platforms never got the entities, so nothing was left behind. A reload sets the entry up.
+- Otherwise, run `pururu.reload`. If it logs `has already been setup`, the entities stayed: restart Home Assistant.
 
 ## Entities
 

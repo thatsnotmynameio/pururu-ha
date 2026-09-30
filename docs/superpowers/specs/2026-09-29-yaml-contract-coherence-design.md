@@ -528,7 +528,7 @@ As Terraform's plan/apply: the plan is a value; validation never touches `hass`.
    3. until D, each `Requires`: `<capability>_from` names a feature of the device with the matching `Provides`;
    4. the aspects' checks that depend on settings: a counter whose `needs` setting is missing is refused.
 3. **`CHECKS`**, at the domain level: `index = catalogue.index(devices)`, then each check runs as `check(house, index, builders)` (the builders passed in, so a check in an L0–L2 module reads them without importing the registries) and raises `vol.Invalid(msg, path=[devices, key, …])`; voluptuous prepends the path, so HA shows the right place. Each rule lives in its owner's module and is listed once in `CHECKS` (references, one real entity per device, distinct entity and generated IDs, `places.floors_exist`, areas exist, reactions', programs', alert lights' groups, messages have a `notify`).
-4. **`async_setup_entry`, the prelude:** `places.async_sync`; `texts`; the index again; the generated IDs the entry owns (every `Generates` and aspect `generates`); `built = build.plan(...)`: builders' builds, then offered aspects' builds, then `_creatable`; `entry.runtime_data = built.entities`; forward to the platforms. Everything that can raise on bad data runs before forwarding.
+4. **`async_setup_entry`, the prelude:** `places.async_sync`; `texts`; the index again; the generated IDs the entry owns (every `Generates` and aspect `generates`); `built = build.plan(...)`: builders' builds, then offered aspects' builds, then `_creatable`; `entry.runtime_data = built.entities`; forward to the platforms. Everything that can raise on bad data runs before forwarding. From the forward on, a failure or a cancellation (`except BaseException`) unloads the platforms before it is raised again (D1): platforms left holding a non-loaded entry would refuse it at every reload, which would report success with nothing added; an unload that raises or leaves platforms is logged with what to do.
 5. **`STEPS`**, in order, each in `try/except Exception` with `_LOGGER.exception(name)`. Without the guard, a step raising after forwarding leaves the entry stuck until a restart: HA unloads a non-loaded entry without calling `async_unload_entry`.
 
    | Step | Does |
@@ -540,7 +540,7 @@ As Terraform's plan/apply: the plan is a value; validation never touches `hass`.
    | alert lights | lends and hands back lights |
    | dashboard | `/pururu` |
 
-6. **Listener.** Reloads the entry when one of its entities is renamed; when a script or automation whose `(platform, unique_id)` is tracked in `entry.data[kind.data_key]` is renamed (one rule for every generated kind, instead of today's `_watched_items`, which lists reactions and programs only: nothing refers to a notification's automation, so its rename needs no rebuild, but one rule is simpler than a rule with an exception); when an ID a step added to the targets is disabled (once per burst).
+6. **Listener.** Set up after the steps and guarded as one (D1): one that raises is logged (`Listener failed`), and the entry stays loaded. Reloads the entry when one of its entities is renamed; when a script or automation whose `(platform, unique_id)` is tracked in `entry.data[kind.data_key]` is renamed (one rule for every generated kind, instead of today's `_watched_items`, which lists reactions and programs only: nothing refers to a notification's automation, so its rename needs no rebuild, but one rule is simpler than a rule with an exception); when an ID a step added to the targets is disabled (once per burst).
 
 ### What `__init__.py` becomes
 
@@ -631,7 +631,7 @@ pool:
 
 ### In the code
 
-- **`features/cycle/program.py`** (L1, shared machinery): the detected `Program` schema, the detector (today's band logic of `phases.py` and the one-at-a-time arbitration and delays of `modes/current.py`, merged), and its entities (on `CycleSource`). The appliance builds its `running_program` with it.
+- **`features/cycle/program/`** (L1, shared machinery, a package): the detected `Program` schema, the detector (today's band logic of `phases.py` and the one-at-a-time arbitration and delays of `modes/current.py`, merged), and its entities (on `CycleSource`). The appliance builds its `running_program` with it.
 - **`aspects/programs.py`** (L2): mounts `programs:` in the block of a builder with the `Programs` role, and is the device key `programs` (today's top-level `programs.py`, moved: the scripts, `plan()`, `Runs`). It imports `features/cycle`, as the L2 row allows.
 - **A new role, `Programs(reading: str, energy: str | None = None)`:** the settings a detected program in this builder reads (the appliance: `power`, `energy`). It replaces `Provides`/`Requires`.
 - **Statistics:** each program and phase is an item with `Counters` (`runtime`, `cycles`, and `energy` when the builder has an energy setting); the statistics aspect of B meters them, as it meters today's modes.
@@ -643,7 +643,7 @@ Small choices that don't change the model:
 
 1. **Overlapping phases** — decided (the owner, 2026-09-29): bands may overlap. Two bands that hold at once are two cycles running at the same time; the configuration doesn't refuse it and no band wins. Today phases pick the first listed band that holds and modes refuse overlapping bands; both go.
 2. **Entity IDs of phases** — decided (the owner, 2026-09-30): `<platform>.pururu_<device>_appliance_phase_<key>_<suffix>`, in the appliance's namespace with a fixed `phase`, for the washer's and the purifier's alike (today `mode_<key>_*`, `mode_current`, `mode_last`, `phase_current`). The appliance's own entities (`appliance_running`, its totals and meters) keep their IDs.
-3. **Showing the running phases** — decided (2026-09-30): each phase gets a binary sensor, `appliance_phase_<key>`, on while it runs (overlap reads naturally); `appliance_phase_current` lists the phases running, and `appliance_phase_last` keeps the last one.
+3. **Showing the running phases** — decided (2026-09-30): each phase gets a binary sensor, `appliance_phase_<key>`, on while it runs (overlap reads naturally); `appliance_phase_current` shows the phase that started last and lists the running ones in its `running` attribute (an enum can't hold a list), and `appliance_phase_last` keeps the last one.
 4. **The current phase when none holds** — decided (2026-09-30): `idle` while the appliance is stopped; `other` while it runs outside every band. `other` is a built-in phase with the full set of phase entities and statistics (`appliance_phase_other_*`); it starts after its `on_delay` outside every band and ends when the appliance stops, or at once when a band's phase starts (a configured phase has priority). Its delays default to 30 s each (so the chill's 2-s compressor spike isn't a cycle), tuned by an optional `other: {on_delay, off_delay}` in `running_program`. `idle` and `other` are reserved phase keys. It also covers exact band bounds and gaps between bands.
 5. **The idle-gap end** — decided (from 0.1.12's notes and a real day of data): a running phase whose reading left for no band (outside every phase's band, or under the program's) blocks nothing. The next phase starts after its own `on_delay`, without waiting for the first's `off_delay`, so it isn't truncated; both run until that `off_delay` passes. The first still ends then, at the moment it left, unless its reading came back. A dip straight into another band still makes that phase wait for the first's `off_delay`, or for a reading back in both bands; it then starts from when its `on_delay` passed. The non-overlapping behaviour (one band at a time) stays identical otherwise, two edge cases excepted (implemented in D1):
    - no phase starts while the program's reading is out, where today's modes record a zero-length cycle; only a phase band reaching below the program's can hold then, and none of today's configurations has one;
@@ -844,7 +844,7 @@ pururu has one user, its author. So:
 - An old key is voluptuous' `extra keys not allowed`, with HA's file and line.
 - One manual step, in PR B (below), carried into PR C's "Updating to 0.2.1" guide.
 - No entity ID or unique ID changes in A1–C; D changes those of today's `modes` and `phases` (D20). Everything else keeps its history, statistics and dashboards.
-- A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under the same version. That is accepted: 0.2.0 is the sum of the seven PRs.
+- A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under 0.2.0. That is accepted: C sets 0.2.1, the release carrying them all.
 
 ## PRs
 
@@ -860,7 +860,7 @@ Each leaves the whole suite green. Before merging A1, which bumps the version, c
 | B2 | The statistics aspect: `Aspect`, `mount`, `Counters` | stays 0.2.0 |
 | B3 | The alerts aspect; `alerts` becomes a device key | stays 0.2.0 |
 | B4 | The notifications aspect; one automations kind; the whole layer table | stays 0.2.0 |
-| D1 | The detector: `features/cycle/program.py` (the detected `Program` schema; bands with `on_delay`/`off_delay`, overlap allowed, the idle-gap end, the built-in `other`) and its entities, tested alone | stays 0.2.0 |
+| D1 | The detector: `features/cycle/program/` (a package: the detected `Program` schema; bands with `on_delay`/`off_delay`, overlap allowed, the idle-gap end, the built-in `other`) and its entities, tested alone | stays 0.2.0 |
 | D2 | `running_program` with its phases replaces the appliance's `running`/`threshold`, `modes`, `phases`, `cycle_from` and `Provides`/`Requires` | stays 0.2.0 |
 | D3 | `programs: {detected, executable}`: the `Programs` role, `aspects/programs.py`, the device key's items under `executable:` | stays 0.2.0 |
 | C | Part 2: the vocabulary | sets 0.2.1 (the whole refactor's release; v0.2.0 is immutable) |
@@ -899,7 +899,7 @@ custom_components/pururu/
 
 The manual step, in the PR's text: before updating, remove every `notifications:` block and reload pururu (their automations and registry entries go; the new kind would otherwise find them registered under the old data key and treat them as the user's). Update, delete `pururu/automations/reactions.yaml` and `pururu/automations/notifications.yaml` (HA loads every file in the folder, and they'd repeat `automations.yaml`'s IDs), restart. Put the `notifications:` blocks back and reload.
 
-**D, programs.** Part 4 whole: `features/cycle/program.py`, `aspects/programs.py`, the `Programs` role, `running_program`, `programs: {detected, executable}`, phases as programs; `modes`, `phases`, `cycle_from`, `Provides`, `Requires` go; the two choices of "Decided when D starts". Docs: `docs/features/modes.mdx` and `phases.mdx` go, a programs concept page replaces `concepts/programs.mdx`, `appliance.mdx`, `docs.json`, `configuration.mdx`.
+**D, programs.** Part 4 whole: `features/cycle/program/` (a package), `aspects/programs.py`, the `Programs` role, `running_program`, `programs: {detected, executable}`, phases as programs; `modes`, `phases`, `cycle_from`, `Provides`, `Requires` go; the two choices of "Decided when D starts". Docs: `docs/features/modes.mdx` and `phases.mdx` go, a programs concept page replaces `concepts/programs.mdx`, `appliance.mdx`, `docs.json`, `configuration.mdx`.
 
 **C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.1" guide (from 0.1.23), carrying B4's manual step, whose first step comes *before* updating:
 

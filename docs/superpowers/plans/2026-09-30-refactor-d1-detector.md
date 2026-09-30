@@ -22,9 +22,10 @@
 
 - Version stays `0.2.0`.
 - `tests/test_ids.py` and `tests/fixtures/house_ids.json` unchanged. D1 registers no builder, so no entity or generated item appears or goes. D2 updates the snapshot on purpose for modes and phases.
-- Nothing user-visible changes. `FEATURES`, `DEVICE_KEYS`, `ASPECTS`, `CHECKS`, the schema and the docs' Guide tab stay as they are. The shared code D1 touches only gains:
+- No feature, device key or setting changes. `FEATURES`, `DEVICE_KEYS`, `ASPECTS`, `CHECKS` and the schema stay as they are; the Guide tab changes only where the review rounds changed what users see (ruling 22: `troubleshooting.mdx`; `phases.mdx`'s two new state names). The shared code D1 touches only gains:
   - an optional `translation=` on the cycle entities (`features/cycle/last.py`, `totals.py`); without it, everything is as today;
-  - new translation and icon keys. The only existing key it touches, `phase_current`, keeps its name and gains two states (`other`, `dispensing`).
+  - new translation and icon keys. The only existing key it touches, `phase_current`, keeps its name and gains two states (`other`, `dispensing`): today's `phases` feature shows a band so named translated (`phases.mdx` says so), its state unchanged;
+  - one guarded time parser, `core/entity.as_time`: an impossible date (`2026-02-30`) is no time, never an error, wherever a time is read back (ruling 15; the final review's M10).
 - Layers (`tests/test_code.py`, unchanged): `features/cycle/program/` imports only `core/`, `const` and `features/cycle`. `features/modes`, `features/phases.py` and `features/appliance` don't import it (D2 does).
 - `uv run pytest` green at every commit: ruff, ruff format, mypy strict, hassfest, the layer table, the quality scale.
 - Per-function coverage not lower than B4's (20 missed lines at 217bb52), measured the same way on both: `uv run pytest --cov=custom_components/pururu --cov-report=json:<file>`, B4's in a `git archive 217bb52` scratch copy, each function compared by name (a moved function under its new name). Every function of `features/cycle/program/` is fully covered.
@@ -97,10 +98,10 @@ Where the spec is silent, decided here:
     - The carrier stores the whole snapshot: the running cycles, the order they started in, and `seen`. Delays and armed phases aren't stored; they count again from the next reading.
     - `seen` is restored whether or not the program runs: after a restart, a finished program still shows the phases it saw, as before it. Only phases still configured are kept.
     - The program runs only with a start: a snapshot whose program has none, or one the detector can't read, restores no running cycle. A running phase is restored with or without a start (one without ends when its reading left).
-    - What the detector can't read is dropped: a key that isn't a string or no longer configured, a time without a zone, and an impossible date (`2026-02-30`), which `CycleStart.from_dict` reads as no time. That helper is shared with the appliance's `running`, `modes` and the openings, which gain the same guard.
+    - What the detector can't read is dropped: a key that isn't a string or no longer configured, a time without a zone, and an impossible date (`2026-02-30`), which `CycleStart.from_dict` reads as no time. Its parser, `core/entity.as_time`, is shared with the appliance's `running`, `modes` and the openings, which gain the same guard, and (the final review) with the runtime totals' `cycle_start`/`cycle_end` attributes, the elapsed alerts' creation date and milestone, and the openings' event times.
     - A `PhaseRunning` is added after the carrier on the same platform (`build`'s order; HA adds one platform's entities one by one), so it never shows an unrestored state.
     - `PhaseCurrent` (another platform) shows its restored state and attributes (`running`, `seen`) until the carrier is `ready`.
-    - The carrier follows the reading only once its entry is set up (`LOADED`): a step at add could end a restored phase (delays of 0) before its entities listen, and the cycle would be lost. A reading before that is read by its first step.
+    - The carrier follows the reading only once its entry's setup is over (it leaves `SETUP_IN_PROGRESS`, whatever state follows: `LOADED`, or `SETUP_ERROR` with the platforms kept, ruling 22): a step at add could end a restored phase (delays of 0) before its entities listen, and the cycle would be lost. A reading before that is read by its first step. Added once the setup is over, it starts at once; removed while it waits (an unload), it never starts.
     - A snapshot that isn't a map is none: the carrier starts from nothing. Anything in a map goes to the detector, which drops what it can't read (above), so the carrier needs no guard of its own.
 16. **After the program ends,** a running phase whose band still holds is armed, and starts with the next program cycle (today's modes). When the program ends, its running phases end with it, in the order they started (ruling 17).
 17. **Ordering at one instant:**
@@ -117,6 +118,9 @@ Where the spec is silent, decided here:
 19. **The 10:10 heating of the purifier's day is not truncated on `main` already.** On `main`, today's modes record 189 s at a 1-s replay and 185 s at a 30-s step; the handover's start from when it was armed came with 0.1.20 (#30). The ~69 s once pinned elsewhere comes from a replay of an older version. D1's replay pins the detector's result, 10:10:50.569 → 10:13:59.899 UTC on the anonymised day (189.33 s, its on_delay excluded). D1's own gain on that data is the idle gap: a phase armed during another's gap is no longer lost (Task 1's idle-gap tests). On that day itself the counts are unchanged (14 drinks, 21 chills, 2 heatings, 33 appliance cycles), and `other` never runs.
 20. **A disabled carrier:** HA never adds it, so the detector never runs. Its phases' entities are still created (`creatable` ignores a disabled source, as for every follower today): each `phase_<key>` shows off and `phase_current` shows `idle`, not its restored phase. Dropping the followers of a disabled source would change every feature, not only this one.
 21. **While the program's reading is out** (its off_delay counting), no phase starts. One whose on_delay passes then stays armed: it starts on the program's reading back, dated from when its on_delay passed, or with the next program cycle. Only a phase band reaching below the program's can hold then. Today's modes start it and end it with the program, a zero-length cycle; none of today's configurations has such a band.
+22. **The lifecycle, two changes the review rounds made** (`setup/lifecycle.py`; they change what users see, `troubleshooting.mdx` says so):
+    - **The listener is guarded as a step.** Set up after the steps, one that raises is logged (`Listener failed`) and the entry stays loaded; before, it failed the whole entry. The autouse fixture fails a test on an unexpected `Step ` or `Listener ` error.
+    - **A setup failing after the forward unloads its platforms, then raises.** HA unloads a non-loaded entry without `async_unload_entry`, so platforms left holding it would refuse it at every reload, which would report success with nothing added. The entry is `SETUP_ERROR` without its entities, and a reload sets it up. A cancellation too (`except BaseException`, the final review's I1): a `pururu.reload` called by an automation runs in its task, and stopping the automation cancels it. An unload that raises or leaves platforms is logged with what to do: a platform HA loaded but never gave the entry (the forward raised before it) is logged by HA as `Config entry was never loaded!` and nothing of it is left, so a reload sets the entry up; only `has already been setup` at a reload means a restart. The carrier waiting in a failed entry is removed by the unload and never starts; only if the unload fails too does it run the kept entities.
 
 ---
 
@@ -2083,7 +2087,7 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
 
   Expected: `5 passed`.
 
-- [ ] **Step 3: The failing entity tests.** Create `tests/test_program_entities.py`:
+- [ ] **Step 3: The failing entity tests.** Create `tests/test_program_entities.py` (as first written: the review rounds added tests, and the final review made the dispatcher probes `@callback`, as a plain function is run as a job, in an order that varies; the file is authoritative):
 
   ```python
   """features/cycle/program's entities, in HA, through a test-only builder in the appliance's namespace.
@@ -2411,12 +2415,12 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
 
   Expected: `13 failed`: the package exports no `build` yet (`AttributeError: … has no attribute 'build'` when the builder builds, so no entity exists).
 
-- [ ] **Step 4: The entities.** Create `custom_components/pururu/features/cycle/program/entities.py`:
+- [ ] **Step 4: The entities.** Create `custom_components/pururu/features/cycle/program/entities.py` (the code as it stands after the review rounds, which added the start gate, `_views` as a tuple, the end order and the disabled carrier; `entities.py` is authoritative):
 
   ```python
   """The detector in HA: the program's carrier, and its phases' entities showing it."""
 
-  from collections.abc import Callable, Iterator
+  from collections.abc import Callable, Iterator, Mapping
   from dataclasses import dataclass
   from datetime import datetime
   from functools import partial
@@ -2431,6 +2435,7 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
       SensorDeviceClass,
       SensorEntity,
   )
+  from homeassistant.config_entries import ConfigEntry, ConfigEntryState
   from homeassistant.const import STATE_ON, Platform
   from homeassistant.core import (
       CALLBACK_TYPE,
@@ -2440,6 +2445,7 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
       State,
       callback,
   )
+  from homeassistant.helpers import entity_registry as er
   from homeassistant.helpers.dispatcher import async_dispatcher_connect
   from homeassistant.helpers.event import (
       async_track_point_in_utc_time,
@@ -2448,6 +2454,7 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
   from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
   from homeassistant.util import dt as dt_util
 
+  from ....const import DOMAIN
   from ....core.entity import PururuEntity, reading
   from ....core.feature import Device
   from .. import Cycle, CycleSource, cycle_signal
@@ -2475,9 +2482,14 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
   class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
       """On while the program runs: it owns the detector, and the phases' entities show it.
 
-      It follows the reading and waits for the detector's next delay. Each step
-      writes its own state (sending the program's cycle when it ends), then calls
-      each view (`subscribe`) with the step's changes.
+      It follows the reading and waits for the detector's next delay, from once
+      its entry's setup is over, whatever it gave: every view listens by then
+      (`subscribe`, and the phases' cycle entities on their signals), so no
+      step's cycle is lost; a setup failing after the platforms unloads them,
+      and the removed carrier never starts; if that unload fails too, HA keeps
+      the entities and the carrier runs them. It wraps its phases: a step writes its own state, then calls each view with
+      the step's changes; a step that ends the program calls the views first,
+      then writes its state and sends the program's cycle.
       """
 
       _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -2497,9 +2509,12 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
           self.detector = Detector(program)
           self._reading = reading
           self._energy = energy
-          self._views: list[View] = []
+          # Replaced, never changed in place: a step calls the views it started with
+          self._views: tuple[View, ...] = ()
           # Whether the detector holds what was restored: until then, a view shows its own
           self.ready = False
+          # Whether it follows the reading: once its entry's setup is over
+          self._started = False
           self._timer: CALLBACK_TYPE | None = None
 
       @property
@@ -2529,23 +2544,62 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
 
       @callback
       def subscribe(self, view: View) -> CALLBACK_TYPE:
-          """Call `view` with each step's changes, after the carrier's own; returns the unsubscribe."""
-          self._views.append(view)
-          return partial(self._views.remove, view)
+          """Call `view` with each step's changes (after the carrier's state; before it when the program ends); returns the unsubscribe."""
+          self._views = (*self._views, view)
+          return partial(self._unsubscribe, view)
+
+      @callback
+      def _unsubscribe(self, view: View) -> None:
+          self._views = tuple(each for each in self._views if each is not view)
 
       @override
       async def async_added_to_hass(self) -> None:
-          """Restore the detector, then follow the reading from its current state."""
+          """Restore the detector; follow the reading once the entry's setup is over, every view listening.
+
+          A step at add could end a restored phase before its entities listen
+          (on this platform, added after the carrier; on another, maybe not
+          added yet), and its cycle would be lost. Over whatever it gave: a
+          setup failing after its platforms unloads them, and removing the
+          carrier unsubscribes the wait; if that unload fails too, HA keeps the
+          entities of the SETUP_ERROR entry, and the carrier runs them.
+          """
           await super().async_added_to_hass()
           if (extra := await self.async_get_last_extra_data()) is not None:
-              self.detector.restore(extra.as_dict())
+              self._restore(extra.as_dict())
           self.ready = True
+          self.async_on_remove(self._cancel_timer)
+          entry = self.platform.config_entry
+          if entry is None or entry.state is not ConfigEntryState.SETUP_IN_PROGRESS:
+              self._start()
+          else:
+              self.async_on_remove(
+                  entry.async_on_state_change(partial(self._entry_changed, entry))
+              )
+
+      def _restore(self, data: Any) -> None:
+          """Take back the snapshot; one that isn't a map (a hand-edited .storage) is none.
+
+          The detector drops what it can't read in a map: a time without a zone,
+          an impossible date, a key no longer configured.
+          """
+          if isinstance(data, Mapping):
+              self.detector.restore(data)
+
+      @callback
+      def _entry_changed(self, entry: ConfigEntry[Any]) -> None:
+          # Not unsubscribed here: HA iterates its callbacks while calling them
+          if not self._started and entry.state is not ConfigEntryState.SETUP_IN_PROGRESS:
+              self._start()
+
+      @callback
+      def _start(self) -> None:
+          """Follow the reading from its current state."""
+          self._started = True
           self.async_on_remove(
               async_track_state_change_event(
                   self.hass, self._reading, self._reading_changed
               )
           )
-          self.async_on_remove(self._cancel_timer)
           self._step(self._read(self.hass.states.get(self._reading)))
 
       def _read(self, state: State | None) -> list[Change]:
@@ -2572,16 +2626,21 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
 
       @callback
       def _step(self, changes: list[Change]) -> None:
-          """Show a step: the carrier's state (and the program's cycle), then each view; then wait for the next delay."""
+          """Show a step, then wait for the next delay.
+
+          The carrier's state, then each view; when the program ends, each view
+          first, then the carrier's state and the program's cycle: its end
+          comes with its phases' ended (the events' states agree).
+          """
           ended = next(
               (c.cycle for c in changes if isinstance(c, Ended) and c.key is None), None
           )
+          if ended is None:
+              self.async_write_ha_state()
+          for view in self._views:
+              view(changes)
           if ended is not None:
               self._send(ended)
-          else:
-              self.async_write_ha_state()
-          for view in list(self._views):
-              view(changes)
           self._cancel_timer()
           if (due := self.detector.due()) is not None:
               self._timer = async_track_point_in_utc_time(
@@ -2593,7 +2652,10 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
       """On while its phase runs: the source of the phase's cycles.
 
       Added after the carrier on the same platform, so the detector is restored
-      by then: its first state is already the restored one.
+      by then: its first state is already the restored one. That holds because
+      `build` puts the carrier first, `binary_sensor.py` hands a platform's
+      entities to one `async_add_entities`, and HA's `EntityPlatform` adds them
+      one by one, each awaited; splitting that call would break it.
       """
 
       _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -2657,7 +2719,12 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
 
 
   class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
-      """The phase that started last among those running, or idle; those running and seen as attributes."""
+      """The phase that started last among those running, or idle; those running and seen as attributes.
+
+      Until the carrier restored the detector (another platform may add it
+      first), it shows its own restored state and attributes. A disabled carrier
+      never runs the detector: it shows idle, as every phase shows off.
+      """
 
       _attr_device_class = SensorDeviceClass.ENUM
 
@@ -2669,14 +2736,16 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
           self.sources = (source,)
           self._carrier = carrier
           phases = carrier.detector.program.phases
-          self._options = [IDLE, *(phase.key for phase in phases)]
+          self._phases = [phase.key for phase in phases]
+          self._options = [IDLE, *self._phases]
           self._attr_options = self._options
           self._restored = IDLE
+          self._restored_attributes: dict[str, Any] = {"running": [], "seen": []}
 
       @property
       @override
       def native_value(self) -> str:
-          """The current phase; the restored one until the carrier restored the detector (another platform may add it first)."""
+          """The current phase; the restored one until the carrier restored the detector."""
           if not self._carrier.ready:
               return self._restored
           return self._carrier.detector.current
@@ -2684,18 +2753,46 @@ def build(hass: HomeAssistant, device: Device, program: Program, *, key: str,
       @property
       @override
       def extra_state_attributes(self) -> dict[str, Any]:
-          """The running phases, and those the program's current or last cycle saw, in the configuration's order."""
+          """The running phases, and those the program's current or last cycle saw, in the configuration's order; the restored ones until the carrier restored the detector."""
+          if not self._carrier.ready:
+              return self._restored_attributes
           detector = self._carrier.detector
           return {"running": detector.running, "seen": detector.seen}
 
       @override
       async def async_added_to_hass(self) -> None:
-          """Take the restored phase, then show each step of the carrier's."""
+          """Take the restored phase, unless the carrier is disabled; then show each step of the carrier's."""
           await super().async_added_to_hass()
           last = await self.async_get_last_state()
-          if last is not None and last.state in self._options:
+          if (
+              last is not None
+              and last.state in self._options
+              and not self._carrier_disabled()
+          ):
               self._restored = last.state
+              own = [] if last.state == IDLE else [last.state]
+              self._restored_attributes = {
+                  name: self._known(last.attributes.get(name), own)
+                  for name in ("running", "seen")
+              }
           self.async_on_remove(self._carrier.subscribe(self._changed))
+
+      def _carrier_disabled(self) -> bool:
+          """Whether the user disabled the carrier: HA never adds it."""
+          registry = er.async_get(self.hass)
+          found = registry.async_get_entity_id(
+              Platform.BINARY_SENSOR, DOMAIN, str(self._carrier.unique_id)
+          )
+          entry = None if found is None else registry.async_get(found)
+          return entry is not None and entry.disabled
+
+      def _known(self, value: Any, default: list[str]) -> list[str]:
+          """A restored list of phases, in the configuration's order; `default` when it isn't one."""
+          if not isinstance(value, list) or not all(
+              isinstance(key, str) and key in self._phases for key in value
+          ):
+              return default
+          return [key for key in self._phases if key in value]
 
       @callback
       def _changed(self, _changes: list[Change]) -> None:
