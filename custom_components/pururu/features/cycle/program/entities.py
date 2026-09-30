@@ -264,7 +264,16 @@ class PhaseRunning(CycleSource, BinarySensorEntity):
     ) -> None:
         """Show `phase` of `carrier`'s detector; `source`: the carrier's entity key."""
         item = phase.item
-        if phase.other:
+        if phase.other and phase.of is not None:
+            # <of>_phase_other, named with its program's name
+            self._identify(
+                device,
+                Platform.BINARY_SENSOR,
+                f"{PHASE}_{OTHER}",
+                item=phase.of,
+                translation=f"{DETECTED}_{PHASE}_{OTHER}",
+            )
+        elif phase.other:
             self._identify(
                 device,
                 Platform.BINARY_SENSOR,
@@ -330,10 +339,16 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
 
     _attr_device_class = SensorDeviceClass.ENUM
 
-    def __init__(self, device: Device, carrier: Carrier, *, source: str) -> None:
-        """Show `carrier`'s detector; `source`: the carrier's entity key."""
+    def __init__(
+        self, device: Device, carrier: Carrier, *, source: str, of: Item | None = None
+    ) -> None:
+        """Show `carrier`'s detector; `source`: the carrier's entity key; `of`: a detected program's item."""
         self._identify(
-            device, Platform.SENSOR, f"{PHASE}_current", translation=f"{PHASE}_current"
+            device,
+            Platform.SENSOR,
+            f"{PHASE}_current",
+            item=of,
+            translation=_fixed(f"{PHASE}_current", of),
         )
         self.sources = (source,)
         self._carrier = carrier
@@ -410,10 +425,16 @@ class PhaseLast(PururuEntity, RestoreSensor):
 
     _attr_device_class = SensorDeviceClass.ENUM
 
-    def __init__(self, device: Device, program: Program, *, source: str) -> None:
-        """Take the phase of every cycle `program`'s phases send; `source`: the carrier's entity key."""
+    def __init__(
+        self, device: Device, program: Program, *, source: str, of: Item | None = None
+    ) -> None:
+        """Take the phase of every cycle `program`'s phases send; `source`: the carrier's entity key; `of`: a detected program's item."""
         self._identify(
-            device, Platform.SENSOR, f"{PHASE}_last", translation=f"{PHASE}_last"
+            device,
+            Platform.SENSOR,
+            f"{PHASE}_last",
+            item=of,
+            translation=_fixed(f"{PHASE}_last", of),
         )
         self.sources = (source,)
         self._device = device
@@ -443,9 +464,16 @@ class PhaseLast(PururuEntity, RestoreSensor):
         self.async_write_ha_state()
 
 
+def _fixed(key: str, of: Item | None) -> str:
+    """What the current or last phase is named under: its key, or detected_<key> with {item} in a detected program."""
+    return key if of is None else f"{DETECTED}_{key}"
+
+
 def _translation(phase: Phase, suffix: str) -> str:
-    """What a phase's cycle entity is named under: phase_<suffix> with {item}, or other's own."""
-    return f"{PHASE}_{OTHER}_{suffix}" if phase.other else f"{PHASE}_{suffix}"
+    """What a phase's cycle entity is named under: phase_<suffix> with {item}, or other's own (a detected program's, with {item})."""
+    if not phase.other:
+        return f"{PHASE}_{suffix}"
+    return _fixed(f"{PHASE}_{OTHER}_{suffix}", phase.of)
 
 
 def _cycle_entities(
@@ -508,8 +536,8 @@ def build(
     entities: list[PururuEntity] = [carrier]
     if not program.phases:
         return entities
-    entities.append(PhaseCurrent(device, carrier, source=key))
-    entities.append(PhaseLast(device, program, source=key))
+    entities.append(PhaseCurrent(device, carrier, source=key, of=of))
+    entities.append(PhaseLast(device, program, source=key, of=of))
     for phase in program.phases:
         entities.append(PhaseRunning(device, carrier, phase, source=key))
         entities.extend(_cycle_entities(hass, device, phase, energy))
@@ -532,7 +560,13 @@ def build_detected(
     """
     of = Item(slug=key, name=config["name"])
     entities = build(
-        hass, device, program_of(config), key=key, reading=reading, energy=energy, of=of
+        hass,
+        device,
+        program_of(config, of),
+        key=key,
+        reading=reading,
+        energy=energy,
+        of=of,
     )
     for description in LAST_CYCLE:
         if energy is not None or description.key != "last_cycle_energy":

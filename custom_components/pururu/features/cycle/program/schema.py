@@ -49,10 +49,18 @@ NAMED: dict[str, Platform] = {
 # the programs aspect's key (aspects/programs.py)
 DETECTED_AT: Path = (CONF_PROGRAMS, CONF_DETECTED, EACH)
 # A detected program's translations, once for every builder, all with {item},
-# its name: detected_<suffix> for its cycle entities
+# its name: detected_<suffix> for its cycle entities, detected_phase_current and
+# _last for its fixed ones, detected_phase_other* for its other's (a configured
+# phase's are phase_<suffix>, with the phase's name, as the running program's)
 DETECTED = "detected"
 DETECTED_NAMED: dict[str, Platform] = {
-    f"{DETECTED}_{suffix}": platform for suffix, platform in SUFFIXES.items()
+    **{f"{DETECTED}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
+    **{f"{DETECTED}_{key}": platform for key, platform in FIXED.items()},
+    f"{DETECTED}_{PHASE}_{OTHER}": Platform.BINARY_SENSOR,
+    **{
+        f"{DETECTED}_{PHASE}_{OTHER}_{suffix}": platform
+        for suffix, platform in SUFFIXES.items()
+    },
 }
 # Each phase's totals, for the statistics aspect to meter; energy needs the builder's `energy`
 PHASE_COUNTERS: dict[str, str | None] = {
@@ -62,9 +70,14 @@ PHASE_COUNTERS: dict[str, str | None] = {
 }
 
 
-def phase_slug(key: str) -> str:
-    """A phase's entity keys' slug: phase_<key>, the one rule every phase key uses."""
-    return f"{PHASE}_{key}"
+def _of(entity_key: str, of: str | None) -> str:
+    """`entity_key` of the running program, or of detected program `of`: <of>_<entity_key>."""
+    return entity_key if of is None else f"{of}_{entity_key}"
+
+
+def phase_slug(key: str, of: str | None = None) -> str:
+    """A phase's entity keys' slug: phase_<key>, or <of>_phase_<key> in detected program `of`; the one rule every phase key uses."""
+    return _of(f"{PHASE}_{key}", of)
 
 
 def _phase_item(block: Any, path: Path) -> Item:
@@ -101,43 +114,72 @@ def _detected_item(block: Any, path: Path) -> Item:
     return Item(slug=path[-1], name=at(block, path)["name"])
 
 
+def _detected_phase_item(block: Any, path: Path) -> Item:
+    """A phase of a detected program, at `path` (…, <program>, phases, <phase>): <program>_phase_<phase>, named by its name."""
+    return Item(slug=phase_slug(path[-1], path[-3]), name=at(block, path)["name"])
+
+
+def _detected_other_item(block: Any, path: Path) -> Item:
+    """A detected program's other, at `path` (…, <program>, other): <program>_phase_other, named with its program's name."""
+    return Item(slug=phase_slug(OTHER, path[-2]), name=at(block, path[:-1])["name"])
+
+
 def counted_each(where: Path) -> tuple[Counted, ...]:
-    """Where each detected program of the map at `where` counts: its runtime, cycles and energy, as its item's.
+    """Where each detected program of the map at `where` counts: its runtime, cycles and energy, as its item's; each phase's and other's.
 
     Unlike running_program's (the builder's own totals), a detected program's
     totals are its own: <key>_runtime_total, <key>_cycles_total,
-    <key>_energy_total (energy needs the builder's `energy`, D3 ruling 7).
+    <key>_energy_total (energy needs the builder's `energy`, D3 ruling 7). Its
+    phases' are <key>_phase_<phase>_<counter>_total; its other's meters are
+    named by detected_phase_other_*, with its name.
     """
-    return (Counted(needs=PHASE_COUNTERS, at=where, item=_detected_item),)
+    return (
+        Counted(needs=PHASE_COUNTERS, at=where, item=_detected_item),
+        Counted(
+            needs=PHASE_COUNTERS,
+            at=(*where, "phases", EACH),
+            item=_detected_phase_item,
+        ),
+        Counted(
+            needs=PHASE_COUNTERS,
+            at=(*where, OTHER),
+            item=_detected_other_item,
+            named=f"{DETECTED}_{PHASE}_{OTHER}",
+        ),
+    )
 
 
-def detected_keys(key: str) -> dict[str, Platform]:
-    """Every entity key detected program `key` can create: its carrier, then its cycle entities."""
+def detected_keys(key: str, config: Mapping[str, Any]) -> dict[str, Platform]:
+    """Every entity key detected program `key` can create: its carrier, its cycle entities, then its phases'."""
     return {
         key: Platform.BINARY_SENSOR,
         **{f"{key}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
+        **keys_of(config, of=key),
     }
 
 
-def phase_keys(key: str) -> dict[str, Platform]:
-    """Every entity key phase `key` can create: its binary sensor, then its cycle entities."""
-    slug = phase_slug(key)
+def phase_keys(key: str, of: str | None = None) -> dict[str, Platform]:
+    """Every entity key phase `key` (of detected program `of`) can create: its binary sensor, then its cycle entities."""
+    slug = phase_slug(key, of)
     return {
         slug: Platform.BINARY_SENSOR,
         **{f"{slug}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
     }
 
 
-def keys_of(config: Mapping[str, Any]) -> dict[str, Platform]:
-    """Every entity key a program block's phases create, other's too: none without phases."""
+def keys_of(config: Mapping[str, Any], of: str | None = None) -> dict[str, Platform]:
+    """Every entity key a program block's phases create, other's too: none without phases.
+
+    `of`: a detected program's key, before each (<of>_phase_current, …).
+    """
     if "phases" not in config:
         return {}
     return {
-        **FIXED,
+        **{_of(key, of): platform for key, platform in FIXED.items()},
         **{
             entity_key: platform
             for key in (*config["phases"], OTHER)
-            for entity_key, platform in phase_keys(key).items()
+            for entity_key, platform in phase_keys(key, of).items()
         },
     }
 
@@ -253,11 +295,20 @@ class Phase:
     key: str
     name: str
     band: Band
+    # The detected program it is a phase of: None, the builder's running program
+    of: Item | None = None
 
     @property
     def item(self) -> Item:
-        """Its entity keys' item: phase_<key>_<suffix>."""
-        return Item(slug=phase_slug(self.key), name=self.name)
+        """Its entity keys' item: phase_<key>_<suffix>, or <of>_phase_<key>_<suffix>.
+
+        A detected program's other is named with the program's name: its
+        translations (detected_phase_other_*) carry {item}.
+        """
+        if self.of is None:
+            return Item(slug=phase_slug(self.key), name=self.name)
+        name = self.of.name if self.other else self.name
+        return Item(slug=phase_slug(self.key, self.of.slug), name=name)
 
     @property
     def other(self) -> bool:
@@ -282,10 +333,13 @@ def _band(block: Mapping[str, Any]) -> Band:
     )
 
 
-def program_of(config: Mapping[str, Any]) -> Program:
-    """The program of a block SCHEMA validated: other comes with the first phase."""
+def program_of(config: Mapping[str, Any], of: Item | None = None) -> Program:
+    """The program of a block SCHEMA validated: other comes with the first phase.
+
+    `of`: a detected program's item, its phases' (Phase.of).
+    """
     phases = [
-        Phase(key=key, name=phase["name"], band=_band(phase))
+        Phase(key=key, name=phase["name"], band=_band(phase), of=of)
         for key, phase in config.get("phases", {}).items()
     ]
     if phases:
@@ -294,5 +348,5 @@ def program_of(config: Mapping[str, Any]) -> Program:
         # Its name is only its item's: its entities are named by their own translations.
         # Only its delays: the mounted block holds its statistics too
         band = Band(on_delay=other["on_delay"], off_delay=other["off_delay"])
-        phases.append(Phase(key=OTHER, name=OTHER, band=band))
+        phases.append(Phase(key=OTHER, name=OTHER, band=band, of=of))
     return Program(band=_band(config), phases=tuple(phases))

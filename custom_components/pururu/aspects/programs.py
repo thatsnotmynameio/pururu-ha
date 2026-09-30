@@ -451,8 +451,17 @@ def _derived(value: Mapping[str, Any]) -> Iterator[tuple[str, Platform]]:
     A key two of them create comes twice: checks.keys_distinct refuses it
     (cotton's cotton_cycles_total beside a program keyed cotton_cycles_total).
     """
-    for key in value[CONF_DETECTED]:
-        yield from detected_keys(key).items()
+    for key, config in value[CONF_DETECTED].items():
+        yield from detected_keys(key, config).items()
+
+
+# A detected program with a phase and other: the programs aspect's example
+EXAMPLE: dict[str, Any] = {
+    "name": "Cotton",
+    "above": 1500,
+    "phases": {"rinsing": {"name": "Rinsing", "above": 1800}},
+    "other": {},
+}
 
 
 def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
@@ -466,7 +475,8 @@ def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
             schema=DETECTED_BLOCK,
             keys={},
             named=partial(qualified, builder.namespace),
-            example={CONF_DETECTED: {"cotton": {"name": "Cotton", "above": 1500}}},
+            # One phase and other: the contract test reaches every place
+            example={CONF_DETECTED: {"cotton": EXAMPLE}},
             derived=_derived,
         ),
     )

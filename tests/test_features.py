@@ -195,6 +195,10 @@ def test_a_detected_programs_keys_are_named(ha: HomeAssistant) -> None:
         for translations in (en, pt):
             assert "{item}" in translations["entity"][platform][key]["name"], key
         assert icons["entity"][platform][key]["default"].startswith("mdi:"), key
+    for translations in (en, pt):
+        sensors = translations["entity"]["sensor"]
+        for fixed in ("phase_current", "phase_last"):
+            assert sensors[f"detected_{fixed}"]["state"] == sensors[fixed]["state"], fixed
 
 
 def test_example_is_valid_and_unknown_keys_are_refused(features: dict[str, Any]) -> None:
@@ -242,7 +246,8 @@ def test_what_a_last_cycle_follows_is_a_cycle_source(
                 assert isinstance(built[device.qualified(source)], cycle_source), (name, entity.key)
                 following.setdefault(name, set()).add(source)
     assert set(following) == {"appliance", "door", "window", "programs"}
-    assert following["appliance"] == {"running", "phase_warming", "phase_other", "cotton"}
+    assert following["appliance"] == {"running", "phase_warming", "phase_other", "cotton",
+                                      "cotton_phase_rinsing", "cotton_phase_other"}
 
 
 def test_a_derived_key_is_in_the_index(ha: HomeAssistant, features: dict[str, Any]) -> None:
@@ -753,6 +758,8 @@ def test_a_counter_without_its_setting_is_refused(features: dict[str, Any]) -> N
         ("appliance", ("running_program", "phases", "*")),
         ("appliance", ("running_program", "other")),
         ("appliance", ("programs", "detected", "*")),
+        ("appliance", ("programs", "detected", "*", "phases", "*")),
+        ("appliance", ("programs", "detected", "*", "other")),
     }
     for name, feature, counted, counter, setting in needing:
         example = {key: value for key, value in full(name, feature).items() if key != setting}

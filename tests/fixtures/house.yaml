@@ -45,6 +45,13 @@ devices:
             above: 1500
             on_delay: {minutes: 5}
             statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+            phases:
+              warming:
+                name: Aquecendo
+                above: 1800
+                statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+            other:
+              statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
       statistics:
         idle_energy: [today, week, month, year]
       alerts:

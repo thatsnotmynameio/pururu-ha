@@ -51,7 +51,8 @@
       "appliance_alert_no_cycle": {"name": "Sem ciclo"},
       "door_open": {"name": "Aberta"},
       "window_open": {"name": "Aberta"},
-      "phase_other": {"name": "Outra fase"}
+      "phase_other": {"name": "Outra fase"},
+      "detected_phase_other": {"name": "Outra fase de {item}"}
     },
     "sensor": {
       "appliance_power": {"name": "Potência"},
@@ -109,6 +110,37 @@
       "detected_cycles_total": {"name": "Ciclos de {item}", "unit_of_measurement": "ciclos"},
       "detected_runtime_total": {"name": "Tempo de {item}"},
       "detected_energy_total": {"name": "Energia de {item}"},
+      "detected_phase_current": {
+        "name": "Fase de {item}",
+        "state": {
+          "idle": "Parada", "other": "Outra"
+        }
+      },
+      "detected_phase_last": {
+        "name": "Última fase de {item}",
+        "state": {
+          "other": "Outra"
+        }
+      },
+      "detected_phase_other_last_cycle_start": {"name": "Início do último ciclo de outra fase de {item}"},
+      "detected_phase_other_last_cycle_end": {"name": "Fim do último ciclo de outra fase de {item}"},
+      "detected_phase_other_last_cycle_duration": {"name": "Duração do último ciclo de outra fase de {item}"},
+      "detected_phase_other_last_cycle_energy": {"name": "Energia do último ciclo de outra fase de {item}"},
+      "detected_phase_other_cycles_total": {"name": "Ciclos de outra fase de {item}", "unit_of_measurement": "ciclos"},
+      "detected_phase_other_runtime_total": {"name": "Tempo de outra fase de {item}"},
+      "detected_phase_other_energy_total": {"name": "Energia de outra fase de {item}"},
+      "detected_phase_other_runtime_today": {"name": "Tempo de outra fase de {item} hoje"},
+      "detected_phase_other_runtime_week": {"name": "Tempo de outra fase de {item} na semana"},
+      "detected_phase_other_runtime_month": {"name": "Tempo de outra fase de {item} no mês"},
+      "detected_phase_other_runtime_year": {"name": "Tempo de outra fase de {item} no ano"},
+      "detected_phase_other_cycles_today": {"name": "Ciclos de outra fase de {item} hoje"},
+      "detected_phase_other_cycles_week": {"name": "Ciclos de outra fase de {item} na semana"},
+      "detected_phase_other_cycles_month": {"name": "Ciclos de outra fase de {item} no mês"},
+      "detected_phase_other_cycles_year": {"name": "Ciclos de outra fase de {item} no ano"},
+      "detected_phase_other_energy_today": {"name": "Energia de outra fase de {item} hoje"},
+      "detected_phase_other_energy_week": {"name": "Energia de outra fase de {item} na semana"},
+      "detected_phase_other_energy_month": {"name": "Energia de outra fase de {item} no mês"},
+      "detected_phase_other_energy_year": {"name": "Energia de outra fase de {item} no ano"},
       "phase_other_last_cycle_start": {"name": "Início do último ciclo de outra fase"},
       "phase_other_last_cycle_end": {"name": "Fim do último ciclo de outra fase"},
       "phase_other_last_cycle_duration": {"name": "Duração do último ciclo de outra fase"},
