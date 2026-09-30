@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 import pytest
 import voluptuous as vol
 
@@ -141,6 +142,48 @@ def test_an_aspect_inside_another_is_taken_first_and_put_back_last(ha: HomeAssis
     assert mounted["outer"] == {"each": {"a": {"n": 1, "inner": {"m": 2}}, "b": {"n": 3}}}
 
 
+def nested(check: Any = None) -> tuple[Any, Any]:
+    """`outer` at the block, its items keyed by slugs (YAML's 1 made "1"); `inner` in each of them."""
+    outer = made_up("outer", (), vol.Schema({"each": {cv.slug: {"n": int}}}))
+    extra = {} if check is None else {"check": check}
+    inner = made_up("inner", ("outer", "each", module("core.feature").EACH), vol.Schema({"m": int}), **extra)
+    return outer, inner
+
+
+def test_an_aspect_inside_another_keeps_a_whole_number_key(ha: HomeAssistant) -> None:
+    """An item keyed 1 at depth: its inner value is put back under "1", where the outer schema made it."""
+    catalogue = module("setup.catalogue")
+    block = {**PLAIN, "outer": {"each": {1: {"n": 1, "inner": {"m": 2}}}}}
+    with patch.object(catalogue, "ASPECTS", nested()):
+        mounted = catalogue.mount(catalogue.builders()["appliance"], "appliance", block)
+    assert mounted["outer"] == {"each": {"1": {"n": 1, "inner": {"m": 2}}}}
+
+
+def test_a_refusal_inside_another_aspect_says_where(ha: HomeAssistant) -> None:
+    catalogue = module("setup.catalogue")
+    block = {**PLAIN, "outer": {"each": {1: {"n": 1, "inner": {"m": "two"}}}}}
+    with patch.object(catalogue, "ASPECTS", nested()), pytest.raises(vol.MultipleInvalid) as refused:
+        catalogue.mount(catalogue.builders()["appliance"], "appliance", block)
+    assert [error.path for error in refused.value.errors] == [["outer", "each", "1", "inner", "m"]]
+
+
+def test_a_check_inside_another_aspect_gets_its_container_put_back(ha: HomeAssistant) -> None:
+    """A nested place's check sees its container with its value back in it; its refusal says where."""
+    catalogue = module("setup.catalogue")
+    seen: list[Any] = []
+
+    def check(_block: Any, container: Any) -> None:
+        seen.append(container)
+        if container["inner"]["m"] > 1:
+            raise vol.Invalid("too many", path=["inner"])
+
+    block = {**PLAIN, "outer": {"each": {"a": {"n": 1, "inner": {"m": 2}}, "b": {"n": 3, "inner": {"m": 1}}}}}
+    with patch.object(catalogue, "ASPECTS", nested(check)), pytest.raises(vol.MultipleInvalid) as refused:
+        catalogue.mount(catalogue.builders()["appliance"], "appliance", block)
+    assert seen == [{"n": 1, "inner": {"m": 2}}, {"n": 3, "inner": {"m": 1}}]
+    assert [error.path for error in refused.value.errors] == [["outer", "each", "a", "inner"]]
+
+
 def test_keys_lists_what_a_place_derives(ha: HomeAssistant) -> None:
     """Place.derived: the keys an aspect's validated value adds, by the aspect and no item's; none while it's absent."""
     catalogue = module("setup.catalogue")
@@ -154,3 +197,15 @@ def test_keys_lists_what_a_place_derives(ha: HomeAssistant) -> None:
             {"appliance": catalogue.mount(appliance, "appliance", PLAIN)})}
     assert rows["cotton_seen"] == ("made", None)
     assert not {key for key in absent if key.endswith("_seen")}
+
+
+def test_keys_lists_a_key_derived_twice_twice(ha: HomeAssistant) -> None:
+    """Place.derived gives pairs, not a map: a key two items derive comes twice, for checks.keys_distinct."""
+    catalogue = module("setup.catalogue")
+    derives = made_up("made", (), vol.Schema({str: int}),
+                      derived=lambda value: [("same", Platform.SENSOR) for _ in value])
+    appliance = catalogue.builders()["appliance"]
+    with patch.object(catalogue, "ASPECTS", (derives,)):
+        block = catalogue.mount(appliance, "appliance", {**PLAIN, "made": {"cotton": 1, "linen": 2}})
+        listed = [key for _, key, *_ in catalogue.keys({"appliance": block})]
+    assert listed.count("same") == 2

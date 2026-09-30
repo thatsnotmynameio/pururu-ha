@@ -111,7 +111,7 @@ def counted_each(where: Path) -> tuple[Counted, ...]:
     return (Counted(needs=PHASE_COUNTERS, at=where, item=_detected_item),)
 
 
-def detected_keys(key: str, config: Mapping[str, Any]) -> dict[str, Platform]:
+def detected_keys(key: str) -> dict[str, Platform]:
     """Every entity key detected program `key` can create: its carrier, then its cycle entities."""
     return {
         key: Platform.BINARY_SENSOR,

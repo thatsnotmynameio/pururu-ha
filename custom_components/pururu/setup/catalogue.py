@@ -44,17 +44,17 @@ def aspects_of(builder: Feature) -> tuple[Aspect, ...]:
 type Taken = dict[tuple[Path, str], tuple[Place, Any]]
 
 
-def _taken(value: Any, aspect: Aspect, place: Place, taken: Taken, at: Path) -> Any:
-    """`value` without the aspect's key, what the key held put in `taken` at `at`.
+def _taken(value: Any, aspect: Aspect, place: Place, taken: Taken, where: Path) -> Any:
+    """`value` without the aspect's key, what the key held put in `taken` at `where`.
 
     Absent, or `value` not a map (left whole): `{}`, or nothing put when the
     aspect doesn't mount an absent key (Aspect.mount_absent).
     """
     if isinstance(value, dict) and aspect.key in value:
-        taken[at, aspect.key] = (place, value[aspect.key])
+        taken[where, aspect.key] = (place, value[aspect.key])
         return {each: kept for each, kept in value.items() if each != aspect.key}
     if aspect.mount_absent:
-        taken[at, aspect.key] = (place, {})
+        taken[where, aspect.key] = (place, {})
     return value
 
 
@@ -64,11 +64,11 @@ def _take(
     aspect: Aspect,
     place: Place,
     taken: Taken,
-    at: Path = (),
+    where: Path = (),
 ) -> Any:
     """`value` without the aspect's key in each container `path` names (feature.walk's rule), rebuilt along the path."""
     if not path:
-        return _taken(value, aspect, place, taken, at)
+        return _taken(value, aspect, place, taken, where)
     if not isinstance(value, dict):
         return value
     head, *rest = path
@@ -77,7 +77,9 @@ def _take(
     return {
         **value,
         **{
-            key: _take(value[key], tuple(rest), aspect, place, taken, (*at, str(key)))
+            key: _take(
+                value[key], tuple(rest), aspect, place, taken, (*where, str(key))
+            )
             for key in keys
         },
     }
@@ -223,22 +225,29 @@ def _aspects_keys(
     for aspect in aspects_of(feature):
         for place in aspect.places(feature, name):
             for path, container in walk(block, place.path):
-                item = None if place.item is None else place.item(block, path)
-                yield from (
-                    (
-                        name,
-                        item_key(entity_key, item),
-                        platform,
-                        aspect.key,
-                        None if item is None else item.slug,
-                    )
-                    for entity_key, platform in place.keys.items()
-                )
-                if place.derived is not None and aspect.key in container:
-                    yield from (
-                        (name, entity_key, platform, aspect.key, None)
-                        for entity_key, platform in place.derived(container[aspect.key])
-                    )
+                yield from _place_keys(name, aspect, place, block, path, container)
+
+
+def _place_keys(
+    name: str, aspect: Aspect, place: Place, block: Any, path: Path, container: Any
+) -> Iterator[tuple[str, str, Platform, str | None, str | None]]:
+    """_aspects_keys' rows for one container at `path`: the place's fixed keys, then what it derives."""
+    item = None if place.item is None else place.item(block, path)
+    yield from (
+        (
+            name,
+            item_key(entity_key, item),
+            platform,
+            aspect.key,
+            None if item is None else item.slug,
+        )
+        for entity_key, platform in place.keys.items()
+    )
+    if place.derived is not None and aspect.key in container:
+        yield from (
+            (name, entity_key, platform, aspect.key, None)
+            for entity_key, platform in place.derived(container[aspect.key])
+        )
 
 
 def targets(key: str, config: dict[str, Any]) -> dict[str, Target]:

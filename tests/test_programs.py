@@ -109,11 +109,19 @@ async def test_invalid_program_is_refused(ha: HomeAssistant, program: dict[str, 
     assert not await setup(ha, devices(clean=program))
 
 
+# A flat map (before D3) or a block without its group: the device's programs
+# sit under executable:, said at the block
+UNDER_EXECUTABLE = ("a device's programs sit under executable: (programs: executable: <key>: …) "
+                    "for dictionary value 'pururu->devices->greenhouse->programs'")
+
+
 @pytest.mark.parametrize(("programs", "message"), [
-    pytest.param({"clean": CLEANING}, "'clean' is an invalid option for 'pururu', check: "
-                 "pururu->devices->greenhouse->programs->clean", id="a flat map, as before D3"),
-    pytest.param({}, "required key 'executable' not provided", id="no group"),
+    pytest.param({"clean": CLEANING}, UNDER_EXECUTABLE, id="a flat map, as before D3"),
+    pytest.param({}, UNDER_EXECUTABLE, id="no group"),
     pytest.param({"executable": {}}, "length of value must be at least 1", id="no program"),
+    pytest.param({"executable": None},
+                 "expected a mapping for dictionary value 'pururu->devices->greenhouse->programs->executable'",
+                 id="executable with nothing under it"),
     pytest.param(None, "expected a mapping for dictionary value 'pururu->devices->greenhouse->programs'",
                  id="null"),
     pytest.param({"executable": {"clean": CLEANING}, "detected": {"cotton": {"name": "Algodão", "above": 1500}}},
@@ -709,6 +717,14 @@ async def test_meters_are_asked_for(scripts: HomeAssistant) -> None:
     for suffix in ("runtime_today", "cycles_month", "cycles_year"):
         assert scripts.states.get(STAT + suffix) is not None, suffix
     assert scripts.states.get(STAT + "runtime_week") is None
+
+
+async def test_a_program_keyed_statistics_is_a_program(scripts: HomeAssistant) -> None:
+    """A program keyed like the statistics aspect is a program, with statistics of its own."""
+    program = {**CLEANING, "statistics": {"cycles": ["today"]}}
+    assert await setup(scripts, devices(statistics=program))
+    assert scripts.states.get(
+        "sensor.pururu_greenhouse_program_executable_statistics_cycles_today") is not None
 
 
 def test_a_whole_number_key_keeps_its_statistics(ha: HomeAssistant) -> None:

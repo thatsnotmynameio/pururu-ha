@@ -526,8 +526,9 @@ def test_a_builders_own_schema_refuses_an_aspects_key(features: dict[str, Any]) 
         feature.schema(valid)
         for place in aspect.places(feature, name):
             if list(walk(valid, place.path)):
+                refused = put(valid, place.path, aspect.key, place.example)
                 with pytest.raises(vol.Invalid):
-                    feature.schema(put(valid, place.path, aspect.key, place.example))
+                    feature.schema(refused)
                 continue
             holders = [(other, at) for other, _, each in offered({name: feature}) if each is feature
                        for at in other.places(feature, name)
@@ -536,8 +537,9 @@ def test_a_builders_own_schema_refuses_an_aspects_key(features: dict[str, Any]) 
             for other, at in holders:
                 inner = place.path[len(at.path) + 1:]
                 assert list(walk(at.example, inner)), (aspect.key, name, place.path)
+                refused = put(at.example, inner, aspect.key, place.example)
                 with pytest.raises(vol.Invalid):
-                    at.schema(put(at.example, inner, aspect.key, place.example))
+                    at.schema(refused)
 
 
 def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
@@ -561,10 +563,15 @@ def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
         example = full(name, feature)
         for where in maps:
             item = next(iter(feature_module.at(example, where).values()))
+            # The item mounted under a key alike no aspect's: what it is as an item
+            plain = feature_module.at(
+                catalogue.mount(feature, name, _replaced(example, where, {"plain": item})), where)["plain"]
             for aspect in module("aspects").ASPECTS:
                 block = _replaced(example, where, {aspect.key: item})
                 mounted = feature_module.at(catalogue.mount(feature, name, block), where)
                 assert set(mounted) == {aspect.key}, (name, where)
+                # Mounted as its peers are: walked into as an item, its own aspects mounted in it
+                assert mounted[aspect.key] == plain, (name, where, aspect.key)
 
 
 def _replaced(block: Any, path: tuple[str, ...], value: Any) -> Any:
@@ -583,7 +590,12 @@ def _replaced(block: Any, path: tuple[str, ...], value: Any) -> Any:
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SWITCHES, "programs": 5}}},
         ["devices", "greenhouse", "programs"],
-        id="an item-placed aspect's block isn't a map"),
+        id="the programs block isn't a map"),
+    pytest.param(
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SWITCHES,
+                                    "programs": {"executable": 5}}}},
+        ["devices", "greenhouse", "programs", "executable"],
+        id="a group isn't a map"),
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SWITCHES,
                                     "programs": {"executable": {"clean": 5}}}}},

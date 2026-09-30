@@ -210,14 +210,14 @@ type Path = tuple[str, ...]
 EACH = "*"
 
 
-def walk(value: Any, path: Path, at: Path = ()) -> Iterator[tuple[Path, Any]]:
+def walk(value: Any, path: Path, where: Path = ()) -> Iterator[tuple[Path, Any]]:
     """Each container `path` names in `value`, with its own path (EACH made each key).
 
     A key missing, or a map expected where there's none, names no container:
     nothing is yielded for it. The last container may be anything.
     """
     if not path:
-        yield at, value
+        yield where, value
         return
     if not isinstance(value, Mapping):
         return
@@ -226,7 +226,7 @@ def walk(value: Any, path: Path, at: Path = ()) -> Iterator[tuple[Path, Any]]:
     keys = value if head == EACH else present
     for key in keys:
         # As the builder's schema returns it: cv.slug makes YAML's 1 "1"
-        yield from walk(value[key], tuple(rest), (*at, str(key)))
+        yield from walk(value[key], tuple(rest), (*where, str(key)))
 
 
 def at(block: Any, path: Path) -> Any:

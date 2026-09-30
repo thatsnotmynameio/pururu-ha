@@ -250,7 +250,7 @@ async def test_detected_programs_may_not_take_each_others_keys(ha: HomeAssistant
     schema = module("setup.schema").CONFIG_SCHEMA
     program = module("features.cycle.program")
     cotton = DETECTED["cotton"]
-    for key in sorted(set(program.detected_keys("cotton", cotton)) - {"cotton"}):
+    for key in sorted(set(program.detected_keys("cotton")) - {"cotton"}):
         detected = {"cotton": cotton, key: {"name": "X", "above": 1500}}
         house = {"devices": {KEY: {"name": "Tanquinho", "appliance": appliance(programs={"detected": detected})}}}
         with pytest.raises(vol.Invalid, match="would be two entities"):

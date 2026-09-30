@@ -1490,7 +1490,7 @@ PhaseCurrent(device, carrier, *, source, of=None); PhaseLast(device, program, *,
   }
   ```
 
-  After `_detected_item`, and `counted_each` and `detected_keys` in full:
+  After `_detected_item`, and `counted_each` and `detected_keys` in full. Fix round 1 of Tasks 1–2 dropped `detected_keys`' `config` while nothing read it (Sonar S1172): it comes back here, and its two callers pass it again (`_derived` in `aspects/programs.py`: `for key, config in value[CONF_DETECTED].items()`; `test_detected_programs_may_not_take_each_others_keys`: `program.detected_keys("cotton", cotton)`):
 
   ```python
   def _detected_phase_item(block: Any, path: Path) -> Item:
@@ -1718,7 +1718,7 @@ The user-facing pages say what D3 changed: one programs page with both groups (r
   - `docs/getting-started/first-device.mdx`: the link to the detected programs page becomes `/concepts/programs#phases`; one sentence after the phases: a wash kind the power alone tells apart can be a detected program of its own (link). `install.mdx`: "Using [executable programs](/concepts/programs#executable-programs)? …".
   - `docs/index.mdx`: "A [program](/concepts/programs) is a script …" becomes "An [executable program](/concepts/programs#executable-programs) is a script …".
   - `docs/reference/configuration.mdx`: the example's `programs:` under `executable:` (Task 1) and the washer's `programs: detected: cotton`; "General rules"' key list names "a detected or executable program"; `programs`' property: "`executable:`, a map of **program key → program**, each one a Home Assistant script …; a detected program sits in its feature's block (`programs: detected:`)", `then` names an executable program.
-  - `docs/reference/troubleshooting.mdx`: "The reload changed nothing" adds: a flat `programs:` (`'clean' is an invalid option for 'pururu', check: pururu->devices->greenhouse->programs->clean`: indent under `executable:`), `detected:` at the device, `executable:` in a feature, `programs: {}` (`a feature's programs needs detected`), a detected program without `name`, `then:` naming a detected program, a detected program keyed as one of the appliance's entities (`… would be two entities`); every `script.pururu_greenhouse_program_clean` becomes `…_program_executable_clean`; "Programs" is "Executable programs".
+  - `docs/reference/troubleshooting.mdx`: "The reload changed nothing" adds: a flat `programs:` at a device, or one without a group (`a device's programs sit under executable: (programs: executable: <key>: …) for dictionary value 'pururu->devices->greenhouse->programs'`: indent under `executable:`; fix round 1 of Tasks 1–2), `detected:` at the device, `executable:` in a feature, `programs: {}` (`a feature's programs needs detected`), a detected program without `name`, `then:` naming a detected program, a detected program keyed as one of the appliance's entities (`… would be two entities`); every `script.pururu_greenhouse_program_clean` becomes `…_program_executable_clean`; "Programs" is "Executable programs".
   - `README.md`: nothing names a flat `programs:` or an old ID (checked below).
 
   ```sh
@@ -1768,7 +1768,8 @@ What contributors read says what D3 built: the `Programs` role, `aspects/program
   - "Where the code lives": `aspects/` holds "`ASPECTS` … `statistics.py`, `alerts.py`, `notifications.py`, `programs.py` (the detected programs' aspect and the executable programs' device key)"; `device_keys/` holds "`DEVICE_KEYS`, reactions" (programs moved); `CHECKS`' owners list `programs.check` in `aspects/programs.py`; `setup/catalogue.py`'s line adds that `mount` takes the deepest places first and puts the shallowest first;
   - step 6: "Generate the programs' scripts (`aspects/programs.py`: `programs: executable:`, `script.pururu_<device>_program_executable_<key>`) …"; "`reactions` and `programs` are device keys" becomes "`reactions` and `programs` (its `executable:` group) are device keys; a feature's `programs: detected:` is an aspect";
   - the roles list gains `Programs`; a bullet after the `Derived` one: "A builder with `Programs(reading, energy)` (the appliance: `power`, `energy`) takes `programs: detected:` in its block: the programs aspect (`aspects/programs.py`) mounts it, lists each detected program's keys (`Place.derived`, pairs, so `checks.keys_distinct` sees a key two programs create) and builds each with `program.build_detected` (the detector with `of`, the program's item: `<key>`, `<key>_<suffix>`, `<key>_phase_…`, named `detected_*` with `{item}`); the builder's `Counters` lists `program.counted_each(program.DETECTED_AT)`.";
-  - the **Aspects** bullet: `ASPECTS` is the build order (alerts, programs, statistics, notifications); `mount` takes each (aspect, place) deepest first, so an aspect's key can sit inside another aspect's value (statistics in a detected program), and puts values back shallowest first; `Place.item` and `Counted.item` take `(block, path)` (`feature.ItemOf`, `feature.at`); `Place.derived`;
+  - the **Aspects** bullet: `ASPECTS` is the build order (alerts, programs, statistics, notifications); `mount` takes each (aspect, place) deepest first, so an aspect's key can sit inside another aspect's value (statistics in a detected program), and puts values back shallowest first; `Place.item` and `Counted.item` take `(block, path)` (`feature.ItemOf`, `feature.at`): the bullet's `item: the item a container there is` says so (fix round 1 of Tasks 1–2); `Place.derived`;
+  - the Detected programs bullet's `schema.py` list: `counted(at)` is `counted(where)`, and `counted_each`, `detected_keys` join it (fix round 1 of Tasks 1–2; the Develop pages' `counted(at)` and "from its key and the container" were fixed there);
   - the `Items` bullet's example: a program's keys are `executable_<key>_<suffix>` (`program_executable_clean_cycles_total`), named `program_<suffix>` with `{program}`;
   - the entity IDs bullet: the script is `script.pururu_<device>_program_executable_<key>`;
   - Tests: `test_detected_programs.py` (the aspect: IDs, counting apart, restarts, names, statistics, where programs sit, collisions computed).
@@ -1780,7 +1781,7 @@ What contributors read says what D3 built: the `Programs` role, `aspects/program
   - `docs/develop/testing.mdx`, "Test files": `test_detected_programs.py` comes ("a feature's detected programs: IDs, counting apart from the running program, restarts, names in both languages, statistics, where programs sit, collisions computed from `catalogue.keys`, phases"); `test_catalogue.py` adds "an aspect inside another, a place's derived keys"; `test_programs.py` says "executable programs".
 
   ```sh
-  git grep -n 'device_keys/programs\|device_keys\.programs\|programs\.STATISTICS\|_program_clean\|detected-programs' -- CLAUDE.md docs ':!docs/superpowers'
+  git grep -n 'device_keys/programs\|device_keys\.programs\|programs\.STATISTICS\|_program_clean\|detected-programs\|counted(at)\|from its key and the container' -- CLAUDE.md docs ':!docs/superpowers'
   pnpm docs:check
   uv run pytest tests/test_code.py -n 0 -q
   ```

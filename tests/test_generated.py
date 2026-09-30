@@ -42,7 +42,8 @@ class Case:
     kind: str
     empty: Any
     device: str
-    namespace: str
+    # The prefix of its items' IDs after the device: the builder's namespace, then its group (programs' executable_)
+    prefix: str
     block: str
     feature: dict[str, Any]
     item: dict[str, Any]
@@ -59,7 +60,7 @@ class Case:
         return f"{self.include_key}: !include_dir_merge_{self.merge} {self.folder}"
 
     def unique_id(self, key: str) -> str:
-        return f"pururu_{self.device}_{self.namespace}_{key}"
+        return f"pururu_{self.device}_{self.prefix}_{key}"
 
     def entity_id(self, key: str) -> str:
         return f"{self.domain}.{self.unique_id(key)}"
@@ -85,7 +86,7 @@ AUTOMATION = Case(
     merge="list", issue="automations_not_included", data_key="automations",
     one="an automation", plural="automations", source="reactions and notifications",
     kind="AUTOMATIONS", empty=[],
-    device="lights", namespace="reaction", block="reactions",
+    device="lights", prefix="reaction", block="reactions",
     feature={"lights": {"teto": {"entity": "light.dummy_teto", "name": "Teto"}}},
     item={"name": "Noite", "at": "22:00"},
     process="homeassistant.components.automation._async_process_config",
@@ -94,7 +95,7 @@ SCRIPT = Case(
     domain="script", folder="pururu/scripts", file="pururu/scripts/programs.yaml",
     merge="named", issue="scripts_not_included", data_key="scripts",
     one="a script", plural="scripts", source="programs", kind="SCRIPTS", empty={},
-    device="greenhouse", namespace="program_executable", block="programs",
+    device="greenhouse", prefix="program_executable", block="programs",
     feature={"switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}},
     item={"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}]},
     process="homeassistant.components.script._async_process_config",

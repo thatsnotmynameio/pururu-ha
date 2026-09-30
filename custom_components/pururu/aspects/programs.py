@@ -122,12 +122,23 @@ PROGRAM = vol.Schema(
 
 
 def _executable_only(block: Any) -> Any:
-    """Refuse `detected:` at the device: a detected program reads a feature's reading, in its block."""
-    if isinstance(block, dict) and CONF_DETECTED in block:
+    """Refuse `detected:` at the device, and a block without `executable:` (a flat map, as before D3).
+
+    A detected program reads a feature's reading, in its block; the device's
+    own programs sit under `executable:`, said at the block.
+    """
+    if not isinstance(block, dict):
+        return block
+    if CONF_DETECTED in block:
         raise vol.Invalid(
             "a device's programs are executable: a detected program sits in the "
             "block of the feature whose reading it reads",
             path=[CONF_DETECTED],
+        )
+    if CONF_EXECUTABLE not in block:
+        raise vol.Invalid(
+            f"a device's {CONF_PROGRAMS} sit under {CONF_EXECUTABLE}: "
+            f"({CONF_PROGRAMS}: {CONF_EXECUTABLE}: <key>: …)"
         )
     return block
 
@@ -433,8 +444,8 @@ def _derived(value: Mapping[str, Any]) -> Iterator[tuple[str, Platform]]:
     A key two of them create comes twice: checks.keys_distinct refuses it
     (cotton's cotton_cycles_total beside a program keyed cotton_cycles_total).
     """
-    for key, config in value[CONF_DETECTED].items():
-        yield from detected_keys(key, config).items()
+    for key in value[CONF_DETECTED]:
+        yield from detected_keys(key).items()
 
 
 def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
