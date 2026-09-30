@@ -92,6 +92,12 @@ A builder is its roles (the Extension Object pattern), so `Feature` never gains 
 
 The contract test holds the rules between roles: each at most once, `Configured` and `Items` never together, no device key `Provides`, `Requires` or has `Actions`.
 
+### Detected programs
+
+`features/cycle/program/` is the detector of a **detected program**: a band of a reading with `on_delay`/`off_delay`, and phases that are bands too. No builder uses it yet — D2 gives the appliance a `running_program` built on it, in place of `running`, `modes` and `phases`. `schema.py` validates the block (`SCHEMA`) into a `Program` (`program_of`). `detector.py`'s `Detector` is pure: `read(value, now, kwh)` and `advance(now, kwh)` take a reading and the time and return `Started`/`Ended`, each delay passing at its own deadline however late `advance` comes, so a whole day of readings replays in milliseconds. `entities.py`'s `build()` puts it in Home Assistant: the **carrier**, a `CycleSource` binary sensor under the builder's own key, owns and restores the detector and follows the reading (once its entry's setup is over); per phase, a `PhaseRunning` binary sensor (a `CycleSource`, the source of the phase's cycles), and `PhaseCurrent` and `PhaseLast` sensors.
+
+Two edge cases matter: a **dip** (the reading leaves a running phase's band straight into another's) makes the other phase wait, once its own `on_delay` has passed, for the first to end or for a reading back in both bands; an **idle gap** (a reading outside every band once a phase left its own) blocks nothing — a phase whose `on_delay` passes starts at once, and the gap's phase still ends at the moment it left. `other` is the built-in phase for the program's band outside every configured one: it exists only with at least one configured phase, waits for nothing, and ends at once when a phase starts. `phase_current` is an enum sensor: the phase that started last among those running, or `idle` when none does (including while its carrier is disabled, or not yet restored), with `running` and `seen` (the phases seen in the program's current or last cycle) as attributes. `NAMED` lists every translation key the detector itself owns, outside every namespace, as the statistics aspect's own; the contract test (`test_the_detectors_keys_are_named`) counts and names each.
+
 ## Aspects
 
 Some concerns cut across builders: `statistics` (a meter per period) applies to `appliance`, `door`, `window`, `modes`, `programs` and `reactions` alike, and ready-made alerts and ready-made notifications apply to any builder offering at least one, so each is written once as an **aspect** (`core/feature.Aspect`, `aspects/`) instead of copied into each. `ASPECTS` (`aspects/__init__.py`) lists them, in build order: `alerts.ASPECT` (`aspects/alerts.py`), then `statistics.ASPECT` (`aspects/statistics.py`), then `notifications.ASPECT` (`aspects/notifications.py`), which adds no entity key and builds no entity: each enabled notification is an automation its `plan` generates.
@@ -157,5 +163,6 @@ Entities that must survive restarts are `RestoreEntity` or `RestoreSensor`. The 
 - The `last_cycle_*` sensors, `cycles_total` and `runtime_total` restore their values.
 - `phase` restores its state and its `seen` attribute.
 - The meters rely on `utility_meter`'s own restore.
+- A detected program's **carrier** (`features/cycle/program/entities.py`) keeps the detector's whole snapshot as extra restore data (the running cycles, the order they started in, and `seen`); `phase_current`, on another platform, shows its own restored state and attributes until the carrier has restored the detector.
 
 A reload is an unload plus a set-up, so the same restore path covers it.

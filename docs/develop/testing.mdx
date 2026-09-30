@@ -70,9 +70,11 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_vocabulary.py` | `trigger`'s state and numeric_state form case by case, `period`'s `HH:MM:SS` |
 | `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices, configured entity keys |
 | `test_ids.py` | Every entity and generated ID of a whole house (`fixtures/house.yaml`), pinned: a refactor can't lose or rename one |
-| `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every builder in `FEATURES` and `DEVICE_KEYS`, including that every `CycleSource` (`Provides`, `modes`' `Current`, the programs' `Runs`) is pinned |
+| `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every builder in `FEATURES` and `DEVICE_KEYS`, including that every `CycleSource` (`Provides`, `modes`' `Current`, the programs' `Runs`) is pinned; that the detector's own keys (`features.cycle.program.NAMED`) are counted among the created entity keys and each is named, in both languages, with an icon |
 | `test_statistics.py` | Today's meters, pinned: every entity ID a `Counters` builder can create, a few names and icons in both languages, and the schema's refusal texts, so consolidating them into one aspect can't change any unnoticed |
-| `test_cycle.py` | `CycleSource`'s order: the state is written, then the cycle signal, then the end signal |
+| `test_cycle.py` | `CycleSource`'s order: the state is written, then the cycle signal, then the end signal; that a cycle entity takes an optional `translation` |
+| `test_program.py` | `features/cycle/program`'s pure `Detector`: the schema's refusals, today's modes and phases scenarios replayed with the same readings, overlapping bands, the idle gap, `other`, ordering at one instant, restores, and the purifier day's replay (`fixtures/purifier_day.csv`) |
+| `test_program_entities.py` | The detector's entities (`build`), through a test-only builder swapped in for `FEATURES["appliance"]`: entity IDs, states, the handover, restarts, reloads, names |
 | `test_appliance.py` | `running`, cycles, energy, runtime, meters, restores |
 | `test_phases.py` | Bands, `for`, `seen`, restores, translations |
 | `test_switches.py` | Following the real switch, passing commands on, refused blocks, taken IDs, renames, reloads |
