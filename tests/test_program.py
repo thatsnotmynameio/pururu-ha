@@ -149,7 +149,7 @@ def test_the_keys_a_phase_creates(ha: HomeAssistant) -> None:
     assert set(program.PHASE_COUNTERS) == {"runtime", "cycles", "energy"}
 
 
-# --- the program alone: today's appliance `running` ------------------------------
+# --- the program alone: 0.1's appliance `running` --------------------------------
 
 ALONE = {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}
 
@@ -212,7 +212,7 @@ def test_the_programs_cycle_never_ends_before_it_started(ha: HomeAssistant) -> N
     assert drive.cycles(None) == [(60, 60)]
 
 
-# --- today's modes, as phases -----------------------------------------------------
+# --- 0.1's `modes`, as phases -----------------------------------------------------
 
 MODES: dict[str, Any] = {
     "above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2},
@@ -454,7 +454,7 @@ def test_phases_starting_at_one_instant_start_in_the_configurations_order(
     assert drive.current == current
 
 
-# --- today's phases ---------------------------------------------------------------
+# --- 0.1's `phases` ---------------------------------------------------------------
 
 WASHER: dict[str, Any] = {
     "above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2},
@@ -987,7 +987,7 @@ def replay(name: str) -> list[tuple[str | None, datetime | None, datetime]]:
 
 @pytest.mark.usefixtures("ha")
 def test_the_real_day_counts_each_kind() -> None:
-    """Each drink, chill and warming its own cycle, as today's modes count them; no `other`."""
+    """Each drink, chill and warming its own cycle, as 0.1's `modes` count them; no `other`."""
     ended = replay("purifier_day.csv")
     assert Counter(key for key, *_ in ended) == {
         None: 33, "pouring": 14, "frosting": 21, "warming": 2}

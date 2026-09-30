@@ -86,13 +86,13 @@
       "phase_current": {
         "name": "Phase",
         "state": {
-          "idle": "Idle", "rinsing": "Rinsing", "drying": "Drying", "other": "Other"
+          "idle": "Idle", "other": "Other"
         }
       },
       "phase_last": {
         "name": "Last phase",
         "state": {
-          "rinsing": "Rinsing", "drying": "Drying", "other": "Other"
+          "other": "Other"
         }
       },
       "phase_last_cycle_start": {"name": "{item} last cycle start"},

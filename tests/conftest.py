@@ -26,7 +26,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 @pytest.fixture
 def expected_lingering_timers() -> bool:
-    """Running's delays and phases' `for` timers may still be pending when a test ends."""
+    """The carrier's next delay (a detected program's on_delay/off_delay, its phases' too) may still be pending when a test ends."""
     return True
 
 

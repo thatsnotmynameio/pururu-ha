@@ -311,11 +311,15 @@ class PhaseRunning(CycleSource, BinarySensorEntity):
 
 
 class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
-    """The phase that started last among those running, or idle; those running and seen as attributes.
+    """The phase that started last among those running, or idle; its name, and those running and seen, as attributes.
 
-    Until the carrier restored the detector (another platform may add it
-    first), it shows its own restored state and attributes. A disabled carrier
-    never runs the detector: it shows idle, as every phase shows off.
+    Its state is the phase's key, translated only for idle and other; its
+    `name` attribute is the phase's as its binary sensor shows it: a
+    configured phase's `name`, other's translation, none while idle. Until the
+    carrier restored the detector (another platform may add it first), it
+    shows its own restored state and attributes, named as that phase is now. A
+    disabled carrier never runs the detector: it shows idle, as every phase
+    shows off.
     """
 
     _attr_device_class = SensorDeviceClass.ENUM
@@ -329,6 +333,8 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
         self._carrier = carrier
         phases = carrier.detector.program.phases
         self._phases = [phase.key for phase in phases]
+        # other's name is its translation's, read once added (`_name`)
+        self._names = {phase.key: phase.name for phase in phases if not phase.other}
         self._options = [IDLE, *self._phases]
         self._attr_options = self._options
         self._restored = IDLE
@@ -345,11 +351,21 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
-        """The running phases, and those the program's current or last cycle saw, in the configuration's order; the restored ones until the carrier restored the detector."""
+        """The shown phase's name; the running phases, and those the program's current or last cycle saw, in the configuration's order (the restored ones until the carrier restored the detector)."""
         if not self._carrier.ready:
-            return self._restored_attributes
-        detector = self._carrier.detector
-        return {"running": detector.running, "seen": detector.seen}
+            phases = self._restored_attributes
+        else:
+            detector = self._carrier.detector
+            phases = {"running": detector.running, "seen": detector.seen}
+        return {"name": self._name(self.native_value), **phases}
+
+    def _name(self, key: str) -> str | None:
+        """Phase `key`'s name: a configured phase's own, other's translation (none without one), none for idle."""
+        if key == OTHER:
+            return self.platform_data.platform_translations.get(
+                f"component.{DOMAIN}.entity.{Platform.BINARY_SENSOR}.{PHASE}_{OTHER}.name"
+            )
+        return self._names.get(key)
 
     @override
     async def async_added_to_hass(self) -> None:

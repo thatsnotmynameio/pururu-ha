@@ -188,7 +188,8 @@ class Feature:
     schema: Callable[[Any], Any]
     # Everything it can create: entity key -> the platform of its entity
     entity_keys: Mapping[str, Platform]
-    # Its entities, from its validated block and the entity IDs of what it requires
+    # Its entities, from its validated block and the entity IDs of what it refers to
+    # (Refers), or of the scripts and automations it generates (Generates)
     build: Build
     # A minimal valid block, for the contract test
     example: Mapping[str, Any]

@@ -245,6 +245,27 @@ async def test_a_late_timer_ends_the_phases_before_the_next_cycle(ha: HomeAssist
     assert state(ha, sensor("phase_resfriar_cycles_total")) == "1"
 
 
+async def test_a_late_timer_ends_a_phase_alone_before_it_starts_again(
+        ha: HomeAssistant, freezer: Any) -> None:
+    """The program runs on: a reading back in the phase's band after its off_delay passed, before its timer ran, ends the phase, then starts it again; the program shows no change."""
+    quick = {"above": 4, "off_delay": {"minutes": 10},
+             "phases": {"resfriar": {"name": "Resfriar", "above": 40, "off_delay": {"minutes": 2}}}}
+    assert await setup(ha, {KEY: {"name": "Dummy station",
+                                  "appliance": {"power": POWER, "running_program": quick}}})
+    await watts(ha, IDLE_W)
+    await watts(ha, 120)
+    assert (state(ha, RUNNING), state(ha, RESFRIAR)) == ("on", "on")
+    changes = capture(ha, "state_changed")
+    await watts(ha, 10)
+    freezer.tick(timedelta(seconds=130))  # the phase's off_delay passed at 120 s; its timer hasn't run
+    ha.states.async_set(POWER, "120")  # handled at once, before the timer
+    await ha.async_block_till_done()
+    assert shown(changes, RUNNING) == []
+    assert shown(changes, RESFRIAR) == ["off", "on"]
+    assert state(ha, sensor("phase_resfriar_cycles_total")) == "1"
+    assert state(ha, sensor("cycles_total")) == "0"
+
+
 async def test_a_handover_never_shows_idle(purifier: HomeAssistant, freezer: Any) -> None:
     """resfriar to quente after a dip: phase_current goes straight from resfriar to quente."""
     await cool(purifier, freezer)
@@ -274,6 +295,32 @@ async def test_other_is_a_phase_with_its_entities(purifier: HomeAssistant, freez
     assert state(purifier, CURRENT) == "quente"
     assert state(purifier, sensor("phase_other_cycles_total")) == "1"
     assert state(purifier, LAST) == "other"
+
+
+@pytest.mark.parametrize(("language", "other"), [("en", "Other phase"), ("pt-BR", "Outra fase")])
+async def test_the_current_phase_names_its_phase(
+        ha: HomeAssistant, freezer: Any, language: str, other: str) -> None:
+    """Its `name` attribute: a configured phase's `name` in every language, other's translation, none while idle."""
+    ha.config.language = language
+    assert await setup(ha, DEVICES)
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+
+    def named() -> tuple[str, Any]:
+        return state(ha, CURRENT), ha.states.get(CURRENT).attributes["name"]
+
+    assert named() == ("idle", None)
+    await cool(ha, freezer)
+    assert named() == ("resfriar", "Resfriar")
+    await watts(ha, 300)
+    await tick(ha, freezer, 35)
+    assert named() == ("other", other)
+    await watts(ha, 1000)
+    await tick(ha, freezer, 10)
+    assert named() == ("quente", "Água quente")
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    assert named() == ("idle", None)
 
 
 async def test_a_reading_without_a_value_holds_the_phase(
@@ -382,6 +429,7 @@ async def test_a_restart_keeps_the_running_phase(ha: HomeAssistant, freezer: Any
     )
     assert state(ha, RESFRIAR) == "on"
     assert state(ha, CURRENT) == "resfriar"
+    assert ha.states.get(CURRENT).attributes["name"] == "Resfriar"
     shown = [event.data["new_state"].state for event in changes
              if event.data["entity_id"] in (RESFRIAR, CURRENT)]
     assert "off" not in shown, shown
@@ -401,6 +449,8 @@ async def test_a_restart_keeps_the_running_phase(ha: HomeAssistant, freezer: Any
 @pytest.mark.parametrize(("attributes", "running", "seen"), [
     pytest.param({"running": ["resfriar"], "seen": ["quente", "resfriar"]},
                  ["resfriar"], ["resfriar", "quente"], id="its attributes"),
+    pytest.param({"name": "Antes", "running": ["resfriar"], "seen": ["resfriar"]},
+                 ["resfriar"], ["resfriar"], id="a name saved before a rename: its name now"),
     pytest.param({}, ["resfriar"], ["resfriar"], id="none saved: its phase"),
     pytest.param({"running": ["nope", 3], "seen": "resfriar"}, ["resfriar"], ["resfriar"],
                  id="unusable: its phase"),
@@ -408,7 +458,7 @@ async def test_a_restart_keeps_the_running_phase(ha: HomeAssistant, freezer: Any
 async def test_the_current_phase_restored_before_the_carrier(
         ha: HomeAssistant, monkeypatch: pytest.MonkeyPatch,
         attributes: dict[str, Any], running: list[str], seen: list[str]) -> None:
-    """The carrier held until phase_current is written: it shows its restored phase, and its running and seen, until the carrier restored the detector."""
+    """The carrier held until phase_current is written: it shows its restored phase, named as configured now, and its running and seen, until the carrier restored the detector."""
     entities = module("features.cycle.program.entities")
     written = asyncio.Event()
 
@@ -437,8 +487,10 @@ async def test_the_current_phase_restored_before_the_carrier(
     first = next(event.data["new_state"] for event in changes
                  if event.data["entity_id"] == CURRENT)
     assert (first.attributes["running"], first.attributes["seen"]) == (running, seen)
+    assert first.attributes["name"] == "Resfriar"
     assert (CURRENT, "idle") not in shown, shown
     assert state(ha, CURRENT) == "resfriar"
+    assert ha.states.get(CURRENT).attributes["name"] == "Resfriar"
     assert state(ha, RUNNING) == "on"
 
 
@@ -546,11 +598,13 @@ async def test_a_disabled_carrier_leaves_the_phases_idle(ha: HomeAssistant) -> N
         "binary_sensor", "pururu", f"{PREFIX}_running",
         suggested_object_id=f"{PREFIX}_running",
         disabled_by=er.RegistryEntryDisabler.USER)
-    await restart(ha, DEVICES, (State(CURRENT, "resfriar", {"running": ["resfriar"]}), {}))
+    await restart(ha, DEVICES, (State(CURRENT, "resfriar",
+                                     {"name": "Resfriar", "running": ["resfriar"]}), {}))
     assert ha.states.get(RUNNING) is None
     assert state(ha, RESFRIAR) == "off"
     assert state(ha, CURRENT) == "idle"
     assert ha.states.get(CURRENT).attributes["running"] == []
+    assert ha.states.get(CURRENT).attributes["name"] is None
 
 
 def forward_then_fail(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> None:

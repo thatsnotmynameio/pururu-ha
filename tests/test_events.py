@@ -269,6 +269,33 @@ async def start_cycle_renamed(hass: HomeAssistant, freezer: Any) -> None:
     assert hass.states.get("binary_sensor.washer_running").state == "on"
 
 
+async def test_a_phases_entities_are_named_by_their_keys(ha: HomeAssistant, freezer: Any) -> None:
+    """A phase's entities, its meters too, carry <device>.appliance_phase_<...>: their key in the appliance's namespace."""
+    phased = {**APPLIANCE, "running_program": {**APPLIANCE["running_program"], "phases": {
+        "warming": {"name": "Warming", "above": 40, "statistics": {"cycles": ["today"]}}}}}
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": phased}}, events=BOTH)
+    await kwh(ha, 100.0)
+    await watts(ha, 1.4)
+    await tick(ha, freezer, 125)
+    captured = capture(ha, *TYPES)
+    await start_cycle(ha, freezer)
+    await end_cycle(ha, freezer)
+    expected = {
+        "sensor.pururu_dummy_washer_appliance_phase_current": ("appliance_phase_current", "state_changed"),
+        "binary_sensor.pururu_dummy_washer_appliance_phase_warming": ("appliance_phase_warming", "state_changed"),
+        sensor("phase_warming_cycles_total"): ("appliance_phase_warming_cycles_total", "reading"),
+        sensor("phase_warming_cycles_today"): ("appliance_phase_warming_cycles_today", "reading"),
+    }
+    for entity_id, (key, event_class) in expected.items():
+        fired = [event for event in captured if event.data["entity_id"] == entity_id]
+        assert fired, entity_id
+        for event in fired:
+            assert event.data["event_name"] == f"{KEY}.{key}", entity_id
+            assert event.data["key"] == key, entity_id
+            assert event.data["event_class"] == event_class, entity_id
+            assert event.data["states"][key] == event.data["new"], entity_id
+
+
 async def test_devices_sharing_a_prefix(ha: HomeAssistant) -> None:
     """`greenhouse` and `greenhouse_sprinkler`: each entity's key comes from the device that built it."""
     devices = {

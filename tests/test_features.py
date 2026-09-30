@@ -159,7 +159,8 @@ def test_every_translated_entity_key_is_created(features: dict[str, Any]) -> Non
 def test_the_detectors_keys_are_named(ha: HomeAssistant) -> None:
     """Each key the detector names, in both languages and with an icon: a phase's own with {item}, other's and its own two without.
 
-    The states it shows by itself are named too: idle (the current phase only) and other.
+    The states it shows by itself are named, and only they: idle (the current phase only) and
+    other. A configured phase's key is shown as written, its name in phase_current's `name`.
     """
     program = module("features.cycle.program")
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
@@ -172,9 +173,8 @@ def test_the_detectors_keys_are_named(ha: HomeAssistant) -> None:
         assert icons["entity"][platform][key]["default"].startswith("mdi:"), key
     for translations in (en, pt):
         sensors = translations["entity"]["sensor"]
-        assert {program.IDLE, program.OTHER} <= set(sensors["phase_current"]["state"])
-        assert program.OTHER in sensors["phase_last"]["state"]
-        assert program.IDLE not in sensors["phase_last"]["state"]
+        assert set(sensors["phase_current"]["state"]) == {program.IDLE, program.OTHER}
+        assert set(sensors["phase_last"]["state"]) == {program.OTHER}
 
 
 def test_example_is_valid_and_unknown_keys_are_refused(features: dict[str, Any]) -> None:

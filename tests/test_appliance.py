@@ -119,7 +119,7 @@ async def test_the_old_block_and_a_name_are_refused_by_their_text(
 # --- running -------------------------------------------------------------------
 
 
-async def test_starts_after_on_delay_above_threshold(washer: HomeAssistant, freezer: Any) -> None:
+async def test_starts_after_on_delay_above_above(washer: HomeAssistant, freezer: Any) -> None:
     await watts(washer, 120)
     await tick(washer, freezer, 50)
     assert running(washer) == "off"
@@ -128,7 +128,7 @@ async def test_starts_after_on_delay_above_threshold(washer: HomeAssistant, free
     assert running(washer) == "on"
 
 
-async def test_threshold_itself_is_not_above(washer: HomeAssistant, freezer: Any) -> None:
+async def test_above_itself_is_outside(washer: HomeAssistant, freezer: Any) -> None:
     await watts(washer, 4)
     await tick(washer, freezer, 180)
     assert running(washer) == "off"
