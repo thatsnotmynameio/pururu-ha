@@ -28,7 +28,7 @@
 | D16 | Six layers, all enforced by one import test | Dependency direction stays true without review | Part 3 | A2a (part), B (the whole table) |
 | D17 | Validate (no `hass`) → plan (a frozen `Built`) → apply (`STEPS`, each guarded) | A broken output can't leave the entry stuck until a restart | Part 3 | A |
 | D18 | One automations file for reactions and ready-made notifications | One include, one Repairs issue, one reload per change | Part 3 | B |
-| D19 | Seven PRs: A1 (moves), A2a (lifecycle), A2-layout (folders), A2b (model), B (aspects), D (programs), C (vocabulary). Together they are 0.2.0; A1 sets the version, so v0.2.0 is tagged with A1 alone, and the rest lands on `main` under it. An ID snapshot first | Small reviewable steps; one version for one breaking change | [PRs](#prs) | — |
+| D19 | Seven PRs: A1 (moves), A2a (lifecycle), A2-layout (folders), A2b (model), B (aspects), D (programs), C (vocabulary). Together they are 0.2.0; A1 sets the version, so v0.2.0 is tagged with A1 alone, and the rest lands on `main` under it. Releases are immutable, so the last PR, C, sets 0.2.1: the release that carries the whole refactor, the one the owner installs (the owner, 2026-09-30). An ID snapshot first | Small reviewable steps; one version for one breaking change | [PRs](#prs) | — |
 | D20 | No entity ID or unique ID changes in A1–C. D changes the IDs of today's `modes` and `phases` entities (their history is lost, accepted); the appliance's own entities keep theirs | Keep history where it costs nothing | PRs | all |
 | D21 | One folder per layer: `core/` (L0), `features/` (L1), `aspects/` and `device_keys/` (L2), `outputs/` (L3), `setup/` (L4 and the lifecycle); at the root only what HA requires there (`__init__`, `config_flow`, `const`, the platforms, manifest, translations, icons, services) | The root had 32 modules and would pass 35; the tree then shows the layers the import test enforces. Replaces the earlier "keep it flat" | [PRs](#prs) | A2-layout |
 | D22 | A program's scope: in a feature's block it sees only that feature; at the device it sees the device's features and may run their executable programs. Only an executable program can be started, and one program runs another only from the device to a feature | Placement by what it can reference (D2); no call cycles, fixed depth | Part 4 | D |
@@ -650,7 +650,7 @@ Small choices that don't change the model:
 
 ### Not in 0.2.0
 
-Deferred to 0.2.1 (the owner, 2026-09-29):
+Deferred to 0.2.2 (the owner, 2026-09-29; 0.2.1 became the refactor's own release, 2026-09-30):
 
 - `phases` on an executable program (its steps could be its phases): refused until needed.
 - A detected program from another source than a band of a reading (a smart washer's program sensor).
@@ -840,7 +840,7 @@ pururu has one user, its author. So:
 
 - No aliases, no deprecation Repairs issue, no migration code, no "From 0.1.x" sections; the existing "From 0.1.14 and before" section goes in PR C.
 - An old key is voluptuous' `extra keys not allowed`, with HA's file and line.
-- One manual step, in PR B (below), carried into PR C's "Updating to 0.2.0" guide.
+- One manual step, in PR B (below), carried into PR C's "Updating to 0.2.1" guide.
 - No entity ID or unique ID changes in A1–C; D changes those of today's `modes` and `phases` (D20). Everything else keeps its history, statistics and dashboards.
 - A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under the same version. That is accepted: 0.2.0 is the sum of the seven PRs.
 
@@ -861,7 +861,7 @@ Each leaves the whole suite green. Before merging A1, which bumps the version, c
 | D1 | The detector: `features/cycle/program.py` (the detected `Program` schema; bands with `on_delay`/`off_delay`, overlap allowed, the idle-gap end, the built-in `other`) and its entities, tested alone | stays 0.2.0 |
 | D2 | `running_program` with its phases replaces the appliance's `running`/`threshold`, `modes`, `phases`, `cycle_from` and `Provides`/`Requires` | stays 0.2.0 |
 | D3 | `programs: {detected, executable}`: the `Programs` role, `aspects/programs.py`, the device key's items under `executable:` | stays 0.2.0 |
-| C | Part 2: the vocabulary | stays 0.2.0 |
+| C | Part 2: the vocabulary | sets 0.2.1 (the whole refactor's release; v0.2.0 is immutable) |
 
 **Why this order.** Each PR builds on the previous one without redoing it:
 - **D after B:** programs and phases get their statistics from B's aspect (`Counters` on items) and their entities from B's `CycleSource`. Before B, D would build meters the old way for B to move.
@@ -899,7 +899,7 @@ The manual step, in the PR's text: before updating, remove every `notifications:
 
 **D, programs.** Part 4 whole: `features/cycle/program.py`, `aspects/programs.py`, the `Programs` role, `running_program`, `programs: {detected, executable}`, phases as programs; `modes`, `phases`, `cycle_from`, `Provides`, `Requires` go; the two choices of "Decided when D starts". Docs: `docs/features/modes.mdx` and `phases.mdx` go, a programs concept page replaces `concepts/programs.mdx`, `appliance.mdx`, `docs.json`, `configuration.mdx`.
 
-**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.0" guide, carrying B4's manual step, whose first step comes *before* updating:
+**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.1" guide (from 0.1.23), carrying B4's manual step, whose first step comes *before* updating:
 
 1. Before updating, remove every `notifications:` block and reload pururu.
 2. Download the update (in HACS); don't restart yet.
