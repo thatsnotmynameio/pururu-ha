@@ -81,7 +81,7 @@ A phase's key is a slug. `idle` (the state while none runs) and `other` (the bui
 - A **dip** straight from a running phase's band into another's makes the other wait, once its `on_delay` passed, for the first to end or for a reading back in both bands; it then starts from when its `on_delay` passed. A short visit to another band is nothing: a chill's tail dipping into a sip's band for a few seconds isn't a drink.
 - An **idle gap**, a reading outside every band once a phase left its own (between `below: 40` and `above: 40`, or under the program's band), blocks nothing: the next phase starts after its own `on_delay`, and the first still ends, at the moment it left, unless its reading comes back.
 - A phase whose band holds before the program runs starts with it; after the program ends, a band still holding starts with the next cycle; while the program's reading is out (its `off_delay` counting), no phase starts.
-- At one instant: the program's end first, then the phases' ends in the order they started, then their starts in the configuration's order. A reading at the very instant a delay passes comes before it.
+- At one instant: the program's own change first (its start or its end), then the phases' ends in the order they started, then their starts in the configuration's order. A reading at the very instant a delay passes comes before it.
 
 ## `other`
 
