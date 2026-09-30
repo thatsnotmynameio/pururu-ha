@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Entity IDs: `<platform>.pururu_<device key>_<namespace>_<entity key>`, namespaces `door` and `window`: `binary_sensor.pururu_clausura_frente_door_open`.
+- Entity IDs: `<platform>.pururu_<device key>_<namespace>_<entity key>`, namespaces `door` and `window`: `binary_sensor.pururu_cercado_frente_door_open`.
 - Entity keys (both namespaces): `open` (binary_sensor); sensors `last_opened`, `last_closed`, `last_open_duration`, `openings_total`, `open_time_total`, `openings_<period>`, `open_time_<period>` (periods `today`, `week`, `month`, `year`), `last_opened_by`, `last_opened_via`, `last_direction`, `last_denied`, `last_ring`.
 - `open`'s device class is `door` for `door`, `window` for `window`, whatever the contact's.
 - `last_open_duration` is in seconds (`UnitOfTime.SECONDS`), a whole number.
@@ -69,9 +69,9 @@ import pytest
 
 from helpers import fake, held, reload, restart, setup, tick
 
-KEY = "clausura_frente"
-NAME = "Clausura frente"
-CONTACT = "binary_sensor.clausura_frente"
+KEY = "cercado_frente"
+NAME = "Cercado frente"
+CONTACT = "binary_sensor.cercado_frente"
 
 
 @pytest.fixture(params=["door", "window"])
@@ -127,7 +127,7 @@ async def door(ha: HomeAssistant, kind: str) -> HomeAssistant:
 
 @pytest.mark.parametrize("block", [
     pytest.param({}, id="no contact"),
-    pytest.param({"contact": "sensor.clausura_frente"}, id="not a binary sensor"),
+    pytest.param({"contact": "sensor.cercado_frente"}, id="not a binary sensor"),
     pytest.param({"contact": "binary_sensor.pururu_outra_door_open"}, id="a pururu binary sensor"),
     pytest.param({"contact": CONTACT, "statistics": {"openings": ["today", "today"]}},
                  id="repeated period"),
@@ -142,7 +142,7 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, kind: str,
 
 
 @pytest.mark.parametrize(("contact_id", "message"), [
-    pytest.param("sensor.clausura_frente", "sensor.clausura_frente is not a binary_sensor",
+    pytest.param("sensor.cercado_frente", "sensor.cercado_frente is not a binary_sensor",
                  id="another domain"),
     pytest.param("binary_sensor.pururu_outra_door_open",
                  "binary_sensor.pururu_outra_door_open is a pururu binary_sensor: name the real one",
@@ -384,7 +384,7 @@ async def test_the_openings_are_a_cycle_for_phases(ha: HomeAssistant, kind: str)
 - [ ] **Step 2: Run the tests to see them fail**
 
 Run: `uv run pytest tests/test_opening.py -n 0 -q`
-Expected: FAIL. Setups with `door:`/`window:` are refused (`extra keys not allowed @ data['pururu']['devices']['clausura_frente']['door']`), so most tests fail on `assert await setup(...)` or on a missing state. The schema tests may pass already, since an unknown feature key is refused too.
+Expected: FAIL. Setups with `door:`/`window:` are refused (`extra keys not allowed @ data['pururu']['devices']['cercado_frente']['door']`), so most tests fail on `assert await setup(...)` or on a missing state. The schema tests may pass already, since an unknown feature key is refused too.
 
 - [ ] **Step 3: Let the totals take an entity key**
 
@@ -885,8 +885,8 @@ Append to `tests/test_opening.py`:
 ```python
 # --- events -------------------------------------------------------------------------
 
-ACCESS = "event.clausura_frente_access"
-DOORBELL = "event.clausura_frente_doorbell"
+ACCESS = "event.cercado_frente_access"
+DOORBELL = "event.cercado_frente_doorbell"
 ACCESS_TYPES = {"access_granted": "opening", "access_denied": "denied"}
 ACCESS_FIELDS = {"who": "actor", "how": "authentication", "direction": "direction"}
 EVENTS = [
@@ -1698,23 +1698,23 @@ description: A door from its contact sensor. It records each opening, counts the
 ```yaml
 pururu:
   devices:
-    porta_clausura_frente:
-      name: Clausura frente
+    porta_cercado_frente:
+      name: Cercado frente
       area: entrada
       door:
-        contact: binary_sensor.clausura_frente
+        contact: binary_sensor.cercado_frente
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
         events:
-          - entity: event.clausura_frente_access
+          - entity: event.cercado_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
-          - entity: event.clausura_frente_doorbell
+          - entity: event.cercado_frente_doorbell
             types: {ring: ring}
 ```
 
-This creates `binary_sensor.pururu_porta_clausura_frente_door_open`, shown as **Clausura frente Open**, and the entities below.
+This creates `binary_sensor.pururu_porta_cercado_frente_door_open`, shown as **Cercado frente Open**, and the entities below.
 
 ## Settings
 
@@ -1852,7 +1852,7 @@ In the same file's second table (Provides/Needs), after the `appliance` row, add
 In `docs/concepts/entity-ids.mdx`, in the table of features and namespaces (its `appliance` row is `| [\`appliance\`](/features/appliance) | \`appliance\` | \`binary_sensor.pururu_laundry_washer_appliance_running\` |`), add after that row:
 
 ```markdown
-| [`door`](/features/door) | `door` | `binary_sensor.pururu_porta_clausura_frente_door_open` |
+| [`door`](/features/door) | `door` | `binary_sensor.pururu_porta_cercado_frente_door_open` |
 | [`window`](/features/window) | `window` | `binary_sensor.pururu_janela_quarto_window_open` |
 ```
 
@@ -1877,7 +1877,7 @@ After the section `### … is this switch itself: name the real one (or light)`,
 ### `… is a pururu binary sensor: name the real contact; … stands for nothing`
 
 ```
-binary_sensor.lavadora_rodando is a pururu binary sensor: name the real contact; binary_sensor.pururu_clausura_frente_door_open stands for nothing
+binary_sensor.lavadora_rodando is a pururu binary sensor: name the real contact; binary_sensor.pururu_cercado_frente_door_open stands for nothing
 ```
 
 A door's or window's `contact:` names one of pururu's own binary sensors that you renamed in the UI, so it no longer starts with `binary_sensor.pururu_`. The door is kept, but its `open` is `unavailable` and it records no openings.

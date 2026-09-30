@@ -100,9 +100,9 @@ async def test_appliance_meters(ha: HomeAssistant, language: str) -> None:
 
 # --- door and window -------------------------------------------------------------------
 
-OPENING_KEY = "clausura_frente"
-OPENING_NAME = "Clausura frente"
-OPENING_CONTACT = "binary_sensor.clausura_frente"
+OPENING_KEY = "cercado_frente"
+OPENING_NAME = "Cercado frente"
+OPENING_CONTACT = "binary_sensor.cercado_frente"
 OPENING_COUNTERS = ("openings", "open_time")
 OPENING_ICONS = {"openings_today": "mdi:counter", "open_time_week": "mdi:timer-sand"}
 OPENING_NAMES = {

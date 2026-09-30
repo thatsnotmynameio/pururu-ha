@@ -15,7 +15,7 @@ import yaml
 from helpers import capture, fake, module, reload, restart, settle, setup, tick
 
 HOUSE = "casa"
-REAL_LED = "light.led_piscina"
+REAL_LED = "light.pool_led"
 LED = "light.pururu_pool_light_led"
 REAL_RELAY = "switch.varanda_rele"
 RELAY = "light.pururu_varanda_light_rele"

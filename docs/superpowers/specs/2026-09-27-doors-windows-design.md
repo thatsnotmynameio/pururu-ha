@@ -11,26 +11,26 @@ pururu knows nothing of any integration. The user names the entities, says what 
 ```yaml
 pururu:
   devices:
-    porta_clausura_frente:
-      name: Clausura frente
+    porta_cercado_frente:
+      name: Cercado frente
       area: entrada
       door:
-        contact: binary_sensor.clausura_frente
+        contact: binary_sensor.cercado_frente
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
         events:
-          - entity: event.clausura_frente_access
+          - entity: event.cercado_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
-          - entity: event.clausura_frente_doorbell
+          - entity: event.cercado_frente_doorbell
             types: {ring: ring}
     janela_quarto:
       name: Janela do quarto
       window:
         contact: binary_sensor.janela_quarto_contact
-# → binary_sensor.pururu_porta_clausura_frente_door_open        "Clausura frente Aberta"
-# → sensor.pururu_porta_clausura_frente_door_last_opened_by     "Alex Doe"
+# → binary_sensor.pururu_porta_cercado_frente_door_open        "Cercado frente Aberta"
+# → sensor.pururu_porta_cercado_frente_door_last_opened_by     "Alex Doe"
 # → binary_sensor.pururu_janela_quarto_window_open              "Janela do quarto Aberta"
 ```
 

@@ -145,7 +145,7 @@ import pytest
 from helpers import fake, module, setup
 
 HOUSE = "casa"
-REAL_LED = "light.led_piscina"
+REAL_LED = "light.pool_led"
 LED = "light.pururu_pool_light_led"
 REAL_RELAY = "switch.varanda_rele"
 RELAY = "light.pururu_varanda_light_rele"
@@ -1935,7 +1935,7 @@ pururu:
     pool:
       name: Piscina
       lights:
-        led: {entity: light.led_piscina, name: LED}
+        led: {entity: light.pool_led, name: LED}
     varanda:
       name: Varanda
       lights:

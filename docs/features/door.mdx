@@ -10,23 +10,23 @@ description: A door from its contact sensor. It records each opening, counts the
 ```yaml
 pururu:
   devices:
-    porta_clausura_frente:
-      name: Clausura frente
+    porta_cercado_frente:
+      name: Cercado frente
       area: entrada
       door:
-        contact: binary_sensor.clausura_frente
+        contact: binary_sensor.cercado_frente
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
         events:
-          - entity: event.clausura_frente_access
+          - entity: event.cercado_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
-          - entity: event.clausura_frente_doorbell
+          - entity: event.cercado_frente_doorbell
             types: {ring: ring}
 ```
 
-This creates `binary_sensor.pururu_porta_clausura_frente_door_open`, shown as **Clausura frente Open**, and the entities below.
+This creates `binary_sensor.pururu_porta_cercado_frente_door_open`, shown as **Cercado frente Open**, and the entities below.
 
 ## Settings
 

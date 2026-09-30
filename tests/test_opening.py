@@ -10,9 +10,9 @@ import pytest
 
 from helpers import fake, held, reload, restart, setup, tick
 
-KEY = "clausura_frente"
-NAME = "Clausura frente"
-CONTACT = "binary_sensor.clausura_frente"
+KEY = "cercado_frente"
+NAME = "Cercado frente"
+CONTACT = "binary_sensor.cercado_frente"
 
 
 @pytest.fixture(params=["door", "window"])
@@ -68,7 +68,7 @@ async def door(ha: HomeAssistant, kind: str) -> HomeAssistant:
 
 @pytest.mark.parametrize("block", [
     pytest.param({}, id="no contact"),
-    pytest.param({"contact": "sensor.clausura_frente"}, id="not a binary sensor"),
+    pytest.param({"contact": "sensor.cercado_frente"}, id="not a binary sensor"),
     pytest.param({"contact": "binary_sensor.pururu_outra_door_open"}, id="a pururu binary sensor"),
     pytest.param({"contact": CONTACT, "statistics": {"openings": ["today", "today"]}},
                  id="repeated period"),
@@ -83,7 +83,7 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, kind: str,
 
 
 @pytest.mark.parametrize(("contact_id", "message"), [
-    pytest.param("sensor.clausura_frente", "sensor.clausura_frente is not a binary_sensor",
+    pytest.param("sensor.cercado_frente", "sensor.cercado_frente is not a binary_sensor",
                  id="another domain"),
     pytest.param("binary_sensor.pururu_outra_door_open",
                  "binary_sensor.pururu_outra_door_open is a pururu binary_sensor: name the real one",
@@ -323,8 +323,8 @@ async def test_a_renamed_pururu_contact_stands_for_nothing(
 
 # --- events -------------------------------------------------------------------------
 
-ACCESS = "event.clausura_frente_access"
-DOORBELL = "event.clausura_frente_doorbell"
+ACCESS = "event.cercado_frente_access"
+DOORBELL = "event.cercado_frente_doorbell"
 ACCESS_TYPES = {"access_granted": "opening", "access_denied": "denied"}
 ACCESS_FIELDS = {"who": "actor", "how": "authentication", "direction": "direction"}
 EVENTS = [
