@@ -1,6 +1,6 @@
 """What a device and a feature are: the contract every module in features/ fulfils."""
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 import math
@@ -229,6 +229,18 @@ def walk(value: Any, path: Path, at: Path = ()) -> Iterator[tuple[Path, Any]]:
         yield from walk(value[key], tuple(rest), (*at, str(key)))
 
 
+def at(block: Any, path: Path) -> Any:
+    """The container at `path` in `block`: a concrete path, as walk yields it."""
+    for key in path:
+        block = block[key]
+    return block
+
+
+# The item the container at a path of the builder's validated block is (a
+# program, a phase): the block and the container's concrete path
+type ItemOf = Callable[[Any, Path], Item]
+
+
 @dataclass(frozen=True, kw_only=True)
 class Place:
     """Where an aspect's key sits in a builder's block, and what the aspect has there."""
@@ -244,9 +256,14 @@ class Place:
     named: Callable[[str], str]
     # A valid value, for the contract test
     example: Any
-    # The item a container there is, from its key and the container: its
-    # keys are the item's (<slug>_<key>); None: the builder's own
-    item: Callable[[str, Any], Item] | None = None
+    # The item a container there is (ItemOf): its keys are the item's
+    # (<slug>_<key>); None: the builder's own
+    item: ItemOf | None = None
+    # The local keys a container's validated value of the aspect adds beyond
+    # `keys`, the builder's own and no item's (a detected program's, its
+    # phases'): they vary with the value, as Derived's with a block. Pairs, not
+    # a map: a key two of them add comes twice, for checks.keys_distinct
+    derived: Callable[[Any], Iterable[tuple[str, Platform]]] | None = None
     # Refuses (vol.Invalid) what it can't be once validated, given the
     # builder's whole block and the container, its value put back
     check: Callable[[Mapping[str, Any], Mapping[str, Any]], None] | None = None

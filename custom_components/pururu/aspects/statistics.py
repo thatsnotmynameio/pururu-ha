@@ -225,7 +225,7 @@ def _build(
             device,
             counted,
             container[KEY],
-            None if counted.item is None else counted.item(path[-1], container),
+            None if counted.item is None else counted.item(block, path),
         )
     ]
 

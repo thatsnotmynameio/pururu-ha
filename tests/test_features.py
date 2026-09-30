@@ -501,18 +501,35 @@ def test_a_builders_own_schema_refuses_an_aspects_key(features: dict[str, Any]) 
 
 
 def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
-    """In a block of items, a key alike an aspect's is an item: a program keyed `statistics` is a program, a switch keyed `notifications` a switch."""
+    """In a map of items, a key alike an aspect's is an item.
+
+    A program keyed `statistics` is a program, a phase keyed `alerts` a
+    phase, a switch keyed `notifications` a switch: wherever a place walks
+    into a map of items (the path before its EACH), or the block's keys are
+    items (Configured).
+    """
     catalogue = module("setup.catalogue")
+    feature_module = module("core.feature")
+    each = feature_module.EACH
     for name, feature in features.items():
-        each = module("core.feature").EACH
-        in_items = any(place.path[:1] == (each,) for aspect in catalogue.aspects_of(feature)
-                       for place in aspect.places(feature, name))
-        if not (role(feature, "Configured") or in_items):
-            continue
-        item = next(iter(feature.example.values()))
-        for aspect in module("aspects").ASPECTS:
-            block = catalogue.mount(feature, name, {aspect.key: item})
-            assert set(block) == {aspect.key}, name
+        maps = {place.path[:place.path.index(each)] for aspect in catalogue.aspects_of(feature)
+                for place in aspect.places(feature, name) if each in place.path}
+        if role(feature, "Configured"):
+            maps.add(())
+        for where in maps:
+            item = next(iter(feature_module.at(feature.example, where).values()))
+            for aspect in module("aspects").ASPECTS:
+                block = _replaced(feature.example, where, {aspect.key: item})
+                mounted = feature_module.at(catalogue.mount(feature, name, block), where)
+                assert set(mounted) == {aspect.key}, (name, where)
+
+
+def _replaced(block: Any, path: tuple[str, ...], value: Any) -> Any:
+    """`block` with `value` at `path`, rebuilt along it."""
+    if not path:
+        return value
+    head, *rest = path
+    return {**block, head: _replaced(block[head], tuple(rest), value)}
 
 
 @pytest.mark.parametrize(("house", "path"), [
@@ -640,8 +657,8 @@ def test_a_counter_is_totalled(features: dict[str, Any]) -> None:
         for counted in role(feature, "Counters").places:
             containers = list(feature_module.walk(block, counted.at))
             assert containers, (name, counted.at)
-            for path, container in containers:
-                item = None if counted.item is None else counted.item(path[-1], container)
+            for path, _container in containers:
+                item = None if counted.item is None else counted.item(block, path)
                 for counter in counted.needs:
                     total = feature_module.item_key(f"{counter}_total", item)
                     assert total in own, f"{name}: {total}"

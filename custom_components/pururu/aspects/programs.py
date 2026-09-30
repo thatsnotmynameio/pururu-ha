@@ -36,7 +36,7 @@ from ..const import (
 )
 from ..core import generated, vocabulary
 from ..core.entity import PururuEntity
-from ..core.feature import EACH, Device, Feature, Item, qualified
+from ..core.feature import EACH, Device, Feature, Item, Path, at, qualified
 from ..core.generated import SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Counted, Counters, Generates, Items
@@ -81,9 +81,14 @@ def _item(key: str, program: Mapping[str, Any]) -> Item:
     return Item(slug=slug(key), name=program[CONF_NAME])
 
 
+def _item_at(block: Any, path: Path) -> Item:
+    """The executable program at `path` of the device key's block."""
+    return _item(path[-1], at(block, path))
+
+
 # The statistics aspect meters them, `statistics:` in each executable program
 COUNTED = Counted(
-    needs={"runtime": None, "cycles": None}, at=(CONF_EXECUTABLE, EACH), item=_item
+    needs={"runtime": None, "cycles": None}, at=(CONF_EXECUTABLE, EACH), item=_item_at
 )
 PER_PROGRAM: dict[str, Platform] = {
     **{description.key: Platform.SENSOR for description in LAST_RUN},

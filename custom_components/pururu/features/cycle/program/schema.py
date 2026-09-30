@@ -10,7 +10,7 @@ import voluptuous as vol
 from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 
-from ....core.feature import EACH, TEXT, Item, Path, bounded, finite_float
+from ....core.feature import EACH, TEXT, Item, Path, at, bounded, finite_float
 from ....core.roles import Counted
 from ..last import LAST_CYCLE
 
@@ -57,9 +57,9 @@ def phase_slug(key: str) -> str:
     return f"{PHASE}_{key}"
 
 
-def _phase_item(key: str, phase: Mapping[str, Any]) -> Item:
-    """A configured phase's item: phase_<key>, named by its name."""
-    return Item(slug=phase_slug(key), name=phase["name"])
+def _phase_item(block: Any, path: Path) -> Item:
+    """A configured phase's item, at `path` of the builder's block: phase_<key>, named by its name."""
+    return Item(slug=phase_slug(path[-1]), name=at(block, path)["name"])
 
 
 def _other_item(*_: Any) -> Item:
@@ -67,19 +67,19 @@ def _other_item(*_: Any) -> Item:
     return Item(slug=f"{PHASE}_{OTHER}", name=OTHER)
 
 
-def counted(at: Path) -> tuple[Counted, ...]:
-    """Where a detected program at `at` counts: its own runtime and cycles, each phase's and other's.
+def counted(where: Path) -> tuple[Counted, ...]:
+    """Where a detected program at `where` counts: its own runtime and cycles, each phase's and other's.
 
     The program's own totals are its builder's (the appliance's runtime_total,
     cycles_total); a phase's and other's are phase_<key>_<counter>_total,
     other's meters named by their own translations (phase_other_*).
     """
     return (
-        Counted(needs={"runtime": None, "cycles": None}, at=at),
-        Counted(needs=PHASE_COUNTERS, at=(*at, "phases", EACH), item=_phase_item),
+        Counted(needs={"runtime": None, "cycles": None}, at=where),
+        Counted(needs=PHASE_COUNTERS, at=(*where, "phases", EACH), item=_phase_item),
         Counted(
             needs=PHASE_COUNTERS,
-            at=(*at, OTHER),
+            at=(*where, OTHER),
             item=_other_item,
             named=f"{PHASE}_{OTHER}",
         ),
