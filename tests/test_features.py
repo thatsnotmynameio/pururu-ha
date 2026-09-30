@@ -58,9 +58,8 @@ def offered(features: dict[str, Any]) -> list[tuple[Any, str, Any]]:
 
 
 def aspect_groups(aspect: Any, feature: Any) -> dict[str, Any]:
-    """Where the aspect's keys for this builder are named: <key>, or item_<key> for an Items builder."""
-    prefix = "item_" if role(feature, "Items") else ""
-    return {f"{prefix}{key}": platform for key, platform in aspect.keys(feature).items()}
+    """Where the aspect's keys for this builder are named, as the aspect itself says (Aspect.named)."""
+    return {aspect.named(feature, key): platform for key, platform in aspect.keys(feature).items()}
 
 
 def placed(aspect: Any, feature: Any, value: Any, block: Any) -> dict[str, Any]:
