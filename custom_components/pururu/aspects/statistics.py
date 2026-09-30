@@ -126,7 +126,7 @@ def _schema(builder: Feature, _name: str) -> vol.Schema:
     """`statistics:`: counter -> its periods; a schema of its own, so an unknown counter is refused.
 
     Statistics doesn't need the builder's key in the device (`_name`): it names
-    nothing to a person, unlike a ready-made alert's or notification's messages.
+    nothing to a person, unlike B4's ready-made notifications' messages.
     """
     return vol.Schema(
         {

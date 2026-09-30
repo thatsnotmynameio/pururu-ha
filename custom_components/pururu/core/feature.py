@@ -212,12 +212,14 @@ type AspectBuild = Callable[
 class Aspect:
     """A concern written once, mounted in the block (or each item) of every builder offering it."""
 
-    # The block key it mounts: "statistics"
+    # The block key it mounts: "statistics", "alerts"
     key: str
-    # Whether this builder offers it: it has the role the aspect needs
+    # Whether this builder offers it: it has what the aspect needs (Counters;
+    # at least one ready-made alert)
     offered: Callable[[Feature], bool]
-    # Validates the aspect's value, for this builder and its key in the device
-    # (a ready-made alert's messages, a notification's, need it)
+    # Validates the aspect's value, for this builder and its key in the device,
+    # for an aspect whose messages name the builder (B4's ready-made
+    # notifications); the alerts aspect doesn't need it
     schema: Callable[[Feature, str], Callable[[Any], Any]]
     # The local entity keys it adds: suffixes for an Items builder
     keys: Callable[[Feature], Mapping[str, Platform]]

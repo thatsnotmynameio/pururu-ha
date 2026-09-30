@@ -67,6 +67,19 @@ def lights_group(value: Any) -> str | None:
     return str(cv.slug(value))
 
 
+def shared(priority: str) -> dict[Any, Any]:
+    """What every alert takes, hand-written or ready-made: priority, notify, lights.
+
+    Only the default priority differs: low for a hand-written alert, the
+    ready-made alert's own for one.
+    """
+    return {
+        vol.Optional("priority", default=priority): vol.In(PRIORITIES),
+        vol.Optional("notify"): NOTIFY,
+        vol.Optional("lights"): lights_group,
+    }
+
+
 ALERT = vol.All(
     vol.Schema(
         {
@@ -77,9 +90,7 @@ ALERT = vol.All(
             vol.Optional("above"): finite_float,
             vol.Optional("below"): finite_float,
             vol.Optional("for", default=timedelta(0)): cv.positive_time_period,
-            vol.Optional("priority", default="low"): vol.In(PRIORITIES),
-            vol.Optional("notify"): NOTIFY,
-            vol.Optional("lights"): lights_group,
+            **shared("low"),
         }
     ),
     _one_condition,

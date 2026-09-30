@@ -1,5 +1,6 @@
 """The contract, over every Feature in FEATURES and DEVICE_KEYS: a new one is covered here unchanged."""
 
+import dataclasses
 import json
 from pathlib import Path
 import re
@@ -265,6 +266,49 @@ def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
         catalogue.mount(feature, name, {**feature.example, "alerts": settings})
         with pytest.raises(vol.Invalid):
             catalogue.mount(feature, name, {**feature.example, "alerts": {"not_an_alert": None}})
+
+
+def test_ready_made_alerts_are_offered_only_with_one(features: dict[str, Any]) -> None:
+    """The alerts aspect is offered for at least one ready-made alert, the rule alert_lights reads (presets_of).
+
+    An empty Presets offers nothing: no key to mount, no example to give.
+    """
+    roles = module("core.roles")
+    aspect = module("aspects.alerts").ASPECT
+    appliance = features["appliance"]
+    assert aspect.offered(appliance)
+    empty = dataclasses.replace(appliance, roles=tuple(
+        roles.Presets({}) if isinstance(each, roles.Presets) else each for each in appliance.roles))
+    assert role(empty, "Presets") is not None
+    assert not aspect.offered(empty)
+    assert aspect not in module("setup.catalogue").aspects_of(empty)
+
+
+def schema_keys(schema: Any) -> dict[str, Any]:
+    """A voluptuous schema's keys by name, with their markers (Optional, Required)."""
+    return {str(key): key for key in schema.schema}
+
+
+def test_every_alert_takes_the_shared_keys(features: dict[str, Any]) -> None:
+    """Hand-written and ready-made alerts take problem.shared's keys, one schema: only the default priority differs."""
+    problem, alerts = module("aspects.problem"), module("aspects.alerts")
+    shared = schema_keys(vol.Schema(problem.shared("low")))
+    assert set(shared) == {"priority", "notify", "lights"}
+    hand_written = schema_keys(problem.ALERT.validators[0])
+    assert set(shared) <= set(hand_written)
+    assert hand_written["priority"].default() == "low"
+    for name, feature in features.items():
+        for alert, preset in (role(feature, "Presets").offered if role(feature, "Presets") else {}).items():
+            ready_made = schema_keys(alerts._settings(preset))
+            assert set(shared) <= set(ready_made), f"{name}: {alert}"
+            assert set(ready_made) - set(shared) == {"for"}, f"{name}: {alert}"
+            assert ready_made["priority"].default() == preset.priority, f"{name}: {alert}"
+
+
+def test_alerts_is_a_device_key_not_a_feature(ha: HomeAssistant) -> None:
+    """`alerts` builds entities as a device key, like programs: it never counts as a device's feature."""
+    assert "alerts" in module("device_keys").DEVICE_KEYS
+    assert "alerts" not in module("features").FEATURES
 
 
 def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:

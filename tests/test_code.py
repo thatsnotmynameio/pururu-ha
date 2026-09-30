@@ -69,7 +69,7 @@ PLATFORMS = {"sensor", "binary_sensor", "switch", "light"}
 
 
 def imports_of(path: Path) -> set[str]:
-    """The integration's modules a file imports, dotted from the package root (features.alerts)."""
+    """The integration's modules a file imports, dotted from the package root (aspects.alerts)."""
     package = path.relative_to(PROJECT / CODE).with_suffix("").parts[:-1]
     found: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text())):
@@ -120,6 +120,18 @@ def test_each_folder_imports_no_later_layer() -> None:
         for path in (PROJECT / CODE / folder).rglob("*.py"):
             wrong = {name for name in imports_of(path) if name.split(".")[0] in forbidden}
             assert not wrong, (str(path.relative_to(PROJECT / CODE)), wrong)
+
+
+# What an output (outputs/) may take of the features and aspects: the alert
+# entity (Alert2's file, the alert lights) and the light it lends, nothing else
+OUTPUTS_TAKE = {"aspects.problem", "features.lights"}
+
+
+def test_the_outputs_take_only_the_alert_and_the_light() -> None:
+    for path in (PROJECT / CODE / "outputs").rglob("*.py"):
+        taken = {name for name in imports_of(path)
+                 if name.split(".")[0] in {"features", ASPECTS}}
+        assert taken <= OUTPUTS_TAKE, (str(path.relative_to(PROJECT / CODE)), taken)
 
 
 UTILITY_METER = "homeassistant.components.utility_meter"

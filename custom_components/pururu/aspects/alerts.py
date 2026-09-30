@@ -7,7 +7,7 @@ each one with one key, its defaults and texts ready. Both build on
 aspects.problem's ProblemAlert.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import timedelta
 from typing import Any, Literal
 
@@ -17,10 +17,10 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
+from ..const import CONF_ALERTS, CONF_DEVICES
 from ..core.entity import PururuEntity
 from ..core.feature import (
     ALERTS_KEY,
-    PRIORITIES,
     Aspect,
     Device,
     Feature,
@@ -28,12 +28,12 @@ from ..core.feature import (
     presets_of,
     qualified,
 )
-from ..core.resolve import Ref
-from ..core.roles import Configured, Presets, Refers
+from ..core.resolve import Index, Ref, find
+from ..core.roles import Configured, Refers
 from ..core.texts import Texts
 from ..core.vocabulary import Condition
 from .elapsed import ElapsedAlert
-from .problem import NOTIFY, SCHEMA, Alert, lights_group
+from .problem import SCHEMA, Alert, shared
 
 
 def _build(
@@ -69,6 +69,26 @@ def _refers(config: dict[str, Any]) -> set[Ref]:
     return {Ref(None, alert["when"]) for alert in config.values()}
 
 
+def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
+    """Refuse an alert watching a ready-made alert (a schema check): an alert can't watch another.
+
+    What isn't another feature's entity key is checks.references' refusal, so
+    each reference is refused once.
+    """
+    for key, device in house[CONF_DEVICES].items():
+        for ref in _refers(device.get(CONF_ALERTS, {})):
+            target = find(index, key, ref)
+            if (
+                target is not None
+                and target.builder != CONF_ALERTS
+                and target.by == ASPECT.key
+            ):
+                yield vol.Invalid(
+                    f"{CONF_ALERTS}: {ref.key} is an alert: an alert can't watch another",
+                    path=[CONF_DEVICES, key, CONF_ALERTS],
+                )
+
+
 ALERTS = Feature(
     schema=SCHEMA,
     entity_keys={},
@@ -80,20 +100,13 @@ ALERTS = Feature(
 
 
 def _settings(preset: Preset) -> vol.Schema:
-    """What one alert takes: for, priority, notify, lights."""
+    """What one alert takes: its for, then what every alert takes (problem.shared)."""
     timing: dict[Any, Any] = (
         {vol.Required("for"): cv.positive_time_period}
         if preset.hold is None
         else {vol.Optional("for", default=preset.hold): cv.positive_time_period}
     )
-    return vol.Schema(
-        {
-            **timing,
-            vol.Optional("priority", default=preset.priority): vol.In(PRIORITIES),
-            vol.Optional("notify"): NOTIFY,
-            vol.Optional("lights"): lights_group,
-        }
-    )
+    return vol.Schema({**timing, **shared(preset.priority)})
 
 
 def settings_schema(
@@ -120,9 +133,9 @@ def settings_schema(
 
 
 def _presets(builder: Feature) -> Mapping[str, Preset]:
-    """The builder's ready-made alerts: it offers the aspect only with them."""
+    """The builder's ready-made alerts: it offers the aspect only with at least one."""
     presets = presets_of(builder)
-    assert presets  # ASPECT.offered checked it
+    assert presets  # ASPECT.offered checked there is at least one
     return presets
 
 
@@ -232,7 +245,8 @@ def _build_ready_made(
 
 ASPECT = Aspect(
     key=ALERTS_KEY,
-    offered=lambda builder: builder.role(Presets) is not None,
+    # The rule alert_lights reads too: at least one ready-made alert (presets_of)
+    offered=lambda builder: bool(presets_of(builder)),
     schema=_schema,
     keys=_keys,
     named=_named,

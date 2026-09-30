@@ -98,3 +98,25 @@ def test_every_refusal_is_told_at_once(ha: HomeAssistant) -> None:
         schema({DOMAIN: house})
     assert sorted(error.path for error in refused.value.errors) == [
         [DOMAIN, "devices", "dryer", "alerts"], [DOMAIN, "devices", "washer", "alerts"]]
+
+
+@pytest.mark.parametrize(("when", "message"), [
+    pytest.param("alert_other",
+                 "alerts: alert_other is not an entity key of another feature of this device",
+                 id="its own block's alert (checks.references)"),
+    pytest.param("appliance_alert_offline",
+                 "alerts: appliance_alert_offline is an alert: an alert can't watch another",
+                 id="a ready-made alert (alerts.check)"),
+])
+def test_an_alert_watching_an_alert_is_refused_once(
+        ha: HomeAssistant, when: str, message: str) -> None:
+    """Each check refuses what the other doesn't: one refusal per reference, never two."""
+    other = {"name": "Other", "when": "appliance_running", "is": "on"}
+    house = {"devices": {"washer": washer(
+        alerts={"x": {"name": "X", "when": when, "is": "on"}, "other": other},
+        appliance={**APPLIANCE, "alerts": {"offline": None}})}}
+    schema = module("setup.schema").CONFIG_SCHEMA
+    with pytest.raises(vol.MultipleInvalid) as refused:
+        schema({DOMAIN: house})
+    assert [(error.msg, error.path) for error in refused.value.errors] == [
+        (message, [DOMAIN, "devices", "washer", "alerts"])]
