@@ -74,7 +74,8 @@ def imports_of(path: Path) -> set[str]:
     the package's `__init__`).
 
     An absolute self-import (`from custom_components.pururu.outputs import dashboard`,
-    `import custom_components.pururu.const`) counts the same, the prefix stripped.
+    `import custom_components.pururu.const`) counts the same, the prefix stripped;
+    the package itself (`from custom_components import pururu`) is "", which no row allows.
     """
     package = path.relative_to(PROJECT / CODE).with_suffix("").parts[:-1]
     found: set[str] = set()
@@ -87,11 +88,12 @@ def imports_of(path: Path) -> set[str]:
         if node.level:
             base = package[:len(package) - (node.level - 1)]
             source = [*base, *node.module.split(".")] if node.module else list(base)
-        elif (name := own(node.module or "")) is not None:
-            source = name.split(".") if name else []
+            found.update(module_of(".".join([*source, alias.name])) for alias in node.names)
         else:
-            continue
-        found.update(module_of(".".join([*source, alias.name])) for alias in node.names)
+            # Each name joined to its module, so `from custom_components import pururu`
+            # counts too, as the package itself
+            found.update(module_of(name) for alias in node.names
+                         if (name := own(f"{node.module}.{alias.name}")) is not None)
     return found
 
 
@@ -159,7 +161,7 @@ def test_each_module_imports_only_what_its_row_allows() -> None:
         module = path.relative_to(PROJECT / CODE).with_suffix("").parts
         assert module[0] in ALLOWED, f"{'/'.join(module)}: no row in ALLOWED"
         allowed = row_of(module)
-        wrong += [f"{'/'.join(module)}.py imports {name}"
+        wrong += [f"{'/'.join(module)}.py imports {name or 'the package itself'}"
                   for name in sorted(imports_of(path))
                   if not any(allows(prefix, name) for prefix in allowed)]
     assert not wrong, "\n".join(wrong)

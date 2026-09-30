@@ -95,7 +95,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 
 ## The layer table
 
-`tests/test_code.py` maps every module to a layer and fails on any import the table doesn't allow (`test_each_module_imports_only_what_its_row_allows`). It's the spec's ["Layers"](/develop/architecture#layers) as code: each folder, and each module at the root, gets a row of what it may import of the integration (`homeassistant` and the stdlib aside). A prefix ending in `.` is a module *inside* that package, never the package itself: only `setup/` reads a folder's `__init__` (`FEATURES`, `ASPECTS`, `DEVICE_KEYS`). An absolute self-import (`from custom_components.pururu.outputs import dashboard`) is checked like the relative one.
+`tests/test_code.py` maps every module to a layer and fails on any import the table doesn't allow (`test_each_module_imports_only_what_its_row_allows`). It's the spec's ["Layers"](/develop/architecture#layers) as code: each folder, and each module at the root, gets a row of what it may import of the integration (`homeassistant` and the stdlib aside). A prefix ending in `.` is a module *inside* that package, never the package itself: only `setup/` reads a folder's `__init__` (`FEATURES`, `ASPECTS`, `DEVICE_KEYS`). An absolute self-import (`from custom_components.pururu.outputs import dashboard`) is checked like the relative one, and importing the package itself (`from custom_components import pururu`) is refused in every folder.
 
 | Folder (or root module) | May import |
 |---|---|
