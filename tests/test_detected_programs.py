@@ -345,7 +345,7 @@ def test_its_keys_are_in_the_index(ha: HomeAssistant) -> None:
 # --- keys a later setting would create ----------------------------------------------
 
 
-# A plain detected program, and one heating over 1800 W without other:
+# A plain detected program, and one warming over 1800 W without other:
 PLAIN: dict[str, Any] = {"name": "X", "above": 1500}
 PHASED_ONLY: dict[str, Any] = {**PLAIN, "phases": {"warming": WARMING}}
 PHASES = {"phases": {"warming": {"name": "Aquecendo", "above": 1000}}}
