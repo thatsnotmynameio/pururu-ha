@@ -63,75 +63,86 @@ def test_quality_scale_covers_every_rule() -> None:
         assert status.get("comment"), f"{rule}: {status['status']} without a comment"
 
 
-# The core (L0), core/: contracts and shared helpers, importing nothing but each other and const
-CORE = "core"
 PLATFORMS = {"sensor", "binary_sensor", "switch", "light"}
 
 
 def imports_of(path: Path) -> set[str]:
-    """The integration's modules a file imports, dotted from the package root (aspects.alerts)."""
+    """The integration's modules a file imports, dotted from the package root (aspects.alerts).
+
+    Each name imported counts: a module (`from ..core import generated`: core.generated),
+    or else the module it's taken from (`from ..features import FEATURES`: features,
+    the package's `__init__`).
+    """
     package = path.relative_to(PROJECT / CODE).with_suffix("").parts[:-1]
     found: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text())):
         if not isinstance(node, ast.ImportFrom) or not node.level:
             continue
         base = package[:len(package) - (node.level - 1)]
-        if node.module:
-            found.add(".".join([*base, *node.module.split(".")]))
-        else:
-            found.update(".".join([*base, alias.name]) for alias in node.names)
+        source = [*base, *node.module.split(".")] if node.module else list(base)
+        found.update(module_of(".".join([*source, alias.name])) for alias in node.names)
     return found
 
 
-def test_the_core_imports_only_the_core() -> None:
-    for path in (PROJECT / CODE / CORE).rglob("*.py"):
-        imported = imports_of(path)
-        assert all(name == "const" or name.startswith(f"{CORE}.") or name == CORE
-                   for name in imported), (path.name, imported)
+def module_of(name: str) -> str:
+    """The module a dotted name is: itself when a file or a package has it, else its parent."""
+    path = PROJECT / CODE / name.replace(".", "/")
+    if path.with_suffix(".py").exists() or (path / "__init__.py").exists():
+        return name
+    return name.rpartition(".")[0]
 
 
-# An aspect (aspects/) is written once for every builder offering it: it may read
-# the core's contracts and const, share cycle code with features/cycle/ (an
-# Items-repeated aspect's meters can use it), and other aspects, but never a
-# specific feature or a device key
-ASPECTS = "aspects"
-ASPECTS_ALLOWED = (CORE, "const", "features.cycle", ASPECTS)
-
-
-def test_aspects_import_only_the_core_and_features_cycle() -> None:
-    for path in (PROJECT / CODE / ASPECTS).rglob("*.py"):
-        imported = imports_of(path)
-        assert all(name in ASPECTS_ALLOWED
-                   or any(name.startswith(f"{allowed}.") for allowed in ASPECTS_ALLOWED)
-                   for name in imported), (path.name, imported)
-
-
-# Each folder never imports these, until B enforces the whole layer table
-NEVER = {
-    "features": {"aspects", "device_keys", "outputs", "setup"},
-    "aspects": {"device_keys", "outputs", "setup"},
-    "device_keys": {"outputs", "setup"},
-    "outputs": {"device_keys", "setup"},
+# The layer table (the spec's "Layers"): what each folder, or each module at the
+# root, may import of the integration (homeassistant and the stdlib aside). A
+# prefix ending in "." is a module inside that package, never the package itself:
+# only setup/ reads a folder's __init__ (FEATURES, ASPECTS, DEVICE_KEYS).
+ALLOWED: dict[str, tuple[str, ...]] = {
+    "core": ("core.", "const"),
+    # and its own package: features/<x>/, or itself for a module features/<x>.py
+    "features": ("core.", "const", "features.cycle", "features.standing"),
+    "aspects": ("core.", "const", "features.cycle", "aspects."),
+    "device_keys": ("core.", "const", "features.cycle", "device_keys."),
+    # Alert2's file and the alert lights read ProblemAlert; the alert lights lend Borrowable lights
+    "outputs": ("core.", "const", "aspects.problem", "features.lights"),
+    "setup": ("const", "core", "features", "aspects", "device_keys", "outputs", "setup"),
+    # HA's entry points take the typed entry: hassfest's strict-typing check wants
+    # it named *ConfigEntry, and PururuConfigEntry is core/runtime.py's, as for the platforms
+    "__init__": ("setup.", "const", "core.runtime"),
+    "config_flow": ("const",),
+    "const": (),
+    **{platform: ("core.runtime",) for platform in PLATFORMS},
+}
+# The table's named allowances for one module
+ALSO: dict[str, tuple[str, ...]] = {
+    "features/__init__": ("features.",),  # it lists FEATURES: every feature
+    "device_keys/__init__": ("aspects.alerts",),  # the hand-written alerts' device key
 }
 
 
-def test_each_folder_imports_no_later_layer() -> None:
-    for folder, forbidden in NEVER.items():
-        for path in (PROJECT / CODE / folder).rglob("*.py"):
-            wrong = {name for name in imports_of(path) if name.split(".")[0] in forbidden}
-            assert not wrong, (str(path.relative_to(PROJECT / CODE)), wrong)
+def allows(prefix: str, name: str) -> bool:
+    if prefix.endswith("."):
+        return name.startswith(prefix)
+    return name == prefix or name.startswith(f"{prefix}.")
 
 
-# What an output (outputs/) may take of the features and aspects: the alert
-# entity (Alert2's file, the alert lights) and the light it lends, nothing else
-OUTPUTS_TAKE = {"aspects.problem", "features.lights"}
+def row_of(module: tuple[str, ...]) -> tuple[str, ...]:
+    """What a module (its path's parts, no suffix) may import: its folder's row, or its own at the root."""
+    allowed = ALLOWED[module[0]] + ALSO.get("/".join(module), ())
+    if module[0] == "features" and len(module) > 1:
+        allowed += (f"features.{module[1]}",)  # its own package
+    return allowed
 
 
-def test_the_outputs_take_only_the_alert_and_the_light() -> None:
-    for path in (PROJECT / CODE / "outputs").rglob("*.py"):
-        taken = {name for name in imports_of(path)
-                 if name.split(".")[0] in {"features", ASPECTS}}
-        assert taken <= OUTPUTS_TAKE, (str(path.relative_to(PROJECT / CODE)), taken)
+def test_each_module_imports_only_what_its_row_allows() -> None:
+    wrong = []
+    for path in sorted((PROJECT / CODE).rglob("*.py")):
+        module = path.relative_to(PROJECT / CODE).with_suffix("").parts
+        assert module[0] in ALLOWED, f"{'/'.join(module)}: no row in ALLOWED"
+        allowed = row_of(module)
+        wrong += [f"{'/'.join(module)}.py imports {name}"
+                  for name in sorted(imports_of(path))
+                  if not any(allows(prefix, name) for prefix in allowed)]
+    assert not wrong, "\n".join(wrong)
 
 
 UTILITY_METER = "homeassistant.components.utility_meter"
@@ -157,11 +168,6 @@ def test_only_the_statistics_aspect_imports_utility_meter() -> None:
                for name in absolute_imports_of(path))
     }
     assert importing == {"aspects/statistics.py"}, importing
-
-
-def test_the_platforms_import_only_runtime() -> None:
-    for name in PLATFORMS:
-        assert imports_of(PROJECT / CODE / f"{name}.py") <= {f"{CORE}.runtime"}, name
 
 
 def test_the_root_holds_only_what_home_assistant_looks_up() -> None:
