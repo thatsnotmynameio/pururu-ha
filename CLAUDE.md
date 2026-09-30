@@ -87,6 +87,8 @@ python3 release.py check                        # the manifest version must be s
 ## Docs
 
 - **Where:** [docs.page](https://docs.page/thatsnotmynameio/pururu-ha) serves `docs.json` (tabs and sidebar) and `docs/**/*.mdx` from `main`. Only `.mdx` is published, so `docs/superpowers/` (specs and plans) is not.
+- **Solutions:** `docs/solutions/` holds documented solutions to past problems (bugs, best practices, workflow patterns), by category with YAML frontmatter (`module`, `tags`, `problem_type`); relevant when implementing or debugging in a documented area. Not published (`.md`, not `.mdx`).
+- **Capturing learnings:** After a solved, verified problem, automatically invoke the `ce-compound` skill with `mode:non-interactive` at the completion checkpoint only when the work produced durable project reasoning that is not readily recoverable from the final code, tests, types, comments, or existing documentation, and losing it would plausibly cause recurrence, material risk, or substantial rediscovery. Apply this counterfactual: if the learning document disappeared, would a future engineer reading the final implementation still be likely to repeat the mistake or redo substantial investigation? If not, do not invoke it. Completion, effort, and diff size alone are not enough. Capture at the checkpoint so a qualifying learning can ship in the PR that produced it, and only where the repository treats captured learnings as tracked, committed knowledge.
 - **Two tabs:** `Guide` (`/`) for users (getting started, concepts, one page per feature in `FEATURES`, configuration reference, troubleshooting) and `Develop` (`/develop`) for contributors.
 - **Keep it true:** a change in behaviour, configuration, entities or log messages updates the matching pages in the same PR. A new feature gets `docs/features/<feature>.mdx` and a sidebar entry.
 - **MDX:** `{` and `<` outside code are JSX, so keep them in backticks or code blocks.
@@ -97,3 +99,7 @@ python3 release.py check                        # the manifest version must be s
 - **Releases:** the version is `version` in `custom_components/pururu/manifest.json`. A PR that changes it is a release. After it merges to `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release, which HACS offers.
 - **CI:** GitHub Actions are pinned by SHA, Python packages by hash (`uv.lock`), pnpm packages by hash (`pnpm-lock.yaml`). SonarQube Cloud and the docs.page check run on PRs.
 - **Sonar suppressions:** a Sonar finding that conflicts with HA's required signatures or conventions is suppressed in `sonar-project.properties` (`sonar.issue.ignore.multicriteria`), with a comment giving the reason, not in code.
+
+## Writing to the user
+
+Write every report, summary, or handoff to the user through the `ce-noslop` skill. This applies when you are the top-level agent writing to the user, not when you are a subagent reporting to its caller. Do not apply it to code, config, verbatim quotes, or text the user asked to post as written.
