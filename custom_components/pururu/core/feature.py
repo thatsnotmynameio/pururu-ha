@@ -280,14 +280,14 @@ type AspectBuild = Callable[
 class Aspect:
     """A concern written once, mounted at its places in the block of every builder offering it."""
 
-    # The key it mounts: "statistics", "alerts", "notifications"
+    # The key it mounts: "statistics", "alerts", "notifications", "programs"
     key: str
     # Whether this builder offers it: it has what the aspect needs (Counters;
-    # at least one ready-made alert; at least one Happening)
+    # at least one ready-made alert; at least one Happening; the Programs role)
     offered: Callable[[Feature], bool]
     # Where its key sits for this builder, given the builder's key in the
     # device (the notifications' refusals name it): the block, a map's items,
-    # or deeper (a running program, each of its phases)
+    # or deeper (a running program, each of its phases, a detected program)
     places: Callable[[Feature, str], tuple[Place, ...]]
     # Its entities, from the builder's validated block
     build: AspectBuild

@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant, State
 import pytest
 import voluptuous as vol
 
-from helpers import DOMAIN, fake, held, module, restart, setup, snapshot, tick
+from helpers import DOMAIN, fake, generated, held, module, restart, setup, snapshot, tick
 
 KEY = "clothes_washer"
 POWER = "sensor.washer_plug_power"
@@ -38,6 +38,12 @@ def devices(**block: Any) -> dict[str, Any]:
 
 def sensor(entity_key: str) -> str:
     return f"sensor.{PREFIX}_{entity_key}"
+
+
+def paths(refused: vol.Invalid) -> list[list[Any]]:
+    """Where each of its refusals is."""
+    errors = refused.errors if isinstance(refused, vol.MultipleInvalid) else [refused]
+    return [error.path for error in errors]
 
 
 def state(hass: HomeAssistant, entity_id: str) -> str:
@@ -105,14 +111,15 @@ async def test_it_runs_and_counts_apart_from_the_running_program(
 
 
 async def test_a_restart_keeps_a_running_detected_program(ha: HomeAssistant, freezer: Any) -> None:
-    """Its carrier restores its own snapshot, as the running program's does."""
-    since = "2026-09-16T16:50:00+00:00"
-    await restart(ha, devices(), (State(RUNNING, "on"), snapshot(since)),
-                  (State(COTTON, "on"), snapshot(since)))
+    """Its carrier restores its own snapshot, as the running program's does: each its own start."""
+    running, cotton = "2026-09-16T16:50:00+00:00", "2026-09-16T16:57:00+00:00"
+    await restart(ha, devices(), (State(RUNNING, "on"), snapshot(running)),
+                  (State(COTTON, "on"), snapshot(cotton)))
     await watts(ha, 2000)
     await tick(ha, freezer, 1)
-    assert state(ha, COTTON) == "on"
-    assert ha.states.get(COTTON).attributes["cycle_start"].isoformat() == since
+    assert (state(ha, RUNNING), state(ha, COTTON)) == ("on", "on")
+    assert ha.states.get(RUNNING).attributes["cycle_start"].isoformat() == running
+    assert ha.states.get(COTTON).attributes["cycle_start"].isoformat() == cotton
 
 
 @pytest.mark.parametrize(("language", "names"), [
@@ -144,7 +151,10 @@ async def test_its_statistics(ha: HomeAssistant) -> None:
     pytest.param({"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}},
                  "a feature's programs are detected: executable programs are the device's",
                  id="an executable program in a feature"),
-    pytest.param({}, "a feature's programs needs detected", id="empty"),
+    pytest.param({}, "a feature's programs needs detected "
+                 "'pururu->devices->clothes_washer->appliance->programs'", id="empty"),
+    pytest.param({"cotton": DETECTED["cotton"]}, "a feature's programs needs detected "
+                 "'pururu->devices->clothes_washer->appliance->programs'", id="a flat map"),
     pytest.param({"detected": {}}, "length of value must be at least 1", id="no program"),
     pytest.param({"detected": {"cotton": {"above": 1500}}},
                  "a detected program needs a name: it names its entities", id="no name"),
@@ -193,12 +203,23 @@ async def test_a_step_on_a_detected_program_is_refused(ha: HomeAssistant, caplog
     assert "programs: appliance_cotton does not take turn_on" in caplog.text
 
 
-async def test_an_alert_and_a_reaction_can_watch_it(ha: HomeAssistant) -> None:
+async def test_an_alert_and_a_reaction_can_watch_it(ha: HomeAssistant, freezer: Any) -> None:
+    """The alert follows the carrier, and the reaction's automation triggers on it."""
     config = devices()
     config[KEY]["alerts"] = {"long": {"name": "Longo", "when": "appliance_cotton", "is": "on", "for": {"hours": 3}}}
     config[KEY]["reactions"] = {"done": {"name": "Pronto", "when": "appliance_cotton", "from": "on", "to": "off"}}
+    await fake(ha, ENERGY, "100")
     assert await setup(ha, config)
-    assert ha.states.get(f"binary_sensor.pururu_{KEY}_alert_long") is not None
+    (reaction,) = [each for each in generated(ha) if each["id"] == f"pururu_{KEY}_reaction_done"]
+    assert [trigger["entity_id"] for trigger in reaction["triggers"]] == [COTTON]
+    long = f"binary_sensor.pururu_{KEY}_alert_long"
+    await watts(ha, 1)
+    await tick(ha, freezer, 125)
+    await watts(ha, 2000)
+    await tick(ha, freezer, 300)
+    assert (state(ha, COTTON), state(ha, long)) == ("on", "off")
+    await tick(ha, freezer, 3 * 60 * 60)
+    assert state(ha, long) == "on"
 
 
 def reserved(block: dict[str, Any]) -> set[str]:
@@ -239,18 +260,31 @@ async def test_a_detected_program_may_not_take_a_key_of_the_appliance(ha: HomeAs
     for key in sorted(reserved(FULL)):
         detected = {key: {"name": "X", "above": 1500}}
         house = {"devices": {KEY: {"name": "Tanquinho", "appliance": {**FULL, "programs": {"detected": detected}}}}}
-        with pytest.raises(vol.Invalid, match="would be two entities"):
+        with pytest.raises(vol.Invalid, match="would be two entities") as refused:
             schema({DOMAIN: house})
+        assert [DOMAIN, "devices", KEY] in paths(refused.value), key
     house = {"devices": {KEY: {"name": "Tanquinho", "appliance": {**FULL, "programs": {"detected": DETECTED}}}}}
     schema({DOMAIN: house})
 
 
 async def test_detected_programs_may_not_take_each_others_keys(ha: HomeAssistant) -> None:
-    """Each key cotton creates, as another detected program's key, is refused (Place.derived's pairs)."""
+    """Each key cotton creates, as another detected program's key, is refused.
+
+    Its carrier's and cycle entities' (Place.derived's pairs), and each of its
+    meters' (the statistics aspect's rows, cotton's item): cotton asks for them all.
+    """
+    catalogue = module("setup.catalogue")
     schema = module("setup.schema").CONFIG_SCHEMA
     program = module("features.cycle.program")
-    cotton = DETECTED["cotton"]
-    for key in sorted(set(program.detected_keys("cotton")) - {"cotton"}):
+    periods = module("aspects.statistics").PERIODS
+    cotton = {**DETECTED["cotton"],
+              "statistics": {counter: list(periods) for counter in program.PHASE_COUNTERS}}
+    block = catalogue.mount(catalogue.builders()["appliance"], "appliance",
+                            appliance(programs={"detected": {"cotton": cotton}}))
+    meters = {key for _, key, _, by, item in catalogue.keys({"appliance": block})
+              if by == "statistics" and item == "cotton"}
+    assert len(meters) == len(program.PHASE_COUNTERS) * len(periods)
+    for key in sorted((set(program.detected_keys("cotton")) | meters) - {"cotton"}):
         detected = {"cotton": cotton, key: {"name": "X", "above": 1500}}
         house = {"devices": {KEY: {"name": "Tanquinho", "appliance": appliance(programs={"detected": detected})}}}
         with pytest.raises(vol.Invalid, match="would be two entities"):

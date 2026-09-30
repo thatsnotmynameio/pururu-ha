@@ -106,7 +106,7 @@ def counted_each(where: Path) -> tuple[Counted, ...]:
 
     Unlike running_program's (the builder's own totals), a detected program's
     totals are its own: <key>_runtime_total, <key>_cycles_total,
-    <key>_energy_total (energy needs the builder's `energy`, ruling 7).
+    <key>_energy_total (energy needs the builder's `energy`, D3 ruling 7).
     """
     return (Counted(needs=PHASE_COUNTERS, at=where, item=_detected_item),)
 

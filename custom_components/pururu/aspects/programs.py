@@ -414,27 +414,34 @@ def _disabled(
 
 
 def _detected_only(block: Any) -> Any:
-    """Refuse `executable:` in a feature's block: an executable program is its device's."""
-    if isinstance(block, dict) and CONF_EXECUTABLE in block:
+    """Refuse `executable:` in a feature's block, and a block without `detected:` (`{}`, a flat map).
+
+    An executable program is its device's; a feature's programs sit under
+    `detected:`, said at the block, as the device's under `executable:`.
+    """
+    if not isinstance(block, dict):
+        return block
+    if CONF_EXECUTABLE in block:
         raise vol.Invalid(
             "a feature's programs are detected: executable programs are the device's",
             path=[CONF_EXECUTABLE],
         )
+    if CONF_DETECTED not in block:
+        raise vol.Invalid(f"a feature's {CONF_PROGRAMS} needs {CONF_DETECTED}")
     return block
 
 
 # `programs:` in a feature's block; schemas of their own, as the device key's.
-# Its only key is `detected`, so an empty block is refused where it is
-DETECTED = vol.All(
+# Built alike: its group is required, and refused at the block when missing
+DETECTED_BLOCK = vol.All(
     _detected_only,
     vol.Schema(
         {
-            vol.Optional(CONF_DETECTED): vol.All(
+            vol.Required(CONF_DETECTED): vol.All(
                 vol.Schema({cv.slug: DETECTED_SCHEMA}), vol.Length(min=1)
             )
         }
     ),
-    vol.Length(min=1, msg=f"a feature's {CONF_PROGRAMS} needs {CONF_DETECTED}"),
 )
 
 
@@ -456,7 +463,7 @@ def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
     """
     return (
         Place(
-            schema=DETECTED,
+            schema=DETECTED_BLOCK,
             keys={},
             named=partial(qualified, builder.namespace),
             example={CONF_DETECTED: {"cotton": {"name": "Cotton", "above": 1500}}},
