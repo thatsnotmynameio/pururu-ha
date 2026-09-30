@@ -59,11 +59,19 @@ async def test_invalid_alerts_are_refused(ha: HomeAssistant, caplog: pytest.LogC
     assert reason in caplog.text
 
 
-async def test_finished_as_an_alert_says_where_it_went(ha: HomeAssistant,
-                                                      caplog: pytest.LogCaptureFixture) -> None:
-    """Upgrading from 0.1.21 with appliance: alerts: finished: the error says what to write."""
+async def test_finished_as_an_alert_is_an_unknown_alert(ha: HomeAssistant,
+                                                        caplog: pytest.LogCaptureFixture) -> None:
+    """`finished` is a ready-made notification, not an alert: refused as any unknown alert."""
     assert not await setup(ha, devices({"offline": None, "finished": {"lasts": {"minutes": 30}}}))
-    assert "finished is now a notification: appliance: notifications: finished" in caplog.text
+    assert ("finished is not a ready-made alert: offline, no_power, long_cycle, no_cycle"
+            in caplog.text)
+    assert "is now a notification" not in caplog.text
+
+
+async def test_without_alerts_none_is_enabled(ha: HomeAssistant) -> None:
+    """A block without `alerts` enables no ready-made alert, and nothing is refused."""
+    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": APPLIANCE}})
+    assert not [entity_id for entity_id in held(ha, KEY) if "_alert_" in entity_id]
 
 
 async def test_a_hand_written_alert_cannot_watch_a_ready_made_one(

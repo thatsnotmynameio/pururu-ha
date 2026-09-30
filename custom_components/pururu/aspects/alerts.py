@@ -1,14 +1,15 @@
-"""`alerts`: the device key for hand-written alerts, and ready-made alerts' settings and build.
+"""`alerts`: the device key for hand-written alerts, and the ready-made alerts' aspect.
 
 The device key `ALERTS` builds one alert per key of a device's `alerts:`
 block, watching the entity its `when` names. A feature offers ready-made
-alerts (roles.Presets); its block's `alerts` enables each one with one key,
-its defaults and texts ready. Both build on aspects.problem's ProblemAlert.
+alerts (roles.Presets); `ASPECT` mounts its block's `alerts`, which enables
+each one with one key, its defaults and texts ready. Both build on
+aspects.problem's ProblemAlert.
 """
 
 from collections.abc import Callable, Mapping
 from datetime import timedelta
-from typing import Any
+from typing import Any, Literal
 
 import voluptuous as vol
 
@@ -20,14 +21,15 @@ from ..core.entity import PururuEntity
 from ..core.feature import (
     ALERTS_KEY,
     PRIORITIES,
+    Aspect,
     Device,
     Feature,
     Preset,
-    happenings_of,
     presets_of,
+    qualified,
 )
 from ..core.resolve import Ref
-from ..core.roles import Configured, Refers
+from ..core.roles import Configured, Presets, Refers
 from ..core.texts import Texts
 from ..core.vocabulary import Condition
 from .elapsed import ElapsedAlert
@@ -117,28 +119,40 @@ def settings_schema(
     return validate
 
 
-def validate(feature: Feature, value: Any, key: str = "") -> Any:
-    """A feature's block: its schema, and `alerts` when it offers ready-made alerts.
+def _presets(builder: Feature) -> Mapping[str, Preset]:
+    """The builder's ready-made alerts: it offers the aspect only with them."""
+    presets = presets_of(builder)
+    assert presets  # ASPECT.offered checked it
+    return presets
 
-    `key` is the feature's in the device: a ready-made alert that became a
-    notification says where it went.
+
+def _schema(builder: Feature, _name: str) -> Callable[[Any], dict[str, dict[str, Any]]]:
+    """The block's `alerts`, for this builder's ready-made alerts.
+
+    Its refusals name the alert, not the builder's key in the device (`_name`).
     """
-    presets = presets_of(feature)
-    if not presets or not isinstance(value, dict) or ALERTS_KEY not in value:
-        return feature.schema(value)
-    if isinstance(given := value[ALERTS_KEY], dict):
-        for name in given:
-            if name in happenings_of(feature) and name not in presets:
-                raise vol.Invalid(
-                    f"{name} is now a notification: "
-                    f"{key or feature.namespace}: notifications: {name}",
-                    path=[ALERTS_KEY, name],
-                )
-    block = {each: setting for each, setting in value.items() if each != ALERTS_KEY}
-    enabled = vol.Schema({ALERTS_KEY: settings_schema(presets)})(
-        {ALERTS_KEY: value[ALERTS_KEY]}
-    )
-    return {**feature.schema(block), **enabled}
+    return settings_schema(_presets(builder))
+
+
+def _keys(builder: Feature) -> dict[str, Platform]:
+    """Every ready-made alert it can enable: alert_<name>, a binary sensor."""
+    return {f"alert_{name}": Platform.BINARY_SENSOR for name in _presets(builder)}
+
+
+def _named(builder: Feature, key: str) -> str:
+    """The translation key `key` (`alert_<name>`) is named under: in the builder's namespace."""
+    return qualified(builder.namespace, key)
+
+
+def _example(builder: Feature) -> dict[str, dict[str, Any] | None]:
+    """The first ready-made alert, with a `for` when it has no default one."""
+    name, preset = next(iter(_presets(builder).items()))
+    return {name: None if preset.hold is not None else {"for": {"hours": 1}}}
+
+
+def _placed(_builder: Feature) -> Literal["block"]:
+    """`alerts:` sits in the block, for every builder offering it."""
+    return "block"
 
 
 def _notify(
@@ -154,14 +168,14 @@ def _notify(
     }
 
 
-def build(
+def _build_ready_made(
     hass: HomeAssistant,
     device: Device,
     feature: Feature,
     block: Mapping[str, Any],
     texts: Texts,
 ) -> list[PururuEntity]:
-    """The block's enabled ready-made alerts, in the feature's namespace."""
+    """The block's enabled ready-made alerts, in the feature's namespace; none without `alerts`."""
     entities: list[PururuEntity] = []
     for name, settings in block.get(ALERTS_KEY, {}).items():
         preset = presets_of(feature)[name]
@@ -214,3 +228,17 @@ def build(
             )
         )
     return entities
+
+
+ASPECT = Aspect(
+    key=ALERTS_KEY,
+    offered=lambda builder: builder.role(Presets) is not None,
+    schema=_schema,
+    keys=_keys,
+    named=_named,
+    example=_example,
+    placed=_placed,
+    build=_build_ready_made,
+    # Absent: no alert enabled; an explicit empty `alerts` is still refused
+    mount_absent=False,
+)

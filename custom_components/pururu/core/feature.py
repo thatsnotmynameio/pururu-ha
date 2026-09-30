@@ -160,11 +160,6 @@ def happenings_of(feature: Feature) -> Mapping[str, Happening]:
     return role.offered if (role := feature.role(Happenings)) else {}
 
 
-def preset_keys(presets: Mapping[str, Preset]) -> dict[str, Platform]:
-    """The entity keys of a feature's ready-made alerts: alert_<name>, binary sensors."""
-    return {f"alert_{name}": Platform.BINARY_SENSOR for name in presets}
-
-
 @dataclass(frozen=True, kw_only=True)
 class Happening:
     """A ready-made notification of a feature: what happens, as a reaction's trigger.
@@ -228,7 +223,7 @@ class Aspect:
     keys: Callable[[Feature], Mapping[str, Platform]]
     # The translation key one of its local keys is named under, for this
     # builder: statistics' own at the block level, or under the builder's
-    # namespace, as a later aspect's may be (B3's ready-made alerts)
+    # namespace (the ready-made alerts')
     named: Callable[[Feature, str], str]
     # A valid value, for the contract test
     example: Callable[[Feature], Any]
@@ -240,3 +235,7 @@ class Aspect:
     # its key in the device, and each container (the block, or an item) with
     # its value put back
     check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None
+    # Its key absent (or its container not a map): validated as `{}` and
+    # mounted (statistics: no counter asks a period), or left out, as nothing
+    # asked (ready-made alerts: none enabled; an explicit `{}` is still refused)
+    mount_absent: bool = True

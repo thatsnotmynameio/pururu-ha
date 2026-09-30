@@ -7,18 +7,9 @@ import voluptuous as vol
 
 from homeassistant.const import CONF_NAME, Platform
 
-from ..aspects import ASPECTS, alerts as presets
+from ..aspects import ASPECTS
 from ..const import CONF_NOTIFICATIONS
-from ..core.feature import (
-    ALERTS_KEY,
-    Aspect,
-    Device,
-    Feature,
-    Item,
-    happenings_of,
-    preset_keys,
-    presets_of,
-)
+from ..core.feature import Aspect, Device, Feature, Item, happenings_of
 from ..core.resolve import Index, Target
 from ..core.roles import Actions, Configured, Items
 from ..device_keys import DEVICE_KEYS, notifications
@@ -45,13 +36,18 @@ type Place = tuple[str, ...]
 type Places = dict[tuple[Place, str], Any]
 
 
-def _taken(value: Any, key: str) -> tuple[Any, Any]:
-    """`value` without `key`, and what `key` held (absent: `{}`); anything but a map is left whole."""
-    if not isinstance(value, dict):
-        return value, {}
-    return {each: kept for each, kept in value.items() if each != key}, value.get(
-        key, {}
-    )
+def _taken(value: Any, aspect: Aspect, places: Places, path: Place) -> Any:
+    """`value` without the aspect's key, what the key held put in `places` at `path`.
+
+    Absent, or `value` not a map (left whole): `{}`, or nothing put when the
+    aspect doesn't mount an absent key (Aspect.mount_absent).
+    """
+    if isinstance(value, dict) and aspect.key in value:
+        places[path, aspect.key] = value[aspect.key]
+        return {each: kept for each, kept in value.items() if each != aspect.key}
+    if aspect.mount_absent:
+        places[path, aspect.key] = {}
+    return value
 
 
 def _split(
@@ -62,13 +58,13 @@ def _split(
     places: Places = {}
     for aspect in aspects:
         if aspect.placed(builder) == "block":
-            rest, places[(), aspect.key] = _taken(rest, aspect.key)
+            rest = _taken(rest, aspect, places, ())
         elif isinstance(rest, dict):
-            items = {}
-            for key, item in rest.items():
-                # As the builder's schema returns it: cv.slug makes YAML's 1 "1"
-                items[key], places[(str(key),), aspect.key] = _taken(item, aspect.key)
-            rest = items
+            # As the builder's schema returns it: cv.slug makes YAML's 1 "1"
+            rest = {
+                key: _taken(item, aspect, places, (str(key),))
+                for key, item in rest.items()
+            }
     return rest, places
 
 
@@ -84,7 +80,7 @@ def mount(builder: Feature, name: str, value: Any) -> Any:
 
     Each aspect's key is taken out of the block, or out of each item, where the
     aspect says it sits (Aspect.placed), and validated by the aspect: absent,
-    as `{}`. The rest goes to _validated. This is the first stage: the
+    as `{}`, or left out (Aspect.mount_absent). The rest goes to _validated. This is the first stage: the
     builder's own schema refusal and each aspect's schema refusal are raised
     together, before either runs a check. Once every value is validated and
     back where it sat, the second stage runs: each aspect checks each
@@ -157,22 +153,22 @@ def _flat(errors: list[vol.Invalid]) -> list[vol.Invalid]:
 
 
 def _feature_block(feature: Feature, key: str, value: Any) -> Any:
-    """A feature's block, `key` in the device: its ready-made notifications (notifications.py), the rest as presets.validate says.
+    """A feature's block, `key` in the device: its ready-made notifications (notifications.py), the rest by its schema.
 
-    Only a feature offering them has them: a configured feature (alerts,
-    switches) may have an item keyed `notifications`.
+    Only a feature offering them has them: a configured feature (switches,
+    lights) may have an item keyed `notifications`.
     """
     if (
         not (happenings := happenings_of(feature))
         or not isinstance(value, dict)
         or CONF_NOTIFICATIONS not in value
     ):
-        return presets.validate(feature, value, key)
+        return feature.schema(value)
     rest = {each: block for each, block in value.items() if each != CONF_NOTIFICATIONS}
     enabled = vol.Schema({CONF_NOTIFICATIONS: notifications.schema(key, happenings)})(
         {CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]}
     )
-    return {**presets.validate(feature, rest, key), **enabled}
+    return {**feature.schema(rest), **enabled}
 
 
 def keys(
@@ -180,21 +176,15 @@ def keys(
 ) -> Iterator[tuple[str, str, Platform, str | None, str | None]]:
     """(builder, local entity key, platform, by, item) of every entity the device's builders can create.
 
-    `by` is "alerts" for a ready-made alert's key, an aspect's key for the
-    entity keys it adds; `item` the item owning an Items key.
+    `by` is the key of the aspect adding it ("alerts" for a ready-made
+    alert's, "statistics" for a meter's), None for the builder's own; `item`
+    the item owning an Items key.
     """
     for name, feature in builders().items():
         if name not in device:
             continue
-        ready_made = preset_keys(presets_of(feature))
         yield from (
-            (
-                name,
-                entity_key,
-                platform,
-                ALERTS_KEY if entity_key in ready_made else None,
-                None,
-            )
+            (name, entity_key, platform, None, None)
             for entity_key, platform in feature.entity_keys.items()
         )
         if (configured := feature.role(Configured)) is not None:

@@ -190,9 +190,8 @@ def _build(
 ) -> list[PururuEntity]:
     """The meters asked for; per item for an Items builder, from the item's or the block's statistics.
 
-    Statistics is the only aspect today, so AspectBuild's `texts` (the common
-    texts a ready-made alert's or notification's messages need) has nothing to
-    build from here; `*_` takes it without naming it.
+    AspectBuild's `texts` (the common texts a ready-made alert's messages
+    need) has nothing to build meters from; `*_` takes it without naming it.
     """
     if (items := builder.role(Items)) is None:
         return list(_meters(hass, device, builder, block[KEY], None))

@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
-from ...core.feature import Device, Feature, finite_float, preset_keys
+from ...core.feature import Device, Feature, finite_float
 from ...core.roles import Counters, Happenings, Presets, Provides
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal
@@ -87,7 +87,7 @@ def build(
 
 APPLIANCE = Feature(
     schema=SCHEMA,
-    entity_keys={**ENTITY_KEYS, **preset_keys(PRESETS)},
+    entity_keys=ENTITY_KEYS,
     build=build,
     example={
         "power": "sensor.demo_plug_power",
@@ -102,6 +102,7 @@ APPLIANCE = Feature(
         Provides("cycle", "running"),
         # Metered by the statistics aspect; idle energy needs the plug's energy
         Counters({"runtime": None, "cycles": None, "idle_energy": "energy"}),
+        # Enabled in its block's `alerts`: the alerts aspect
         Presets(PRESETS),
         Happenings(HAPPENINGS),
     ),
