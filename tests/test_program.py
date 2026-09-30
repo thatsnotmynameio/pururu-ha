@@ -125,6 +125,15 @@ def test_a_phase_keyed_as_others_keys_begin_is_the_one_named(ha: HomeAssistant, 
         assert refused.value.path == ["phases", key]
 
 
+def test_a_phase_keyed_idle_is_the_one_named(ha: HomeAssistant) -> None:
+    """idle, the current phase while none runs, is refused at the phase key, as other's are."""
+    schema = module("features.cycle.program").SCHEMA
+    block = {**PROGRAM, "phases": {"idle": RESFRIAR}}
+    with pytest.raises(vol.Invalid, match="^idle is a reserved phase key: name the phase otherwise") as refused:
+        schema(block)
+    assert refused.value.path == ["phases", "idle"]
+
+
 @pytest.mark.parametrize("key", ["others", "another", "heat_other", "idle_heat", "current_heat"])
 def test_a_phase_key_other_cannot_take_passes(ha: HomeAssistant, key: str) -> None:
     """Only other and other_… are other's; idle creates no entity; the detector's own keys are current and last."""

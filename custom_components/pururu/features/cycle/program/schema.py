@@ -195,7 +195,9 @@ def _reserved(phases: dict[str, Any]) -> dict[str, Any]:
     then; so the whole form is other's, the user's key the one named.
     """
     if IDLE in phases:
-        raise vol.Invalid(f"{IDLE} is a reserved phase key: name the phase otherwise")
+        raise vol.Invalid(
+            f"{IDLE} is a reserved phase key: name the phase otherwise", path=[IDLE]
+        )
     for key in phases:
         if key == OTHER or key.startswith(f"{OTHER}_"):
             raise vol.Invalid(
