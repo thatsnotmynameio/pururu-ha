@@ -67,8 +67,13 @@ async def end_cycle(hass: HomeAssistant, freezer: Any) -> None:
 
 
 @pytest.mark.parametrize("block", [
-    pytest.param({**APPLIANCE, "statistics": {"cycles": ["today", "today"]}}, id="repeated period"),
-    pytest.param({**APPLIANCE, "statistics": {"cycles": ["daily"]}}, id="unknown period"),
+    pytest.param({**APPLIANCE, "running_program": {**APPLIANCE["running_program"],
+                                                   "statistics": {"cycles": ["today", "today"]}}},
+                 id="repeated period"),
+    pytest.param({**APPLIANCE, "running_program": {**APPLIANCE["running_program"],
+                                                   "statistics": {"cycles": ["daily"]}}},
+                 id="unknown period"),
+    pytest.param({**APPLIANCE, "statistics": {"cycles": ["today"]}}, id="cycles in the block"),
     pytest.param({key: value for key, value in APPLIANCE.items() if key != "energy"}
                  | {"statistics": {"idle_energy": ["today"]}}, id="idle_energy without energy"),
     pytest.param({**APPLIANCE, "running_program": {"on_delay": {"minutes": 1}}}, id="no bound"),
@@ -473,8 +478,9 @@ async def test_devices_do_not_cross(ha: HomeAssistant, freezer: Any) -> None:
 
 # --- runtime and statistics --------------------------------------------------------
 
-STATISTICS = {**APPLIANCE, "statistics": {"runtime": ["today", "week"],
-                                          "cycles": ["today", "month"]}}
+STATISTICS = {**APPLIANCE, "running_program": {
+    **APPLIANCE["running_program"],
+    "statistics": {"runtime": ["today", "week"], "cycles": ["today", "month"]}}}
 
 
 @pytest.fixture
@@ -634,6 +640,20 @@ async def test_a_meter_is_not_created_without_its_total(
     assert ha.states.get(sensor("runtime_today")) is not None
     assert (f"{sensor('cycles_today')} follows {sensor('cycles_total')}, which is not created; "
             "not creating it") in caplog.text
+
+
+async def test_the_appliances_meters_keep_their_ids(metered: HomeAssistant) -> None:
+    """runtime and cycles count in running_program now: their meters keep the appliance's IDs and names, and a customisation survives a reload."""
+    registry = er.async_get(metered)
+    for key, name in (("runtime_today", "Runtime today"), ("cycles_month", "Cycles this month")):
+        entry = registry.async_get(sensor(key))
+        assert entry is not None, key
+        assert entry.unique_id == f"pururu_{KEY}_appliance_{key}"
+        assert entry.translation_key == key
+        assert metered.states.get(sensor(key)).attributes["friendly_name"] == f"Dummy washer {name}"
+    registry.async_update_entity(sensor("runtime_today"), name="Hoje")
+    await reload(metered, {KEY: {"name": "Dummy washer", "appliance": STATISTICS}})
+    assert registry.async_get(sensor("runtime_today")).name == "Hoje"
 
 
 async def test_two_devices_have_their_own_meters(ha: HomeAssistant, freezer: Any) -> None:

@@ -23,11 +23,22 @@ devices:
         on_delay: {minutes: 1}
         off_delay: {minutes: 2}
         phases:
-          warming: {name: Aquecendo, above: 1000}
-          wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+          warming:
+            name: Aquecendo
+            above: 1000
+            statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+          wringing:
+            name: Centrifugando
+            above: 50
+            below: 1000
+            on_delay: {minutes: 3}
+            statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+        other:
+          statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+        statistics:
+          runtime: [today, week, month, year]
+          cycles: [today, week, month, year]
       statistics:
-        runtime: [today, week, month, year]
-        cycles: [today, week, month, year]
         idle_energy: [today, week, month, year]
       alerts:
         offline:
@@ -56,8 +67,22 @@ devices:
         on_delay: {seconds: 1}
         off_delay: {minutes: 1}
         phases:
-          resfriar: {name: Resfriar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
-          quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
+          resfriar:
+            name: Resfriar
+            above: 4
+            below: 150
+            on_delay: {seconds: 10}
+            off_delay: {minutes: 3}
+            statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+          quente:
+            name: Água quente
+            above: 150
+            below: 400
+            on_delay: {seconds: 30}
+            off_delay: {seconds: 30}
+            statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+        other:
+          statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
   porta_frente:
     name: Porta da frente
     area: entrada

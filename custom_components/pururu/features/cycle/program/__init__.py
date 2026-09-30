@@ -9,31 +9,32 @@ builder reading a sensor calls `build` (D2: the appliance's `running_program`).
 from .detector import Change, Detector, Ended, Run, Started
 from .entities import build
 from .schema import (
-    COUNTERS,
     FIXED,
     IDLE,
     NAMED,
     OTHER,
     OTHER_DELAY,
     PHASE,
+    PHASE_COUNTERS,
     SCHEMA,
     SUFFIXES,
     Band,
     Phase,
     Program,
+    counted,
     keys_of,
     phase_keys,
     program_of,
 )
 
 __all__ = [
-    "COUNTERS",
     "FIXED",
     "IDLE",
     "NAMED",
     "OTHER",
     "OTHER_DELAY",
     "PHASE",
+    "PHASE_COUNTERS",
     "SCHEMA",
     "SUFFIXES",
     "Band",
@@ -45,6 +46,7 @@ __all__ = [
     "Run",
     "Started",
     "build",
+    "counted",
     "keys_of",
     "phase_keys",
     "program_of",

@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import Platform
 
@@ -48,17 +48,28 @@ class Items:
     of: Callable[[Any], Iterable[Item]]
 
 
+@dataclass(frozen=True, kw_only=True)
+class Counted:
+    """Totals it builds at one place of its block, <counter>_total; `statistics:` there asks for their meters."""
+
+    # Counter -> the setting of the builder's whole block it needs (None: none)
+    needs: Mapping[str, str | None]
+    # Where `statistics:` sits: the path from the block to its containers
+    # (feature.Path; EACH for each item of a map)
+    at: tuple[str, ...] = ()
+    # The item a container there is, from its key and the container: its
+    # totals and meters are the item's, named with {item}; None: the builder's own
+    item: Callable[[str, Any], Item] | None = None
+    # The prefix its meters' translations are named under (<named>_<counter>_<period>,
+    # other's own), instead of the statistics aspect's
+    named: str | None = None
+
+
 @dataclass(frozen=True)
 class Counters:
-    """Totals it builds as <counter>_total; the statistics aspect meters them per period.
+    """Totals it builds, at each of its places (Counted); the statistics aspect meters them per period."""
 
-    `needs`: counter -> the setting of its block it needs (None: none).
-    `mount`: where `statistics:` sits, the block or each item; with Items, the
-    meters repeat per item either way.
-    """
-
-    needs: Mapping[str, str | None]
-    mount: Literal["block", "item"] = "block"
+    places: tuple[Counted, ...]
 
 
 @dataclass(frozen=True)

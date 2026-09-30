@@ -146,7 +146,7 @@ def test_the_keys_a_phase_creates(ha: HomeAssistant) -> None:
         "phase_resfriar_last_cycle_duration", "phase_resfriar_last_cycle_energy",
         "phase_resfriar_cycles_total", "phase_resfriar_runtime_total", "phase_resfriar_energy_total"}
     assert set(program.FIXED) == {"phase_current", "phase_last"}
-    assert set(program.COUNTERS.needs) == {"runtime", "cycles", "energy"}
+    assert set(program.PHASE_COUNTERS) == {"runtime", "cycles", "energy"}
 
 
 # --- the program alone: today's appliance `running` ------------------------------

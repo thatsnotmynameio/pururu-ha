@@ -1,12 +1,14 @@
 """The statistics aspect: a total's growth per period, HA's utility meter inside the device.
 
-Every builder with Counters builds its totals (<counter>_total); `statistics:`,
-in its block or in each item (Counters.mount), asks for their meters by period.
+Every builder with Counters builds its totals (<counter>_total) at each of
+its places (Counted: its block, each item, a running program, each phase);
+`statistics:` there asks for their meters by period.
 """
 
 from collections.abc import Iterator, Mapping
 from datetime import timedelta
-from typing import Any, Literal, override
+from functools import partial
+from typing import Any, override
 
 import voluptuous as vol
 
@@ -25,10 +27,10 @@ from homeassistant.helpers import config_validation as cv
 
 from ..const import DOMAIN
 from ..core.entity import PururuEntity
-from ..core.feature import Aspect, Device, Feature, Item, item_key
-from ..core.roles import Counters, Items
+from ..core.feature import Aspect, Device, Feature, Item, Place, item_key, walk
+from ..core.roles import Counted, Counters
 
-# The block key, in the block or in each item
+# The key, at each place a builder counts (Counted)
 KEY = "statistics"
 
 # A period's name in the configuration and in entity IDs -> utility_meter's cycle
@@ -122,50 +124,76 @@ def _counters(builder: Feature) -> Counters:
     return counters
 
 
-def _schema(builder: Feature, _name: str) -> vol.Schema:
-    """`statistics:`: counter -> its periods; a schema of its own, so an unknown counter is refused.
-
-    Statistics doesn't need the builder's key in the device (`_name`): it names
-    nothing to a person, unlike the ready-made notifications' messages.
-    """
+def _schema(counted: Counted) -> vol.Schema:
+    """`statistics:` at a place: counter -> its periods; a schema of its own, so an unknown counter is refused."""
     return vol.Schema(
-        {
-            vol.Optional(counter, default=[]): PERIOD_LIST
-            for counter in _counters(builder).needs
-        }
+        {vol.Optional(counter, default=[]): PERIOD_LIST for counter in counted.needs}
     )
 
 
-def _keys(builder: Feature) -> dict[str, Platform]:
-    """Every meter it can add: <counter>_<period> (a suffix for an Items builder)."""
-    return {
-        f"{counter}_{period}": Platform.SENSOR
-        for counter in _counters(builder).needs
-        for period in PERIODS
-    }
+def _named(counted: Counted, key: str) -> str:
+    """The translation key `key` (`<counter>_<period>`) is named under, once for every builder.
+
+    `key` itself for the builder's own, `item_<key>` (with the `{item}`
+    placeholder) for an item's, `<named>_<key>` for a place named on its own
+    (other's).
+    """
+    if counted.named is not None:
+        return f"{counted.named}_{key}"
+    return key if counted.item is None else f"item_{key}"
 
 
-def _example(builder: Feature) -> dict[str, list[str]]:
+def _example(counted: Counted) -> dict[str, list[str]]:
     """A period for each counter needing no setting: a builder's example has only what it requires."""
     return {
         counter: [next(iter(PERIODS))]
-        for counter, setting in _counters(builder).needs.items()
+        for counter, setting in counted.needs.items()
         if setting is None
     }
 
 
-def _named(builder: Feature, key: str) -> str:
-    """The translation key `key` (`<counter>_<period>`) is named under: once for every builder.
+def _check(
+    counted: Counted, block: Mapping[str, Any], container: Mapping[str, Any]
+) -> None:
+    """Refuse a counter with periods whose setting (Counted.needs) isn't in the builder's block.
 
-    `key` itself at the block level, `item_<key>` (with the `{item}` placeholder) for an Items builder.
+    The whole block, not the container: a phase's energy needs the appliance's.
     """
-    return key if builder.role(Items) is None else f"item_{key}"
+    for counter, setting in counted.needs.items():
+        if setting is not None and container[KEY][counter] and setting not in block:
+            raise vol.Invalid(f"{KEY}.{counter} needs {setting}")
+
+
+def _place(counted: Counted) -> Place:
+    """Where `statistics:` sits for these counters, and every meter it can add there: <counter>_<period>."""
+    return Place(
+        path=counted.at,
+        schema=_schema(counted),
+        keys={
+            f"{counter}_{period}": Platform.SENSOR
+            for counter in counted.needs
+            for period in PERIODS
+        },
+        named=partial(_named, counted),
+        example=_example(counted),
+        item=counted.item,
+        check=partial(_check, counted),
+    )
+
+
+def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
+    """One place per Counted of the builder.
+
+    Statistics doesn't need the builder's key in the device (`_name`): it names
+    nothing to a person, unlike the ready-made notifications' messages.
+    """
+    return tuple(_place(counted) for counted in _counters(builder).places)
 
 
 def _meters(
     hass: HomeAssistant,
     device: Device,
-    builder: Feature,
+    counted: Counted,
     asked: Mapping[str, list[str]],
     item: Item | None,
 ) -> Iterator[Meter]:
@@ -176,50 +204,35 @@ def _meters(
         for period in periods:
             key = f"{counter}_{period}"
             yield Meter(
-                device, key, total, source, period, _named(builder, key), item=item
+                device, key, total, source, period, _named(counted, key), item=item
             )
-
-
-def _placed(builder: Feature) -> Literal["block", "item"]:
-    """Where `statistics:` sits for this builder: its Counters say."""
-    return _counters(builder).mount
 
 
 def _build(
     hass: HomeAssistant, device: Device, builder: Feature, block: Any, *_: Any
 ) -> list[PururuEntity]:
-    """The meters asked for; per item for an Items builder, from the item's or the block's statistics.
+    """The meters asked for at each place, an item's for a container that is one.
 
     AspectBuild's `texts` (the common texts a ready-made alert's messages
     need) has nothing to build meters from; `*_` takes it without naming it.
     """
-    if (items := builder.role(Items)) is None:
-        return list(_meters(hass, device, builder, block[KEY], None))
-    in_items = _placed(builder) == "item"
     return [
         meter
-        for item in items.of(block)
+        for counted in _counters(builder).places
+        for path, container in walk(block, counted.at)
         for meter in _meters(
-            hass, device, builder, (block[item.slug] if in_items else block)[KEY], item
+            hass,
+            device,
+            counted,
+            container[KEY],
+            None if counted.item is None else counted.item(path[-1], container),
         )
     ]
-
-
-def _check(builder: Feature, _name: str, container: Mapping[str, Any]) -> None:
-    """Refuse a counter with periods whose setting (Counters.needs) isn't in its block (or item)."""
-    for counter, setting in _counters(builder).needs.items():
-        if setting is not None and container[KEY][counter] and setting not in container:
-            raise vol.Invalid(f"{KEY}.{counter} needs {setting}")
 
 
 ASPECT = Aspect(
     key=KEY,
     offered=lambda builder: builder.role(Counters) is not None,
-    schema=_schema,
-    keys=_keys,
-    named=_named,
-    example=_example,
-    placed=_placed,
+    places=_places,
     build=_build,
-    check=_check,
 )

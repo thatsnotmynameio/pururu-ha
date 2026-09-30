@@ -28,10 +28,10 @@ from homeassistant.helpers.event import async_track_state_change_event
 from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, ENTITY_PREFIX
 from ..core import generated, vocabulary
 from ..core.entity import PururuEntity
-from ..core.feature import Device, Feature, Item, qualified
+from ..core.feature import EACH, Device, Feature, Item, qualified
 from ..core.generated import SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
-from ..core.roles import Counters, Generates, Items
+from ..core.roles import Counted, Counters, Generates, Items
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
 from ..features.cycle.totals import CyclesTotal, RuntimeTotal
@@ -62,11 +62,17 @@ def _step(value: Any) -> dict[str, Any]:
 
 # What a run records: the last cycle's values (a script uses no energy), and totals
 LAST_RUN = tuple(d for d in LAST_CYCLE if d.key != "last_cycle_energy")
+
+
+def _item(key: str, program: Mapping[str, Any]) -> Item:
+    return Item(slug=key, name=program[CONF_NAME])
+
+
 # The statistics aspect meters them, `statistics:` in each program
-COUNTERS = Counters({"runtime": None, "cycles": None}, mount="item")
+COUNTED = Counted(needs={"runtime": None, "cycles": None}, at=(EACH,), item=_item)
 PER_PROGRAM: dict[str, Platform] = {
     **{description.key: Platform.SENSOR for description in LAST_RUN},
-    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS.needs},
+    **{f"{counter}_total": Platform.SENSOR for counter in COUNTED.needs},
 }
 
 PROGRAM = vol.Schema(
@@ -167,7 +173,7 @@ class Runs(CyclesTotal, CycleSource):
 
 
 def _items(config: Mapping[str, Any]) -> list[Item]:
-    return [Item(slug=key, name=program[CONF_NAME]) for key, program in config.items()]
+    return [_item(key, program) for key, program in config.items()]
 
 
 def build(
@@ -205,7 +211,7 @@ STATISTICS = Feature(
     namespace=NAMESPACE,
     roles=(
         Items(PER_PROGRAM, _items),
-        COUNTERS,
+        Counters((COUNTED,)),
         Generates(
             "program",
             lambda key, config: ((SCRIPTS.domain, script_id(key, p)) for p in config),

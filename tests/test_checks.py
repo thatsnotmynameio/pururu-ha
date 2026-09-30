@@ -64,6 +64,14 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "device greenhouse_switch: pururu_greenhouse_switch_switch_sprinkler is already an entity of device greenhouse",
         id="two devices' IDs"),
     pytest.param(
+        {"devices": {"washer": washer(appliance={**APPLIANCE, "running_program": {
+            **APPLIANCE["running_program"],
+            "phases": {"resfriar": {"name": "Resfriar", "above": 40},
+                       "resfriar_cycles_today": {"name": "Hoje", "above": 300}}}})}},
+        ["devices", "washer"],
+        "device washer: pururu_washer_appliance_phase_resfriar_cycles_today would be two entities",
+        id="two entities of one device"),
+    pytest.param(
         {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_running", "is": "on",
                                                     "lights": "porch"}})}},
         ["devices", "washer", "alerts", "x"],

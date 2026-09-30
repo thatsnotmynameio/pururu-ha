@@ -9,12 +9,13 @@ after the reactions', in the folder configuration.yaml includes
 """
 
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from functools import partial
 import logging
-from typing import Any, Literal
+from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_NAME, Platform
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
@@ -27,6 +28,7 @@ from ..core.feature import (
     Device,
     Feature,
     Happening,
+    Place,
     happenings_of,
     qualified,
 )
@@ -165,24 +167,23 @@ def _happenings(builder: Feature) -> Mapping[str, Happening]:
     return happenings
 
 
-def _schema(builder: Feature, name: str) -> Callable[[Any], dict[str, dict[str, Any]]]:
-    """The block's `notifications`, for this builder's; its refusals name `name`, the builder's key in the device."""
-    return schema(name, _happenings(builder))
+def _places(builder: Feature, name: str) -> tuple[Place, ...]:
+    """`notifications:` sits in the block, for every builder offering it; no entity key.
 
-
-def _keys(*_: Any) -> dict[str, Platform]:
-    """No entity key: each enabled notification is an automation (plan)."""
-    return {}
-
-
-def _example(builder: Feature) -> dict[str, None]:
-    """The first ready-made notification, with its default text."""
-    return {next(iter(_happenings(builder))): None}
-
-
-def _placed(*_: Any) -> Literal["block"]:
-    """`notifications:` sits in the block, for every builder offering it."""
-    return "block"
+    Each enabled notification is an automation (plan). Its refusals name
+    `name`, the builder's key in the device; its example is the first ready-made
+    notification, with its default text.
+    """
+    happenings = _happenings(builder)
+    return (
+        Place(
+            schema=schema(name, happenings),
+            keys={},
+            # Never asked, as it adds no key: under the builder's namespace, as a ready-made alert's
+            named=partial(qualified, builder.namespace),
+            example={next(iter(happenings)): None},
+        ),
+    )
 
 
 def _build(*_: Any) -> list[PururuEntity]:
@@ -194,12 +195,7 @@ ASPECT = Aspect(
     key=CONF_NOTIFICATIONS,
     # At least one ready-made notification (happenings_of), as the alerts aspect's presets_of
     offered=lambda builder: bool(happenings_of(builder)),
-    schema=_schema,
-    keys=_keys,
-    # Never asked, as it adds no key: under the builder's namespace, as a ready-made alert's
-    named=lambda builder, key: qualified(builder.namespace, key),
-    example=_example,
-    placed=_placed,
+    places=_places,
     build=_build,
     # Absent: none enabled; an explicit empty `notifications` is still refused.
     # No check: `notify` is checks.messages_sent's rule, over the whole house

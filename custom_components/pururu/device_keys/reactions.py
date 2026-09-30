@@ -34,6 +34,7 @@ from ..const import (
 from ..core import generated, messages, vocabulary
 from ..core.entity import PururuEntity
 from ..core.feature import (
+    EACH,
     TEXT,
     Device,
     Feature,
@@ -44,7 +45,7 @@ from ..core.feature import (
 )
 from ..core.generated import AUTOMATIONS, SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
-from ..core.roles import Counters, Generates, Items
+from ..core.roles import Counted, Counters, Generates, Items
 from . import programs
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,7 +58,15 @@ SOURCES = ("when", "entity", "at", "sun")
 AUTOMATION_TRIGGERED = "automation_triggered"
 PER_REACTION: dict[str, Platform] = {"triggered_total": Platform.SENSOR}
 # The statistics aspect meters it, `statistics:` in each reaction
-COUNTERS = Counters({"triggered": None}, mount="item")
+COUNTERS = Counters(
+    (
+        Counted(
+            needs={"triggered": None},
+            at=(EACH,),
+            item=lambda key, reaction: Item(slug=key, name=reaction[CONF_NAME]),
+        ),
+    )
+)
 # Keys that only a reaction on an entity's state takes
 STATE_KEYS = ("to", "from", "above", "below", "for")
 # How late a reaction's last try may be, after its occurrence: a chain never

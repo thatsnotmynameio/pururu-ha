@@ -150,11 +150,43 @@
   ],
   [
    "sensor",
+   "pururu_clothes_washer_appliance_phase_other_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_cycles_today"
+  ],
+  [
+   "sensor",
    "pururu_clothes_washer_appliance_phase_other_cycles_total"
   ],
   [
    "sensor",
+   "pururu_clothes_washer_appliance_phase_other_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_energy_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_energy_today"
+  ],
+  [
+   "sensor",
    "pururu_clothes_washer_appliance_phase_other_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_energy_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_energy_year"
   ],
   [
    "sensor",
@@ -174,7 +206,31 @@
   ],
   [
    "sensor",
+   "pururu_clothes_washer_appliance_phase_other_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_runtime_today"
+  ],
+  [
+   "sensor",
    "pururu_clothes_washer_appliance_phase_other_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_runtime_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_cycles_today"
   ],
   [
    "sensor",
@@ -182,7 +238,31 @@
   ],
   [
    "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_energy_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_energy_today"
+  ],
+  [
+   "sensor",
    "pururu_clothes_washer_appliance_phase_warming_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_energy_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_energy_year"
   ],
   [
    "sensor",
@@ -202,7 +282,31 @@
   ],
   [
    "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_runtime_today"
+  ],
+  [
+   "sensor",
    "pururu_clothes_washer_appliance_phase_warming_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_runtime_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_cycles_today"
   ],
   [
    "sensor",
@@ -210,7 +314,31 @@
   ],
   [
    "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_energy_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_energy_today"
+  ],
+  [
+   "sensor",
    "pururu_clothes_washer_appliance_phase_wringing_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_energy_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_energy_year"
   ],
   [
    "sensor",
@@ -230,7 +358,23 @@
   ],
   [
    "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_runtime_today"
+  ],
+  [
+   "sensor",
    "pururu_clothes_washer_appliance_phase_wringing_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_runtime_year"
   ],
   [
    "sensor",
@@ -490,11 +634,43 @@
   ],
   [
    "sensor",
+   "pururu_water_station_appliance_phase_other_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_cycles_today"
+  ],
+  [
+   "sensor",
    "pururu_water_station_appliance_phase_other_cycles_total"
   ],
   [
    "sensor",
+   "pururu_water_station_appliance_phase_other_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_energy_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_energy_today"
+  ],
+  [
+   "sensor",
    "pururu_water_station_appliance_phase_other_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_energy_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_energy_year"
   ],
   [
    "sensor",
@@ -514,7 +690,31 @@
   ],
   [
    "sensor",
+   "pururu_water_station_appliance_phase_other_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_runtime_today"
+  ],
+  [
+   "sensor",
    "pururu_water_station_appliance_phase_other_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_other_runtime_year"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_cycles_today"
   ],
   [
    "sensor",
@@ -522,7 +722,31 @@
   ],
   [
    "sensor",
+   "pururu_water_station_appliance_phase_quente_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_energy_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_energy_today"
+  ],
+  [
+   "sensor",
    "pururu_water_station_appliance_phase_quente_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_energy_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_energy_year"
   ],
   [
    "sensor",
@@ -542,7 +766,31 @@
   ],
   [
    "sensor",
+   "pururu_water_station_appliance_phase_quente_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_runtime_today"
+  ],
+  [
+   "sensor",
    "pururu_water_station_appliance_phase_quente_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_quente_runtime_year"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_cycles_today"
   ],
   [
    "sensor",
@@ -550,7 +798,31 @@
   ],
   [
    "sensor",
+   "pururu_water_station_appliance_phase_resfriar_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_energy_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_energy_today"
+  ],
+  [
+   "sensor",
    "pururu_water_station_appliance_phase_resfriar_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_energy_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_energy_year"
   ],
   [
    "sensor",
@@ -570,7 +842,23 @@
   ],
   [
    "sensor",
+   "pururu_water_station_appliance_phase_resfriar_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_runtime_today"
+  ],
+  [
+   "sensor",
    "pururu_water_station_appliance_phase_resfriar_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_water_station_appliance_phase_resfriar_runtime_year"
   ],
   [
    "sensor",

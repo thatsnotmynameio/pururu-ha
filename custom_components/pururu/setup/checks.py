@@ -10,6 +10,8 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.const import CONF_NAME
+
 from ..aspects import notifications
 from ..const import (
     CONF_AREA,
@@ -22,9 +24,10 @@ from ..const import (
     CONF_REACTIONS,
 )
 from ..core import generated
-from ..core.feature import Feature
+from ..core.feature import Device, Feature
 from ..core.resolve import Index, Ref, find
 from ..core.roles import Configured, Generates, Refers
+from . import catalogue
 
 
 def references(
@@ -89,6 +92,30 @@ def areas_exist(
                 f"device {key}: area {area_id} is not in areas",
                 path=[CONF_DEVICES, key, CONF_AREA],
             )
+
+
+def keys_distinct(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> Iterator[vol.Invalid]:
+    """Refuse two entities of one device with one unique ID, whatever their platforms.
+
+    The index keeps one entity per qualified key and would lose the other. A
+    phase keyed resfriar_cycles_today has the binary sensor
+    phase_resfriar_cycles_today, phase resfriar's meter's key.
+    """
+    for key, device in house[CONF_DEVICES].items():
+        seen: set[str] = set()
+        for name, entity_key, *_ in catalogue.keys(device):
+            unique_id = Device(
+                key=key, name=device[CONF_NAME], namespace=builders[name].namespace
+            ).object_id(entity_key)
+            if unique_id in seen:
+                yield vol.Invalid(
+                    f"device {key}: {unique_id} would be two entities",
+                    path=[CONF_DEVICES, key],
+                )
+                break
+            seen.add(unique_id)
 
 
 def entity_ids_distinct(

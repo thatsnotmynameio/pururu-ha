@@ -341,6 +341,32 @@ async def test_each_phases_runtime_counts_from_its_start(purifier: HomeAssistant
     assert float(state(purifier, sensor("phase_other_runtime_total"))) == 0
 
 
+async def test_meters_per_phase(ha: HomeAssistant, freezer: Any) -> None:
+    """Each phase's statistics meter its own totals; a period not asked has no meter."""
+    periods = {"runtime": ["today"], "cycles": ["today", "month"], "energy": ["today"]}
+    program = {**RUNNING_PROGRAM, "phases": {key: {**phase, "statistics": periods}
+                                             for key, phase in RUNNING_PROGRAM["phases"].items()}}
+    assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": {
+        "power": POWER, "energy": ENERGY, "running_program": program}}})
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    for _ in range(2):
+        await kwh(ha, 100.0)
+        await cool(ha, freezer)
+        await kwh(ha, 100.05)
+        await watts(ha, IDLE_W)
+        await tick(ha, freezer, 125)
+    await tick(ha, freezer, 60)
+    assert float(state(ha, sensor("phase_resfriar_cycles_today"))) == 2
+    assert float(state(ha, sensor("phase_resfriar_cycles_month"))) == 2
+    assert float(state(ha, sensor("phase_resfriar_energy_today"))) == pytest.approx(0.1)
+    assert float(state(ha, sensor("phase_resfriar_runtime_today"))) == pytest.approx(
+        float(state(ha, sensor("phase_resfriar_runtime_total"))), abs=0.01)
+    assert float(state(ha, sensor("phase_quente_cycles_today"))) == 0
+    assert ha.states.get(sensor("phase_resfriar_runtime_month")) is None
+    assert ha.states.get(sensor("phase_resfriar_cycles_today")).attributes["unit_of_measurement"] == "cycles"
+
+
 # --- restarts and reloads ------------------------------------------------------------
 
 

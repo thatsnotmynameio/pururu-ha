@@ -1,6 +1,6 @@
 """Every builder of a device, the aspects mounted in its blocks, and the entity keys they can create."""
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_NAME, Platform
 
 from ..aspects import ASPECTS
-from ..core.feature import Aspect, Device, Feature, Item
+from ..core.feature import EACH, Aspect, Device, Feature, Path, Place, item_key, walk
 from ..core.resolve import Index, Target
 from ..core.roles import Actions, Configured, Derived, Items
 from ..device_keys import DEVICE_KEYS
@@ -29,109 +29,126 @@ def aspects_of(builder: Feature) -> tuple[Aspect, ...]:
     return tuple(aspect for aspect in ASPECTS if aspect.offered(builder))
 
 
-# Where an aspect's value sat: () the block, (key,) the block's item `key`
-type Place = tuple[str, ...]
-# An aspect's value by where it sat and the aspect's key
-type Places = dict[tuple[Place, str], Any]
+# An aspect's value by where it sat (its container's path, EACH made each
+# key) and the aspect's key, with the place it sat at
+type Taken = dict[tuple[Path, str], tuple[Place, Any]]
 
 
-def _taken(value: Any, aspect: Aspect, places: Places, path: Place) -> Any:
-    """`value` without the aspect's key, what the key held put in `places` at `path`.
+def _taken(value: Any, aspect: Aspect, place: Place, taken: Taken, at: Path) -> Any:
+    """`value` without the aspect's key, what the key held put in `taken` at `at`.
 
     Absent, or `value` not a map (left whole): `{}`, or nothing put when the
     aspect doesn't mount an absent key (Aspect.mount_absent).
     """
     if isinstance(value, dict) and aspect.key in value:
-        places[path, aspect.key] = value[aspect.key]
+        taken[at, aspect.key] = (place, value[aspect.key])
         return {each: kept for each, kept in value.items() if each != aspect.key}
     if aspect.mount_absent:
-        places[path, aspect.key] = {}
+        taken[at, aspect.key] = (place, {})
     return value
 
 
+def _take(
+    value: Any,
+    path: Path,
+    aspect: Aspect,
+    place: Place,
+    taken: Taken,
+    at: Path = (),
+) -> Any:
+    """`value` without the aspect's key in each container `path` names (feature.walk's rule), rebuilt along the path."""
+    if not path:
+        return _taken(value, aspect, place, taken, at)
+    if not isinstance(value, dict):
+        return value
+    head, *rest = path
+    keys = list(value) if head == EACH else [head] if head in value else []
+    return {
+        **value,
+        **{
+            key: _take(value[key], tuple(rest), aspect, place, taken, (*at, str(key)))
+            for key in keys
+        },
+    }
+
+
 def _split(
-    builder: Feature, aspects: tuple[Aspect, ...], value: Any
-) -> tuple[Any, Places]:
-    """The block without the aspects' keys, and their values by where each aspect sits (Aspect.placed)."""
+    builder: Feature, name: str, aspects: tuple[Aspect, ...], value: Any
+) -> tuple[Any, Taken]:
+    """The block without the aspects' keys, and their values by where each sat (Aspect.places)."""
     rest = value
-    places: Places = {}
+    taken: Taken = {}
     for aspect in aspects:
-        if aspect.placed(builder) == "block":
-            rest = _taken(rest, aspect, places, ())
-        elif isinstance(rest, dict):
-            # As the builder's schema returns it: cv.slug makes YAML's 1 "1"
-            rest = {
-                key: _taken(item, aspect, places, (str(key),))
-                for key, item in rest.items()
-            }
-    return rest, places
+        for place in aspect.places(builder, name):
+            rest = _take(rest, place.path, aspect, place, taken)
+    return rest, taken
 
 
 def mount(builder: Feature, name: str, value: Any) -> Any:
     """Builder `name`'s block, validated, each offered aspect's value in it where it was.
 
-    Each aspect's key is taken out of the block, or out of each item, where the
-    aspect says it sits (Aspect.placed), and validated by the aspect: absent,
-    as `{}`, or left out (Aspect.mount_absent). The rest goes to the
-    builder's own schema.
+    Each aspect's key is taken out of each container its places name (the
+    block, each item, a running program, each phase: Aspect.places), and
+    validated by that place's schema: absent, as `{}`, or left out
+    (Aspect.mount_absent). The rest goes to the builder's own schema.
     This is the first stage: the builder's own schema refusal and each
     aspect's schema refusal are raised together, before either runs a check.
     Once every value is validated and back where it sat, the second stage
-    runs: each aspect checks each container it sits in (Aspect.check), and
-    those refusals are raised together too, separately from the first stage's.
+    runs: each place's check on each container (Place.check), and those
+    refusals are raised together too, separately from the first stage's.
     """
     if not (aspects := aspects_of(builder)):
         return builder.schema(value)
-    by_key = {aspect.key: aspect for aspect in aspects}
-    rest, places = _split(builder, aspects, value)
+    rest, taken = _split(builder, name, aspects, value)
     errors: list[vol.Invalid] = []
     block: Any = None
     try:
         block = builder.schema(rest)
     except vol.Invalid as error:
         errors.append(error)
-    mounted: Places = {}
-    for (path, key), taken in places.items():
+    mounted: Taken = {}
+    for (path, key), (place, each) in taken.items():
         try:
-            mounted[path, key] = by_key[key].schema(builder, name)(taken)
+            mounted[path, key] = (place, place.schema(each))
         except vol.Invalid as error:
             error.prepend([*path, key])
             errors.append(error)
     if errors:
         raise vol.MultipleInvalid(_flat(errors))
-    for (path, key), each in mounted.items():
+    for (path, key), (_, each) in mounted.items():
         block = _put(block, path, key, each)
-    if errors := _checked(builder, name, by_key, block, mounted.keys()):
+    if errors := _checked(block, mounted):
         raise vol.MultipleInvalid(_flat(errors))
     return block
 
 
-def _checked(
-    builder: Feature,
-    name: str,
-    aspects: Mapping[str, Aspect],
-    block: dict[str, Any],
-    places: Iterable[tuple[Place, str]],
-) -> list[vol.Invalid]:
-    """Each aspect's check (Aspect.check) on each container it sits in; the refusals, with their path."""
+def _checked(block: dict[str, Any], mounted: Taken) -> list[vol.Invalid]:
+    """Each place's check (Place.check) on each container it sat in; the refusals, with their path."""
     errors: list[vol.Invalid] = []
-    for path, key in places:
-        if (check := aspects[key].check) is None:
+    for (path, _), (place, _) in mounted.items():
+        if place.check is None:
             continue
         try:
-            check(builder, name, block[path[0]] if path else block)
+            place.check(block, _at(block, path))
         except vol.Invalid as error:
             error.prepend(list(path))
             errors.append(error)
     return errors
 
 
-def _put(block: dict[str, Any], path: Place, key: str, value: Any) -> Any:
-    """`block` with `value` under `key` back where it sat."""
+def _at(block: Mapping[str, Any], path: Path) -> Any:
+    """The container at `path` in the validated block."""
+    for key in path:
+        block = block[key]
+    return block
+
+
+def _put(block: dict[str, Any], path: Path, key: str, value: Any) -> Any:
+    """`block` with `value` under `key` back where it sat, rebuilt along `path`."""
     if not path:
         return {**block, key: value}
-    (item,) = path
-    return {**block, item: {**block[item], key: value}}
+    head, *rest = path
+    return {**block, head: _put(block[head], tuple(rest), key, value)}
 
 
 def _flat(errors: list[vol.Invalid]) -> list[vol.Invalid]:
@@ -152,7 +169,8 @@ def keys(
 
     `by` is the key of the aspect adding it ("alerts" for a ready-made
     alert's, "statistics" for a meter's), None for the builder's own; `item`
-    the item owning an Items key.
+    the item owning the key (an Items item, or a container an aspect's place
+    makes one: a phase).
     """
     for name, feature in builders().items():
         if name not in device:
@@ -171,37 +189,33 @@ def keys(
                 (name, entity_key, platform, None, None)
                 for entity_key, platform in derived.of(device[name]).items()
             )
-        each: list[Item] | None = None
         if (items := feature.role(Items)) is not None:
-            each = list(items.of(device[name]))
-            yield from _per_item(name, each, items.keys, None)
-        yield from _aspects_keys(name, feature, each)
+            yield from (
+                (name, item.key(suffix), platform, None, item.slug)
+                for item in items.of(device[name])
+                for suffix, platform in items.keys.items()
+            )
+        yield from _aspects_keys(name, feature, device[name])
 
 
 def _aspects_keys(
-    name: str, feature: Feature, items: list[Item] | None
+    name: str, feature: Feature, block: Any
 ) -> Iterator[tuple[str, str, Platform, str | None, str | None]]:
-    """keys()' rows for the keys each aspect it offers adds: per item for an Items builder (`items`)."""
+    """keys()' rows for the keys each aspect it offers adds, at each container of each of its places."""
     for aspect in aspects_of(feature):
-        added = aspect.keys(feature)
-        if items is not None:
-            yield from _per_item(name, items, added, aspect.key)
-            continue
-        yield from (
-            (name, entity_key, platform, aspect.key, None)
-            for entity_key, platform in added.items()
-        )
-
-
-def _per_item(
-    name: str, items: Iterable[Item], suffixes: Mapping[str, Platform], by: str | None
-) -> Iterator[tuple[str, str, Platform, str | None, str | None]]:
-    """keys()' rows for `suffixes` repeated per item: <slug>_<suffix>, owned by the item."""
-    return (
-        (name, item.key(suffix), platform, by, item.slug)
-        for item in items
-        for suffix, platform in suffixes.items()
-    )
+        for place in aspect.places(feature, name):
+            for path, container in walk(block, place.path):
+                item = None if place.item is None else place.item(path[-1], container)
+                yield from (
+                    (
+                        name,
+                        item_key(entity_key, item),
+                        platform,
+                        aspect.key,
+                        None if item is None else item.slug,
+                    )
+                    for entity_key, platform in place.keys.items()
+                )
 
 
 def targets(key: str, config: dict[str, Any]) -> dict[str, Target]:

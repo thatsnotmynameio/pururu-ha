@@ -15,7 +15,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Device, Feature
-from ...core.roles import Counters, Derived, Happenings, Presets
+from ...core.roles import Counted, Counters, Derived, Happenings, Presets
 from ..cycle import program
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal
@@ -118,8 +118,14 @@ APPLIANCE = Feature(
     roles=(
         # Its running program's phases' keys (none without phases)
         Derived(lambda config: program.keys_of(config[RUNNING_PROGRAM])),
-        # Metered by the statistics aspect; idle energy needs the plug's energy
-        Counters({"runtime": None, "cycles": None, "idle_energy": "energy"}),
+        # Metered by the statistics aspect: idle energy in the block (it needs
+        # the plug's energy), the rest in running_program, each phase and other
+        Counters(
+            (
+                Counted(needs={"idle_energy": "energy"}),
+                *program.counted((RUNNING_PROGRAM,)),
+            )
+        ),
         # Enabled in its block's `alerts`: the alerts aspect
         Presets(PRESETS),
         Happenings(HAPPENINGS),

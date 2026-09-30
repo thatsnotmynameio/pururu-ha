@@ -1,7 +1,9 @@
 """Characterizes today's meters: entity IDs, translated names and icons, and refusals.
 
 Five builders build per-period `Meter` entities through the statistics aspect
-(aspects/statistics.py): appliance, door, window, programs, reactions.
+(aspects/statistics.py): appliance, door, window, programs, reactions. The
+appliance counts at four places: its block, its running program, each phase
+and other.
 This file pins what each shows today - the full list of IDs, a few names in
 `en` and `pt-BR`, a few icons, and the schema's refusal texts - so a change to
 the aspect can't move any of them unnoticed.
@@ -85,8 +87,11 @@ async def test_appliance_meters(ha: HomeAssistant, language: str) -> None:
     block = {
         "power": "sensor.dummy_plug_power",
         "energy": "sensor.dummy_plug_energy",
-        "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
-        "statistics": {counter: list(PERIODS) for counter in APPLIANCE_COUNTERS},
+        "running_program": {
+            "above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2},
+            "statistics": {counter: list(PERIODS) for counter in ("runtime", "cycles")},
+        },
+        "statistics": {"idle_energy": list(PERIODS)},
     }
     assert await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
     for counter in APPLIANCE_COUNTERS:
@@ -96,6 +101,70 @@ async def test_appliance_meters(ha: HomeAssistant, language: str) -> None:
         assert icon_of(ha, appliance_sensor(suffix)) == icon
     for suffix, expected in APPLIANCE_NAMES[language].items():
         assert friendly_name(ha, appliance_sensor(suffix)) == f"{APPLIANCE_NAME} {expected}"
+
+
+# --- phases ----------------------------------------------------------------------------
+
+PHASE_KEY = "dummy_station"
+PHASE_NAME = "Dummy station"
+PHASE_COUNTERS = ("runtime", "cycles", "energy")
+PHASE_STATISTICS = {counter: list(PERIODS) for counter in PHASE_COUNTERS}
+PHASE_ICONS = {
+    "resfriar_runtime_today": "mdi:timer-sand",
+    "resfriar_cycles_week": "mdi:counter",
+    "resfriar_energy_month": "mdi:lightning-bolt",
+    "other_runtime_today": "mdi:timer-sand",
+    "other_energy_year": "mdi:lightning-bolt",
+}
+PHASE_NAMES = {
+    "en": {
+        "resfriar_runtime_today": "Resfriar runtime today",
+        "resfriar_cycles_week": "Resfriar cycles this week",
+        "resfriar_energy_month": "Resfriar energy this month",
+        "other_runtime_today": "Other phase runtime today",
+        "other_cycles_week": "Other phase cycles this week",
+        "other_energy_year": "Other phase energy this year",
+    },
+    "pt-BR": {
+        "resfriar_runtime_today": "Tempo de Resfriar hoje",
+        "resfriar_cycles_week": "Ciclos de Resfriar na semana",
+        "resfriar_energy_month": "Energia de Resfriar no mês",
+        "other_runtime_today": "Tempo de outra fase hoje",
+        "other_cycles_week": "Ciclos de outra fase na semana",
+        "other_energy_year": "Energia de outra fase no ano",
+    },
+}
+
+
+def phase_sensor(suffix: str) -> str:
+    return f"sensor.pururu_{PHASE_KEY}_appliance_phase_{suffix}"
+
+
+def phases(statistics: dict[str, Any], **appliance: Any) -> dict[str, Any]:
+    """The dummy station: phase resfriar and other, each with `statistics`."""
+    return {PHASE_KEY: {"name": PHASE_NAME, "appliance": {
+        "power": "sensor.dummy_plug_power",
+        "running_program": {
+            "above": 4,
+            "phases": {"resfriar": {"name": "Resfriar", "above": 40, "statistics": statistics}},
+            "other": {"statistics": statistics},
+        },
+        **appliance,
+    }}}
+
+
+@pytest.mark.parametrize("language", ["en", "pt-BR"])
+async def test_phases_meters(ha: HomeAssistant, language: str) -> None:
+    ha.config.language = language
+    assert await setup(ha, phases(PHASE_STATISTICS, energy="sensor.dummy_plug_energy"))
+    for phase in ("resfriar", "other"):
+        for counter in PHASE_COUNTERS:
+            for period in PERIODS:
+                assert_meter(ha, phase_sensor(f"{phase}_{counter}_{period}"))
+    for suffix, icon in PHASE_ICONS.items():
+        assert icon_of(ha, phase_sensor(suffix)) == icon
+    for suffix, expected in PHASE_NAMES[language].items():
+        assert friendly_name(ha, phase_sensor(suffix)) == f"{PHASE_NAME} {expected}"
 
 
 # --- door and window -------------------------------------------------------------------
@@ -255,6 +324,12 @@ APPLIANCE_MINIMAL = {
 }
 
 
+def counting(statistics: dict[str, Any]) -> dict[str, Any]:
+    """APPLIANCE_MINIMAL with `statistics` in its running program."""
+    return {**APPLIANCE_MINIMAL, "running_program": {**APPLIANCE_MINIMAL["running_program"],
+                                                     "statistics": statistics}}
+
+
 async def test_idle_energy_without_energy_is_refused(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -266,7 +341,7 @@ async def test_idle_energy_without_energy_is_refused(
 async def test_a_repeated_period_is_refused(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
-    block = {**APPLIANCE_MINIMAL, "statistics": {"cycles": ["today", "today"]}}
+    block = counting({"cycles": ["today", "today"]})
     assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
     # Verbatim up to the colon (pururu's words); the repeated period after it,
     # not the exact list-vs-tuple formatting of what follows.
@@ -275,10 +350,36 @@ async def test_a_repeated_period_is_refused(
 
 
 async def test_an_unknown_period_is_refused(ha: HomeAssistant) -> None:
-    block = {**APPLIANCE_MINIMAL, "statistics": {"cycles": ["daily"]}}
+    block = counting({"cycles": ["daily"]})
     assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
 
 
 async def test_an_unknown_counter_is_refused(ha: HomeAssistant) -> None:
     block = {**APPLIANCE_MINIMAL, "statistics": {"closings": ["today"]}}
     assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
+
+
+async def test_the_appliances_counters_sit_where_they_count(ha: HomeAssistant) -> None:
+    """runtime and cycles are its running program's, idle energy its block's: each refused at the other place."""
+    for block in ({**APPLIANCE_MINIMAL, "statistics": {"cycles": ["today"]}},
+                  counting({"idle_energy": ["today"]})):
+        assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
+
+
+@pytest.mark.parametrize("place", ["resfriar", "other"])
+async def test_a_phases_energy_needs_the_appliances_energy(
+    ha: HomeAssistant, caplog: pytest.LogCaptureFixture, place: str
+) -> None:
+    """The setting is the appliance's, looked up in its whole block: the phase has none of its own."""
+    devices = phases({})
+    program = devices[PHASE_KEY]["appliance"]["running_program"]
+    (program["phases"]["resfriar"] if place == "resfriar" else program["other"])["statistics"] = {
+        "energy": ["today"]}
+    assert not await setup(ha, devices)
+    where = "phases->resfriar" if place == "resfriar" else "other"
+    assert f"appliance->running_program->{where}" in caplog.text
+    assert "statistics.energy needs energy" in caplog.text
+
+
+async def test_no_period_for_a_phases_energy_without_energy_passes(ha: HomeAssistant) -> None:
+    assert await setup(ha, phases({"energy": []}))

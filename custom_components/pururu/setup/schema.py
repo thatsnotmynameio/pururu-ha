@@ -67,6 +67,7 @@ CHECKS: tuple[Check, ...] = (
     places.floors_exist,
     checks.areas_exist,
     checks.generated_ids_distinct,
+    checks.keys_distinct,
     checks.entity_ids_distinct,
     alert_lights.check,
     checks.messages_sent,
