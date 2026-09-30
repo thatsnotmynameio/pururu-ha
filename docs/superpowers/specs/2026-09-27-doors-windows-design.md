@@ -30,7 +30,7 @@ pururu:
       window:
         contact: binary_sensor.janela_quarto_contact
 # → binary_sensor.pururu_porta_clausura_frente_door_open        "Clausura frente Aberta"
-# → sensor.pururu_porta_clausura_frente_door_last_opened_by     "Matheus Guilarducci"
+# → sensor.pururu_porta_clausura_frente_door_last_opened_by     "Alex Doe"
 # → binary_sensor.pururu_janela_quarto_window_open              "Janela do quarto Aberta"
 ```
 
@@ -40,7 +40,7 @@ The owner's two enclosure doors (UniFi Access), history of 2026-09-26 and 27:
 
 | Situation | Contact | Event |
 |---|---|---|
-| Entry, front | opens | `access_granted`, `actor: Matheus Guilarducci`, `authentication: PIN_CODE`, `direction: entry`, about 0.9 s **after** the contact opens |
+| Entry, front | opens | `access_granted`, `actor: Alex Doe`, `authentication: PIN_CODE`, `direction: entry`, about 0.9 s **after** the contact opens |
 | Entry, back | opens | the same, about 0.5 s after |
 | Exit, back (button → automation → relay) | opens | `actor: N/A`, `authentication: REX`, `direction: exit`, about 0.8 s after |
 | Exit, front | opens | **no event** (the handle, from inside) |
