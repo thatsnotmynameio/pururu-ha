@@ -124,8 +124,9 @@ async def _reload_cancelled(ha: HomeAssistant) -> None:
 
     with patch.object(ha.config_entries, "async_forward_entry_setups",
                       side_effect=forward_then_cancel):
+        cancelled = asyncio.create_task(reload(ha, {"pool": SWITCH}))
         with pytest.raises(asyncio.CancelledError):
-            await asyncio.create_task(reload(ha, {"pool": SWITCH}))
+            await cancelled
 
 
 async def _reload_raising_cancelled(ha: HomeAssistant) -> None:
