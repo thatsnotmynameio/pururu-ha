@@ -531,3 +531,31 @@ async def test_last_restores(detecting: HomeAssistant) -> None:
     await restart(detecting, DEVICES, (State(LAST, "quente"), {
         "native_value": "quente", "native_unit_of_measurement": None}))
     assert state(detecting, LAST) == "quente"
+
+
+# --- names ------------------------------------------------------------------------------
+
+NAMES = {
+    "en": {GELAR: "Demo filter Gelar", OTHER: "Demo filter Other phase",
+           CURRENT: "Demo filter Phase", LAST: "Demo filter Last phase",
+           sensor("phase_quente_cycles_total"): "Demo filter Água quente cycles",
+           sensor("phase_gelar_last_cycle_start"): "Demo filter Gelar last cycle start",
+           sensor("phase_other_runtime_total"): "Demo filter Other phase runtime"},
+    "pt-BR": {GELAR: "Demo filter Gelar", OTHER: "Demo filter Outra fase",
+              CURRENT: "Demo filter Fase", LAST: "Demo filter Última fase",
+              sensor("phase_quente_cycles_total"): "Demo filter Ciclos de Água quente",
+              sensor("phase_gelar_last_cycle_start"): "Demo filter Início do último ciclo de Gelar",
+              sensor("phase_other_runtime_total"): "Demo filter Tempo de outra fase"},
+}
+
+
+@pytest.mark.parametrize("language", ["en", "pt-BR"])
+async def test_names(detecting: HomeAssistant, language: str) -> None:
+    """A phase's binary sensor is its name; its cycle entities carry it; other's and the detector's are translated."""
+    detecting.config.language = language
+    assert await setup(detecting, DEVICES)
+    for entity_id, name in NAMES[language].items():
+        assert detecting.states.get(entity_id).attributes["friendly_name"] == name, entity_id
+    if language == "en":
+        assert detecting.states.get(sensor("phase_gelar_cycles_total")).attributes[
+            "unit_of_measurement"] == "cycles"
