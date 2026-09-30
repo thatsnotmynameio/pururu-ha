@@ -114,7 +114,7 @@ pururu:
 - Each **phase** is a band of the same power sensor. `warming` holds as soon as the power goes above 1000 W. `wringing` holds once the power has stayed between 50 and 1000 W for 3 minutes (`on_delay`, as the program's own).
 - **Bands may overlap**, and when both hold at once, both phases run: nothing picks a winner. When neither holds, the phase is `other`, the built-in phase for the program's band outside every one you named. Outside a cycle, the phase is `idle`.
 
-You now have `sensor.pururu_clothes_washer_appliance_phase_current`. It shows `idle` outside a cycle, `warming` or `wringing` while one of those holds, and `other` in between. Its `seen` attribute lists the phases the current (or last) cycle went through, and `binary_sensor.pururu_clothes_washer_appliance_phase_warming` is on while `warming` runs.
+You now have `sensor.pururu_clothes_washer_appliance_phase_current`. It shows `idle` outside a cycle, `warming` or `wringing` while one of those holds, and `other` in between. Its `name` attribute is the running phase's `name` ("Aquecendo"), and its `seen` attribute lists the phases the current (or last) cycle went through, and `binary_sensor.pururu_clothes_washer_appliance_phase_warming` is on while `warming` runs.
 
 Watch a wash in **History** and tune the bands to your machine. [Detected programs and phases](/concepts/detected-programs) covers overlapping bands, dips and idle gaps in full.
 

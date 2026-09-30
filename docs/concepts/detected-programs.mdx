@@ -96,7 +96,7 @@ A phase's key is a slug. `idle` (the state while none runs) and `other` (the bui
 | Entity | What it is |
 |---|---|
 | `binary_sensor.pururu_<key>_appliance_running` | The program: on while the appliance runs (see [`appliance`](/features/appliance#entities)) |
-| `sensor.pururu_<key>_appliance_phase_current` | The running phase that started last, or `idle`. Device class `enum`. Attributes: `running` (the running phases, in the configuration's order) and `seen` (the phases of the current or last cycle, `other` included, cleared when a cycle starts) |
+| `sensor.pururu_<key>_appliance_phase_current` | The running phase that started last, or `idle`. Device class `enum`. Attributes: `name` (the shown phase's `name`; `other`'s is translated, "Other phase"; none while `idle`), `running` (the running phases, in the configuration's order) and `seen` (the phases of the current or last cycle, `other` included, cleared when a cycle starts) |
 | `sensor.pururu_<key>_appliance_phase_last` | The phase of the last phase cycle that ended; `enum`, kept across restarts, `unknown` until the first |
 | `binary_sensor.pururu_<key>_appliance_phase_<phase>` | On while the phase runs, named by its `name` (`other`: "Other phase"). Attributes `cycle_start`, and `cycle_end` while its `off_delay` runs |
 | `sensor.pururu_<key>_appliance_phase_<phase>_last_cycle_start`, `_end`, `_duration`, `_energy` | The phase's last cycle, as the appliance's own (`_end` written last; `_energy` *with `energy`*) |
@@ -107,19 +107,17 @@ A phase's cycle entities are named after its `name` ("Aquecendo cycles", "Ciclos
 
 ## State names
 
-`phase_current` and `phase_last` show a phase's key. These names are translated in the UI (English and Portuguese):
+`phase_current` and `phase_last` show a phase's key. Only the two states pururu gives itself are translated in the UI (English and Portuguese):
 
 | Name | English | Portuguese |
 |---|---|---|
 | `idle` | Idle | Parada |
-| `rinsing` | Rinsing | Enxaguando |
-| `drying` | Drying | Secando |
 | `other` | Other | Outra |
 
-Any other key, such as `warming` or `wringing`, is shown as written. `phase_last` never shows `idle`: it has no cycle to be one.
+A configured phase's key, such as `warming` or `wringing`, is shown as written: choose keys you'd read. To show its `name` instead, use `phase_current`'s `name` attribute (restored with it after a restart), or the phase's binary sensor, which is named by it. `phase_last` never shows `idle`: it has no cycle to be one.
 
 ## Referring to a phase
 
 An alert's or a reaction's `when` names a phase's entity key as it ends every entity ID: `appliance_phase_current`, `appliance_phase_resfriar`, `appliance_phase_resfriar_cycles_total`. A phase not configured, or any phase key of an appliance without phases, is refused at the configuration: `alerts: appliance_phase_morno is not an entity key of another feature of this device`.
 
-Renaming a phase's entity in the UI is followed, as every pururu entity: `sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it` if the program itself can't be created.
+Renaming a phase's entity in the UI is followed, as every pururu entity. If `running` can't be created (its ID taken), neither are the phases: `sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it`.
