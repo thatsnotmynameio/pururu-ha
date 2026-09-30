@@ -69,7 +69,10 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
     and the removed carrier never starts; if that unload fails too, HA keeps
     the entities and the carrier runs them. It wraps its phases: a step writes its own state, then calls each view with
     the step's changes; a step that ends the program calls the views first,
-    then writes its state and sends the program's cycle.
+    then writes its state and sends the program's cycle. A reading's step
+    comes after, in its own step, the delays a late timer missed: a program
+    ended and started again by one reading shows `off` in between, and the
+    same for a phase ending late and starting again on that one reading.
     """
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -180,16 +183,25 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
                 self.hass, self._reading, self._reading_changed
             )
         )
-        self._step(self._read(self.hass.states.get(self._reading)))
+        self._read(self.hass.states.get(self._reading))
 
-    def _read(self, state: State | None) -> list[Change]:
-        return self.detector.read(
-            reading(state), dt_util.utcnow(), kwh_now(self.hass, self._energy)
-        )
+    @callback
+    def _read(self, state: State | None) -> None:
+        """Show a reading: first, in its own step, what a late timer missed.
+
+        One reading can end the program (its off_delay passed, the timer not
+        run yet) and start it again (on_delay 0): the end is shown first, `off`
+        and its phases' ends, then the reading's step shows the new cycle.
+        """
+        now = dt_util.utcnow()
+        kwh = kwh_now(self.hass, self._energy)
+        if missed := self.detector.catch_up(now, kwh):
+            self._step(missed)
+        self._step(self.detector.read(reading(state), now, kwh))
 
     @callback
     def _reading_changed(self, event: Event[EventStateChangedData]) -> None:
-        self._step(self._read(event.data["new_state"]))
+        self._read(event.data["new_state"])
 
     @callback
     def _delay_passed(self, _now: datetime) -> None:
@@ -299,10 +311,13 @@ class PhaseRunning(CycleSource, BinarySensorEntity):
 
 
 class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
-    """The phase that started last among those running, or idle; those running and seen as attributes.
+    """The phase that started last among those running, or idle; its name, and those running and seen, as attributes.
 
-    Until the carrier restored the detector (another platform may add it
-    first), it shows its own restored state and attributes. A disabled carrier
+    Its state is the phase's key, translated only for idle and other; its
+    `name` attribute is a configured phase's `name`, None for idle and other
+    (their state is translated already). Until the carrier restored the
+    detector (another platform may add it first), it shows its own restored
+    state and attributes, named as that phase is now. A disabled carrier
     never runs the detector: it shows idle, as every phase shows off.
     """
 
@@ -317,6 +332,8 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
         self._carrier = carrier
         phases = carrier.detector.program.phases
         self._phases = [phase.key for phase in phases]
+        # Only a configured phase's: idle's and other's state is translated already
+        self._names = {phase.key: phase.name for phase in phases if not phase.other}
         self._options = [IDLE, *self._phases]
         self._attr_options = self._options
         self._restored = IDLE
@@ -333,11 +350,13 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
-        """The running phases, and those the program's current or last cycle saw, in the configuration's order; the restored ones until the carrier restored the detector."""
+        """The shown phase's name; the running phases, and those the program's current or last cycle saw, in the configuration's order (the restored ones until the carrier restored the detector)."""
         if not self._carrier.ready:
-            return self._restored_attributes
-        detector = self._carrier.detector
-        return {"running": detector.running, "seen": detector.seen}
+            phases = self._restored_attributes
+        else:
+            detector = self._carrier.detector
+            phases = {"running": detector.running, "seen": detector.seen}
+        return {"name": self._names.get(self.native_value), **phases}
 
     @override
     async def async_added_to_hass(self) -> None:

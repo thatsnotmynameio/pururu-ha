@@ -145,3 +145,14 @@ def capture(hass: HomeAssistant, *event_types: str) -> list[Event]:
     for event_type in event_types:
         hass.bus.async_listen(event_type, record)
     return captured
+
+
+def snapshot(since: str | None, *, since_energy: float | None = None,
+             until: str | None = None, **phases: dict[str, Any]) -> dict[str, Any]:
+    """A running program's carrier's restored extra data: its cycle from `since` (None: not running), and `phases`' runs by key."""
+    program = None if since is None else {
+        "since": since, "since_energy": since_energy, "until": until, "gap": False}
+    return {"program": program,
+            "phases": {key: {"since_energy": None, "until": None, "gap": False, **run}
+                       for key, run in phases.items()},
+            "order": list(phases), "seen": list(phases)}

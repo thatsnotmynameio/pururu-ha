@@ -13,9 +13,8 @@ from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
 from ..core.feature import Device
 from ..core.resolve import Index, find
-from ..core.roles import Generates, Provides, Refers, Requires
+from ..core.roles import Generates, Refers
 from ..core.texts import Texts
-from ..features import FEATURES
 from . import catalogue
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,12 +32,12 @@ def build(
 
     A builder's own entities, then those of the aspects it offers (its
     ready-made alerts, the meters of its totals), all in its namespace.
-    Each feature sees the device in its own namespace; what it takes through
-    <capability>_from, or refers to, is in the owning feature's. Also the
-    entity ID of each entity some entity watches (`follows`), by unique ID: the
-    settings may never build it, and then only this names it. `index` is what
-    each device can create; `owned` are the
-    entity IDs of the scripts and automations the entry generates, by ID.
+    Each feature sees the device in its own namespace; what it refers to is
+    in the owning feature's. Also the entity ID of each entity some entity
+    watches (`follows`), by unique ID: the settings may never build it, and
+    then only this names it. `index` is what each device can create; `owned`
+    are the entity IDs of the scripts and automations the entry generates, by
+    ID.
     """
     found = index[key]
     built: list[tuple[PururuEntity, set[str]]] = []
@@ -47,7 +46,7 @@ def build(
         if name not in config:
             continue
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
-        inputs, required = _inputs(hass, key, config, name, index, owned)
+        inputs = _inputs(hass, key, config, name, index, owned)
         aspects = (
             entity
             for aspect in catalogue.aspects_of(feature)
@@ -59,9 +58,7 @@ def build(
                 target = found[reference]
                 follows.add(target.unique_id)
                 watched[target.unique_id] = target.current_entity_id(hass)
-            built.append(
-                (entity, {*map(device.object_id, entity.sources), *required, *follows})
-            )
+            built.append((entity, {*map(device.object_id, entity.sources), *follows}))
     return built, watched
 
 
@@ -72,13 +69,12 @@ def _inputs(
     name: str,
     index: Index,
     owned: Mapping[str, str],
-) -> tuple[dict[str, str], set[str]]:
-    """What builder `name` gets in `inputs`, and the unique IDs of what it requires.
+) -> dict[str, str]:
+    """What builder `name` gets in `inputs`.
 
-    A feature: the current entity IDs of what it takes through <capability>_from
-    and of what it refers to. A builder that Generates: the entity IDs of its
-    scripts or automations the entry owns, by ID: its statistics never watch
-    one the entry doesn't.
+    A feature: the current entity IDs of what it refers to. A builder that
+    Generates: the entity IDs of its scripts or automations the entry owns,
+    by ID: its statistics never watch one the entry doesn't.
     """
     feature = catalogue.builders()[name]
     if (generates := feature.role(Generates)) is not None:
@@ -86,26 +82,14 @@ def _inputs(
             unique_id: owned[unique_id]
             for _, unique_id in generates.ids(key, config[name])
             if unique_id in owned
-        }, set()
+        }
     inputs: dict[str, str] = {}
-    required: set[str] = set()
-    if (requires := feature.role(Requires)) is not None:
-        capability = requires.capability
-        source = FEATURES[config[name][f"{capability}_from"]]
-        provider = Device(key=key, name=config[CONF_NAME], namespace=source.namespace)
-        provides = source.role(Provides)
-        assert provides is not None  # the schema checked it (capabilities_provided)
-        entity_key = provides.key
-        inputs[capability] = provider.current_entity_id(
-            hass, source.entity_keys[entity_key], entity_key
-        )
-        required.add(provider.object_id(entity_key))
     refers = feature.role(Refers)
     for ref in refers.of(config[name]) if refers else ():
         target = find(index, key, ref)
         assert target is not None  # the schema checked it (checks.references)
         inputs[ref.text] = target.current_entity_id(hass)
-    return inputs, required
+    return inputs
 
 
 def creatable(

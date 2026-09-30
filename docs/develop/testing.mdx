@@ -12,7 +12,7 @@ Every test that needs Home Assistant takes `ha` (from `tests/conftest.py`) inste
 - **Freezes time** at a fixed Wednesday, 16 September 2026, 10:00, in Home Assistant's time zone. The few hours a test simulates then never cross a day, week, month or year by accident.
 - **Puts the repository's `custom_components`** on Home Assistant's loader path.
 
-It also marks lingering timers as expected: `running`'s delays and the phase bands' `for` may still be pending when a test ends.
+It also marks lingering timers as expected: the carrier's next delay (a detected program's `on_delay`/`off_delay`, its phases' too) may still be pending when a test ends.
 
 Load the integration's modules with `helpers.module("<name>")` **after** the fixture, the name dotted from the package root (`"core.feature"`, `"setup.lifecycle"`), not with a top-level import. The loader path only includes the repository once `ha` has run.
 
@@ -38,15 +38,16 @@ An autouse fixture, `no_step_failed` in `tests/conftest.py`, fails any test in w
 | `device_of(hass, key)` | The device registry entry of a device key, or `None`. |
 | `held(hass, key)` | The entity IDs in a device, from the entity registry. |
 | `capture(hass, *event_types)` | Records events in the order they're fired. |
+| `snapshot(since, *, since_energy=, until=, **phases)` | The carrier's restored extra data: a program run from `since` (`None`: not running), and phases' runs by key. Every `restart` of a running `running` needs it. |
 
 A typical test:
 
 ```python
 from helpers import fake, setup, tick
 
-WASHER = {"laundry_washer": {"name": "Washer", "appliance": {
+WASHER = {"clothes_washer": {"name": "Washer", "appliance": {
     "power": "sensor.plug_power",
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }}}
 
 
@@ -55,9 +56,9 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
     assert await setup(ha, WASHER)
     await fake(ha, "sensor.plug_power", "500")
     await tick(ha, freezer, 59)
-    assert ha.states.get("binary_sensor.pururu_laundry_washer_appliance_running").state == "off"
+    assert ha.states.get("binary_sensor.pururu_clothes_washer_appliance_running").state == "off"
     await tick(ha, freezer, 1)
-    assert ha.states.get("binary_sensor.pururu_laundry_washer_appliance_running").state == "on"
+    assert ha.states.get("binary_sensor.pururu_clothes_washer_appliance_running").state == "on"
 ```
 
 ## Test files
@@ -66,17 +67,17 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 |---|---|
 | `test_lifecycle.py` | The steps' order, a failing step logged with the entry loaded, the one rename rule |
 | `test_resolve.py` | The index of what a device can create and `find`: a feature's key, a ready-made alert's (`by`), an item's, another device's, a rename, what isn't there |
+| `test_catalogue.py` | `mount` and `keys` at places: `walk`, each place mounted, a phase keyed `statistics`, a place that isn't a map, a refusal's path, the keys at each place |
 | `test_checks.py` | Each rule of `schema.CHECKS` refuses with today's words and says where (its path) |
 | `test_vocabulary.py` | `trigger`'s state and numeric_state form case by case, `period`'s `HH:MM:SS` |
 | `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices, configured entity keys |
 | `test_ids.py` | Every entity and generated ID of a whole house (`fixtures/house.yaml`), pinned: a refactor can't lose or rename one |
-| `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every builder in `FEATURES` and `DEVICE_KEYS`, including that every `CycleSource` (`Provides`, `modes`' `Current`, the programs' `Runs`) is pinned; that the detector's own keys (`features.cycle.program.NAMED`) are counted among the created entity keys and each is named, in both languages, with an icon |
-| `test_statistics.py` | Today's meters, pinned: every entity ID a `Counters` builder can create, a few names and icons in both languages, and the schema's refusal texts, so consolidating them into one aspect can't change any unnoticed |
+| `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every builder in `FEATURES` and `DEVICE_KEYS`, including that every last cycle follows a `CycleSource`, and derived keys in the index; that the detector's own keys (`features.cycle.program.NAMED`) are counted among the created entity keys and each is named, in both languages, with an icon |
+| `test_statistics.py` | Today's meters, pinned: every entity ID a `Counters` builder can create — the appliance's four places among them — a few names and icons in both languages, and the schema's refusal texts, so consolidating them into one aspect can't change any unnoticed |
 | `test_cycle.py` | `CycleSource`'s order: the state is written, then the cycle signal, then the end signal; that a cycle entity takes an optional `translation` |
-| `test_program.py` | `features/cycle/program`'s pure `Detector`: the schema's refusals, today's modes and phases scenarios replayed with the same readings, overlapping bands, the idle gap, `other`, ordering at one instant, restores, and the purifier day's replay (`fixtures/purifier_day.csv`) |
-| `test_program_entities.py` | The detector's entities (`build`), through a test-only builder swapped in for `FEATURES["appliance"]`: entity IDs, states, the handover, restarts, reloads, names |
-| `test_appliance.py` | `running`, cycles, energy, runtime, meters, restores |
-| `test_phases.py` | Bands, `for`, `seen`, restores, translations |
+| `test_program.py` | `features/cycle/program`'s pure `Detector`: the schema's refusals, 0.1's `modes` and `phases` scenarios replayed with the same readings, overlapping bands, the idle gap, `other`, ordering at one instant, restores, and the purifier day's replay (`fixtures/purifier_day.csv`) |
+| `test_program_entities.py` | The detector's entities (`build`), through the appliance's `running_program`: IDs, states, the current phase's `name`, the handover, late timers, restarts, reloads, names, what refers to a phase, the phases' meters |
+| `test_appliance.py` | `running_program`, cycles, energy, runtime, meters, restores |
 | `test_switches.py` | Following the real switch, passing commands on, refused blocks, taken IDs, renames, reloads |
 | `test_lights.py` | Following the real light or switch, what it offers, passing commands on, refused blocks, one feature per real entity, taken IDs, renames, reloads |
 | `test_places.py` | Floors and areas: creation, adoption, deletion, refused names |
@@ -126,7 +127,7 @@ A new folder needs a row here, in `ALLOWED` (`tests/test_code.py`), or the impor
 
 ```sh
 uv run pytest                                      # everything, 4 processes
-uv run pytest tests/test_phases.py -n 0 -q         # one file, one process
+uv run pytest tests/test_appliance.py -n 0 -q      # one file, one process
 uv run pytest "tests/test_places.py::test_name[param id]" -n 0
 ```
 

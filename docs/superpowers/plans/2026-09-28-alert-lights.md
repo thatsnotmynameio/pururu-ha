@@ -134,7 +134,7 @@ async def restart(hass: HomeAssistant, devices: dict[str, Any],
 Create `tests/test_alert_lights.py`:
 
 ```python
-"""Alert lights: a made-up house's alerts borrowing the pool's LED and the porch's relay."""
+"""Alert lights: a made-up house's alerts borrowing the greenhouse's lantern and the porch's relay."""
 
 from datetime import timedelta
 from typing import Any
@@ -145,19 +145,19 @@ import pytest
 from helpers import fake, module, setup
 
 HOUSE = "casa"
-REAL_LED = "light.led_piscina"
-LED = "light.pururu_pool_light_led"
+REAL_LANTERN = "light.greenhouse_lantern"
+LANTERN = "light.pururu_greenhouse_light_lantern"
 REAL_RELAY = "switch.varanda_rele"
 RELAY = "light.pururu_varanda_light_rele"
-# The LED as Zigbee2MQTT shows it: hs colour, breathe among its effects,
+# The lantern as Zigbee2MQTT shows it: hs colour, breathe among its effects,
 # EFFECT | FLASH | TRANSITION
 BULB = {"supported_color_modes": ["hs"], "color_mode": "hs", "brightness": 255,
         "hs_color": [240.0, 100.0], "effect_list": ["blink", "breathe"],
         "supported_features": 44}
 # The house's switches: turning one on raises the alert watching it
 REAL = {name: f"switch.casa_{name}" for name in ("gate", "smoke", "mail", "leak")}
-GROUPS = {"default": {"pool": ["led"]}, "porch": {"varanda": ["rele"]},
-          "both": {"pool": ["led"], "varanda": ["rele"]}}
+GROUPS = {"default": {"greenhouse": ["lantern"]}, "porch": {"varanda": ["rele"]},
+          "both": {"greenhouse": ["lantern"], "varanda": ["rele"]}}
 CONFIG = {"alerts": {"lights": {"groups": GROUPS}}}
 RED = {"color_name": "red", "brightness_pct": 100, "effect": "breathe"}
 ORANGE = {"color_name": "orange", "brightness_pct": 100, "effect": "breathe"}
@@ -190,7 +190,7 @@ def devices(**alerts: dict[str, Any]) -> dict[str, Any]:
     if alerts:
         house["alerts"] = alerts
     return {
-        "pool": {"name": "Piscina", "lights": {"led": {"entity": REAL_LED, "name": "LED"}}},
+        "greenhouse": {"name": "Estufa", "lights": {"lantern": {"entity": REAL_LANTERN, "name": "Lanterna"}}},
         "varanda": {"name": "Varanda",
                     "lights": {"rele": {"entity": REAL_RELAY, "name": "Relé"}}},
         HOUSE: house,
@@ -217,7 +217,7 @@ def errors(caplog: pytest.LogCaptureFixture) -> list[str]:
 @pytest.fixture
 async def house(ha: HomeAssistant) -> HomeAssistant:
     """The real lights and switches, all off, before pururu sets up."""
-    await fake(ha, REAL_LED, "off", BULB)
+    await fake(ha, REAL_LANTERN, "off", BULB)
     await fake(ha, REAL_RELAY, "off")
     for real in REAL.values():
         await fake(ha, real, "off")
@@ -294,7 +294,7 @@ def lights_block(**block: Any) -> dict[str, Any]:
     pytest.param(lights_block(groups={"porch": {"casa": ["gate"]}}),
                  "config.alerts.lights.groups: porch: device casa has no light gate",
                  id="a switch, not a light"),
-    pytest.param(lights_block(high={"turn_on": {"entity_id": LED}}),
+    pytest.param(lights_block(high={"turn_on": {"entity_id": LANTERN}}),
                  "'entity_id' is an invalid option", id="entity_id in turn_on"),
     pytest.param(lights_block(high={"turn_on": {"color_name": "reed"}}),
                  "reed is not a colour name Home Assistant knows", id="unknown colour"),
@@ -706,17 +706,17 @@ def light_entity(hass: HomeAssistant, entity_id: str) -> Any:
     return hass.data[DATA_COMPONENT].get_entity(entity_id)
 
 
-async def test_an_effect_the_real_light_does_not_list_is_dropped(sala: HomeAssistant) -> None:
+async def test_an_effect_the_real_light_does_not_list_is_dropped(biblioteca: HomeAssistant) -> None:
     """The alert lights ask every light for breathe: a bulb without it takes the rest."""
-    calls = await forwarded(sala, TETO, "turn_on", {"effect": "breathe", "brightness": 100},
+    calls = await forwarded(biblioteca, TETO, "turn_on", {"effect": "breathe", "brightness": 100},
                             Context(), REAL_TETO)
     assert len(calls) == 1
     assert "effect" not in calls[0][2]
     assert calls[0][2]["brightness"] == 100
 
 
-async def test_an_effect_the_real_light_lists_is_passed_on(sala: HomeAssistant) -> None:
-    calls = await forwarded(sala, TETO, "turn_on", {"effect": "strobe"}, Context(), REAL_TETO)
+async def test_an_effect_the_real_light_lists_is_passed_on(biblioteca: HomeAssistant) -> None:
+    calls = await forwarded(biblioteca, TETO, "turn_on", {"effect": "strobe"}, Context(), REAL_TETO)
     assert calls[0][2]["effect"] == "strobe"
 
 
@@ -728,7 +728,7 @@ async def test_it_shows_what_the_alert_lights_use_it_for(
         ha: HomeAssistant, entity_id: str, real: str, block: dict[str, Any]) -> None:
     await fake(ha, real, "on", BULB if real == REAL_TETO else None)
     key = entity_id.rsplit("_", 1)[1]
-    assert await setup(ha, {KEY: {"name": "Sala", "lights": {key: block}}})
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "lights": {key: block}}})
     context = Context()
     light_entity(ha, entity_id).async_show_alert("medium", ["binary_sensor.x"], context)
     shown = ha.states.get(entity_id)
@@ -890,11 +890,11 @@ In `tests/test_alert_lights.py`, extend the helpers import to `from helpers impo
 async def test_an_alert_with_lights_borrows_its_group(house: HomeAssistant) -> None:
     events = capture(house, "call_service")
     assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
-    assert calls(events, LED) == []
+    assert calls(events, LANTERN) == []
     await turn(house, "gate", "on")
-    assert calls(events, LED) == [("turn_on", ORANGE)]
-    assert attributes(house, LED)["alert"] == "medium"
-    assert attributes(house, LED)["alerts"] == [alert("gate")]
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)]
+    assert attributes(house, LANTERN)["alert"] == "medium"
+    assert attributes(house, LANTERN)["alerts"] == [alert("gate")]
     assert calls(events, RELAY) == []
 
 
@@ -902,8 +902,8 @@ async def test_an_alert_without_lights_borrows_nothing(house: HomeAssistant) -> 
     events = capture(house, "call_service")
     assert await setup(house, devices(gate=raised("gate", "high", None)), config=CONFIG)
     await turn(house, "gate", "on")
-    assert calls(events, LED) == []
-    assert "alert" not in attributes(house, LED)
+    assert calls(events, LANTERN) == []
+    assert "alert" not in attributes(house, LANTERN)
 
 
 async def test_the_priority_is_sent_again_every_15_seconds(
@@ -913,11 +913,11 @@ async def test_the_priority_is_sent_again_every_15_seconds(
     await turn(house, "gate", "on")
     events = capture(house, "call_service")
     await tick(house, freezer, 14)
-    assert calls(events, LED) == []
+    assert calls(events, LANTERN) == []
     await tick(house, freezer, 1)
-    assert calls(events, LED) == [("turn_on", ORANGE)]
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)]
     await tick(house, freezer, 15)
-    assert calls(events, LED) == [("turn_on", ORANGE)] * 2
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)] * 2
 
 
 async def test_the_highest_priority_wins_and_gives_way(house: HomeAssistant) -> None:
@@ -926,19 +926,19 @@ async def test_the_highest_priority_wins_and_gives_way(house: HomeAssistant) -> 
     await turn(house, "gate", "on")
     events = capture(house, "call_service")
     await turn(house, "smoke", "on")
-    assert calls(events, LED) == [("turn_on", RED)]
-    assert attributes(house, LED)["alerts"] == [alert("gate"), alert("smoke")]
+    assert calls(events, LANTERN) == [("turn_on", RED)]
+    assert attributes(house, LANTERN)["alerts"] == [alert("gate"), alert("smoke")]
     await turn(house, "smoke", "off")
-    assert calls(events, LED) == [("turn_on", RED), ("turn_on", ORANGE)]
-    assert attributes(house, LED)["alert"] == "medium"
-    assert attributes(house, LED)["alerts"] == [alert("gate")]
+    assert calls(events, LANTERN) == [("turn_on", RED), ("turn_on", ORANGE)]
+    assert attributes(house, LANTERN)["alert"] == "medium"
+    assert attributes(house, LANTERN)["alerts"] == [alert("gate")]
 
 
 async def test_low_is_blue(house: HomeAssistant) -> None:
     events = capture(house, "call_service")
     assert await setup(house, devices(leak=raised("leak", "low")), config=CONFIG)
     await turn(house, "leak", "on")
-    assert calls(events, LED) == [("turn_on", BLUE)]
+    assert calls(events, LANTERN) == [("turn_on", BLUE)]
 
 
 async def test_another_alert_of_the_same_priority_only_joins(house: HomeAssistant) -> None:
@@ -947,11 +947,11 @@ async def test_another_alert_of_the_same_priority_only_joins(house: HomeAssistan
     await turn(house, "gate", "on")
     events = capture(house, "call_service")
     await turn(house, "mail", "on")
-    assert calls(events, LED) == []
-    assert attributes(house, LED)["alerts"] == [alert("gate"), alert("mail")]
+    assert calls(events, LANTERN) == []
+    assert attributes(house, LANTERN)["alerts"] == [alert("gate"), alert("mail")]
     await turn(house, "gate", "off")
-    assert calls(events, LED) == []
-    assert attributes(house, LED)["alerts"] == [alert("mail")]
+    assert calls(events, LANTERN) == []
+    assert attributes(house, LANTERN)["alerts"] == [alert("mail")]
 
 
 async def test_the_last_alert_ending_shows_resolved_then_hands_the_light_back(
@@ -961,16 +961,16 @@ async def test_the_last_alert_ending_shows_resolved_then_hands_the_light_back(
     await turn(house, "gate", "on")
     events = capture(house, "call_service")
     await turn(house, "gate", "off")
-    assert calls(events, LED) == [("turn_on", GREEN)]
-    assert attributes(house, LED)["alert"] == "resolved"
-    assert attributes(house, LED)["alerts"] == []
+    assert calls(events, LANTERN) == [("turn_on", GREEN)]
+    assert attributes(house, LANTERN)["alert"] == "resolved"
+    assert attributes(house, LANTERN)["alerts"] == []
     await tick(house, freezer, 119)
-    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert calls(events, LANTERN) == [("turn_on", GREEN)]
     assert released == []
     await tick(house, freezer, 1)
-    assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
-    assert [event.data for event in released] == [{"entity_id": LED}]
-    assert "alert" not in attributes(house, LED)
+    assert calls(events, LANTERN) == [("turn_on", GREEN), ("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LANTERN}]
+    assert "alert" not in attributes(house, LANTERN)
 
 
 async def test_an_alert_during_resolved_takes_the_light_again(
@@ -982,11 +982,11 @@ async def test_an_alert_during_resolved_takes_the_light_again(
     await tick(house, freezer, 60)
     events = capture(house, "call_service")
     await turn(house, "gate", "on")
-    assert calls(events, LED) == [("turn_on", ORANGE)]
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)]
     await tick(house, freezer, 61)
-    assert "turn_off" not in [service for service, _ in calls(events, LED)]
+    assert "turn_off" not in [service for service, _ in calls(events, LANTERN)]
     assert released == []
-    assert attributes(house, LED)["alert"] == "medium"
+    assert attributes(house, LANTERN)["alert"] == "medium"
 
 
 async def test_an_alert_of_another_group_does_not_hold_the_light(
@@ -998,11 +998,11 @@ async def test_an_alert_of_another_group_does_not_hold_the_light(
     await turn(house, "mail", "on")
     events = capture(house, "call_service")
     await turn(house, "gate", "off")
-    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert calls(events, LANTERN) == [("turn_on", GREEN)]
     assert calls(events, RELAY) == []
     await tick(house, freezer, 120)
-    assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
-    assert [event.data for event in released] == [{"entity_id": LED}]
+    assert calls(events, LANTERN) == [("turn_on", GREEN), ("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LANTERN}]
     assert attributes(house, RELAY)["alert"] == "low"
 
 
@@ -1012,13 +1012,13 @@ async def test_a_light_in_two_groups_shows_the_highest_of_both(house: HomeAssist
     await turn(house, "gate", "on")
     events = capture(house, "call_service")
     await turn(house, "smoke", "on")
-    assert calls(events, LED) == [("turn_on", RED)]
+    assert calls(events, LANTERN) == [("turn_on", RED)]
     assert calls(events, RELAY) == [("turn_on", RED)]
     await turn(house, "smoke", "off")
-    assert calls(events, LED) == [("turn_on", RED), ("turn_on", ORANGE)]
+    assert calls(events, LANTERN) == [("turn_on", RED), ("turn_on", ORANGE)]
     assert calls(events, RELAY) == [("turn_on", RED), ("turn_on", GREEN)]
     await turn(house, "gate", "off")
-    assert calls(events, LED)[-1] == ("turn_on", GREEN)
+    assert calls(events, LANTERN)[-1] == ("turn_on", GREEN)
 
 
 async def test_a_priority_without_repeat_is_sent_once(house: HomeAssistant, freezer: Any) -> None:
@@ -1028,7 +1028,7 @@ async def test_a_priority_without_repeat_is_sent_once(house: HomeAssistant, free
     events = capture(house, "call_service")
     await turn(house, "smoke", "on")
     await tick(house, freezer, 60)
-    assert calls(events, LED) == [("turn_on", {"color_name": "purple"})]
+    assert calls(events, LANTERN) == [("turn_on", {"color_name": "purple"})]
 
 
 async def test_a_relay_only_turns_on_and_off(house: HomeAssistant, freezer: Any) -> None:
@@ -1053,8 +1053,8 @@ async def test_a_ready_made_alert_borrows_its_group(house: HomeAssistant) -> Non
         **APPLIANCE, "alerts": {"offline": {"for": {"seconds": 0}, "lights": True}}}}
     events = capture(house, "call_service")
     assert await setup(house, {**devices(), "lavadora": washer}, config=CONFIG)
-    assert calls(events, LED) == [("turn_on", ORANGE)]
-    assert attributes(house, LED)["alerts"] == [
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)]
+    assert attributes(house, LANTERN)["alerts"] == [
         "binary_sensor.pururu_lavadora_appliance_alert_offline"]
 ```
 
@@ -1468,14 +1468,14 @@ async def test_a_change_by_someone_else_during_an_alert_is_put_back(house: HomeA
     assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
     await turn(house, "gate", "on")
     events = capture(house, "call_service")
-    await fake(house, REAL_LED, "on", {**BULB, "hs_color": [120.0, 100.0]})
+    await fake(house, REAL_LANTERN, "on", {**BULB, "hs_color": [120.0, 100.0]})
     await house.async_block_till_done()
-    assert calls(events, LED) == [("turn_on", ORANGE)]
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)]
 
 
 def own_calls(events: list[Event]) -> list[Event]:
     return [event for event in events if event.data["domain"] == "light"
-            and event.data["service_data"].get("entity_id") == LED]
+            and event.data["service_data"].get("entity_id") == LANTERN]
 
 
 async def test_the_managers_own_changes_are_not_put_back(house: HomeAssistant) -> None:
@@ -1484,11 +1484,11 @@ async def test_the_managers_own_changes_are_not_put_back(house: HomeAssistant) -
     events = capture(house, "call_service")
     await turn(house, "gate", "on")
     [call] = own_calls(events)
-    house.states.async_set(REAL_LED, "on", {**BULB, "hs_color": [30.0, 100.0]},
+    house.states.async_set(REAL_LANTERN, "on", {**BULB, "hs_color": [30.0, 100.0]},
                            context=call.context)
     await settle()
     await house.async_block_till_done()
-    assert len(calls(events, LED)) == 1
+    assert len(calls(events, LANTERN)) == 1
 
 
 async def test_a_late_report_of_an_earlier_call_is_still_the_managers(
@@ -1498,11 +1498,11 @@ async def test_a_late_report_of_an_earlier_call_is_still_the_managers(
     await turn(house, "gate", "on")
     await tick(house, freezer, 15)
     first, _repeat = own_calls(events)
-    house.states.async_set(REAL_LED, "on", {**BULB, "hs_color": [30.0, 100.0]},
+    house.states.async_set(REAL_LANTERN, "on", {**BULB, "hs_color": [30.0, 100.0]},
                            context=first.context)
     await settle()
     await house.async_block_till_done()
-    assert len(calls(events, LED)) == 2
+    assert len(calls(events, LANTERN)) == 2
 
 
 async def test_a_change_during_resolved_hands_the_light_back_without_turning_it_off(
@@ -1513,12 +1513,12 @@ async def test_a_change_during_resolved_hands_the_light_back_without_turning_it_
     await turn(house, "gate", "off")
     released = capture(house, "pururu_alert_lights_released")
     events = capture(house, "call_service")
-    await fake(house, REAL_LED, "on", {**BULB, "hs_color": [240.0, 100.0]})
+    await fake(house, REAL_LANTERN, "on", {**BULB, "hs_color": [240.0, 100.0]})
     await house.async_block_till_done()
-    assert [event.data for event in released] == [{"entity_id": LED}]
-    assert "alert" not in attributes(house, LED)
+    assert [event.data for event in released] == [{"entity_id": LANTERN}]
+    assert "alert" not in attributes(house, LANTERN)
     await tick(house, freezer, 120)
-    assert calls(events, LED) == []
+    assert calls(events, LANTERN) == []
 
 
 async def test_a_light_back_from_no_reading_during_resolved_shows_resolved_again(
@@ -1529,36 +1529,36 @@ async def test_a_light_back_from_no_reading_during_resolved_shows_resolved_again
     await turn(house, "gate", "off")
     released = capture(house, "pururu_alert_lights_released")
     events = capture(house, "call_service")
-    await fake(house, REAL_LED, "unavailable")
+    await fake(house, REAL_LANTERN, "unavailable")
     await house.async_block_till_done()
-    assert calls(events, LED) == []
-    await fake(house, REAL_LED, "off", BULB)
+    assert calls(events, LANTERN) == []
+    await fake(house, REAL_LANTERN, "off", BULB)
     await house.async_block_till_done()
-    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert calls(events, LANTERN) == [("turn_on", GREEN)]
     assert released == []
     await tick(house, freezer, 120)
-    assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
-    assert [event.data for event in released] == [{"entity_id": LED}]
+    assert calls(events, LANTERN) == [("turn_on", GREEN), ("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LANTERN}]
 
 
 async def test_a_light_gone_unavailable_is_left_until_it_comes_back(house: HomeAssistant) -> None:
     assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
     await turn(house, "gate", "on")
     events = capture(house, "call_service")
-    await fake(house, REAL_LED, "unavailable")
+    await fake(house, REAL_LANTERN, "unavailable")
     await house.async_block_till_done()
-    assert calls(events, LED) == []
-    await fake(house, REAL_LED, "off", BULB)
+    assert calls(events, LANTERN) == []
+    await fake(house, REAL_LANTERN, "off", BULB)
     await house.async_block_till_done()
-    assert calls(events, LED) == [("turn_on", ORANGE)]
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)]
 
 
 async def test_a_free_light_is_left_alone(house: HomeAssistant) -> None:
     assert await setup(house, devices(gate=raised("gate", "medium")), config=CONFIG)
     events = capture(house, "call_service")
-    await fake(house, REAL_LED, "on", BULB)
+    await fake(house, REAL_LANTERN, "on", BULB)
     await house.async_block_till_done()
-    assert calls(events, LED) == []
+    assert calls(events, LANTERN) == []
 
 
 async def test_a_failing_call_is_a_warning_and_the_repeat_tries_again(
@@ -1571,10 +1571,10 @@ async def test_a_failing_call_is_a_warning_and_the_repeat_tries_again(
     monkeypatch.setattr(module("features.lights").Light, "async_turn_on", refuse)
     events = capture(house, "call_service")
     await turn(house, "gate", "on")
-    assert ("The alert lights couldn't call light.turn_on on light.pururu_pool_light_led: "
+    assert ("The alert lights couldn't call light.turn_on on light.pururu_greenhouse_light_lantern: "
             "Zigbee2MQTT refused it") in caplog.text
     await tick(house, freezer, 15)
-    assert calls(events, LED) == [("turn_on", ORANGE)] * 2
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)] * 2
 ```
 
 - [ ] **Step 2: Run the tests to see them fail**
@@ -1671,8 +1671,8 @@ async def test_a_restart_with_an_alert_on_shows_it(house: HomeAssistant) -> None
     events = capture(house, "call_service")
     await restart(house, devices(gate=raised("gate", "medium")),
                   (State(alert("gate"), "on"), {}),
-                  (State(LED, "on", {"alert": "medium"}), {}), config=CONFIG)
-    assert calls(events, LED) == [("turn_on", ORANGE)]
+                  (State(LANTERN, "on", {"alert": "medium"}), {}), config=CONFIG)
+    assert calls(events, LANTERN) == [("turn_on", ORANGE)]
 
 
 async def test_a_restart_during_resolved_hands_the_light_back(
@@ -1681,26 +1681,26 @@ async def test_a_restart_during_resolved_hands_the_light_back(
     events = capture(house, "call_service")
     await restart(house, devices(gate=raised("gate", "medium")),
                   (State(alert("gate"), "off"), {}),
-                  (State(LED, "on", {"alert": "resolved"}), {}), config=CONFIG)
-    assert calls(events, LED) == [("turn_on", GREEN)]
+                  (State(LANTERN, "on", {"alert": "resolved"}), {}), config=CONFIG)
+    assert calls(events, LANTERN) == [("turn_on", GREEN)]
     await tick(house, freezer, 120)
-    assert calls(events, LED) == [("turn_on", GREEN), ("turn_off", {})]
-    assert [event.data for event in released] == [{"entity_id": LED}]
+    assert calls(events, LANTERN) == [("turn_on", GREEN), ("turn_off", {})]
+    assert [event.data for event in released] == [{"entity_id": LANTERN}]
 
 
 async def test_a_restart_after_the_alert_ended_hands_the_light_back(house: HomeAssistant) -> None:
     events = capture(house, "call_service")
     await restart(house, devices(gate=raised("gate", "medium")),
                   (State(alert("gate"), "off"), {}),
-                  (State(LED, "on", {"alert": "medium"}), {}), config=CONFIG)
-    assert calls(events, LED) == [("turn_on", GREEN)]
+                  (State(LANTERN, "on", {"alert": "medium"}), {}), config=CONFIG)
+    assert calls(events, LANTERN) == [("turn_on", GREEN)]
 
 
 async def test_a_restart_with_nothing_borrowed_calls_nothing(house: HomeAssistant) -> None:
     events = capture(house, "call_service")
     await restart(house, devices(gate=raised("gate", "medium")),
-                  (State(alert("gate"), "off"), {}), (State(LED, "off"), {}), config=CONFIG)
-    assert calls(events, LED) == []
+                  (State(alert("gate"), "off"), {}), (State(LANTERN, "off"), {}), config=CONFIG)
+    assert calls(events, LANTERN) == []
 
 
 async def test_a_light_out_of_every_group_is_handed_back(
@@ -1709,11 +1709,11 @@ async def test_a_light_out_of_every_group_is_handed_back(
     released = capture(house, "pururu_alert_lights_released")
     events = capture(house, "call_service")
     await restart(house, devices(mail=raised("mail", "low", "porch")),
-                  (State(LED, "on", {"alert": "high"}), {}),
+                  (State(LANTERN, "on", {"alert": "high"}), {}),
                   config={"alerts": {"lights": {"groups": {"porch": {"varanda": ["rele"]}}}}})
-    assert calls(events, LED) == [("turn_on", GREEN)]
+    assert calls(events, LANTERN) == [("turn_on", GREEN)]
     await tick(house, freezer, 120)
-    assert [event.data for event in released] == [{"entity_id": LED}]
+    assert [event.data for event in released] == [{"entity_id": LANTERN}]
 
 
 async def test_a_reload_with_an_alert_on_neither_greens_nor_releases(house: HomeAssistant) -> None:
@@ -1724,10 +1724,10 @@ async def test_a_reload_with_an_alert_on_neither_greens_nor_releases(house: Home
     events = capture(house, "call_service")
     await reload(house, config, config=CONFIG)
     await house.async_block_till_done()
-    assert ("turn_on", GREEN) not in calls(events, LED)
-    assert "turn_off" not in [service for service, _ in calls(events, LED)]
+    assert ("turn_on", GREEN) not in calls(events, LANTERN)
+    assert "turn_off" not in [service for service, _ in calls(events, LANTERN)]
     assert released == []
-    assert attributes(house, LED)["alert"] == "medium"
+    assert attributes(house, LANTERN)["alert"] == "medium"
 
 
 async def test_an_alert_without_a_reading_for_a_moment_keeps_the_light(
@@ -1740,33 +1740,33 @@ async def test_an_alert_without_a_reading_for_a_moment_keeps_the_light(
     house.states.async_set(alert("gate"), "on")
     await settle()
     await house.async_block_till_done()
-    assert calls(events, LED) == []
-    assert attributes(house, LED)["alert"] == "medium"
+    assert calls(events, LANTERN) == []
+    assert attributes(house, LANTERN)["alert"] == "medium"
 
 
 async def test_a_light_not_created_is_left_out_of_its_group(
         house: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(house).async_get_or_create(
-        "light", "template", "someone_else", suggested_object_id="pururu_pool_light_led")
+        "light", "template", "someone_else", suggested_object_id="pururu_greenhouse_light_lantern")
     events = capture(house, "call_service")
     assert await setup(house, devices(mail=raised("mail", "low", "both")), config=CONFIG)
     await turn(house, "mail", "on")
     assert calls(events, RELAY) == [("turn_on", BLUE)]
-    assert calls(events, LED) == []
-    assert ("light.pururu_pool_light_led is not created: the alert lights group both "
+    assert calls(events, LANTERN) == []
+    assert ("light.pururu_greenhouse_light_lantern is not created: the alert lights group both "
             "goes without it") in caplog.text
 
 
 async def test_a_disabled_light_is_left_out_quietly(
         house: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(house).async_get_or_create(
-        "light", "pururu", "pururu_pool_light_led", suggested_object_id="pururu_pool_light_led",
+        "light", "pururu", "pururu_greenhouse_light_lantern", suggested_object_id="pururu_greenhouse_light_lantern",
         disabled_by=er.RegistryEntryDisabler.USER)
     events = capture(house, "call_service")
     assert await setup(house, devices(mail=raised("mail", "low", "both")), config=CONFIG)
     await turn(house, "mail", "on")
     assert calls(events, RELAY) == [("turn_on", BLUE)]
-    assert calls(events, LED) == []
+    assert calls(events, LANTERN) == []
     assert "goes without it" not in caplog.text
 ```
 
@@ -1919,7 +1919,7 @@ title: Alert lights
 description: Lights that show pururu's alerts while they are on, in the colour of the most serious one, and are handed back when they end.
 ---
 
-While an [alert](/features/alerts) is on, some lights can show it: the pool's LED breathing orange for a washer running too long, red for a leak. When the last alert that uses a light ends, the light turns green for a while, then off, and pururu says it's free so whoever used it before can take it back.
+While an [alert](/features/alerts) is on, some lights can show it: the greenhouse's lantern breathing orange for a washer running too long, red for a leak. When the last alert that uses a light ends, the light turns green for a while, then off, and pururu says it's free so whoever used it before can take it back.
 
 An alert opts in with `lights`. The lights come in **groups**, under `config:`:
 
@@ -1929,19 +1929,19 @@ pururu:
     alerts:
       lights:
         groups:
-          default: {pool: [led]}
-          externas: {pool: [led], varanda: [teto]}
+          default: {greenhouse: [lantern]}
+          externas: {greenhouse: [lantern], varanda: [teto]}
   devices:
-    pool:
-      name: Piscina
+    greenhouse:
+      name: Estufa
       lights:
-        led: {entity: light.led_piscina, name: LED}
+        lantern: {entity: light.greenhouse_lantern, name: Lanterna}
     varanda:
       name: Varanda
       lights:
         teto: {entity: light.varanda_teto, name: Teto}
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
@@ -1951,7 +1951,7 @@ pururu:
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, priority: high, lights: externas}
 ```
 
-`long_cycle` (medium) borrows the `default` group: `light.pururu_pool_light_led` breathes orange. `overload` (high) borrows `externas`: both lights breathe red. The LED is in both groups, so while both alerts are on it shows red, the higher of the two.
+`long_cycle` (medium) borrows the `default` group: `light.pururu_greenhouse_light_lantern` breathes orange. `overload` (high) borrows `externas`: both lights breathe red. The lantern is in both groups, so while both alerts are on it shows red, the higher of the two.
 
 ## Settings
 
@@ -1966,7 +1966,7 @@ pururu:
 Every key is optional.
 
 <Property name="groups" type="map" optional>
-  A map of **group name → device key → list of that device's `lights`**, such as `externas: {pool: [led], varanda: [teto]}`. A group holds at least one light, a light may be in several groups, and a group may hold lights of several devices. Relays (`switch.*` in `lights`) are welcome: they only turn on and off.
+  A map of **group name → device key → list of that device's `lights`**, such as `externas: {greenhouse: [lantern], varanda: [teto]}`. A group holds at least one light, a light may be in several groups, and a group may hold lights of several devices. Relays (`switch.*` in `lights`) are welcome: they only turn on and off.
 </Property>
 
 ---
@@ -2013,7 +2013,7 @@ pururu only calls the light's `turn_on` and `turn_off`. The light takes what it 
 | One of its alerts turns on during `resolved` | taken again: that priority's `turn_on` |
 | `resolved`'s `for` ends | `turn_off`, then the event `pururu_alert_lights_released` |
 
-- **Only its own alerts hold it.** An alert that doesn't use a light never keeps it: the LED is handed back once its alerts are off, whatever else is on.
+- **Only its own alerts hold it.** An alert that doesn't use a light never keeps it: the lantern is handed back once its alerts are off, whatever else is on.
 - **Its attributes say what it's doing:** `alert` (`high`, `medium`, `low` or `resolved`) and `alerts`, the entity IDs of its alerts that are on. Both are gone once it's free.
 - **An alert that is briefly `unavailable`**, as during a pururu reload, changes nothing.
 
@@ -2030,18 +2030,18 @@ pururu doesn't know what the light did before the alert: whoever used it does. L
 
 ```yaml
 automation:
-  - alias: Pool LED back to blue
+  - alias: Greenhouse lantern back to blue
     triggers:
       - trigger: event
         event_type: pururu_alert_lights_released
-        event_data: {entity_id: light.pururu_pool_light_led}
+        event_data: {entity_id: light.pururu_greenhouse_light_lantern}
     conditions:
       - condition: state
-        entity_id: switch.pururu_pool_switch_filter
+        entity_id: switch.pururu_greenhouse_switch_vent
         state: "on"
     actions:
       - action: light.turn_on
-        target: {entity_id: light.pururu_pool_light_led}
+        target: {entity_id: light.pururu_greenhouse_light_lantern}
         data: {color_name: blue}
 ```
 
@@ -2055,7 +2055,7 @@ automation:
 
 - A light of a group that isn't created, because its ID is taken, is left out of the group, and the log says so. A light you disabled is left out quietly.
 - A call that fails, a light unavailable or Zigbee2MQTT refusing, is a warning in the log. The next `repeat` or change tries again.
-- Alert2's **Ignorar** stops the reminders on the phones. It doesn't reach the lights: they show the alert until it ends.
+- Acknowledging an alert in Alert2 stops the reminders on the phones. It doesn't reach the lights: they show the alert until it ends.
 ````
 
 - [ ] **Step 3: Run the docs tests**
@@ -2103,7 +2103,7 @@ A light in a group of [alert lights](/concepts/alert-lights) shows alerts: while
     alerts:
       lights:
         groups:
-          default: {sala: [teto]}
+          default: {biblioteca: [teto]}
 ```
 
   and give the `long_cycle` alert `lights: true` (add the line `          lights: true` after `          priority: medium`).

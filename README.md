@@ -19,7 +19,7 @@ pururu:
       name: Lava-louças
       appliance:
         power: sensor.dishwasher_plug_power
-        running: {threshold: 3, on_delay: {minutes: 1}, off_delay: {minutes: 5}}
+        running_program: {above: 3, on_delay: {minutes: 1}, off_delay: {minutes: 5}}
 ```
 
 This creates the device **Lava-louças**, with `binary_sensor.pururu_dishwasher_appliance_running`, its last cycle's start, end and duration, and its total runtime and cycle count.
@@ -27,7 +27,7 @@ This creates the device **Lava-louças**, with `binary_sensor.pururu_dishwasher_
 - [Your first device](https://docs.page/thatsnotmynameio/pururu-ha/getting-started/first-device): a step-by-step tutorial.
 - [Configuration reference](https://docs.page/thatsnotmynameio/pururu-ha/reference/configuration): every key.
 - [Troubleshooting](https://docs.page/thatsnotmynameio/pururu-ha/reference/troubleshooting): what each logged error means.
-- [Events](https://docs.page/thatsnotmynameio/pururu-ha/concepts/events): send every change of pururu's entities to a webhook, such as n8n.
+- [Events](https://docs.page/thatsnotmynameio/pururu-ha/concepts/events): send every change of pururu's entities to a webhook.
 
 ## Develop
 

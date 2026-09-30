@@ -18,7 +18,7 @@
 - Settings: `for`, `priority`, `notify` — except `finished`: `lasts`, `priority`, `notify`. A null value is `{}`; an empty `alerts:` is refused.
 - Default texts in the translations' `common` block: `<namespace>_alert_<name>_message`, `<namespace>_alert_<name>_done_message`; read in `hass.config.language`, English for what it lacks.
 - Names (en / pt-BR): Offline / Sem conexão, No power / Sem energia, Long cycle / Ciclo longo, No cycle / Sem ciclo, Finished / Terminou.
-- Texts (en / pt-BR), message then done_message: offline "The plug is offline." / "A tomada está sem conexão.", "The plug is back." / "A tomada voltou."; no_power "There's no power." / "Está sem energia.", "Power is back." / "A energia voltou."; long_cycle "The cycle is taking too long." / "O ciclo está demorando demais.", "The cycle ended." / "O ciclo terminou."; no_cycle "It hasn't run in a while." / "Não roda há um tempo.", "It's running again." / "Voltou a rodar."; finished "The cycle finished." / "O ciclo terminou.", "Done." / "Pronto.".
+- Texts (en / pt-BR), message then done_message: offline "The plug is offline." / "A tomada está sem conexão.", "The plug is back." / "A tomada voltou."; no_power "There's no power." / "Está sem energia.", "Power is back." / "A energia voltou."; long_cycle "The cycle is taking too long." / "O ciclo está demorando demais.", "The cycle ended." / "O ciclo terminou."; no_cycle "It hasn't run in a while." / "Não roda há um tempo.", "It's running again." / "Voltou a funcionar."; finished "The cycle finished." / "O ciclo terminou.", "Done." / "Pronto.".
 - `appliance_running` gains the attribute `cycle_start` (datetime) while on, absent while off.
 - A hand-written alert's `when` can't name an `alert_*` entity key of another feature; a reaction's `when` can.
 - Ruff/mypy strict on `custom_components/pururu` (run by `uv run pytest` through `tests/test_code.py`). MDX: `{`/`<` outside code in backticks.
@@ -156,8 +156,8 @@ import pytest
 
 from helpers import setup
 
-KEY = "demo_washer"
-POWER = "sensor.demo_plug_power"
+KEY = "dummy_washer"
+POWER = "sensor.dummy_plug_power"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
     "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
@@ -165,7 +165,7 @@ APPLIANCE: dict[str, Any] = {
 
 
 def devices(alerts: Any, **device: Any) -> dict[str, Any]:
-    return {KEY: {"name": "Demo washer", "appliance": {**APPLIANCE, "alerts": alerts}, **device}}
+    return {KEY: {"name": "Dummy washer", "appliance": {**APPLIANCE, "alerts": alerts}, **device}}
 
 
 # --- configuration ------------------------------------------------------------------------
@@ -555,7 +555,7 @@ and under `common`:
     "appliance_alert_finished_done_message": "Done."
 ```
 
-In `pt-BR.json`, the same keys: names `Sem conexão`, `Sem energia`, `Ciclo longo`, `Sem ciclo`, `Terminou`; texts `A tomada está sem conexão.` / `A tomada voltou.`, `Está sem energia.` / `A energia voltou.`, `O ciclo está demorando demais.` / `O ciclo terminou.`, `Não roda há um tempo.` / `Voltou a rodar.`, `O ciclo terminou.` / `Pronto.`.
+In `pt-BR.json`, the same keys: names `Sem conexão`, `Sem energia`, `Ciclo longo`, `Sem ciclo`, `Terminou`; texts `A tomada está sem conexão.` / `A tomada voltou.`, `Está sem energia.` / `A energia voltou.`, `O ciclo está demorando demais.` / `O ciclo terminou.`, `Não roda há um tempo.` / `Voltou a funcionar.`, `O ciclo terminou.` / `Pronto.`.
 
 In `icons.json`, under `entity.binary_sensor`:
 
@@ -656,10 +656,10 @@ async def test_no_power_turns_on_at_zero_and_keeps_its_state_without_a_reading(
 async def test_its_name_attributes_and_default_texts(ha: HomeAssistant) -> None:
     assert await setup(ha, devices({"offline": {"priority": "high"}}))
     found = ha.states.get(alert("offline"))
-    assert found.attributes["friendly_name"] == "Demo washer Offline"
+    assert found.attributes["friendly_name"] == "Dummy washer Offline"
     assert found.attributes["device_class"] == "problem"
     assert found.attributes["priority"] == "high"
-    assert found.attributes["watches"] == "sensor.pururu_demo_washer_appliance_power"
+    assert found.attributes["watches"] == "sensor.pururu_dummy_washer_appliance_power"
     assert found.attributes["message"] == "The plug is offline."
     assert found.attributes["done_message"] == "The plug is back."
 
@@ -692,8 +692,8 @@ async def test_it_is_an_alert2_alert(ha: HomeAssistant) -> None:
     [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert entry == {
         "domain": "pururu",
-        "name": "demo_washer_appliance_alert_offline",
-        "friendly_name": "Demo washer Offline",
+        "name": "dummy_washer_appliance_alert_offline",
+        "friendly_name": "Dummy washer Offline",
         "condition_on": f"{{{{ is_state('{alert('offline')}', 'on') }}}}",
         "condition_off": f"{{{{ is_state('{alert('offline')}', 'off') }}}}",
         "priority": "medium",
@@ -710,7 +710,7 @@ async def test_a_ready_made_alert_comes_back_as_it_was(ha: HomeAssistant) -> Non
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `uv run pytest tests/test_presets.py -n 0 -q`
-Expected: the new tests FAIL (no `binary_sensor.pururu_demo_washer_appliance_alert_*`).
+Expected: the new tests FAIL (no `binary_sensor.pururu_dummy_washer_appliance_alert_*`).
 
 - [ ] **Step 3: `ProblemAlert` and `Alert` on it (`features/alerts.py`)**
 
@@ -1130,7 +1130,7 @@ async def test_time_alerts_watch_running_and_are_alert2_alerts(ha: HomeAssistant
     assert found.attributes["message"] == "The cycle finished."
     path = Path(ha.config.path("pururu/alert2/alerts.yaml"))
     [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert entry["name"] == "demo_washer_appliance_alert_finished"
+    assert entry["name"] == "dummy_washer_appliance_alert_finished"
 ```
 
 - [ ] **Step 2: Run them to see them fail**
@@ -1409,7 +1409,7 @@ appliance:
 - `no_power` is for an appliance that always draws something, such as a fridge: a washer between cycles reads 0 W, so it would be on almost always.
 - `long_cycle` counts from the cycle's start, `no_cycle` and `finished` from the last cycle's end: a restart in between starts nothing over. `no_cycle` counts from when you enabled it until a first cycle ends.
 - Enabled right after a cycle, `finished` turns on at once for what's left of `lasts`.
-- Each is `binary_sensor.pururu_<key>_appliance_alert_<alert>`, device class `problem`, shown as **Máquina de lavar Sem conexão** and so on, with the attributes of any [alert](/features/alerts#entity). A reaction can react to one (`when: appliance_alert_offline`); another alert can't watch it.
+- Each is `binary_sensor.pururu_<key>_appliance_alert_<alert>`, device class `problem`, shown as **Tanquinho Sem conexão** and so on, with the attributes of any [alert](/features/alerts#entity). A reaction can react to one (`when: appliance_alert_offline`); another alert can't watch it.
 - For anything else (a threshold of yours, another entity), write an [alert](/features/alerts) yourself.
 ````
 
@@ -1418,7 +1418,7 @@ Under `## Entities`, in the row or text for `binary_sensor.pururu_<key>_applianc
 - [ ] **Step 3: The other pages**
 
 - `docs/features/alerts.mdx`, after the first paragraph: `For the common cases, a feature may offer **ready-made alerts** you enable with one key: see the [appliance's](/features/appliance#ready-made-alerts).`
-- `docs/reference/configuration.mdx`: in the full example's `laundry_washer.appliance`, add `alerts: {offline: , finished: }` as block lines:
+- `docs/reference/configuration.mdx`: in the full example's `clothes_washer.appliance`, add `alerts: {offline: , finished: }` as block lines:
   ```yaml
         alerts:
           offline:

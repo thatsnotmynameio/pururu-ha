@@ -11,16 +11,16 @@ This is **detection only**. Telling someone (notifications, reminders, acknowled
 ```yaml
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance: {...}
       alerts:
         long_cycle: {name: Ciclo longo, when: appliance_running, is: "on", for: {hours: 3}, priority: medium}
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
         plug_offline: {name: Tomada offline, when: appliance_power, is: unavailable, for: {minutes: 10}}
-# → binary_sensor.pururu_laundry_washer_alert_long_cycle   "Máquina de lavar Ciclo longo"
-# → binary_sensor.pururu_laundry_washer_alert_overload
-# → binary_sensor.pururu_laundry_washer_alert_plug_offline
+# → binary_sensor.pururu_clothes_washer_alert_long_cycle   "Tanquinho Ciclo longo"
+# → binary_sensor.pururu_clothes_washer_alert_overload
+# → binary_sensor.pururu_clothes_washer_alert_plug_offline
 ```
 
 ## Decisions
@@ -31,7 +31,7 @@ pururu:
 | Depend on Alert2 | No. Alert2 is a HACS integration whose only public API for other integrations covers event alerts; its condition alerts can be created only through internal code. Its entities (`alert2.*`) have no device or area either. pururu's alerts are plain binary sensors, and one Alert2 `generator` block (or HA's `alert:`) can consume all of them. |
 | Reuse HA's condition engine or triggers | No. Conditions (`helpers/condition.py`) only answer when asked and never call back; `numeric_state` has no `for`, and `unavailable` evaluates to false. Triggers fire only on a transition (a value already above a limit at start never fires) and lose `for` on restart. pururu already tracks a value with `for` in `phases` and `running`. |
 | How expressive a condition is | One condition per alert: `when` + `is`, or `above`/`below`, + optional `for`. It's Alert2's model as well. Several conditions ANDed (`all: [...]`) can be added later without changing any YAML written for this one; `when`, `is`, `above`, `below` and `for` keep their meaning inside such a list. |
-| What `when` names | An entity key of **the same device**, as it appears in the entity ID (`appliance_running`, `switch_pump`, `phase_current`), not an entity ID. pururu checks it at configuration time and follows renames. An alert can't watch another alert. |
+| What `when` names | An entity key of **the same device**, as it appears in the entity ID (`appliance_running`, `switch_sprinkler`, `phase_current`), not an entity ID. pururu checks it at configuration time and follows renames. An alert can't watch another alert. |
 | The watched entity has no reading (`unknown`, `unavailable`, not a number) | The alert **keeps its state**, and a pending `for` is cancelled, as `running` and `phases` do. Rejected: turning off (the alert would clear just when the plug disappears) and going `unknown` (a third state every consumer must handle). `is: unavailable` still works, for an offline alert. |
 | Priority | Part of detection: how bad the problem is. `priority: low | medium | high`, default `low`, as an attribute. Delivery decides what to do with it. |
 | Messages (`message`, `done_message`) | Not here: they are notification text, which is delivery. |
@@ -46,7 +46,7 @@ pururu:
 |---|---|---|
 | `name` | yes | The name shown after the device's name. Not empty. Not translated. |
 | `when` | yes | An entity key of another feature of this device, as in its ID. |
-| `is` | one of `is` or `above`/`below` | The state that is a problem: `"on"`, `spinning`, `unavailable`… YAML's `on`/`off` without quotes (booleans) become `"on"`/`"off"`. |
+| `is` | one of `is` or `above`/`below` | The state that is a problem: `"on"`, `wringing`, `unavailable`… YAML's `on`/`off` without quotes (booleans) become `"on"`/`"off"`. |
 | `above`, `below` | one of `is` or `above`/`below` | A number is a problem when strictly above `above` and strictly below `below`. At least one; `above` lower than `below`. |
 | `for` | no | How long the condition must hold before the alert turns on. A time period; default 0. |
 | `priority` | no | `low`, `medium` or `high`. Default `low`. |
@@ -58,7 +58,7 @@ Configuration errors added:
 - `alerts: <key> is not an entity key of another feature of this device`, where `<key>` is the `when` (the check lives in the core, for any feature that refers to entity keys).
 - The usual schema errors (a missing `name`, `is` with `above`, `above` not lower than `below`, an unknown `priority`).
 
-Because a switch's entity keys come from its block, `when: switch_pump` is valid only when the device has the switch `pump`. Every entity key a feature *can* create counts, as for `_entity_ids_distinct`: `when: appliance_runtime_month` is valid even without `statistics`, and the alert simply isn't created (its entity isn't).
+Because a switch's entity keys come from its block, `when: switch_sprinkler` is valid only when the device has the switch `sprinkler`. Every entity key a feature *can* create counts, as for `_entity_ids_distinct`: `when: appliance_runtime_month` is valid even without `statistics`, and the alert simply isn't created (its entity isn't).
 
 ## Behaviour
 

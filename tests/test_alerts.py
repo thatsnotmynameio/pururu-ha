@@ -8,17 +8,17 @@ import pytest
 
 from helpers import capture, fake, held, reload, restart, settle, setup, tick
 
-KEY = "demo_washer"
-POWER = "sensor.demo_plug_power"
-MIRROR = "sensor.pururu_demo_washer_appliance_power"
-REAL_PUMP = "switch.demo_pump"
+KEY = "dummy_washer"
+POWER = "sensor.dummy_plug_power"
+MIRROR = "sensor.pururu_dummy_washer_appliance_power"
+REAL_SPRINKLER = "switch.dummy_sprinkler"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-SWITCHES = {"pump": {"entity": REAL_PUMP, "name": "Bomba"}}
+SWITCHES = {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
 OVERLOAD = {"name": "Overload", "when": "appliance_power", "above": 2500}
-PUMP_ON = {"name": "Pump on", "when": "switch_pump", "is": "on"}
+SPRINKLER_ON = {"name": "Sprinkler on", "when": "switch_sprinkler", "is": "on"}
 
 
 def alert(key: str) -> str:
@@ -26,7 +26,7 @@ def alert(key: str) -> str:
 
 
 def devices(**alerts: dict[str, Any]) -> dict[str, Any]:
-    return {KEY: {"name": "Demo washer", "appliance": APPLIANCE, "switches": SWITCHES,
+    return {KEY: {"name": "Dummy washer", "appliance": APPLIANCE, "switches": SWITCHES,
                   "alerts": alerts}}
 
 
@@ -45,7 +45,7 @@ NOT_AN_ENTITY_KEY = "is not an entity key of another feature of this device"
                  "required key 'name' not provided", id="no name"),
     pytest.param({**OVERLOAD, "name": " "},
                  "length of value must be at least 1 for dictionary value "
-                 "'pururu->devices->demo_washer->alerts->overload->name'", id="empty name"),
+                 "'pururu->devices->dummy_washer->alerts->overload->name'", id="empty name"),
     pytest.param({"name": "X", "above": 1}, "required key 'when' not provided", id="no when"),
     pytest.param({"name": "X", "when": "appliance_power"},
                  "an alert needs is, or above and/or below, not both", id="no condition"),
@@ -57,13 +57,13 @@ NOT_AN_ENTITY_KEY = "is not an entity key of another feature of this device"
                  "expected a finite number, got 'nan'", id="above not finite"),
     pytest.param({**OVERLOAD, "priority": "urgent"},
                  "value must be one of ['high', 'low', 'medium'] for dictionary value "
-                 "'pururu->devices->demo_washer->alerts->overload->priority'", id="unknown priority"),
+                 "'pururu->devices->dummy_washer->alerts->overload->priority'", id="unknown priority"),
     pytest.param({**OVERLOAD, "for": "soon"},
-                 "'pururu->devices->demo_washer->alerts->overload->for', got 'soon'",
+                 "'pururu->devices->dummy_washer->alerts->overload->for', got 'soon'",
                  id="for not a period"),
     pytest.param({**OVERLOAD, "colour": "red"},
                  "'colour' is an invalid option for 'pururu', check: "
-                 "pururu->devices->demo_washer->alerts->overload->colour", id="unknown key"),
+                 "pururu->devices->dummy_washer->alerts->overload->colour", id="unknown key"),
     pytest.param({**OVERLOAD, "when": "appliance_nothing"},
                  f"alerts: appliance_nothing {NOT_AN_ENTITY_KEY}", id="when an unknown entity key"),
     pytest.param({**OVERLOAD, "when": "switch_heater"},
@@ -88,12 +88,12 @@ async def test_an_empty_block_is_refused(ha: HomeAssistant) -> None:
 async def test_alerts_alone_are_not_a_feature(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """`alerts` is a device key, like `programs`: neither counts as a device's feature."""
-    program = {"name": "X", "sequence": [{"turn_on": "switch_pump"}]}
-    assert not await setup(ha, {KEY: {"name": "Demo washer", "programs": {"it": program},
+    program = {"name": "X", "sequence": [{"turn_on": "switch_sprinkler"}]}
+    assert not await setup(ha, {KEY: {"name": "Dummy washer", "programs": {"it": program},
                                       "alerts": {"overload": OVERLOAD}}})
     # Only the real features, in FEATURES' order: alerts is none of them
     assert ("a device needs at least one feature "
-            "(appliance, door, window, lights, phases, modes, switches)" in caplog.text)
+            "(appliance, door, window, lights, switches)" in caplog.text)
 
 
 async def test_a_when_of_no_entity_key_names_it(
@@ -106,24 +106,25 @@ async def test_a_when_of_no_entity_key_names_it(
 async def test_an_alert_may_watch_a_meter(ha: HomeAssistant) -> None:
     """A meter the statistics aspect adds is another feature's entity key: an alert watches it."""
     long_day = {"name": "Long day", "when": "appliance_runtime_today", "above": 5}
-    metered = {**APPLIANCE, "statistics": {"runtime": ["today"]}}
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": metered,
+    metered = {**APPLIANCE, "running_program": {**APPLIANCE["running_program"],
+                                                "statistics": {"runtime": ["today"]}}}
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": metered,
                                   "alerts": {"long_day": long_day}}})
     assert ha.states.get(alert("long_day")) is not None
 
 
 async def test_an_alert_may_watch_a_programs_statistic(ha: HomeAssistant) -> None:
     """A program's statistic is a device key's entity key, not a feature's: an alert still watches it."""
-    program = {"name": "Clean", "sequence": [{"turn_on": "switch_pump"}]}
+    program = {"name": "Clean", "sequence": [{"turn_on": "switch_sprinkler"}]}
     too_many = {"name": "Too many", "when": "program_clean_cycles_total", "above": 5}
-    assert await setup(ha, {KEY: {"name": "Demo washer", "switches": SWITCHES,
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "switches": SWITCHES,
                                   "programs": {"clean": program},
                                   "alerts": {"too_many": too_many}}})
     assert ha.states.get(alert("too_many")) is not None
 
 
 NOTIFY = {"message": "Overload!", "done_message": "Back to normal."}
-NOTIFY_PATH = "pururu->devices->demo_washer->alerts->overload->notify"
+NOTIFY_PATH = "pururu->devices->dummy_washer->alerts->overload->notify"
 
 
 @pytest.mark.parametrize(("notify", "reason"), [
@@ -151,14 +152,14 @@ async def test_an_alert_is_a_problem_sensor_in_the_device(ha: HomeAssistant) -> 
     assert await setup(ha, devices(overload=OVERLOAD))
     overload = ha.states.get(alert("overload"))
     assert overload.state == "off"
-    assert overload.attributes["friendly_name"] == "Demo washer Overload"
+    assert overload.attributes["friendly_name"] == "Dummy washer Overload"
     assert overload.attributes["device_class"] == "problem"
     assert overload.attributes["priority"] == "low"
     assert overload.attributes["watches"] == MIRROR
     assert alert("overload") in held(ha, KEY)
     entry = er.async_get(ha).async_get(alert("overload"))
     assert entry is not None
-    assert entry.unique_id == "pururu_demo_washer_alert_overload"
+    assert entry.unique_id == "pururu_dummy_washer_alert_overload"
     assert entry.translation_key is None
     assert entry.entity_category is None
 
@@ -171,7 +172,7 @@ async def test_priority_is_an_attribute(ha: HomeAssistant) -> None:
 async def test_the_name_is_the_same_in_portuguese(ha: HomeAssistant) -> None:
     ha.config.language = "pt-BR"
     assert await setup(ha, devices(overload=OVERLOAD))
-    assert ha.states.get(alert("overload")).attributes["friendly_name"] == "Demo washer Overload"
+    assert ha.states.get(alert("overload")).attributes["friendly_name"] == "Dummy washer Overload"
 
 
 async def test_notify_texts_are_attributes(ha: HomeAssistant) -> None:
@@ -242,37 +243,37 @@ async def test_the_alert2_error_is_logged_once_per_setup(
 
 
 async def test_is_turns_on_after_for_and_off_at_once(ha: HomeAssistant, freezer: Any) -> None:
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, devices(pump_on={**PUMP_ON, "for": {"minutes": 5}}))
-    await fake(ha, REAL_PUMP, "on")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "for": {"minutes": 5}}))
+    await fake(ha, REAL_SPRINKLER, "on")
     await tick(ha, freezer, 299)
-    assert state(ha, alert("pump_on")) == "off"
+    assert state(ha, alert("sprinkler_on")) == "off"
     await tick(ha, freezer, 1)
-    assert state(ha, alert("pump_on")) == "on"
-    await fake(ha, REAL_PUMP, "off")
-    assert state(ha, alert("pump_on")) == "off"
+    assert state(ha, alert("sprinkler_on")) == "on"
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert state(ha, alert("sprinkler_on")) == "off"
 
 
 async def test_without_for_it_turns_on_at_once(ha: HomeAssistant) -> None:
-    await fake(ha, REAL_PUMP, "on")
-    assert await setup(ha, devices(pump_on=PUMP_ON))
-    assert state(ha, alert("pump_on")) == "on"
+    await fake(ha, REAL_SPRINKLER, "on")
+    assert await setup(ha, devices(sprinkler_on=SPRINKLER_ON))
+    assert state(ha, alert("sprinkler_on")) == "on"
 
 
 async def test_unquoted_on_means_the_on_state(ha: HomeAssistant) -> None:
     """YAML reads `is: on` as a boolean."""
-    await fake(ha, REAL_PUMP, "on")
-    assert await setup(ha, devices(pump_on={**PUMP_ON, "is": True}))
-    assert state(ha, alert("pump_on")) == "on"
+    await fake(ha, REAL_SPRINKLER, "on")
+    assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "is": True}))
+    assert state(ha, alert("sprinkler_on")) == "on"
 
 
 @pytest.mark.parametrize("unquoted", [True, "yes"])
 async def test_yaml_booleans_mean_on(ha: HomeAssistant, unquoted: Any) -> None:
     """YAML reads unquoted on, yes and true alike; "yes" stands for what the loader gives."""
-    await fake(ha, REAL_PUMP, "on")
+    await fake(ha, REAL_SPRINKLER, "on")
     value = True if unquoted == "yes" else unquoted
-    assert await setup(ha, devices(pump_on={**PUMP_ON, "is": value}))
-    assert state(ha, alert("pump_on")) == "on"
+    assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "is": value}))
+    assert state(ha, alert("sprinkler_on")) == "on"
 
 
 @pytest.mark.parametrize("watts", ["1", "1.0", "1.00"])
@@ -293,16 +294,16 @@ async def test_a_number_in_is_holds_its_state_without_a_reading(ha: HomeAssistan
 
 async def test_for_starts_over_when_the_condition_stops_holding(
         ha: HomeAssistant, freezer: Any) -> None:
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, devices(pump_on={**PUMP_ON, "for": {"minutes": 5}}))
-    await fake(ha, REAL_PUMP, "on")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "for": {"minutes": 5}}))
+    await fake(ha, REAL_SPRINKLER, "on")
     await tick(ha, freezer, 240)
-    await fake(ha, REAL_PUMP, "off")
-    await fake(ha, REAL_PUMP, "on")
+    await fake(ha, REAL_SPRINKLER, "off")
+    await fake(ha, REAL_SPRINKLER, "on")
     await tick(ha, freezer, 240)
-    assert state(ha, alert("pump_on")) == "off"
+    assert state(ha, alert("sprinkler_on")) == "off"
     await tick(ha, freezer, 60)
-    assert state(ha, alert("pump_on")) == "on"
+    assert state(ha, alert("sprinkler_on")) == "on"
 
 
 # --- above and below ----------------------------------------------------------------
@@ -325,9 +326,9 @@ async def test_above_and_below_are_strict(
 
 
 async def test_above_on_a_state_that_is_not_a_number_never_turns_on(ha: HomeAssistant) -> None:
-    await fake(ha, REAL_PUMP, "on")
-    assert await setup(ha, devices(pump={"name": "Pump", "when": "switch_pump", "above": 0}))
-    assert state(ha, alert("pump")) == "off"
+    await fake(ha, REAL_SPRINKLER, "on")
+    assert await setup(ha, devices(sprinkler={"name": "Sprinkler", "when": "switch_sprinkler", "above": 0}))
+    assert state(ha, alert("sprinkler")) == "off"
 
 
 # --- no reading ---------------------------------------------------------------------
@@ -459,7 +460,7 @@ async def test_an_alert_on_an_entity_its_settings_dont_build_is_not_created(
     assert await setup(ha, devices(month=month))
     assert ha.states.get(alert("month")) is None
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-    assert (f"{alert('month')} watches sensor.pururu_demo_washer_appliance_runtime_month, which "
+    assert (f"{alert('month')} watches sensor.pururu_dummy_washer_appliance_runtime_month, which "
             "this device's settings don't create (turn it on, or watch another entity); "
             "not creating it" in errors), errors
 
@@ -467,7 +468,7 @@ async def test_an_alert_on_an_entity_its_settings_dont_build_is_not_created(
 async def test_no_alert_when_its_entity_is_not_created(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
-        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_washer_appliance_power")
+        "sensor", "template", "someone_else", suggested_object_id="pururu_dummy_washer_appliance_power")
     assert await setup(ha, devices(overload=OVERLOAD))
     assert ha.states.get(alert("overload")) is None
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]

@@ -9,7 +9,8 @@ aspects.problem's ProblemAlert.
 
 from collections.abc import Callable, Iterator, Mapping
 from datetime import timedelta
-from typing import Any, Literal
+from functools import partial
+from typing import Any
 
 import voluptuous as vol
 
@@ -24,6 +25,7 @@ from ..core.feature import (
     Aspect,
     Device,
     Feature,
+    Place,
     Preset,
     presets_of,
     qualified,
@@ -139,33 +141,27 @@ def _presets(builder: Feature) -> Mapping[str, Preset]:
     return presets
 
 
-def _schema(builder: Feature, _name: str) -> Callable[[Any], dict[str, dict[str, Any]]]:
-    """The block's `alerts`, for this builder's ready-made alerts.
-
-    Its refusals name the alert, not the builder's key in the device (`_name`).
-    """
-    return settings_schema(_presets(builder))
-
-
-def _keys(builder: Feature) -> dict[str, Platform]:
-    """Every ready-made alert it can enable: alert_<name>, a binary sensor."""
-    return {f"alert_{name}": Platform.BINARY_SENSOR for name in _presets(builder)}
-
-
-def _named(builder: Feature, key: str) -> str:
-    """The translation key `key` (`alert_<name>`) is named under: in the builder's namespace."""
-    return qualified(builder.namespace, key)
-
-
-def _example(builder: Feature) -> dict[str, dict[str, Any] | None]:
+def _example(presets: Mapping[str, Preset]) -> dict[str, dict[str, Any] | None]:
     """The first ready-made alert, with a `for` when it has no default one."""
-    name, preset = next(iter(_presets(builder).items()))
+    name, preset = next(iter(presets.items()))
     return {name: None if preset.hold is not None else {"for": {"hours": 1}}}
 
 
-def _placed(_builder: Feature) -> Literal["block"]:
-    """`alerts:` sits in the block, for every builder offering it."""
-    return "block"
+def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
+    """`alerts:` sits in the block, for every builder offering it: alert_<name> per ready-made alert.
+
+    Each is named in the builder's namespace. Its refusals name the alert, not
+    the builder's key in the device (`_name`).
+    """
+    presets = _presets(builder)
+    return (
+        Place(
+            schema=settings_schema(presets),
+            keys={f"alert_{name}": Platform.BINARY_SENSOR for name in presets},
+            named=partial(qualified, builder.namespace),
+            example=_example(presets),
+        ),
+    )
 
 
 def _notify(
@@ -247,11 +243,7 @@ ASPECT = Aspect(
     key=ALERTS_KEY,
     # The rule alert_lights reads too: at least one ready-made alert (presets_of)
     offered=lambda builder: bool(presets_of(builder)),
-    schema=_schema,
-    keys=_keys,
-    named=_named,
-    example=_example,
-    placed=_placed,
+    places=_places,
     build=_build_ready_made,
     # Absent: no alert enabled; an explicit empty `alerts` is still refused
     mount_absent=False,

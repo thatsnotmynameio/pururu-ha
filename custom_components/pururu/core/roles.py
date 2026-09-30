@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import Platform
 
@@ -12,28 +12,21 @@ if TYPE_CHECKING:  # feature.py imports this module
 
 
 @dataclass(frozen=True)
-class Provides:
-    """A capability others take through <capability>_from, carried by one of its entity keys."""
-
-    capability: str
-    key: str
-
-
-@dataclass(frozen=True)
-class Requires:
-    """A capability it takes through <capability>_from: build() gets its current entity ID.
-
-    Its entities aren't created when the provider's entity isn't.
-    """
-
-    capability: str
-
-
-@dataclass(frozen=True)
 class Configured:
     """Its entity keys are its block's keys, all on this platform, named by each block's `name`."""
 
     platform: Platform
+
+
+@dataclass(frozen=True)
+class Derived:
+    """Entity keys its validated block adds beyond entity_keys: the appliance's phases'.
+
+    `of` takes the validated block. catalogue.keys lists them, so the index
+    knows them: an alert, a reaction or a `when:` can name one.
+    """
+
+    of: Callable[[Any], Mapping[str, Platform]]
 
 
 @dataclass(frozen=True)
@@ -48,24 +41,35 @@ class Items:
     """Its block is a map of items, each with entity keys of its own: <slug>_<suffix>.
 
     Each is named by the suffix's translation, with the item's name as the
-    placeholder named after the namespace ({mode}).
+    placeholder named after the namespace ({program}).
     """
 
     keys: Mapping[str, Platform]
     of: Callable[[Any], Iterable[Item]]
 
 
+@dataclass(frozen=True, kw_only=True)
+class Counted:
+    """Totals it builds at one place of its block, <counter>_total; `statistics:` there asks for their meters."""
+
+    # Counter -> the setting of the builder's whole block it needs (None: none)
+    needs: Mapping[str, str | None]
+    # Where `statistics:` sits: the path from the block to its containers
+    # (feature.Path; EACH for each item of a map)
+    at: tuple[str, ...] = ()
+    # The item a container there is, from its key and the container: its
+    # totals and meters are the item's, named with {item}; None: the builder's own
+    item: Callable[[str, Any], Item] | None = None
+    # The prefix its meters' translations are named under (<named>_<counter>_<period>,
+    # other's own), instead of the statistics aspect's
+    named: str | None = None
+
+
 @dataclass(frozen=True)
 class Counters:
-    """Totals it builds as <counter>_total; the statistics aspect meters them per period.
+    """Totals it builds, at each of its places (Counted); the statistics aspect meters them per period."""
 
-    `needs`: counter -> the setting of its block it needs (None: none).
-    `mount`: where `statistics:` sits, the block or each item; with Items, the
-    meters repeat per item either way.
-    """
-
-    needs: Mapping[str, str | None]
-    mount: Literal["block", "item"] = "block"
+    places: tuple[Counted, ...]
 
 
 @dataclass(frozen=True)
@@ -109,9 +113,8 @@ class Generates:
 
 
 type Role = (
-    Provides
-    | Requires
-    | Configured
+    Configured
+    | Derived
     | Actions
     | Items
     | Counters

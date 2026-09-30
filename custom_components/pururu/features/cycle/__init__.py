@@ -1,7 +1,8 @@
 """What features recording cycles share: a finished cycle, where it's sent, its start kept across restarts.
 
-`appliance` has one kind of cycle; `modes` one per mode, an Item of its block;
-the detector (`program/`) one for its program and one per phase.
+The detector (`program/`) has one for its program (the appliance's `running`)
+and one per phase; a door's or a window's `open` one; an executable program's
+`Runs` one per program, an Item of its block.
 """
 
 from dataclasses import dataclass
@@ -45,10 +46,8 @@ def end_signal(device: Device, item: Item | None = None) -> SignalType[Cycle]:
 class CycleSource(PururuEntity):
     """An entity whose finished cycles are sent on its cycle and end signals, state written first.
 
-    `Running`, `Open`, `Runs`, and the detector's `Carrier` and `PhaseRunning`
-    set the signals up once, in `__init__`; `Current`
-    (modes) has one running mode at a time, so it sets them up again for each
-    item it sends.
+    `Open`, `Runs`, and the detector's `Carrier` and `PhaseRunning` set the
+    signals up once, in `__init__`.
     """
 
     def _cycle_signals(self, device: Device, item: Item | None = None) -> None:

@@ -21,8 +21,8 @@ pururu:
   config:
     notify: notify.mobile_app_celular        # every message's default: one or a list
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
@@ -35,9 +35,9 @@ pururu:
       reactions:
         door_open:
           name: Porta aberta
-          entity: binary_sensor.porta_lavanderia
+          entity: binary_sensor.porta_despensa
           to: "on"
-          message: A porta da lavanderia abriu.
+          message: A porta da despensa abriu.
           notify: [notify.mobile_app_celular, notify.mobile_app_tablet]
           then: blink
 automation pururu: !include_dir_merge_list pururu/automations   # unchanged
@@ -45,14 +45,14 @@ automation pururu: !include_dir_merge_list pururu/automations   # unchanged
 
 | YAML | Automation | Alias | Sends |
 |---|---|---|---|
-| `notifications: appliance: finished` | `automation.pururu_laundry_washer_appliance_notification_finished` | Máquina de lavar Finished (translated: Terminou) | title "Máquina de lavar", "The cycle finished." (translated) |
-| reaction `door_open` | `automation.pururu_laundry_washer_reaction_door_open` | Máquina de lavar Porta aberta | starts `blink`, then title "Máquina de lavar", "A porta da lavanderia abriu." to both phones |
+| `notifications: appliance: finished` | `automation.pururu_clothes_washer_appliance_notification_finished` | Tanquinho Finished (translated: Terminou) | title "Tanquinho", "The cycle finished." (translated) |
+| reaction `door_open` | `automation.pururu_clothes_washer_reaction_door_open` | Tanquinho Porta aberta | starts `blink`, then title "Tanquinho", "A porta da despensa abriu." to both phones |
 
 ## Where a message goes
 
 - `pururu: config: notify` is the default: a `notify.<name>` action, or a list of them. Validated as `notify.` followed by a slug; whether the action exists is Home Assistant's to say when the automation runs (its trace and log show it).
 - A reaction or a notification may give its own `notify`, same form, which **replaces** the default (not added to it).
-- A message with no `notify` of its own and no default is a configuration error, naming where: `device laundry_washer: reactions: door_open: message needs notify, here or in config.notify`.
+- A message with no `notify` of its own and no default is a configuration error, naming where: `device clothes_washer: reactions: door_open: message needs notify, here or in config.notify`.
 
 ## A reaction's message
 
@@ -106,12 +106,12 @@ Unlike `Feature.alerts`, a happening creates no entity of the feature: it adds n
   - a feature that offers none: `notifications: switches offers no ready-made notification`;
   - a name it doesn't offer: `notifications: appliance: nope is not a ready-made notification of appliance: finished`;
   - a feature the device doesn't have: `notifications: modes: the device has no modes`;
-  - no `notify` anywhere: `device laundry_washer: notifications: appliance: finished needs notify, here or in config.notify`.
+  - no `notify` anywhere: `device clothes_washer: notifications: appliance: finished needs notify, here or in config.notify`.
 
 ### Each one is an automation
 
 - Built as a reaction on `when: <namespace>_<watches>` with the happening's `from`/`to`, through the same trigger and action code (`reactions.triggers`, the notify actions above), no `then`.
-- ID, and object ID of its entity ID: `pururu_<device>_<namespace>_notification_<name>`, so `automation.pururu_laundry_washer_appliance_notification_finished`. Across devices it could meet a reaction's (device `a`'s reaction `appliance_notification_finished` and device `a_reaction`'s notification): `_generated_ids_distinct` checks every automation ID, reactions' and notifications', together.
+- ID, and object ID of its entity ID: `pururu_<device>_<namespace>_notification_<name>`, so `automation.pururu_clothes_washer_appliance_notification_finished`. Across devices it could meet a reaction's (device `a`'s reaction `appliance_notification_finished` and device `a_reaction`'s notification): `_generated_ids_distinct` checks every automation ID, reactions' and notifications', together.
 - Alias `<device name> <name>`, the name translated from the translations' `common` block (`appliance_notification_finished_name`), as the default message (`appliance_notification_finished_message`), in HA's language with English for what it lacks (`presets.async_texts`). Description `pururu: <device>, <namespace> notification <name>`.
 - Written to **`pururu/automations/notifications.yaml`**, a second `Kind` of domain `automation`: the same folder, so the same include line; its own file, its own key of `entry.data` (`notifications`), its own Repairs issue (`notifications_not_included`, with its translations, the same include line in its text). `generated.py` handles it as any kind, each kind tracking only the IDs in its own `entry.data` key; when both files change, automations may reload twice, accepted. The file is always written, an empty list without notifications, as the reactions' is.
 - Its life is a reaction's: not generated when the entity it watches isn't created (the usual log line), its registry entry dropped once HA no longer runs it, `async_remove_entry` removes it. Never held: it starts no program. Renaming it needs nothing rebuilt: nothing watches it, and its registry entry is found by unique ID. A rename of the entity it watches is followed, as a reaction's (the entry reloads on any rename of its entities).

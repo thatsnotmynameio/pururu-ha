@@ -27,10 +27,10 @@ pururu:
       icon: mdi:home-floor-0  # optional
       aliases: [embaixo]      # optional list of strings
   areas:
-    cozinha:                  # the area_id (cv.slug)
-      name: Cozinha           # required
+    atelie:                  # the area_id (cv.slug)
+      name: Ateliê           # required
       floor: terreo           # optional; must be a key of floors:
-      icon: mdi:stove         # optional
+      icon: mdi:palette         # optional
       aliases: [copa]         # optional list of strings
   devices: {}                 # unchanged
 ```
@@ -44,7 +44,7 @@ pururu:
 
 On every setup of the config entry (start and reload), in this order:
 
-1. **Remove stale.** Every ID in `entry.data` (`floors`, `areas`) no longer in the YAML is deleted from its registry, if it still exists. Removal comes first so names are free again (swapping `terreo: Térreo` for `ground: Térreo` works). HA itself unsets a deleted floor on its areas, and a deleted area on devices and entities.
+1. **Remove stale.** Every ID in `entry.data` (`floors`, `areas`) no longer in the YAML is deleted from its registry, if it still exists. Removal comes first so names are free again (swapping `terreo: Térreo` for `mezzanine: Térreo` works). HA itself unsets a deleted floor on its areas, and a deleted area on devices and entities.
 2. **Floors.** For each configured floor:
    - ID exists → `async_update` with the configured fields.
    - ID free → `async_create(name=<id>)`. If the generated ID is not `<id>`, delete the new floor and log an error. Otherwise `async_update(name=<name>, level, icon, aliases)`; if that fails, delete the new floor and log an error.
@@ -83,7 +83,7 @@ The entry is created when the YAML declares at least one device, floor or area (
 - the area is on its floor;
 - an existing floor/area with that ID is adopted and synced (name, level, icon, aliases, floor), including clearing omitted fields;
 - a reload that drops a floor/area deletes it; one that keeps it keeps its ID;
-- changing an ID while keeping the name (`terreo` → `ground`, both "Térreo") works;
+- changing an ID while keeping the name (`terreo` → `mezzanine`, both "Térreo") works;
 - a name already used by a floor/area pururu does not manage: logged error, not created, its areas not created, the rest created;
 - a key equal to the normalized name of a floor pururu does not manage (e.g. key `terreo`, an unmanaged floor named "Terreo"): `async_create(name="terreo")` raises, logged error, nothing left behind. (The generated-ID check in step 2 is a guard only: a `cv.slug` key slugifies to itself and a taken ID is adopted, so HA cannot suffix it.)
 - an area's `floor:` not in `floors:` is refused by the configuration;

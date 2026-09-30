@@ -40,11 +40,11 @@
 |---|---|
 | **house** | The validated `pururu:` block: `config`, `floors`, `areas`, `devices`. |
 | **device key** (the concept) | A key of a device that isn't a feature and can reference any of its features: `alerts`, `programs`, `reactions`. Listed in `DEVICE_KEYS`. |
-| **device key** (the identifier) | A device's key under `devices:` (`laundry_washer`). The text always says which. |
+| **device key** (the identifier) | A device's key under `devices:` (`clothes_washer`). The text always says which. |
 | **feature** | An atomic component of a device, a key in `FEATURES`: `appliance`, `door`, `window`, `switches`, `lights` (and `phases`, `modes` until D). |
 | **builder** | Any entry of `FEATURES` or `DEVICE_KEYS`: a `Feature` value that validates its block and builds entities. `builders()` returns both. |
 | **namespace** | A builder's prefix in entity keys: `appliance`, `phase`, `mode`, `switch`, `light`, `alert`, `program`, `reaction`. |
-| **entity key** | An entity's ID after `<platform>.pururu_<device>_`: `appliance_running`, `switch_pump`. Local keys (inside a builder) drop the namespace: `running`. |
+| **entity key** | An entity's ID after `<platform>.pururu_<device>_`: `appliance_running`, `switch_sprinkler`. Local keys (inside a builder) drop the namespace: `running`. |
 | **aspect** | A cross-cutting concern mounted in a builder's block (or in each item): `statistics`, a feature's ready-made `alerts`, its ready-made `notifications`. Listed in `ASPECTS`. |
 | **offered** | An aspect is offered by a builder when the builder has the role the aspect needs (`statistics` needs `Counters`). Only then does the builder's block accept the aspect's key. |
 | **mount** | Taking an offered aspect's key out of a block (or item), validating it with the aspect's schema, and passing the rest to the builder's schema. |
@@ -52,8 +52,8 @@
 | **preset** | The definition of a ready-made alert, in its feature's code (`offline`: `power` has no reading for 10 min). |
 | **happening** | The definition of a ready-made notification, in its feature's code (`finished`: `running` goes `on` → `off`). |
 | **item** | One entry of a builder whose block is a map of items with entity keys of their own: a program, a phase, a reaction (a mode until D). |
-| **program** | A named kind of run (Part 4). **Detected**: pururu tells it runs from a reading (the appliance's `running_program`, a purifier's "gelar"). **Executable**: its steps are written in the YAML and pururu runs them as a script ("limpar"). |
-| **phase** | A stage inside a program's run (washing, spinning). A phase is a program that has no phases of its own. |
+| **program** | A named kind of run (Part 4). **Detected**: pururu tells it runs from a reading (the appliance's `running_program`, a purifier's "resfriar"). **Executable**: its steps are written in the YAML and pururu runs them as a script ("limpar"). |
+| **phase** | A stage inside a program's run (soaking, wringing). A phase is a program that has no phases of its own. |
 | **cycle** | One run of a program: start, end, duration, energy, counted. `door`/`window` openings are cycles too (`open`). |
 | **`CycleSource`** | The entity base class of a cycle's carrier: it sends state → cycle signal → end signal in that order, which `Running` and `Current` (modes) and `Open` each do by hand today. The `cycle_start`/`cycle_end` attributes stay opt-in: `Running` and `Current` have them, `Open` doesn't, and B doesn't add them. |
 | **reference** | How the YAML names an entity: `key`, `device.key`, or `entity: <entity_id>`. `Ref` in code. |
@@ -111,8 +111,8 @@ Lands in **PR B** (the YAML users write doesn't change).
 | ready-made alerts | only their feature's entities (`offline` watches `power`) | mounted in the feature's block |
 | ready-made notifications | only their feature's entities (`finished` watches `running`) | mounted in the feature's block |
 | hand-written `alerts` | any feature of the device (`when: phase_current`) | device |
-| programs in a feature's block (D) | only that feature (the purifier's "gelar" reads the appliance's power) | mounted in the feature's block |
-| programs at the device | the device's features, their executable programs included (`switch_pump`, then `light_teto`) | device |
+| programs in a feature's block (D) | only that feature (the purifier's "resfriar" reads the appliance's power) | mounted in the feature's block |
+| programs at the device | the device's features, their executable programs included (`switch_sprinkler`, then `light_teto`) | device |
 | `reactions` | any feature, another device, a real entity, a time, the sun | device |
 
 A reaction watching only `light_teto` still goes on the device: otherwise the same thing would live in two places depending on the instance. A hand-written notification is a reaction with a `message`, so it is on the device too.
@@ -143,7 +143,7 @@ Lands in **PR C**. The problems, numbered as below:
 
 | # | Where | Problem |
 |---|---|---|
-| 1 | References | Five forms: `when: appliance_running`, `turn_on: switch_pump`, `device:` + `when:` (two fields for one reference), `entity:` for a real ID, and alert light groups `{pool: [led]}`, a bare key without the `light_` namespace. |
+| 1 | References | Five forms: `when: appliance_running`, `turn_on: switch_sprinkler`, `device:` + `when:` (two fields for one reference), `entity:` for a real ID, and alert light groups `{greenhouse: [lantern]}`, a bare key without the `light_` namespace. |
 | 2 | Conditions | An alert's `is: 1` compares as a number (`1.0` matches); a reaction's `to: 1` as text. (The appliance's `threshold`, `above` in `phases` and `modes`, becomes `above` in D, with `running_program`.) |
 | 3 | Durations | `resolved.for` means "how long it shows"; everywhere else `for` means "how long the condition must hold". |
 | 4 | Time format | `repeat` and `resolved.for` take only `{seconds: N}` (`alert_lights.py`); every other time takes `{minutes: 1}`, `"00:01:30"` or `90`. |
@@ -159,7 +159,7 @@ Lands in **PR C**. The problems, numbered as below:
 | What | Written as |
 |---|---|
 | An entity of the same device | `appliance_running` |
-| An entity of another device | `laundry_washer.appliance_running` |
+| An entity of another device | `clothes_washer.appliance_running` |
 | A real entity | `entity: sensor.x` (its own key, not a reference) |
 
 `<device>.<key>` already exists: it is the `event_name` `events.py` fires. Not `appliance.running` (a dot between namespace and key): it reads like an entity ID and stops matching the end of the ID the user sees.
@@ -467,7 +467,7 @@ def local_key(value: Any) -> str                            # refuses "<device>.
 # step refuses a target whose actions lack the step's. Until B adds the alerts aspect, A2
 # sets by="alerts" on the keys a builder's Presets role adds, so the rule holds already.
 # A2 builds Ref from 0.1.23's syntax: a reaction's device: + when: -> Ref(device, when);
-# a light group's {pool: [led]} -> Ref("pool", "light_led"). C only changes the parsing.
+# a light group's {greenhouse: [lantern]} -> Ref("greenhouse", "light_lantern"). C only changes the parsing.
 
 # runtime.py: deletes the state today's setup keeps in closures
 @dataclass(frozen=True, kw_only=True)
@@ -578,7 +578,7 @@ Lands in **PR D**, after B and before C.
 
 ### The model
 
-**A cycle is a run of a program, and a program has phases.** Today three names cover pieces of that: the appliance's `running` (a run), `modes` (the purifier's gelar and quente, each a kind of run) and `phases` (the washer's washing and spinning, stages of a run), next to `programs` (ours, run by pururu). One type, `Program`, replaces them:
+**A cycle is a run of a program, and a program has phases.** Today three names cover pieces of that: the appliance's `running` (a run), `modes` (the purifier's resfriar and quente, each a kind of run) and `phases` (the washer's soaking and wringing, stages of a run), next to `programs` (ours, run by pururu). One type, `Program`, replaces them:
 
 | | Detected | Executable |
 |---|---|---|
@@ -594,7 +594,7 @@ Lands in **PR D**, after B and before C.
 ### In the YAML
 
 ```yaml
-laundry_washer:
+clothes_washer:
   appliance:
     power: sensor.washer_plug_power
     running_program:                  # required: the appliance running
@@ -603,20 +603,20 @@ laundry_washer:
       off_delay: {minutes: 2}
       statistics: {cycles: [today, month]}
       phases:
-        heating: {name: Aquecendo, above: 1000}
-        spinning: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+        warming: {name: Aquecendo, above: 1000}
+        wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
     programs:                         # optional: more detected programs of the appliance
       detected:
         cotton: {name: Algodão, above: 1500, on_delay: {minutes: 5}}   # a program its power alone tells apart
 
-pool:
+greenhouse:
   switches:
-    pump: {entity: switch.pool_pump, name: Bomba}
+    sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
   programs:                           # at the device
     executable:
       clean:
         name: Limpar
-        sequence: [{turn_on: switch_pump}, {delay: {hours: 2}}, {turn_off: switch_pump}]
+        sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
 ```
 
 `running_program` needs no check inside `programs:`: it has its own key.
@@ -633,8 +633,8 @@ pool:
 
 - **`features/cycle/program/`** (L1, shared machinery, a package): the detected `Program` schema, the detector (today's band logic of `phases.py` and the one-at-a-time arbitration and delays of `modes/current.py`, merged), and its entities (on `CycleSource`). The appliance builds its `running_program` with it.
 - **`aspects/programs.py`** (L2): mounts `programs:` in the block of a builder with the `Programs` role, and is the device key `programs` (today's top-level `programs.py`, moved: the scripts, `plan()`, `Runs`). It imports `features/cycle`, as the L2 row allows.
-- **A new role, `Programs(reading: str, energy: str | None = None)`:** the settings a detected program in this builder reads (the appliance: `power`, `energy`). It replaces `Provides`/`Requires`.
-- **Statistics:** each program and phase is an item with `Counters` (`runtime`, `cycles`, and `energy` when the builder has an energy setting); the statistics aspect of B meters them, as it meters today's modes.
+- **A new role, `Programs(reading: str, energy: str | None = None)`:** the settings a detected program in this builder reads (the appliance: `power`, `energy`), for `programs: detected:` (D3). In D2, where the appliance's `running_program` is the only detected program, a generic `Derived(of)` role lists the entity keys its validated block adds (the phases'), and `Provides`/`Requires` go (D2's plan, ruling 6).
+- **Statistics:** each program and phase is a place with `Counters` (`runtime`, `cycles`, and, for a phase and `other`, `energy` when the builder has an energy setting); the statistics aspect of B meters them, as it meters today's modes. `running_program` itself counts `runtime` and `cycles` only: the appliance's energy total mirrors its plug and isn't a program total (D2's plan, ruling 9).
 - `FEATURES` becomes `appliance`, `door`, `window`, `switches`, `lights`; `DEVICE_KEYS` stays `alerts`, `programs`, `reactions`.
 
 ### Decided when D starts
@@ -671,21 +671,21 @@ pururu:
     alerts:
       lights:
         groups:
-          default: [sala.light_teto]        # ← was {sala: [teto]} (C)
-          externas: [sala.light_teto, sala.light_abajur]
+          default: [biblioteca.light_teto]        # ← was {biblioteca: [teto]} (C)
+          externas: [biblioteca.light_teto, biblioteca.light_abajur]
         high: {turn_on: {color_name: red, effect: breathe}, repeat: {seconds: 15}}   # ← any time period (C)
         resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}                # ← was for: {seconds: 120} (C)
 
   floors:
     terreo: {name: Térreo, level: 0, icon: mdi:home-floor-0, aliases: [embaixo]}
   areas:
-    lavanderia: {name: Lavanderia, floor: terreo, icon: mdi:washing-machine}
+    despensa: {name: Despensa, floor: terreo, icon: mdi:washing-machine}
     entrada: {name: Entrada, floor: terreo}
 
   devices:
-    laundry_washer:
-      name: Máquina de lavar
-      area: lavanderia
+    clothes_washer:
+      name: Tanquinho
+      area: despensa
       # features, with their aspects mounted
       appliance:
         power: sensor.washer_plug_power
@@ -698,8 +698,8 @@ pururu:
             runtime: [today, week, month, year]
             cycles: [today, week, month, year]
           phases:                           # ← was the phases feature (D)
-            heating: {name: Aquecendo, above: 1000}
-            spinning: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}   # ← was for (D)
+            warming: {name: Aquecendo, above: 1000}
+            wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}   # ← was for (D)
         statistics:
           idle_energy: [today, month]       # the appliance's own counter, outside any program
         alerts:                             # ready-made alerts
@@ -720,18 +720,18 @@ pururu:
           done_message: Parou.              # ← was notify: {…, done_message} (C)
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high, lights: externas}
 
-    water_filter:
+    water_station:
       name: Purificador
       appliance:
-        power: sensor.filter_plug_power
-        energy: sensor.filter_plug_energy
+        power: sensor.station_plug_power
+        energy: sensor.station_plug_energy
         running_program:                    # ← was running (D)
           above: 2.9
           on_delay: {seconds: 1}
           off_delay: {minutes: 1}
           phases:                           # ← was the modes feature (D)
-            gelar:
-              name: Gelar
+            resfriar:
+              name: Resfriar
               above: 4
               below: 150
               on_delay: {seconds: 10}
@@ -761,10 +761,10 @@ pururu:
         contact: binary_sensor.janela_quarto
         statistics: {open_time: [today, week]}
 
-    garden:
-      name: Jardim
+    orchard:
+      name: Pomar
       switches:
-        valve: {entity: switch.garden_valve, name: Válvula}
+        valve: {entity: switch.orchard_valve, name: Válvula}
       programs:
         executable:                         # ← was programs (D)
           water:
@@ -780,10 +780,10 @@ pururu:
           statistics: {triggered: [month]}
         dusk: {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
 
-    sala:
-      name: Sala
+    biblioteca:
+      name: Biblioteca
       lights:
-        teto: {entity: light.sala_teto, name: Teto}
+        teto: {entity: light.biblioteca_teto, name: Teto}
         abajur: {entity: switch.sonoff_abajur, name: Abajur}
       programs:
         executable:                         # ← was programs (D)
@@ -794,13 +794,13 @@ pururu:
         teto_on: {name: Teto acendeu, when: light_teto, to: "on"}
         washer_done:
           name: Lavadora terminou
-          when: laundry_washer.appliance_running   # ← was device: laundry_washer + when: appliance_running (C)
+          when: clothes_washer.appliance_running   # ← was device: clothes_washer + when: appliance_running (C)
           from: "on"
           to: "off"
           then: blink                              # its own program, always
           message: A roupa terminou.
           notify: [notify.mobile_app_celular, notify.mobile_app_tablet]
-        door: {name: Porta abriu, entity: binary_sensor.porta_lavanderia, to: "on", for: {minutes: 5}}
+        door: {name: Porta abriu, entity: binary_sensor.porta_despensa, to: "on", for: {minutes: 5}}
 
 automation pururu: !include_dir_merge_list pururu/automations
 script pururu: !include_dir_merge_named pururu/scripts
@@ -813,7 +813,7 @@ alert2:
 ### The contract
 
 - **C1. Aspects at the device, by entity key** (`statistics: {appliance_runtime_total: [month]}`): one rule for every counter, but long names, and the appliance spread over several blocks.
-- **C2. Aspects at the device, by feature** (`statistics: {appliance: {runtime: …}}`, `notifications: {appliance: …}`): the block's matrix transposed, no less coupled (D6); depth changes with the namespace (`mode: {gelar: …}`); a namespace and an alert key share a level in `alerts:`. The first notifications design used it for ready-made notifications; 0.1.23 shipped them in the block instead.
+- **C2. Aspects at the device, by feature** (`statistics: {appliance: {runtime: …}}`, `notifications: {appliance: …}`): the block's matrix transposed, no less coupled (D6); depth changes with the namespace (`mode: {resfriar: …}`); a namespace and an alert key share a level in `alerts:`. The first notifications design used it for ready-made notifications; 0.1.23 shipped them in the block instead.
 - **C3. A `features:` level in each device; a device-level wiring block**: the extra level buys nothing, and after D nothing needs wiring (a program sits in the block it reads).
 - **C4. HA's full trigger schema in reactions** (`triggers: [{trigger: …}]`): pururu would lose validating references and following renames.
 - **C5. `notify` as the text and `to` as where**: `notify` already means where in `config` and in reactions, and HA's actions are `notify.*`; the text moves, not the target.
@@ -830,11 +830,11 @@ alert2:
 
 ### Programs
 
-- **P1. Keep `modes`, `phases` and `running` as they are**: nothing breaks, but it keeps `cycle_from` and the capability roles for one case, and three names for pieces of one idea (a run of a program with phases).
-- **P2. One `programs` list at the device, with a `type` per item**: a detected program there must say which feature's reading it reads (`from:`, `cycle_from` again), and the rules depend on the item's type. The groups `detected`/`executable` keep the discriminator without that.
-- **P3. Modes and executable programs as one thing**: an executable program is ours, run by pururu; a mode is a stage of the appliance's run. They share the cycle, not the kind.
-- **P4. Programs containing programs (a tree)**: depth without limit. Fixed at program → phase.
-- **P5. `running` inside `programs:`**: needs a check that it's there; a fixed `running_program` key needs none.
+- **PR1. Keep `modes`, `phases` and `running` as they are**: nothing breaks, but it keeps `cycle_from` and the capability roles for one case, and three names for pieces of one idea (a run of a program with phases).
+- **PR2. One `programs` list at the device, with a `type` per item**: a detected program there must say which feature's reading it reads (`from:`, `cycle_from` again), and the rules depend on the item's type. The groups `detected`/`executable` keep the discriminator without that.
+- **PR3. Modes and executable programs as one thing**: an executable program is ours, run by pururu; a mode is a stage of the appliance's run. They share the cycle, not the kind.
+- **PR4. Programs containing programs (a tree)**: depth without limit. Fixed at program → phase.
+- **PR5. `running` inside `programs:`**: needs a check that it's there; a fixed `running_program` key needs none.
 
 ## Compatibility
 
@@ -842,7 +842,7 @@ pururu has one user, its author. So:
 
 - No aliases, no deprecation Repairs issue, no migration code, no "From 0.1.x" sections; the existing "From 0.1.14 and before" section goes in PR C.
 - An old key is voluptuous' `extra keys not allowed`, with HA's file and line.
-- One manual step, in PR B (below), carried into PR C's "Updating to 0.2.1" guide.
+- Two manual steps, B4's and D2's (the owner's YAML from `running`/`threshold`, `modes` and `phases` to `running_program`), each in its PR's text and carried into PR C's "Updating to 0.2.1" guide.
 - No entity ID or unique ID changes in A1–C; D changes those of today's `modes` and `phases` (D20). Everything else keeps its history, statistics and dashboards.
 - A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under 0.2.0. That is accepted: C sets 0.2.1, the release carrying them all.
 
@@ -901,7 +901,7 @@ The manual step, in the PR's text: before updating, remove every `notifications:
 
 **D, programs.** Part 4 whole: `features/cycle/program/` (a package), `aspects/programs.py`, the `Programs` role, `running_program`, `programs: {detected, executable}`, phases as programs; `modes`, `phases`, `cycle_from`, `Provides`, `Requires` go; the two choices of "Decided when D starts". Docs: `docs/features/modes.mdx` and `phases.mdx` go, a programs concept page replaces `concepts/programs.mdx`, `appliance.mdx`, `docs.json`, `configuration.mdx`.
 
-**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.1" guide (from 0.1.23), carrying B4's manual step, whose first step comes *before* updating:
+**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.1" guide (from 0.1.23), carrying D2's manual step (the YAML to `running_program`) and B4's, whose first step comes *before* updating:
 
 1. Before updating, remove every `notifications:` block and reload pururu.
 2. Download the update (in HACS); don't restart yet.

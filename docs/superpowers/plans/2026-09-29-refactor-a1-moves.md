@@ -27,7 +27,7 @@
 1. **A function moved with a changed body.** A move that "tidies" a line changes behaviour the suite may not catch. Diff each moved function against `main` (Task 5, step 3).
 2. **Import cycles at load.** `features/alerts.py` imports `alert2_alerts` today; `alert2_alerts` will import `features/alerts`. Task 2 cuts the first edge before Task 4 adds the second.
 3. **`builders()` order.** Today's `ChainMap(DEVICE_KEYS, FEATURES)` iterates `FEATURES` first; `{**FEATURES, **DEVICE_KEYS}` must too, or the order in which entities are built, and in which a device's checks report, changes. No ID depends on it, so Task 3 step 2 checks it by reading.
-4. **A test that mutates `FEATURES` at runtime** (`tests/test_init.py`'s `demo` fixture adds `gauge`, `echo`…). `builders()` must read `FEATURES` at call time, never copy it at import.
+4. **A test that mutates `FEATURES` at runtime** (`tests/test_init.py`'s `dummy` fixture adds `gauge`, `echo`…). `builders()` must read `FEATURES` at call time, never copy it at import.
 5. **Coverage lost silently.** A function that only ran through a path that moved could lose coverage without a failing test. Task 5 compares coverage per function.
 
 ---
@@ -87,18 +87,18 @@ config:
   alerts:
     lights:
       groups:
-        default: {sala: [teto]}
-        externas: {sala: [teto, abajur]}
+        default: {biblioteca: [teto]}
+        externas: {biblioteca: [teto, abajur]}
 events: [state_changed, reading]
 floors:
   terreo: {name: Térreo, level: 0}
 areas:
-  lavanderia: {name: Lavanderia, floor: terreo}
+  despensa: {name: Despensa, floor: terreo}
   entrada: {name: Entrada, floor: terreo}
 devices:
-  laundry_washer:
-    name: Máquina de lavar
-    area: lavanderia
+  clothes_washer:
+    name: Tanquinho
+    area: despensa
     appliance:
       power: sensor.washer_plug_power
       energy: sensor.washer_plug_energy
@@ -117,32 +117,32 @@ devices:
     phases:
       cycle_from: appliance
       sensor: sensor.washer_plug_power
-      defaults: {stopped: idle, running: washing}
+      defaults: {stopped: idle, running: soaking}
       bands:
-        heating: {above: 1000}
-        spinning: {above: 50, below: 1000, for: {minutes: 3}}
+        warming: {above: 1000}
+        wringing: {above: 50, below: 1000, for: {minutes: 3}}
     alerts:
       stuck:
         name: Travada
         when: phase_current
-        is: spinning
+        is: wringing
         for: {hours: 1}
         priority: medium
         lights: externas
         notify: {message: Travada!, done_message: Destravou.}
       overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
-  water_filter:
+  water_station:
     name: Purificador
     appliance:
-      power: sensor.filter_plug_power
-      energy: sensor.filter_plug_energy
+      power: sensor.station_plug_power
+      energy: sensor.station_plug_energy
       running: {threshold: 2.9, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
     modes:
       cycle_from: appliance
-      sensor: sensor.filter_plug_power
-      energy: sensor.filter_plug_energy
+      sensor: sensor.station_plug_power
+      energy: sensor.station_plug_energy
       modes:
-        gelar: {name: Gelar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
+        resfriar: {name: Resfriar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
         quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
       statistics:
         runtime: [today, week, month, year]
@@ -170,17 +170,17 @@ devices:
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
-  pool:
-    name: Piscina
+  greenhouse:
+    name: Estufa
     switches:
-      pump: {entity: switch.pool_pump, name: Bomba}
+      sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
     programs:
       clean:
         name: Limpar
         sequence:
-          - turn_on: switch_pump
+          - turn_on: switch_sprinkler
           - delay: {hours: 2}
-          - turn_off: switch_pump
+          - turn_off: switch_sprinkler
         statistics:
           runtime: [today, week, month, year]
           cycles: [today, week, month, year]
@@ -191,15 +191,15 @@ devices:
         then: clean
         retry: {times: 2, every: {hours: 1}}
         statistics: {triggered: [today, week, month, year]}
-  sala:
-    name: Sala
+  biblioteca:
+    name: Biblioteca
     lights:
-      teto: {entity: light.sala_teto, name: Teto}
+      teto: {entity: light.biblioteca_teto, name: Teto}
       abajur: {entity: switch.sonoff_abajur, name: Abajur}
     reactions:
       washer_done:
         name: Lavadora terminou
-        device: laundry_washer
+        device: clothes_washer
         when: appliance_running
         from: "on"
         to: "off"
@@ -274,7 +274,7 @@ PURURU_UPDATE_IDS=1 uv run pytest tests/test_ids.py -n 0 -q
 
 Expected: PASS. If `setup` returns False, the fixture is invalid: read HA's log line in the output and fix `house.yaml` (never the code) until it validates.
 
-Then open `tests/fixtures/house_ids.json` and check it holds, at least: `binary_sensor` `pururu_laundry_washer_appliance_running`, the four `appliance_alert_*`, `alert_stuck`, `alert_overload`; `sensor` `pururu_laundry_washer_appliance_runtime_today` … `_idle_energy_year`, `pururu_laundry_washer_phase_current`, `pururu_water_filter_mode_gelar_energy_year`, `pururu_porta_frente_door_last_opened_by`, `_last_denied`, `_last_ring`, `pururu_pool_program_clean_cycles_year`, `pururu_pool_reaction_morning_triggered_year`, `pururu_sala_reaction_washer_done_triggered_total`; `switch` `pururu_pool_switch_pump`; `light` `pururu_sala_light_teto`, `pururu_sala_light_abajur`; generated `["scripts", "pururu_pool_program_clean"]`, `["automations", "pururu_pool_reaction_morning"]`, `["automations", "pururu_sala_reaction_washer_done"]`, `["automations", "pururu_sala_reaction_night"]`, `["notifications", "pururu_laundry_washer_appliance_notification_finished"]`. A missing one means the fixture doesn't enable it: fix the fixture and regenerate.
+Then open `tests/fixtures/house_ids.json` and check it holds, at least: `binary_sensor` `pururu_clothes_washer_appliance_running`, the four `appliance_alert_*`, `alert_stuck`, `alert_overload`; `sensor` `pururu_clothes_washer_appliance_runtime_today` … `_idle_energy_year`, `pururu_clothes_washer_phase_current`, `pururu_water_station_mode_resfriar_energy_year`, `pururu_porta_frente_door_last_opened_by`, `_last_denied`, `_last_ring`, `pururu_greenhouse_program_clean_cycles_year`, `pururu_greenhouse_reaction_morning_triggered_year`, `pururu_biblioteca_reaction_washer_done_triggered_total`; `switch` `pururu_greenhouse_switch_sprinkler`; `light` `pururu_biblioteca_light_teto`, `pururu_biblioteca_light_abajur`; generated `["scripts", "pururu_greenhouse_program_clean"]`, `["automations", "pururu_greenhouse_reaction_morning"]`, `["automations", "pururu_biblioteca_reaction_washer_done"]`, `["automations", "pururu_biblioteca_reaction_night"]`, `["notifications", "pururu_clothes_washer_appliance_notification_finished"]`. A missing one means the fixture doesn't enable it: fix the fixture and regenerate.
 
 - [ ] **Step 5: Run it as the check it will be**
 

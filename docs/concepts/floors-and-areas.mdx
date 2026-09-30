@@ -12,12 +12,12 @@ pururu:
       icon: mdi:home-floor-0
       aliases: [embaixo]
   areas:
-    cozinha:                 # the area's ID
-      name: Cozinha
+    atelie:                 # the area's ID
+      name: Ateliê
       floor: terreo          # a key of floors:
-      icon: mdi:stove
-    quintal:
-      name: Quintal          # an area on no floor
+      icon: mdi:palette
+    patio:
+      name: Pátio          # an area on no floor
 ```
 
 The keys each floor and area accepts are listed in the [configuration reference](/reference/configuration#floors).
@@ -26,7 +26,7 @@ The keys each floor and area accepts are listed in the [configuration reference]
 
 When you create a floor or an area in the UI, Home Assistant makes its ID from the name. **Térreo** becomes `terreo`, and if you later rename it **Ground floor**, the ID stays `terreo`. You never get to choose the ID.
 
-pururu lets you choose it: the key is the ID. To make that happen, pururu first creates the floor or area named after its key, so that Home Assistant gives it exactly that ID, and then renames it to your `name`. The result is IDs that are stable, readable and known in advance. Use them in automations (`area_id: cozinha`), in dashboards, and in a device's `area`.
+pururu lets you choose it: the key is the ID. To make that happen, pururu first creates the floor or area named after its key, so that Home Assistant gives it exactly that ID, and then renames it to your `name`. The result is IDs that are stable, readable and known in advance. Use them in automations (`area_id: atelie`), in dashboards, and in a device's `area`.
 
 ## YAML wins
 
@@ -68,14 +68,14 @@ A device's `area` must be a key under `areas:`. Anything else is a configuration
 ```yaml
 pururu:
   areas:
-    lavanderia: {name: Lavanderia}
+    despensa: {name: Despensa}
   devices:
-    laundry_washer:
-      name: Máquina de lavar
-      area: lavanderia
+    clothes_washer:
+      name: Tanquinho
+      area: despensa
       appliance:
         power: sensor.washer_plug_power
-        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+        running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
 ```
 
 - The device is put in its area **at every start and reload**. If you move it in the UI, it stays there until the next reload.

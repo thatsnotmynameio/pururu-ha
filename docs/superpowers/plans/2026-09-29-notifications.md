@@ -299,8 +299,8 @@ Append to the `then` section (after the tests that use the `both` fixture):
 async def test_a_missing_notify_action_does_not_keep_the_program_from_starting(
         ha: HomeAssistant, both: None) -> None:
     await fake(ha, DOOR, "off")
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, pool(clean={**DOOR_OPENS, "then": "clean", "message": "Limpando",
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse(clean={**DOOR_OPENS, "then": "clean", "message": "Limpando",
                                        "notify": "notify.nobody"}))
     await fake(ha, DOOR, "on")
     await ha.async_block_till_done()
@@ -455,7 +455,7 @@ import pytest
 from helpers import setup
 
 KEY = "washer"
-POWER = "sensor.demo_plug_power"
+POWER = "sensor.dummy_plug_power"
 PHONE = "notify.phone"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
@@ -907,7 +907,7 @@ async def automations(ha: HomeAssistant) -> AsyncIterator[None]:
 
 
 async def cycle(ha: HomeAssistant, freezer: Any) -> None:
-    """A washing cycle: running on after on_delay, off after off_delay."""
+    """A soaking cycle: running on after on_delay, off after off_delay."""
     await fake(ha, POWER, "100")
     await tick(ha, freezer, 60)
     assert ha.states.get(RUNNING).state == "on"
@@ -1135,7 +1135,7 @@ async def test_time_alerts_watch_running_and_are_alert2_alerts(ha: HomeAssistant
     assert found.attributes["message"] == "It hasn't run in a while."
     path = Path(ha.config.path("pururu/alert2/alerts.yaml"))
     [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert entry["name"] == "demo_washer_appliance_alert_no_cycle"
+    assert entry["name"] == "dummy_washer_appliance_alert_no_cycle"
 ```
 
 - Add, after `test_invalid_alerts_are_refused`:
@@ -1314,8 +1314,8 @@ pururu:
   config:
     notify: notify.mobile_app_phone          # where every message goes
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
@@ -1325,14 +1325,14 @@ pururu:
       reactions:
         door_open:
           name: Porta aberta
-          entity: binary_sensor.porta_lavanderia
+          entity: binary_sensor.porta_despensa
           to: "on"
-          message: A porta da lavanderia abriu.
+          message: A porta da despensa abriu.
 
 automation pururu: !include_dir_merge_list pururu/automations
 ```
 
-Your phone gets **Máquina de lavar** / **The cycle finished.** when a wash ends, and **Máquina de lavar** / **A porta da lavanderia abriu.** when the door opens.
+Your phone gets **Tanquinho** / **The cycle finished.** when a wash ends, and **Tanquinho** / **A porta da despensa abriu.** when the door opens.
 
 ## Where a message goes
 
@@ -1340,7 +1340,7 @@ Your phone gets **Máquina de lavar** / **The cycle finished.** when a wash ends
   Where every message goes: a `notify` action such as `notify.mobile_app_phone`, or a list of them. A reaction's or a notification's own `notify` replaces it.
 </Property>
 
-A message with no `notify` of its own and no `config.notify` is a configuration error: `device laundry_washer: reactions: door_open: message needs notify, here or in config.notify`.
+A message with no `notify` of its own and no `config.notify` is a configuration error: `device clothes_washer: reactions: door_open: message needs notify, here or in config.notify`.
 
 - The title is always the device's name.
 - The message is shown **as you wrote it**: a `{` isn't a template.
@@ -1378,7 +1378,7 @@ notifications:
     finished: {message: Roupa pronta!, notify: notify.mobile_app_tablet}
 ```
 
-- Each one is `automation.pururu_<key>_<feature namespace>_notification_<notification>`, shown as the device's name and its own: `automation.pururu_laundry_washer_appliance_notification_finished`, **Máquina de lavar Finished** (in your Home Assistant's language).
+- Each one is `automation.pururu_<key>_<feature namespace>_notification_<notification>`, shown as the device's name and its own: `automation.pururu_clothes_washer_appliance_notification_finished`, **Tanquinho Finished** (in your Home Assistant's language).
 - A plug reconnecting or a reload tells nobody: `finished` needs `running` to go from `on` straight to `off`.
 - If the entity it watches isn't created, it isn't generated either, and the log says why.
 - `notifications` isn't a feature: a device still needs one.
@@ -1418,7 +1418,7 @@ pururu 0.1.21 and earlier had a ready-made alert `finished`. It's a notification
 `docs/features/alerts.mdx`, after the first paragraph: "An alert is for what you find **critical**. For simple news, such as the washer finishing, use a [notification](/concepts/notifications)."
 
 `docs/reference/configuration.mdx`:
-- In the big example: delete `finished: {lasts: {minutes: 30}}` (line 41); under `config:` add `notify: notify.mobile_app_phone`; under `laundry_washer`, after `appliance:`'s block, add `notifications: {appliance: {finished: }}` written as
+- In the big example: delete `finished: {lasts: {minutes: 30}}` (line 41); under `config:` add `notify: notify.mobile_app_phone`; under `clothes_washer`, after `appliance:`'s block, add `notifications: {appliance: {finished: }}` written as
   ```yaml
         notifications:
           appliance:
@@ -1441,7 +1441,7 @@ pururu:
   config:
     notify: notify.mobile_app_phone
   devices:
-    laundry_washer:
+    clothes_washer:
       # ... as above
       notifications:
         appliance:
@@ -1451,7 +1451,7 @@ pururu:
 For a message with the cycle's numbers, write the automation yourself.
 ````
 
-and change the sentence before the existing automation to start "`sensor.pururu_laundry_washer_appliance_last_cycle_end` changes once per finished cycle…" unchanged.
+and change the sentence before the existing automation to start "`sensor.pururu_clothes_washer_appliance_last_cycle_end` changes once per finished cycle…" unchanged.
 
 `docs/develop/writing-a-feature.mdx`:
 - Line 192: `- `priority` and `hold` (the default `for`, or `None` when the user must give it).`

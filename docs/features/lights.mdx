@@ -8,19 +8,19 @@ description: Real lights inside a device, or relays that drive a lamp. Each one 
 ```yaml
 pururu:
   devices:
-    sala:
-      name: Sala
-      area: sala
+    biblioteca:
+      name: Biblioteca
+      area: biblioteca
       lights:
-        teto: {entity: light.sala_teto, name: Teto}
+        teto: {entity: light.biblioteca_teto, name: Teto}
         abajur: {entity: switch.sonoff_abajur, name: Abajur}
 ```
 
-This creates `light.pururu_sala_light_teto`, shown as **Sala Teto**, with what the bulb offers, and `light.pururu_sala_light_abajur`, shown as **Sala Abajur**, which turns on and off.
+This creates `light.pururu_biblioteca_light_teto`, shown as **Biblioteca Teto**, with what the bulb offers, and `light.pururu_biblioteca_light_abajur`, shown as **Biblioteca Abajur**, which turns on and off.
 
 ## Settings
 
-`lights` is a map of **entity key → light**, with at least one light. The key is a slug, and it ends the entity ID, after the namespace `light`: `teto` → `light.pururu_sala_light_teto`.
+`lights` is a map of **entity key → light**, with at least one light. The key is a slug, and it ends the entity ID, after the namespace `light`: `teto` → `light.pururu_biblioteca_light_teto`.
 
 <Property name="entity" type="entity ID" required>
   The real light: a `light.*` entity, or a `switch.*` entity that drives a lamp, such as a relay. One entity, not a list. It can't be one of pururu's own lights or switches, even one you renamed in the UI. A renamed one is caught when pururu builds the device: that light isn't created, and the log says so.
@@ -32,7 +32,7 @@ This creates `light.pururu_sala_light_teto`, shown as **Sala Teto**, with what t
   The name shown after the device's name. It can't be empty. It's the same in every language: a light's name isn't translated.
 </Property>
 
-A light's key can be one another feature uses, such as `pump` in both `lights` and `switches`: each feature has its own [namespace](/concepts/entity-ids#the-pattern), so `light.pururu_sala_light_pump` and `switch.pururu_sala_switch_pump` are two entities.
+A light's key can be one another feature uses, such as `sprinkler` in both `lights` and `switches`: each feature has its own [namespace](/concepts/entity-ids#the-pattern), so `light.pururu_biblioteca_light_sprinkler` and `switch.pururu_biblioteca_switch_sprinkler` are two entities.
 
 ## Entity
 
@@ -58,7 +58,7 @@ A relay that drives a lamp goes in `lights`, so voice assistants and area action
 switches: switch.sonoff_abajur is already in lights
 ```
 
-Two devices can each use it their own way: a light in `sala` and a switch in `varanda`.
+Two devices can each use it their own way: a light in `biblioteca` and a switch in `varanda`.
 
 ## Alert lights
 
@@ -66,8 +66,8 @@ A light in a group of [alert lights](/concepts/alert-lights) shows alerts: while
 
 ## Good to know
 
-- **Replacing the bulb or the relay.** Point `entity:` at the new one and reload. `light.pururu_sala_light_teto` keeps its ID, name and area, so automations and dashboards keep working.
-- **Two entities for one light.** The real light stays in its own device. If that device is in the same area, the area shows the light twice, and "turn off the lights in Sala" reaches both. Turning both off is harmless, but a count of lights that are on counts two.
+- **Replacing the bulb or the relay.** Point `entity:` at the new one and reload. `light.pururu_biblioteca_light_teto` keeps its ID, name and area, so automations and dashboards keep working.
+- **Two entities for one light.** The real light stays in its own device. If that device is in the same area, the area shows the light twice, and "turn off the lights in Biblioteca" reaches both. Turning both off is harmless, but a count of lights that are on counts two.
 - **Renaming the real entity.** Update `entity:` in the YAML and reload. Until then, the pururu light is `unavailable`.
 - **Renaming the pururu light** in the UI works as for any entity. See [Renaming an entity ID](/concepts/entity-ids#renaming-an-entity-id). Renamed to the entity its own `entity:` names, it stands for itself: it's kept, `unavailable`, and the log says so.
 - **The same real light twice**, in one device or two, is fine: each pururu light follows it.

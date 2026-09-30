@@ -22,7 +22,7 @@ from helpers import DOMAIN, capture, device_of, module, reload, setup
 
 URL = "pururu"
 FLOORS = {"terreo": {"name": "Térreo"}, "superior": {"name": "Superior"}}
-AREAS = {"cozinha": {"name": "Cozinha", "floor": "terreo"}, "quintal": {"name": "Quintal"}}
+AREAS = {"atelie": {"name": "Ateliê", "floor": "terreo"}, "patio": {"name": "Pátio"}}
 
 
 @pytest.fixture
@@ -73,8 +73,8 @@ async def test_totals_and_table_of_what_pururu_manages(
         ["pururu", "Pururu", "Dashboard"],
         ["superior", "Superior", "Floor"],
         ["terreo", "Térreo", "Floor"],
-        ["cozinha", "Cozinha", "Area"],
-        ["quintal", "Quintal", "Area"],
+        ["atelie", "Ateliê", "Area"],
+        ["patio", "Pátio", "Area"],
         ["dryer", "Dryer", "Device"],
         ["washer", "Washer", "Device"],
     ]
@@ -89,10 +89,10 @@ async def test_what_pururu_does_not_manage_is_not_listed(
     dr.async_get(ha).async_get_or_create(
         config_entry_id=other.entry_id, identifiers={("other", "tv")}, name="TV")
     assert await setup(ha, devices(appliance, washer="Washer"),
-                       floors={"terreo": FLOORS["terreo"]}, areas={"quintal": AREAS["quintal"]})
+                       floors={"terreo": FLOORS["terreo"]}, areas={"patio": AREAS["patio"]})
     config = await fetch(ha, hass_ws_client)
     assert totals(config) == ["# 1\nDashboards", "# 1\nFloors", "# 1\nAreas", "# 1\nDevices"]
-    assert [row[0] for row in table(config)[1:]] == ["pururu", "terreo", "quintal", "washer"]
+    assert [row[0] for row in table(config)[1:]] == ["pururu", "terreo", "patio", "washer"]
 
 
 async def test_a_reload_that_drops_items_drops_them_from_the_dashboard(
@@ -100,10 +100,10 @@ async def test_a_reload_that_drops_items_drops_them_from_the_dashboard(
     assert await setup(ha, devices(appliance, washer="Washer", dryer="Dryer"),
                        floors=FLOORS, areas=AREAS)
     await reload(ha, devices(appliance, washer="Washer"),
-                 floors={"terreo": FLOORS["terreo"]}, areas={"cozinha": AREAS["cozinha"]})
+                 floors={"terreo": FLOORS["terreo"]}, areas={"atelie": AREAS["atelie"]})
     config = await fetch(ha, hass_ws_client)
     assert totals(config) == ["# 1\nDashboards", "# 1\nFloors", "# 1\nAreas", "# 1\nDevices"]
-    assert [row[0] for row in table(config)[1:]] == ["pururu", "terreo", "cozinha", "washer"]
+    assert [row[0] for row in table(config)[1:]] == ["pururu", "terreo", "atelie", "washer"]
 
 
 async def test_a_read_only_lovelace_panel_for_admins(
@@ -181,10 +181,10 @@ async def test_a_rename_shows_and_refreshes_an_open_page(
         ha: HomeAssistant, hass_ws_client: WebSocketGenerator, appliance: dict[str, Any]) -> None:
     """Renaming a floor, an area or a device in the UI: an open page fetches again."""
     assert await setup(ha, devices(appliance, washer="Washer"),
-                       floors={"terreo": FLOORS["terreo"]}, areas={"quintal": AREAS["quintal"]})
+                       floors={"terreo": FLOORS["terreo"]}, areas={"patio": AREAS["patio"]})
     updated = capture(ha, "lovelace_updated")
-    fr.async_get(ha).async_update("terreo", name="Ground")
-    ar.async_get(ha).async_update("quintal", name="Garden")
+    fr.async_get(ha).async_update("terreo", name="Mezzanine")
+    ar.async_get(ha).async_update("patio", name="Orchard")
     device = device_of(ha, "washer")
     assert device is not None
     dr.async_get(ha).async_update_device(device.id, name_by_user="My washer")
@@ -192,7 +192,7 @@ async def test_a_rename_shows_and_refreshes_an_open_page(
     assert len(updated) >= 6, updated  # two per change
     assert {event.data["url_path"] for event in updated} == {URL}
     assert [row[1] for row in table(await fetch(ha, hass_ws_client))[1:]] == [
-        "Pururu", "Ground", "Garden", "My washer"]
+        "Pururu", "Mezzanine", "Orchard", "My washer"]
 
 
 async def test_a_url_already_taken_is_an_error_and_left_alone(
@@ -259,7 +259,7 @@ async def test_a_dashboard_that_cannot_be_built_is_an_error_and_leaves_no_panel(
 async def test_changes_to_what_pururu_does_not_manage_refresh_nothing(
         ha: HomeAssistant, appliance: dict[str, Any]) -> None:
     assert await setup(ha, devices(appliance, washer="Washer"),
-                       floors={"terreo": FLOORS["terreo"]}, areas={"quintal": AREAS["quintal"]})
+                       floors={"terreo": FLOORS["terreo"]}, areas={"patio": AREAS["patio"]})
     updated = capture(ha, "lovelace_updated")
     fr.async_get(ha).async_create("Sótão")
     ar.async_get(ha).async_create("Garagem")

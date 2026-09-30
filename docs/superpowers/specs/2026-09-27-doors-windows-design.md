@@ -11,26 +11,26 @@ pururu knows nothing of any integration. The user names the entities, says what 
 ```yaml
 pururu:
   devices:
-    porta_clausura_frente:
-      name: Clausura frente
+    porta_cercado_frente:
+      name: Cercado frente
       area: entrada
       door:
-        contact: binary_sensor.clausura_frente
+        contact: binary_sensor.cercado_frente
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
         events:
-          - entity: event.clausura_frente_access
+          - entity: event.cercado_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
-          - entity: event.clausura_frente_doorbell
+          - entity: event.cercado_frente_doorbell
             types: {ring: ring}
     janela_quarto:
       name: Janela do quarto
       window:
         contact: binary_sensor.janela_quarto_contact
-# → binary_sensor.pururu_porta_clausura_frente_door_open        "Clausura frente Aberta"
-# → sensor.pururu_porta_clausura_frente_door_last_opened_by     "Matheus Guilarducci"
+# → binary_sensor.pururu_porta_cercado_frente_door_open        "Cercado frente Aberta"
+# → sensor.pururu_porta_cercado_frente_door_last_opened_by     "Alex Doe"
 # → binary_sensor.pururu_janela_quarto_window_open              "Janela do quarto Aberta"
 ```
 
@@ -40,7 +40,7 @@ The owner's two enclosure doors (UniFi Access), history of 2026-09-26 and 27:
 
 | Situation | Contact | Event |
 |---|---|---|
-| Entry, front | opens | `access_granted`, `actor: Matheus Guilarducci`, `authentication: PIN_CODE`, `direction: entry`, about 0.9 s **after** the contact opens |
+| Entry, front | opens | `access_granted`, `actor: Alex Doe`, `authentication: PIN_CODE`, `direction: entry`, about 0.9 s **after** the contact opens |
 | Entry, back | opens | the same, about 0.5 s after |
 | Exit, back (button → automation → relay) | opens | `actor: N/A`, `authentication: REX`, `direction: exit`, about 0.8 s after |
 | Exit, front | opens | **no event** (the handle, from inside) |
@@ -52,7 +52,7 @@ So an event is matched to an opening by time, in both directions. An opening wit
 
 | Question | Decision |
 |---|---|
-| What a door is | A feature, like `appliance`: pururu's abstraction, with the real entities inside its block. Not a device `type:` (the device keeps no type) and not a `configured` feature of a room device (`doors: {frente: …}` in `sala`), which would make a lock and a contact of one door hard to keep together. |
+| What a door is | A feature, like `appliance`: pururu's abstraction, with the real entities inside its block. Not a device `type:` (the device keeps no type) and not a `configured` feature of a room device (`doors: {frente: …}` in `biblioteca`), which would make a lock and a contact of one door hard to keep together. |
 | Door and window | Two features, `door` and `window`, with one schema and one code. They differ only in namespace, `device_class` and texts. A window rarely has events, but nothing refuses them (a glass-break or vibration event would fit). |
 | Rejected: one feature `opening` with `kind: door\|window` | The door is the abstraction; a `kind` makes it a detail. |
 | Shared code | A package `features/opening/` with a function that builds a `Feature` for a namespace and a device class. `lights` refused a `Feature` factory because each domain had its own details; door and window have none by definition. |

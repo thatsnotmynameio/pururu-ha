@@ -1,10 +1,10 @@
 """What a device and a feature are: the contract every module in features/ fulfils."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 import math
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
@@ -46,7 +46,7 @@ def state_text(value: Any) -> str:
 
 
 def bounded(what: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """A band of a sensor's value (`what`: band, mode): above, below or both, above lower."""
+    """A band of a sensor's value (`what`: program, phase): above, below or both, above lower."""
 
     def validate(band: dict[str, Any]) -> dict[str, Any]:
         if "above" not in band and "below" not in band:
@@ -69,7 +69,7 @@ def qualified(namespace: str, entity_key: str) -> str:
 
 @dataclass(frozen=True, kw_only=True)
 class Item:
-    """An item of a feature's block with entity keys of its own (roles.Items): a mode."""
+    """An item of a feature's block with entity keys of its own (roles.Items): a program, a reaction; the detector names each phase's entities with one too (Phase.item)."""
 
     slug: str
     name: str
@@ -188,7 +188,8 @@ class Feature:
     schema: Callable[[Any], Any]
     # Everything it can create: entity key -> the platform of its entity
     entity_keys: Mapping[str, Platform]
-    # Its entities, from its validated block and the entity IDs of what it requires
+    # Its entities, from its validated block and the entity IDs of what it refers to
+    # (Refers), or of the scripts and automations it generates (Generates)
     build: Build
     # A minimal valid block, for the contract test
     example: Mapping[str, Any]
@@ -202,8 +203,57 @@ class Feature:
         return next((each for each in self.roles if isinstance(each, kind)), None)
 
 
+# From a builder's block to a container of it: the keys to follow, EACH for
+# every key of a map. () is the block itself
+type Path = tuple[str, ...]
+# Every key of a map, in a Path: no slug is "*"
+EACH = "*"
+
+
+def walk(value: Any, path: Path, at: Path = ()) -> Iterator[tuple[Path, Any]]:
+    """Each container `path` names in `value`, with its own path (EACH made each key).
+
+    A key missing, or a map expected where there's none, names no container:
+    nothing is yielded for it. The last container may be anything.
+    """
+    if not path:
+        yield at, value
+        return
+    if not isinstance(value, Mapping):
+        return
+    head, *rest = path
+    present = (head,) if head in value else ()
+    keys = value if head == EACH else present
+    for key in keys:
+        # As the builder's schema returns it: cv.slug makes YAML's 1 "1"
+        yield from walk(value[key], tuple(rest), (*at, str(key)))
+
+
+@dataclass(frozen=True, kw_only=True)
+class Place:
+    """Where an aspect's key sits in a builder's block, and what the aspect has there."""
+
+    # The containers of its key; () the block itself
+    path: Path = ()
+    # Validates the aspect's value in a container there
+    schema: Callable[[Any], Any]
+    # The local entity keys it adds per container: suffixes of the container's
+    # item, with one; none for the ready-made notifications (automations)
+    keys: Mapping[str, Platform]
+    # The translation key each of its keys is named under
+    named: Callable[[str], str]
+    # A valid value, for the contract test
+    example: Any
+    # The item a container there is, from its key and the container: its
+    # keys are the item's (<slug>_<key>); None: the builder's own
+    item: Callable[[str, Any], Item] | None = None
+    # Refuses (vol.Invalid) what it can't be once validated, given the
+    # builder's whole block and the container, its value put back
+    check: Callable[[Mapping[str, Any], Mapping[str, Any]], None] | None = None
+
+
 # hass, the device in the builder's namespace, the builder, its validated block
-# (the aspect's value in it, or in each item), the common texts
+# (the aspect's value put back at each of its places), the common texts
 type AspectBuild = Callable[
     [HomeAssistant, Device, Feature, Any, Texts], list[PururuEntity]
 ]
@@ -211,34 +261,19 @@ type AspectBuild = Callable[
 
 @dataclass(frozen=True, kw_only=True)
 class Aspect:
-    """A concern written once, mounted in the block (or each item) of every builder offering it."""
+    """A concern written once, mounted at its places in the block of every builder offering it."""
 
-    # The block key it mounts: "statistics", "alerts", "notifications"
+    # The key it mounts: "statistics", "alerts", "notifications"
     key: str
     # Whether this builder offers it: it has what the aspect needs (Counters;
     # at least one ready-made alert; at least one Happening)
     offered: Callable[[Feature], bool]
-    # Validates the aspect's value, for this builder and its key in the device,
-    # for an aspect whose messages name the builder: the notifications
-    # aspect uses it; the alerts and statistics aspects don't need it
-    schema: Callable[[Feature, str], Callable[[Any], Any]]
-    # The local entity keys it adds: suffixes for an Items builder; none for
-    # the ready-made notifications (automations)
-    keys: Callable[[Feature], Mapping[str, Platform]]
-    # The translation key one of its local keys is named under, for this
-    # builder: statistics' own at the block level, or under the builder's
-    # namespace (the ready-made alerts')
-    named: Callable[[Feature, str], str]
-    # A valid value, for the contract test
-    example: Callable[[Feature], Any]
-    # Where its key sits for this builder: in the block, or in each item
-    placed: Callable[[Feature], Literal["block", "item"]]
+    # Where its key sits for this builder, given the builder's key in the
+    # device (the notifications' refusals name it): the block, a map's items,
+    # or deeper (a running program, each of its phases)
+    places: Callable[[Feature, str], tuple[Place, ...]]
     # Its entities, from the builder's validated block
     build: AspectBuild
-    # Refuses (vol.Invalid) what it can't be once validated, given the builder,
-    # its key in the device, and each container (the block, or an item) with
-    # its value put back
-    check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None
     # Its key absent (or its container not a map): validated as `{}` and
     # mounted (statistics: no counter asks a period), or left out, as nothing
     # asked (ready-made alerts and notifications: none enabled; an explicit

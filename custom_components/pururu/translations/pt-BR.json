@@ -24,7 +24,7 @@
     "appliance_alert_long_cycle_message": "O ciclo está demorando demais.",
     "appliance_alert_long_cycle_done_message": "O ciclo terminou.",
     "appliance_alert_no_cycle_message": "Não roda há um tempo.",
-    "appliance_alert_no_cycle_done_message": "Voltou a rodar.",
+    "appliance_alert_no_cycle_done_message": "Voltou a funcionar.",
     "appliance_notification_finished_name": "Terminou",
     "appliance_notification_finished_message": "O ciclo terminou."
   },
@@ -86,17 +86,13 @@
       "phase_current": {
         "name": "Fase",
         "state": {
-          "idle": "Parada", "washing": "Lavando", "heating": "Aquecendo",
-          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando",
-          "cooling": "Esfriando", "other": "Outra", "dispensing": "Dispensando"
+          "idle": "Parada", "other": "Outra"
         }
       },
       "phase_last": {
         "name": "Última fase",
         "state": {
-          "washing": "Lavando", "heating": "Aquecendo",
-          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando",
-          "cooling": "Esfriando", "other": "Outra", "dispensing": "Dispensando"
+          "other": "Outra"
         }
       },
       "phase_last_cycle_start": {"name": "Início do último ciclo de {item}"},
@@ -113,27 +109,6 @@
       "phase_other_cycles_total": {"name": "Ciclos de outra fase", "unit_of_measurement": "ciclos"},
       "phase_other_runtime_total": {"name": "Tempo de outra fase"},
       "phase_other_energy_total": {"name": "Energia de outra fase"},
-      "mode_current": {
-        "name": "Modo",
-        "state": {
-          "idle": "Parado", "dispensing": "Dispensando", "washing": "Lavando", "heating": "Aquecendo",
-          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando", "cooling": "Esfriando"
-        }
-      },
-      "mode_last": {
-        "name": "Último modo",
-        "state": {
-          "dispensing": "Dispensando", "washing": "Lavando", "heating": "Aquecendo",
-          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando", "cooling": "Esfriando"
-        }
-      },
-      "mode_last_cycle_start": {"name": "Início do último ciclo de {mode}"},
-      "mode_last_cycle_end": {"name": "Fim do último ciclo de {mode}"},
-      "mode_last_cycle_duration": {"name": "Duração do último ciclo de {mode}"},
-      "mode_last_cycle_energy": {"name": "Energia do último ciclo de {mode}"},
-      "mode_cycles_total": {"name": "Ciclos de {mode}", "unit_of_measurement": "ciclos"},
-      "mode_runtime_total": {"name": "Tempo de {mode}"},
-      "mode_energy_total": {"name": "Energia de {mode}"},
       "program_last_cycle_start": {"name": "Início da última execução de {program}"},
       "program_last_cycle_end": {"name": "Fim da última execução de {program}"},
       "program_last_cycle_duration": {"name": "Duração da última execução de {program}"},
@@ -172,6 +147,18 @@
       "item_energy_week": {"name": "Energia de {item} na semana"},
       "item_energy_month": {"name": "Energia de {item} no mês"},
       "item_energy_year": {"name": "Energia de {item} no ano"},
+      "phase_other_runtime_today": {"name": "Tempo de outra fase hoje"},
+      "phase_other_runtime_week": {"name": "Tempo de outra fase na semana"},
+      "phase_other_runtime_month": {"name": "Tempo de outra fase no mês"},
+      "phase_other_runtime_year": {"name": "Tempo de outra fase no ano"},
+      "phase_other_cycles_today": {"name": "Ciclos de outra fase hoje"},
+      "phase_other_cycles_week": {"name": "Ciclos de outra fase na semana"},
+      "phase_other_cycles_month": {"name": "Ciclos de outra fase no mês"},
+      "phase_other_cycles_year": {"name": "Ciclos de outra fase no ano"},
+      "phase_other_energy_today": {"name": "Energia de outra fase hoje"},
+      "phase_other_energy_week": {"name": "Energia de outra fase na semana"},
+      "phase_other_energy_month": {"name": "Energia de outra fase no mês"},
+      "phase_other_energy_year": {"name": "Energia de outra fase no ano"},
       "item_triggered_today": {"name": "Disparos de {item} hoje"},
       "item_triggered_week": {"name": "Disparos de {item} na semana"},
       "item_triggered_month": {"name": "Disparos de {item} no mês"},

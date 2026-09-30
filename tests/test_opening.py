@@ -10,9 +10,9 @@ import pytest
 
 from helpers import fake, held, reload, restart, setup, tick
 
-KEY = "clausura_frente"
-NAME = "Clausura frente"
-CONTACT = "binary_sensor.clausura_frente"
+KEY = "cercado_frente"
+NAME = "Cercado frente"
+CONTACT = "binary_sensor.cercado_frente"
 
 
 @pytest.fixture(params=["door", "window"])
@@ -68,7 +68,7 @@ async def door(ha: HomeAssistant, kind: str) -> HomeAssistant:
 
 @pytest.mark.parametrize("block", [
     pytest.param({}, id="no contact"),
-    pytest.param({"contact": "sensor.clausura_frente"}, id="not a binary sensor"),
+    pytest.param({"contact": "sensor.cercado_frente"}, id="not a binary sensor"),
     pytest.param({"contact": "binary_sensor.pururu_outra_door_open"}, id="a pururu binary sensor"),
     pytest.param({"contact": CONTACT, "statistics": {"openings": ["today", "today"]}},
                  id="repeated period"),
@@ -83,7 +83,7 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, kind: str,
 
 
 @pytest.mark.parametrize(("contact_id", "message"), [
-    pytest.param("sensor.clausura_frente", "sensor.clausura_frente is not a binary_sensor",
+    pytest.param("sensor.cercado_frente", "sensor.cercado_frente is not a binary_sensor",
                  id="another domain"),
     pytest.param("binary_sensor.pururu_outra_door_open",
                  "binary_sensor.pururu_outra_door_open is a pururu binary_sensor: name the real one",
@@ -300,7 +300,7 @@ async def test_the_last_opening_restores(ha: HomeAssistant, kind: str) -> None:
 
 WASHER = {"name": "Lavadora", "appliance": {
     "power": "sensor.lavadora_power",
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }}
 
 
@@ -321,26 +321,10 @@ async def test_a_renamed_pururu_contact_stands_for_nothing(
             f"{entity(kind, 'open', 'binary_sensor')} stands for nothing") in caplog.text
 
 
-async def test_the_openings_are_a_cycle_for_phases(ha: HomeAssistant, kind: str) -> None:
-    """`cycle_from: door` (window): a phase runs while it's open."""
-    await contact(ha, "off")
-    phases = {"cycle_from": kind, "sensor": "sensor.vento",
-              "defaults": {"stopped": "parada", "running": "aberta"},
-              "bands": {"ventania": {"above": 50}}}
-    assert await setup(ha, {KEY: {"name": NAME, kind: {"contact": CONTACT}, "phases": phases}})
-    await fake(ha, "sensor.vento", "10")
-    phase = f"sensor.pururu_{KEY}_phase_current"
-    assert ha.states.get(phase).state == "parada"
-    await contact(ha, "on")
-    assert ha.states.get(phase).state == "aberta"
-    await contact(ha, "off")
-    assert ha.states.get(phase).state == "parada"
-
-
 # --- events -------------------------------------------------------------------------
 
-ACCESS = "event.clausura_frente_access"
-DOORBELL = "event.clausura_frente_doorbell"
+ACCESS = "event.cercado_frente_access"
+DOORBELL = "event.cercado_frente_doorbell"
 ACCESS_TYPES = {"access_granted": "opening", "access_denied": "denied"}
 ACCESS_FIELDS = {"who": "actor", "how": "authentication", "direction": "direction"}
 EVENTS = [
@@ -348,7 +332,7 @@ EVENTS = [
     {"entity": DOORBELL, "types": {"ring": "ring"}},
 ]
 # What UniFi Access sent on 2026-09-27
-ENTRY = {"actor": "Matheus Guilarducci", "authentication": "PIN_CODE", "direction": "entry",
+ENTRY = {"actor": "Alex Doe", "authentication": "PIN_CODE", "direction": "entry",
          "result": "ACCESS"}
 EXIT = {"actor": "N/A", "authentication": "REX", "direction": "exit", "result": "ACCESS"}
 FIELD_KEYS = ("last_opened_by", "last_opened_via", "last_direction")
@@ -407,10 +391,10 @@ async def test_entry_by_pin_describes_the_opening(enclosure: HomeAssistant, kind
     assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
     await tick(enclosure, freezer, 0.9)
     await access(enclosure, **ENTRY)
-    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
     await tick(enclosure, freezer, 6)
     await contact(enclosure, "off")
-    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
 
 
 async def test_an_event_before_the_contact_describes_it(enclosure: HomeAssistant, kind: str,
@@ -441,7 +425,7 @@ async def test_match_can_be_set(ha: HomeAssistant, kind: str, freezer: Any) -> N
     await contact(ha, "on")
     await tick(ha, freezer, 8)
     await access(ha, **ENTRY)
-    assert fields(ha, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(ha, kind) == ("Alex Doe", "PIN_CODE", "entry")
 
 
 async def test_the_first_event_wins(enclosure: HomeAssistant, kind: str, freezer: Any) -> None:
@@ -449,7 +433,7 @@ async def test_the_first_event_wins(enclosure: HomeAssistant, kind: str, freezer
     await access(enclosure, **ENTRY)
     await tick(enclosure, freezer, 1)
     await access(enclosure, **EXIT)
-    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
 
 
 async def test_a_short_opening_closed_before_its_event(enclosure: HomeAssistant, kind: str,
@@ -457,7 +441,7 @@ async def test_a_short_opening_closed_before_its_event(enclosure: HomeAssistant,
     await opening(enclosure, freezer, 0.5)
     await tick(enclosure, freezer, 0.5)
     await access(enclosure, **ENTRY)
-    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
 
 
 async def test_an_opening_without_event_forgets_the_last(enclosure: HomeAssistant, kind: str,
@@ -492,8 +476,8 @@ async def test_an_event_type_not_in_types_is_ignored(enclosure: HomeAssistant, k
 
 async def test_a_missing_attribute_is_unknown(enclosure: HomeAssistant, kind: str) -> None:
     await contact(enclosure, "on")
-    await access(enclosure, actor="Matheus Guilarducci")
-    assert fields(enclosure, kind) == ("Matheus Guilarducci", "unknown", "unknown")
+    await access(enclosure, actor="Alex Doe")
+    assert fields(enclosure, kind) == ("Alex Doe", "unknown", "unknown")
 
 
 async def test_a_field_that_is_not_text_is_text(enclosure: HomeAssistant, kind: str) -> None:
@@ -589,9 +573,9 @@ async def test_without_events_nothing_of_theirs_is_created(door: HomeAssistant,
 
 async def test_the_fields_restore(ha: HomeAssistant, kind: str) -> None:
     await restart(ha, devices(kind, events=EVENTS),
-                  (State(entity(kind, "last_opened_by"), "Matheus Guilarducci"),
-                   {"native_value": "Matheus Guilarducci", "native_unit_of_measurement": None}))
-    assert value(ha, kind, "last_opened_by") == "Matheus Guilarducci"
+                  (State(entity(kind, "last_opened_by"), "Alex Doe"),
+                   {"native_value": "Alex Doe", "native_unit_of_measurement": None}))
+    assert value(ha, kind, "last_opened_by") == "Alex Doe"
 
 
 async def test_the_fields_have_names(enclosure: HomeAssistant, kind: str) -> None:
@@ -674,7 +658,7 @@ async def test_a_reload_keeps_the_opening_described(enclosure: HomeAssistant, ki
     await reload(enclosure, devices(kind, events=EVENTS))
     await tick(enclosure, freezer, 0.5)
     await access(enclosure, **EXIT)
-    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
 
 
 async def test_an_event_after_a_reload_still_describes_the_opening(
@@ -683,7 +667,7 @@ async def test_an_event_after_a_reload_still_describes_the_opening(
     await reload(enclosure, devices(kind, events=EVENTS))
     await tick(enclosure, freezer, 0.9)
     await access(enclosure, **ENTRY)
-    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
 
 
 async def test_an_opening_saved_before_described_is_restored_undescribed(
@@ -692,7 +676,7 @@ async def test_an_opening_saved_before_described_is_restored_undescribed(
     ha.states.async_set(CONTACT, "on")
     await restart(ha, devices(kind, events=EVENTS), saved_open(kind, 1))
     await access(ha, **ENTRY)
-    assert fields(ha, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(ha, kind) == ("Alex Doe", "PIN_CODE", "entry")
 
 
 async def test_a_waiting_event_too_early_leaves_the_next_to_describe(
@@ -703,4 +687,4 @@ async def test_a_waiting_event_too_early_leaves_the_next_to_describe(
     await access(enclosure, **ENTRY)
     await tick(enclosure, freezer, 4)
     await contact(enclosure, "on")
-    assert fields(enclosure, kind) == ("Matheus Guilarducci", "PIN_CODE", "entry")
+    assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")

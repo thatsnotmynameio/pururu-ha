@@ -10,6 +10,8 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.const import CONF_NAME
+
 from ..aspects import notifications
 from ..const import (
     CONF_AREA,
@@ -22,30 +24,10 @@ from ..const import (
     CONF_REACTIONS,
 )
 from ..core import generated
-from ..core.feature import Feature
+from ..core.feature import Device, Feature
 from ..core.resolve import Index, Ref, find
-from ..core.roles import Configured, Generates, Provides, Refers, Requires
-from ..features import FEATURES
-
-
-def capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
-    """Refuse a <capability>_from that names no feature of the device providing it."""
-    for name in names:
-        if (requires := FEATURES[name].role(Requires)) is None:
-            continue
-        capability = requires.capability
-        source = device[name][f"{capability}_from"]
-        if source not in names or not _provides(FEATURES[source], capability):
-            raise vol.Invalid(
-                f"{name}: {capability}_from must name a feature of this device "
-                f"that provides {capability}"
-            )
-
-
-def _provides(feature: Feature, capability: str) -> bool:
-    return (provides := feature.role(Provides)) is not None and (
-        provides.capability == capability
-    )
+from ..core.roles import Configured, Generates, Refers
+from . import catalogue
 
 
 def references(
@@ -112,13 +94,37 @@ def areas_exist(
             )
 
 
+def keys_distinct(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> Iterator[vol.Invalid]:
+    """Refuse two entities of one device with one unique ID, whatever their platforms.
+
+    The index keeps one entity per qualified key and would lose the other. A
+    phase keyed resfriar_cycles_today has the binary sensor
+    phase_resfriar_cycles_today, phase resfriar's meter's key.
+    """
+    for key, device in house[CONF_DEVICES].items():
+        seen: set[str] = set()
+        for name, entity_key, *_ in catalogue.keys(device):
+            unique_id = Device(
+                key=key, name=device[CONF_NAME], namespace=builders[name].namespace
+            ).object_id(entity_key)
+            if unique_id in seen:
+                yield vol.Invalid(
+                    f"device {key}: {unique_id} would be two entities",
+                    path=[CONF_DEVICES, key],
+                )
+                break
+            seen.add(unique_id)
+
+
 def entity_ids_distinct(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> Iterator[vol.Invalid]:
     """Refuse two devices whose entities would share an ID.
 
-    Device `pool` with the switch `switch_pump` and device `pool_switch` with
-    the switch `pump` would both have pururu_pool_switch_switch_pump.
+    Device `greenhouse` with the switch `switch_sprinkler` and device `greenhouse_switch` with
+    the switch `sprinkler` would both have pururu_greenhouse_switch_switch_sprinkler.
     """
     owners: dict[str, str] = {}  # object ID -> the device that has it
     for key, targets in index.items():

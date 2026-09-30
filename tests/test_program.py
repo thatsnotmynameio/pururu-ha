@@ -1,8 +1,8 @@
 """features/cycle/program: a detected program and its phases, the detector alone (no HA entity).
 
-Times are seconds from T0. Each scenario of today's modes and phases tests is
-replayed here with the same readings, the washer's 10 s later (see washer()):
-the same cycles, starts and ends.
+Times are seconds from T0. Each scenario of 0.1's `modes` and `phases` tests
+(removed in D2) is replayed here with the same readings, the washer's 10 s
+later (see washer()): the same cycles, starts and ends.
 """
 
 import csv
@@ -65,9 +65,9 @@ class Drive:
 
 # --- the schema ------------------------------------------------------------------
 
-GELAR = {"name": "Gelar", "above": 40, "below": 300, "on_delay": {"seconds": 30}, "off_delay": {"seconds": 30}}
+RESFRIAR = {"name": "Resfriar", "above": 40, "below": 300, "on_delay": {"seconds": 30}, "off_delay": {"seconds": 30}}
 PROGRAM: dict[str, Any] = {"above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2},
-                           "phases": {"gelar": GELAR}}
+                           "phases": {"resfriar": RESFRIAR}}
 
 
 @pytest.mark.parametrize("block", [
@@ -75,24 +75,24 @@ PROGRAM: dict[str, Any] = {"above": 4, "on_delay": {"seconds": 20}, "off_delay":
     pytest.param({k: v for k, v in PROGRAM.items() if k != "above"}, id="no bound"),
     pytest.param({**PROGRAM, "above": "nan"}, id="bound not a number"),
     pytest.param({**PROGRAM, "phases": {}}, id="no phase"),
-    pytest.param({**PROGRAM, "phases": {"Gelar": GELAR}}, id="not a slug"),
-    pytest.param({**PROGRAM, "phases": {"gelar": {k: v for k, v in GELAR.items() if k != "name"}}},
+    pytest.param({**PROGRAM, "phases": {"Resfriar": RESFRIAR}}, id="not a slug"),
+    pytest.param({**PROGRAM, "phases": {"resfriar": {k: v for k, v in RESFRIAR.items() if k != "name"}}},
                  id="a phase without name"),
-    pytest.param({**PROGRAM, "phases": {"gelar": {**GELAR, "name": "  "}}}, id="blank name"),
-    pytest.param({**PROGRAM, "phases": {"gelar": {"name": "Gelar"}}}, id="a phase without bound"),
-    pytest.param({**PROGRAM, "phases": {"gelar": {**GELAR, "above": 300, "below": 40}}},
+    pytest.param({**PROGRAM, "phases": {"resfriar": {**RESFRIAR, "name": "  "}}}, id="blank name"),
+    pytest.param({**PROGRAM, "phases": {"resfriar": {"name": "Resfriar"}}}, id="a phase without bound"),
+    pytest.param({**PROGRAM, "phases": {"resfriar": {**RESFRIAR, "above": 300, "below": 40}}},
                  id="a phase's above over its below"),
-    pytest.param({**PROGRAM, "phases": {"gelar": {**GELAR, "phases": {"x": GELAR}}}},
+    pytest.param({**PROGRAM, "phases": {"resfriar": {**RESFRIAR, "phases": {"x": RESFRIAR}}}},
                  id="phases inside a phase"),
-    pytest.param({**PROGRAM, "phases": {"gelar": {**GELAR, "for": 3}}}, id="a phase's for"),
+    pytest.param({**PROGRAM, "phases": {"resfriar": {**RESFRIAR, "for": 3}}}, id="a phase's for"),
     pytest.param({**PROGRAM, "statistics": {"cycles": ["today"]}}, id="statistics: D2 mounts it"),
-    pytest.param({**PROGRAM, "phases": {"idle": GELAR}}, id="a phase keyed idle"),
-    pytest.param({**PROGRAM, "phases": {"other": GELAR}}, id="a phase keyed other"),
-    pytest.param({**PROGRAM, "phases": {"current": GELAR}}, id="phase_current is the detector's"),
-    pytest.param({**PROGRAM, "phases": {"last": GELAR}}, id="phase_last is the detector's"),
-    pytest.param({**PROGRAM, "phases": {"gelar": GELAR, "gelar_cycles_total": GELAR}},
+    pytest.param({**PROGRAM, "phases": {"idle": RESFRIAR}}, id="a phase keyed idle"),
+    pytest.param({**PROGRAM, "phases": {"other": RESFRIAR}}, id="a phase keyed other"),
+    pytest.param({**PROGRAM, "phases": {"current": RESFRIAR}}, id="phase_current is the detector's"),
+    pytest.param({**PROGRAM, "phases": {"last": RESFRIAR}}, id="phase_last is the detector's"),
+    pytest.param({**PROGRAM, "phases": {"resfriar": RESFRIAR, "resfriar_cycles_total": RESFRIAR}},
                  id="two phases creating one entity key"),
-    pytest.param({**PROGRAM, "phases": {"other_cycles_total": GELAR}},
+    pytest.param({**PROGRAM, "phases": {"other_cycles_total": RESFRIAR}},
                  id="a phase creating one of other's"),
     pytest.param({k: v for k, v in PROGRAM.items() if k != "phases"} | {"other": {}},
                  id="other without phases"),
@@ -108,7 +108,7 @@ def test_invalid_program_is_refused(ha: HomeAssistant, block: dict[str, Any]) ->
 def test_a_phase_creating_one_of_others_is_the_one_named(ha: HomeAssistant) -> None:
     """The user's key is the culprit, not the built-in other."""
     schema = module("features.cycle.program").SCHEMA
-    block = {**PROGRAM, "phases": {"other_cycles_total": GELAR}}
+    block = {**PROGRAM, "phases": {"other_cycles_total": RESFRIAR}}
     with pytest.raises(vol.Invalid, match="phase other_cycles_total would create "
                                           "phase_other_cycles_total, phase other's"):
         schema(block)
@@ -119,13 +119,13 @@ def test_a_program_takes_what_the_spec_says(ha: HomeAssistant) -> None:
     program = module("features.cycle.program")
     config = program.SCHEMA({
         "above": 4,
-        "phases": {"heating": {"name": "Aquecendo", "above": 1000},
-                   "spinning": {"name": "Centrifugando", "above": 50, "below": 1000},
+        "phases": {"warming": {"name": "Aquecendo", "above": 1000},
+                   "wringing": {"name": "Centrifugando", "above": 50, "below": 1000},
                    "any": {"name": "Qualquer", "above": 50}},
     })
     detected = program.program_of(config)
     assert detected.band == program.Band(above=4, on_delay=timedelta(0), off_delay=timedelta(0))
-    assert [phase.key for phase in detected.phases] == ["heating", "spinning", "any", "other"]
+    assert [phase.key for phase in detected.phases] == ["warming", "wringing", "any", "other"]
     assert detected.phases[0].band.on_delay == timedelta(0)
     other = detected.phases[-1]
     assert other.band.on_delay == timedelta(seconds=30)
@@ -141,15 +141,15 @@ def test_a_program_takes_what_the_spec_says(ha: HomeAssistant) -> None:
 def test_the_keys_a_phase_creates(ha: HomeAssistant) -> None:
     """In the builder's namespace: phase_<key>, phase_<key>_<suffix>; the detector's own two."""
     program = module("features.cycle.program")
-    assert set(program.phase_keys("gelar")) == {
-        "phase_gelar", "phase_gelar_last_cycle_start", "phase_gelar_last_cycle_end",
-        "phase_gelar_last_cycle_duration", "phase_gelar_last_cycle_energy",
-        "phase_gelar_cycles_total", "phase_gelar_runtime_total", "phase_gelar_energy_total"}
+    assert set(program.phase_keys("resfriar")) == {
+        "phase_resfriar", "phase_resfriar_last_cycle_start", "phase_resfriar_last_cycle_end",
+        "phase_resfriar_last_cycle_duration", "phase_resfriar_last_cycle_energy",
+        "phase_resfriar_cycles_total", "phase_resfriar_runtime_total", "phase_resfriar_energy_total"}
     assert set(program.FIXED) == {"phase_current", "phase_last"}
-    assert set(program.COUNTERS.needs) == {"runtime", "cycles", "energy"}
+    assert set(program.PHASE_COUNTERS) == {"runtime", "cycles", "energy"}
 
 
-# --- the program alone: today's appliance `running` ------------------------------
+# --- the program alone: 0.1's appliance `running` --------------------------------
 
 ALONE = {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}
 
@@ -212,14 +212,14 @@ def test_the_programs_cycle_never_ends_before_it_started(ha: HomeAssistant) -> N
     assert drive.cycles(None) == [(60, 60)]
 
 
-# --- today's modes, as phases -----------------------------------------------------
+# --- 0.1's `modes`, as phases -----------------------------------------------------
 
 MODES: dict[str, Any] = {
     "above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2},
     "phases": {
         "bebendo": {"name": "Bebendo", "above": 4, "below": 40,
                     "on_delay": {"seconds": 5}, "off_delay": {"minutes": 5}},
-        "gelar": GELAR,
+        "resfriar": RESFRIAR,
         "quente": {"name": "Água quente", "above": 300,
                    "on_delay": {"seconds": 10}, "off_delay": {"seconds": 30}},
     },
@@ -227,12 +227,12 @@ MODES: dict[str, Any] = {
 
 
 def purifier() -> Drive:
-    """test_modes' purifier: idle at 1 W, then 120 W from 125 s: the program at 145, gelar at 155."""
+    """The purifier of 0.1's modes tests: idle at 1 W, then 120 W from 125 s: the program at 145, resfriar at 155."""
     drive = Drive(MODES)
     drive.read(0, 1)
     drive.read(125, 120)
     drive.to(155)
-    assert drive.current == "gelar"
+    assert drive.current == "resfriar"
     return drive
 
 
@@ -244,20 +244,20 @@ def test_a_phase_starts_after_its_on_delay(ha: HomeAssistant) -> None:
     assert drive.detector.on
     assert drive.current == "idle"
     drive.to(155)
-    assert drive.started == [(None, 145), ("gelar", 155)]
-    assert drive.current == "gelar"
+    assert drive.started == [(None, 145), ("resfriar", 155)]
+    assert drive.current == "resfriar"
     # Its reading hasn't left: it has no end yet
-    assert drive.detector.end_so_far(drive.detector.run("gelar")) is None
+    assert drive.detector.end_so_far(drive.detector.run("resfriar")) is None
 
 
 def test_a_phase_ends_after_its_off_delay_at_when_it_left(ha: HomeAssistant) -> None:
     drive = purifier()
     drive.read(160, 1)
     drive.to(189)
-    assert drive.current == "gelar"
+    assert drive.current == "resfriar"
     drive.to(190)
     assert drive.current == "idle"
-    assert drive.cycles("gelar") == [(155, 160)]
+    assert drive.cycles("resfriar") == [(155, 160)]
 
 
 def test_back_in_its_band_cancels_the_end(ha: HomeAssistant) -> None:
@@ -265,20 +265,20 @@ def test_back_in_its_band_cancels_the_end(ha: HomeAssistant) -> None:
     drive.read(160, 1)
     drive.read(180, 120)
     drive.to(240)
-    assert drive.current == "gelar"
-    assert drive.cycles("gelar") == []
+    assert drive.current == "resfriar"
+    assert drive.cycles("resfriar") == []
 
 
 def test_after_a_dip_another_phase_waits_for_the_running_one(ha: HomeAssistant) -> None:
-    """From 120 W to 1000 W: quente's on_delay passes at 170, it starts when gelar ends at 190, from 170."""
+    """From 120 W to 1000 W: quente's on_delay passes at 170, it starts when resfriar ends at 190, from 170."""
     drive = purifier()
     drive.read(160, 1000)
     drive.to(172)
-    assert drive.current == "gelar"
-    assert drive.detector.running == ["gelar"]
+    assert drive.current == "resfriar"
+    assert drive.detector.running == ["resfriar"]
     drive.to(190)
     assert drive.current == "quente"
-    assert drive.cycles("gelar") == [(155, 160)]
+    assert drive.cycles("resfriar") == [(155, 160)]
     assert drive.started[-1] == ("quente", 170)
 
 
@@ -287,7 +287,7 @@ def test_a_dip_into_another_band_does_not_split_the_cycle(ha: HomeAssistant) -> 
     drive.read(160, 20)
     drive.read(170, 120)
     drive.to(800)
-    assert drive.current == "gelar"
+    assert drive.current == "resfriar"
     assert drive.ended == []
 
 
@@ -296,7 +296,7 @@ def test_a_short_visit_to_another_band_is_nothing(ha: HomeAssistant) -> None:
     drive.read(160, 1000)
     drive.read(165, 120)
     drive.to(800)
-    assert drive.current == "gelar"
+    assert drive.current == "resfriar"
     assert drive.ended == []
 
 
@@ -331,18 +331,18 @@ def test_no_value_keeps_the_phase_and_counts_its_delays_again(ha: HomeAssistant)
     drive.read(160, 1000)
     drive.read(165, None)
     drive.to(765)
-    assert drive.current == "gelar"
+    assert drive.current == "resfriar"
     drive.read(765, 1000)
     drive.to(790)
-    assert drive.current == "gelar"  # its off_delay counts from 765
+    assert drive.current == "resfriar"  # its off_delay counts from 765
     drive.to(795)
     assert drive.current == "quente"
-    assert drive.cycles("gelar") == [(155, 160)]
+    assert drive.cycles("resfriar") == [(155, 160)]
     assert drive.started[-1] == ("quente", 775)
 
 
 def test_a_handover_never_shows_idle(ha: HomeAssistant) -> None:
-    """gelar ends and quente starts in one step: nothing in between."""
+    """resfriar ends and quente starts in one step: nothing in between."""
     drive = purifier()
     drive.read(160, 1000)
     drive.to(189)
@@ -360,8 +360,8 @@ def test_a_phases_energy_is_the_counter_from_its_start_to_its_end(ha: HomeAssist
     drive.kwh = 100.05
     drive.read(755, 1)
     drive.to(790)
-    assert drive.cycles("gelar") == [(155, 755)]
-    assert drive.energy["gelar"] == pytest.approx(0.05)
+    assert drive.cycles("resfriar") == [(155, 755)]
+    assert drive.energy["resfriar"] == pytest.approx(0.05)
 
 
 def test_after_the_program_a_band_still_holding_starts_with_the_next(ha: HomeAssistant) -> None:
@@ -454,21 +454,21 @@ def test_phases_starting_at_one_instant_start_in_the_configurations_order(
     assert drive.current == current
 
 
-# --- today's phases ---------------------------------------------------------------
+# --- 0.1's `phases` ---------------------------------------------------------------
 
 WASHER: dict[str, Any] = {
     "above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2},
-    "phases": {"heating": {"name": "Aquecendo", "above": 1000},
-               "spinning": {"name": "Centrifugando", "above": 50, "below": 1000,
+    "phases": {"warming": {"name": "Aquecendo", "above": 1000},
+               "wringing": {"name": "Centrifugando", "above": 50, "below": 1000,
                             "on_delay": {"minutes": 3}}},
 }
 
 
 def washer(config: dict[str, Any] = WASHER) -> Drive:
-    """test_phases' washer: idle at 1.4 W; 120 W from 125 s runs it at 185, then 7 W at 190.
+    """The washer of 0.1's phases tests: idle at 1.4 W; 120 W from 125 s runs it at 185, then 7 W at 190.
 
-    Each scenario's first reading comes 10 s after the 7 W (test_phases writes
-    it at the same instant), so every instant is 10 s later than there.
+    Its first reading came at the same instant as the 7 W, so every instant
+    here is 10 s later.
     """
     drive = Drive(config)
     drive.read(0, 1.4)
@@ -482,21 +482,21 @@ def washer(config: dict[str, Any] = WASHER) -> Drive:
 def test_a_band_without_on_delay_holds_at_once_and_ends_at_once(ha: HomeAssistant) -> None:
     drive = washer()
     drive.read(200, 1900)
-    assert drive.current == "heating"
+    assert drive.current == "warming"
     drive.read(800, 121)
-    assert drive.cycles("heating") == [(200, 800)]
-    assert drive.detector.seen == ["heating"]
+    assert drive.cycles("warming") == [(200, 800)]
+    assert drive.detector.seen == ["warming"]
 
 
 def test_a_band_with_on_delay_holds_after_it(ha: HomeAssistant) -> None:
     drive = washer()
     drive.read(200, 150)
     drive.to(379)
-    assert "spinning" not in drive.detector.running
+    assert "wringing" not in drive.detector.running
     drive.to(380)
-    assert drive.current == "spinning"
+    assert drive.current == "wringing"
     drive.read(400, 22)
-    assert drive.cycles("spinning") == [(380, 400)]
+    assert drive.cycles("wringing") == [(380, 400)]
 
 
 def test_leaving_before_its_on_delay_is_not_the_phase(ha: HomeAssistant) -> None:
@@ -504,7 +504,7 @@ def test_leaving_before_its_on_delay_is_not_the_phase(ha: HomeAssistant) -> None
     drive.read(200, 150)
     drive.read(288, 7)
     drive.to(700)
-    assert "spinning" not in drive.detector.seen
+    assert "wringing" not in drive.detector.seen
 
 
 def test_overlapping_bands_run_at_once_and_none_wins(ha: HomeAssistant) -> None:
@@ -533,14 +533,14 @@ def test_seen_stays_after_the_program_and_clears_with_the_next(ha: HomeAssistant
     drive.to(420)
     assert not drive.detector.on
     assert drive.current == "idle"
-    assert drive.detector.seen == ["heating"]
+    assert drive.detector.seen == ["warming"]
     drive.read(500, 120)
     drive.to(560)
     assert drive.detector.seen == []
 
 
 def test_seen_holds_after_the_program_over_a_restart(ha: HomeAssistant) -> None:
-    """The washer finished after heating, then HA restarts: seen still shows heating."""
+    """The washer finished after warming, then HA restarts: seen still shows warming."""
     drive = washer()
     drive.read(200, 1900)
     drive.read(260, 121)
@@ -551,7 +551,7 @@ def test_seen_holds_after_the_program_over_a_restart(ha: HomeAssistant) -> None:
     assert not restored.on
     assert restored.current == "idle"
     assert restored.running == []
-    assert restored.seen == ["heating"]
+    assert restored.seen == ["warming"]
 
 
 def test_readings_while_stopped_start_nothing(ha: HomeAssistant) -> None:
@@ -570,7 +570,7 @@ def test_a_band_before_the_program_counts_when_it_starts(ha: HomeAssistant) -> N
     drive.read(125, 30)
     drive.read(145, 1900)
     drive.to(185)
-    assert drive.started == [(None, 185), ("heating", 185)]
+    assert drive.started == [(None, 185), ("warming", 185)]
 
 
 def test_a_band_pending_its_on_delay_starts_over_after_no_value(ha: HomeAssistant) -> None:
@@ -579,9 +579,9 @@ def test_a_band_pending_its_on_delay_starts_over_after_no_value(ha: HomeAssistan
     drive.read(300, None)
     drive.read(420, 150)
     drive.to(599)
-    assert "spinning" not in drive.detector.running
+    assert "wringing" not in drive.detector.running
     drive.to(600)
-    assert drive.current == "spinning"
+    assert drive.current == "wringing"
 
 
 def test_no_value_keeps_a_phase_whose_band_held(ha: HomeAssistant) -> None:
@@ -589,28 +589,28 @@ def test_no_value_keeps_a_phase_whose_band_held(ha: HomeAssistant) -> None:
     drive.read(200, 1900)
     drive.read(210, None)
     drive.to(510)
-    assert drive.current == "heating"
+    assert drive.current == "warming"
     drive.read(510, 121)
-    assert drive.cycles("heating") == [(200, 510)]
+    assert drive.cycles("warming") == [(200, 510)]
 
 
 # --- the idle gap -----------------------------------------------------------------
 
 
 def test_after_an_idle_gap_the_next_phase_does_not_wait(ha: HomeAssistant) -> None:
-    """gelar leaves for no band (40 W is neither's); a sip 10 s later starts at its on_delay.
+    """resfriar leaves for no band (40 W is neither's); a sip 10 s later starts at its on_delay.
 
-    Today it waits for gelar's off_delay, and a sip shorter than that is lost.
+    Today it waits for resfriar's off_delay, and a sip shorter than that is lost.
     """
     drive = purifier()
     drive.read(160, 40)
     drive.read(170, 20)
     drive.to(175)
     assert drive.current == "bebendo"
-    assert drive.detector.running == ["bebendo", "gelar"]
+    assert drive.detector.running == ["bebendo", "resfriar"]
     drive.read(180, 1)
     drive.to(190)
-    assert drive.cycles("gelar") == [(155, 160)]
+    assert drive.cycles("resfriar") == [(155, 160)]
     drive.to(300)
     assert drive.cycles("bebendo") == [(175, 180)]
 
@@ -622,15 +622,15 @@ def test_after_an_idle_gap_below_the_program_the_next_phase_does_not_wait(
     drive.read(0, 0.8)
     drive.read(10, 12)
     drive.to(20)
-    assert drive.current == "cooling"
+    assert drive.current == "frosting"
     drive.read(300, 0.8)
     drive.read(320, 3.2)
     drive.to(321)
-    assert drive.current == "dispensing"
+    assert drive.current == "pouring"
     drive.read(330, 0.8)
     drive.to(600)
-    assert drive.cycles("cooling") == [(20, 300)]
-    assert drive.cycles("dispensing") == [(321, 330)]
+    assert drive.cycles("frosting") == [(20, 300)]
+    assert drive.cycles("pouring") == [(321, 330)]
     assert drive.cycles(None) == [(11, 330)]
 
 
@@ -639,7 +639,7 @@ def test_a_gap_then_back_in_its_band_is_still_one_cycle(ha: HomeAssistant) -> No
     drive.read(160, 40)
     drive.read(170, 120)
     drive.to(800)
-    assert drive.current == "gelar"
+    assert drive.current == "resfriar"
     assert drive.ended == []
 
 
@@ -660,13 +660,13 @@ def test_other_runs_outside_every_band_after_its_on_delay(ha: HomeAssistant) -> 
 def test_other_ends_at_once_when_a_phase_starts(ha: HomeAssistant) -> None:
     drive = washer()
     drive.read(300, 1900)
-    assert drive.current == "heating"
+    assert drive.current == "warming"
     assert drive.cycles("other") == [(220, 300)]
-    assert drive.detector.running == ["heating"]
+    assert drive.detector.running == ["warming"]
 
 
 def test_other_ends_after_its_off_delay_when_no_phase_starts(ha: HomeAssistant) -> None:
-    """150 W is spinning's band, whose on_delay is 3 min: other ends at its off_delay, from when it left."""
+    """150 W is wringing's band, whose on_delay is 3 min: other ends at its off_delay, from when it left."""
     drive = washer()
     drive.read(300, 150)
     drive.to(329)
@@ -702,7 +702,7 @@ def test_a_spike_shorter_than_others_on_delay_is_nothing(ha: HomeAssistant) -> N
     drive.read(10, 500)
     drive.read(12, 12)
     drive.to(600)
-    assert drive.detector.seen == ["cooling"]
+    assert drive.detector.seen == ["frosting"]
 
 
 def test_others_delays_are_tuned(ha: HomeAssistant) -> None:
@@ -726,14 +726,14 @@ def test_no_other_without_phases(ha: HomeAssistant) -> None:
 
 
 def test_each_delay_passes_at_its_own_time(ha: HomeAssistant) -> None:
-    """One late advance gives the same cycles as a timer on time: the program at 145, gelar at 155, quente at 170."""
+    """One late advance gives the same cycles as a timer on time: the program at 145, resfriar at 155, quente at 170."""
     drive = Drive(MODES)
     drive.read(0, 1)
     drive.read(125, 120)
     drive.read(160, 1000)
     drive.to(10_000)
-    assert drive.started[:3] == [(None, 145), ("gelar", 155), ("quente", 170)]
-    assert drive.cycles("gelar") == [(155, 160)]
+    assert drive.started[:3] == [(None, 145), ("resfriar", 155), ("quente", 170)]
+    assert drive.cycles("resfriar") == [(155, 160)]
 
 
 def test_a_phase_whose_delay_passes_as_the_program_ends_waits_for_the_next(
@@ -790,7 +790,7 @@ def _program_leaving() -> Drive:
 
 
 def _phase_leaving() -> Drive:
-    """spinning: 150 W from 200 s, its on_delay passing at 380 s, when 7 W comes."""
+    """wringing: 150 W from 200 s, its on_delay passing at 380 s, when 7 W comes."""
     drive = washer()
     drive.read(200, 150)
     drive.read(380, 7)
@@ -806,7 +806,7 @@ def _other_leaving() -> Drive:
 
 @pytest.mark.parametrize(("leaving", "key"), [
     pytest.param(_program_leaving, None, id="the program"),
-    pytest.param(_phase_leaving, "spinning", id="a phase"),
+    pytest.param(_phase_leaving, "wringing", id="a phase"),
     pytest.param(_other_leaving, "other", id="other"),
 ])
 def test_a_reading_leaving_as_its_on_delay_passes_starts_nothing(
@@ -819,22 +819,37 @@ def test_a_reading_leaving_as_its_on_delay_passes_starts_nothing(
 
 
 def test_a_reading_back_as_its_off_delay_passes_keeps_the_cycle(ha: HomeAssistant) -> None:
-    """gelar left at 160 s; 120 W comes back at 190 s, the instant its off_delay passes: the reading first, gelar goes on."""
+    """resfriar left at 160 s; 120 W comes back at 190 s, the instant its off_delay passes: the reading first, resfriar goes on."""
     drive = purifier()
     drive.read(160, 1)
     drive.read(190, 120)
     drive.to(1000)
-    assert drive.current == "gelar"
+    assert drive.current == "resfriar"
     assert drive.ended == []
 
 
+def test_catch_up_is_what_a_late_reading_passes_first(ha: HomeAssistant) -> None:
+    """on_delay 0, the program's off_delay passed at 130 s, 100 W read at 140 s: catch_up gives its end alone, then read its restart; together, read's own changes."""
+    config = {"above": 4, "off_delay": {"minutes": 2}}
+    alone, split = Drive(config), Drive(config)
+    for drive in (alone, split):
+        drive.read(0, 100)
+        drive.read(10, 1)
+    alone.read(140, 100)
+    split._note(split.detector.catch_up(at(140), None))
+    assert (split.started, split.ended) == ([(None, 0)], [(None, 0, 10)])
+    split.read(140, 100)
+    assert (split.started, split.ended) == (alone.started, alone.ended)
+    assert alone.started == [(None, 0), (None, 140)]
+
+
 def test_at_one_instant_a_phase_ends_before_another_starts(ha: HomeAssistant) -> None:
-    """gelar left for no band at 160 s (its end at 190); bebendo's on_delay passes at 190 too: gelar's end comes first."""
+    """resfriar left for no band at 160 s (its end at 190); bebendo's on_delay passes at 190 too: resfriar's end comes first."""
     drive = purifier()
     drive.read(160, 40)
     drive.read(185, 20)
     changes = drive.detector.advance(at(190), None)
-    assert [(type(c).__name__, c.key) for c in changes] == [("Ended", "gelar"),
+    assert [(type(c).__name__, c.key) for c in changes] == [("Ended", "resfriar"),
                                                              ("Started", "bebendo")]
 
 
@@ -847,16 +862,16 @@ def test_a_snapshot_restores_the_running_cycles(ha: HomeAssistant) -> None:
     restored = program.Detector(drive.detector.program)
     restored.restore(data)
     assert restored.on
-    assert restored.current == "gelar"
-    assert restored.run("gelar").until == at(160)
-    assert restored.seen == ["gelar"]
+    assert restored.current == "resfriar"
+    assert restored.run("resfriar").until == at(160)
+    assert restored.seen == ["resfriar"]
     # Its delays count again from the next reading, and the end stays
     assert restored.due() is None
     changes = restored.read(1000, at(200), None)
     assert changes == []
     changes = restored.advance(at(230), None)
-    # gelar's end is confirmed 30 s after the first reading; quente, armed at 210, waited for it
-    assert [(type(c).__name__, c.key) for c in changes] == [("Ended", "gelar"),
+    # resfriar's end is confirmed 30 s after the first reading; quente, armed at 210, waited for it
+    assert [(type(c).__name__, c.key) for c in changes] == [("Ended", "resfriar"),
                                                              ("Started", "quente")]
     assert changes[0].cycle.end == at(160)
     assert changes[1].since == at(210)
@@ -867,30 +882,30 @@ NAIVE = "2026-09-16T13:00:00"
 
 @pytest.mark.parametrize(("data", "on", "running", "seen"), [
     pytest.param({}, False, [], [], id="empty"),
-    pytest.param({"program": None, "phases": {"gelar": {"since": None}}}, False, [], [],
+    pytest.param({"program": None, "phases": {"resfriar": {"since": None}}}, False, [], [],
                  id="a phase without the program"),
-    pytest.param({"program": None, "seen": ["gone", 5, "gelar"]}, False, [], ["gelar"],
+    pytest.param({"program": None, "seen": ["gone", 5, "resfriar"]}, False, [], ["resfriar"],
                  id="seen while stopped"),
     pytest.param({"program": "garbage"}, False, [], [], id="program not a map"),
-    pytest.param({"program": {}, "seen": ["gelar"]}, False, [], ["gelar"],
+    pytest.param({"program": {}, "seen": ["resfriar"]}, False, [], ["resfriar"],
                  id="program without a start"),
     pytest.param({"program": {"since": NAIVE}}, False, [], [], id="program's start without a zone"),
-    pytest.param({"program": {"since": "2026-02-30T10:00:00+00:00"}, "seen": ["gelar"]},
-                 False, [], ["gelar"], id="program's impossible date"),
+    pytest.param({"program": {"since": "2026-02-30T10:00:00+00:00"}, "seen": ["resfriar"]},
+                 False, [], ["resfriar"], id="program's impossible date"),
     pytest.param({"program": {"since": T0.isoformat()},
-                  "phases": {"gelar": {"since": "2026-13-45T00:00:00+00:00",
+                  "phases": {"resfriar": {"since": "2026-13-45T00:00:00+00:00",
                                        "until": "2026-02-30T10:00:00+00:00"}},
-                  "order": ["gelar"], "seen": ["gelar"]}, True, ["gelar"], ["gelar"],
+                  "order": ["resfriar"], "seen": ["resfriar"]}, True, ["resfriar"], ["resfriar"],
                  id="a phase's impossible dates"),
     pytest.param({"program": {"since": T0.isoformat()}, "phases": {"gone": {"since": T0.isoformat()}},
-                  "order": ["gone", 5], "seen": ["gone", "gelar"]}, True, [], ["gelar"],
+                  "order": ["gone", 5], "seen": ["gone", "resfriar"]}, True, [], ["resfriar"],
                  id="a phase no longer configured"),
-    pytest.param({"program": {"since": T0.isoformat()}, "phases": {"gelar": {}},
-                  "order": [["x"], "gelar"], "seen": [["x"], "gelar"]}, True, ["gelar"], ["gelar"],
+    pytest.param({"program": {"since": T0.isoformat()}, "phases": {"resfriar": {}},
+                  "order": [["x"], "resfriar"], "seen": [["x"], "resfriar"]}, True, ["resfriar"], ["resfriar"],
                  id="keys not strings"),
     pytest.param({"program": {"since": T0.isoformat()},
-                  "phases": {"gelar": {"since": NAIVE, "until": NAIVE}},
-                  "order": ["gelar"], "seen": ["gelar"]}, True, ["gelar"], ["gelar"],
+                  "phases": {"resfriar": {"since": NAIVE, "until": NAIVE}},
+                  "order": ["resfriar"], "seen": ["resfriar"]}, True, ["resfriar"], ["resfriar"],
                  id="a phase's times without a zone"),
     pytest.param({"program": {"since": T0.isoformat()}, "phases": "garbage", "order": "garbage",
                   "seen": "garbage"}, True, [], [], id="garbage"),
@@ -919,13 +934,13 @@ def test_a_phase_restored_twice_runs_once(ha: HomeAssistant) -> None:
     program = module("features.cycle.program")
     detector = program.Detector(program.program_of(program.SCHEMA(MODES)))
     detector.restore({"program": {"since": T0.isoformat()},
-                      "phases": {"gelar": {"until": at(60).isoformat()}},
-                      "order": ["gelar", "gelar"], "seen": ["gelar"]})
-    assert detector.running == ["gelar"]
-    assert detector.end_so_far(detector.run("gelar")) == at(60)
+                      "phases": {"resfriar": {"until": at(60).isoformat()}},
+                      "order": ["resfriar", "resfriar"], "seen": ["resfriar"]})
+    assert detector.running == ["resfriar"]
+    assert detector.end_so_far(detector.run("resfriar")) == at(60)
     changes = detector.read(1, at(100), None)
     changes += detector.advance(at(130), None)
-    assert [(c.key, c.cycle.start, c.cycle.end) for c in changes] == [("gelar", None, at(60))]
+    assert [(c.key, c.cycle.start, c.cycle.end) for c in changes] == [("resfriar", None, at(60))]
 
 
 # --- a real day of a water purifier (anonymised) ----------------------------------
@@ -933,11 +948,11 @@ def test_a_phase_restored_twice_runs_once(ha: HomeAssistant) -> None:
 PURIFIER: dict[str, Any] = {
     "above": 2.9, "on_delay": {"seconds": 1}, "off_delay": {"minutes": 1},
     "phases": {
-        "dispensing": {"name": "Beber água", "above": 2.9, "below": 4,
+        "pouring": {"name": "Servir água", "above": 2.9, "below": 4,
                        "on_delay": {"seconds": 1}, "off_delay": {"minutes": 1}},
-        "cooling": {"name": "Gelar", "above": 4, "below": 150,
+        "frosting": {"name": "Resfriar", "above": 4, "below": 150,
                     "on_delay": {"seconds": 10}, "off_delay": {"minutes": 3}},
-        "heating": {"name": "Esquentar", "above": 150, "below": 400,
+        "warming": {"name": "Aquecer", "above": 150, "below": 400,
                     "on_delay": {"seconds": 30}, "off_delay": {"seconds": 30}},
     },
 }
@@ -972,20 +987,20 @@ def replay(name: str) -> list[tuple[str | None, datetime | None, datetime]]:
 
 @pytest.mark.usefixtures("ha")
 def test_the_real_day_counts_each_kind() -> None:
-    """Each drink, chill and heating its own cycle, as today's modes count them; no `other`."""
+    """Each drink, chill and warming its own cycle, as 0.1's `modes` count them; no `other`."""
     ended = replay("purifier_day.csv")
     assert Counter(key for key, *_ in ended) == {
-        None: 33, "dispensing": 14, "cooling": 21, "heating": 2}
+        None: 33, "pouring": 14, "frosting": 21, "warming": 2}
 
 
 @pytest.mark.usefixtures("ha")
-def test_the_heating_at_10_10_is_not_truncated() -> None:
+def test_the_warming_at_10_10_is_not_truncated() -> None:
     """10:10 UTC: a 3m39s plateau from 10:10:20, 48 s after a chill's tail.
 
     Recorded from its on_delay (10:10:50) to when it left (10:13:59): 189 s.
-    An older replay of the modes recorded ~69 s, the rest credited to cooling.
+    An older replay of the modes recorded ~69 s, the rest credited to frosting.
     """
-    heatings = [(start, end) for key, start, end in replay("purifier_day.csv") if key == "heating"]
+    heatings = [(start, end) for key, start, end in replay("purifier_day.csv") if key == "warming"]
     start, end = heatings[-1]
     assert start == datetime(2020, 1, 1, 10, 10, 50, 569000, tzinfo=UTC)
     assert end == datetime(2020, 1, 1, 10, 13, 59, 899000, tzinfo=UTC)

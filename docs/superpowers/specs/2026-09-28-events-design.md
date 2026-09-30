@@ -4,7 +4,7 @@ Version: 0.1.19.
 
 ## Goal
 
-Send what pururu's entities do to an outside system (the owner's: n8n, through a webhook), generically. pururu doesn't speak HTTP: it fires **its own events on HA's bus**, one per state change of an entity it created, carrying the change and a snapshot of its device. Whatever consumes HA events takes them from there: for a webhook, the user's automation calling a `rest_command` of their own.
+Send what pururu's entities do to an outside system (through a webhook), generically. pururu doesn't speak HTTP: it fires **its own events on HA's bus**, one per state change of an entity it created, carrying the change and a snapshot of its device. Whatever consumes HA events takes them from there: for a webhook, the user's automation calling a `rest_command` of their own.
 
 ```yaml
 pururu:
@@ -12,23 +12,23 @@ pururu:
   devices: ...
 
 rest_command:
-  n8n_pururu:
-    url: !secret n8n_pururu_url
+  webhook_pururu:
+    url: !secret webhook_pururu_url
     method: post
     headers:
-      X-Pururu-Token: !secret n8n_pururu_token
+      X-Webhook-Token: !secret webhook_pururu_token
     content_type: application/json
     payload: "{{ event | tojson }}"
 
 automation:
-  - alias: pururu → n8n
+  - alias: pururu → webhook
     mode: queued
     max: 1000
     triggers:
       - trigger: event
         event_type: [pururu_state_changed, pururu_reading]
     actions:
-      - action: rest_command.n8n_pururu
+      - action: rest_command.webhook_pururu
         data:
           event: "{{ trigger.event.data }}"
 ```
@@ -80,7 +80,7 @@ Event types `pururu_state_changed` and `pururu_reading`, the same data:
 | `entity_id` | The entity's current ID (a UI rename is followed). |
 | `device` | The device's key in the YAML. |
 | `device_name` | The device's `name`. |
-| `key` | The entity key in its namespace, as its unique ID after `pururu_<device>_` (and its translation key): `appliance_last_cycle_end`, `mode_heating_cycles_total`. |
+| `key` | The entity key in its namespace, as its unique ID after `pururu_<device>_` (and its translation key): `appliance_last_cycle_end`, `mode_warming_cycles_total`. |
 | `old`, `new` | The states, as HA's strings. |
 | `time` | The new state's `last_changed` (ISO 8601): when it changed, not when it was fired. |
 | `attributes` | The new state's attributes, as HA's JSON reads them back (plain keys, a datetime as ISO text): a template renders anything else as Python's repr, and the recipe would post a string. |
@@ -123,7 +123,7 @@ For each enabled class, a state change of an entity **the entry created** (in `e
 
 ## Docs
 
-- `docs/concepts/events.mdx`, new, in the Concepts sidebar: what fires and what doesn't, the two classes, the data, the recipe above (`rest_command` + automation), the n8n side (a Webhook node with Header Auth, a Switch on `event_class` or `event_name`, `states` for the cycle's values), and the recorder: `recorder: exclude: event_types: [pururu_reading]` (or both), since the values are already recorded as the entities' states.
+- `docs/concepts/events.mdx`, new, in the Concepts sidebar: what fires and what doesn't, the two classes, the data, the recipe above (`rest_command` + automation), the receiving side (the token header checked, a route on `event_class` or `event_name`, `states` for the cycle's values), and the recorder: `recorder: exclude: event_types: [pururu_reading]` (or both), since the values are already recorded as the entities' states.
 - `docs/reference/configuration.mdx`: `events`.
 - README: one line linking to the page.
 

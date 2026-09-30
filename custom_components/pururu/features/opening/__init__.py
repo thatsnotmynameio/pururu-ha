@@ -20,7 +20,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Build, Device, Feature
-from ...core.roles import Counters, Provides
+from ...core.roles import Counted, Counters
 from .. import standing
 from ..cycle.last import LastCycleDescription, LastCycleValue
 from ..cycle.totals import CyclesTotal, RuntimeTotal
@@ -30,7 +30,7 @@ from .open import Open
 _LOGGER = logging.getLogger(__name__)
 
 # Its totals, <counter>_total; the statistics aspect meters them
-COUNTERS = Counters({"openings": None, "open_time": None})
+COUNTED = Counted(needs={"openings": None, "open_time": None})
 
 SCHEMA = vol.Schema(
     {
@@ -69,7 +69,7 @@ LAST_OPENING: tuple[LastCycleDescription, ...] = (
 ENTITY_KEYS: dict[str, Platform] = {
     "open": Platform.BINARY_SENSOR,
     **{description.key: Platform.SENSOR for description in LAST_OPENING},
-    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS.needs},
+    **{f"{counter}_total": Platform.SENSOR for counter in COUNTED.needs},
     **events.ENTITY_KEYS,
 }
 
@@ -129,9 +129,9 @@ def _opening(namespace: str, device_class: BinarySensorDeviceClass) -> Feature:
         schema=SCHEMA,
         entity_keys=ENTITY_KEYS,
         build=_builder(device_class),
-        example={"contact": f"binary_sensor.demo_{namespace}_contact"},
+        example={"contact": f"binary_sensor.dummy_{namespace}_contact"},
         namespace=namespace,
-        roles=(Provides("cycle", "open"), COUNTERS),
+        roles=(Counters((COUNTED,)),),
     )
 
 

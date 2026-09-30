@@ -9,23 +9,23 @@ A device **listens** to events and **reacts** to them. This spec is the listenin
 ```yaml
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance: {power: sensor.washer_plug_power, running: {threshold: 4}}
       alerts:
         overload: {name: Sobrecarga, when: appliance_power, above: 2500}
     laundry_lights:
-      name: Luzes da lavanderia
+      name: Luzes da despensa
       lights:
-        teto: {entity: light.lavanderia_teto, name: Teto}
+        teto: {entity: light.despensa_teto, name: Teto}
       reactions:
         teto_on:     {name: Teto acendeu, when: light_teto, to: "on"}
-        washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off"}
-        overload:    {name: Sobrecarga, device: laundry_washer, when: alert_overload, to: "on"}
-        door:        {name: Porta abriu, entity: binary_sensor.porta_lavanderia, to: "on", for: {minutes: 5}}
+        washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off"}
+        overload:    {name: Sobrecarga, device: clothes_washer, when: alert_overload, to: "on"}
+        door:        {name: Porta abriu, entity: binary_sensor.porta_despensa, to: "on", for: {minutes: 5}}
         night:       {name: Noite, at: "22:00"}
         dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
-# → automation.pururu_laundry_lights_reaction_washer_done   "Luzes da lavanderia Lavadora terminou"
+# → automation.pururu_laundry_lights_reaction_washer_done   "Luzes da despensa Lavadora terminou"
 # → one automation per other reaction, in pururu/automations/reactions.yaml
 ```
 
@@ -46,7 +46,7 @@ automation pururu: !include_dir_merge_list pururu/automations
 | Include form | `!include_dir_merge_list pururu/automations`, not `!include pururu/automations.yaml`: a plain include of a missing file stops HA from loading its configuration, while a missing folder loads as an empty list. |
 | Vocabulary | pururu's own, flat, as `alerts`, translated to HA triggers. Rejected: HA's native trigger syntax inside a reaction (verbose, errors only at setup since trigger validation is async, entity keys resolvable only in known fields). A native escape hatch can be added later without changing any YAML written for this one. |
 | Sources | Five: an entity key of the device (`when`), of another device (`device` + `when`), a real entity (`entity`), a time (`at`), the sun (`sun`, `offset`). One source per reaction. Deferred: weekdays for `at`, several sources in one reaction, HA events, zones, time patterns, templates. |
-| `device.when` in one string | No: `laundry_washer.appliance_running` reads as an entity ID, and a device may be keyed `light`. `device`, `when` and `entity` are separate keys, and `when` means exactly what it means in `alerts`. |
+| `device.when` in one string | No: `clothes_washer.appliance_running` reads as an entity ID, and a device may be keyed `light`. `device`, `when` and `entity` are separate keys, and `when` means exactly what it means in `alerts`. |
 | `unavailable` in between | HA's rules, since the automation is HA's. With `to` and no `from`, pururu adds `not_from: [unavailable, unknown]`, so a plug reconnecting (`unavailable → off`) never fires. A transition passing through `unavailable` (`on → unavailable → off`) isn't seen. Documented. |
 | The automation's entity ID | `automation.pururu_<device key>_reaction_<reaction key>`, the pururu pattern. HA derives it from the alias, so pururu pre-registers the entity with the public registry API before HA loads the file. A rename in the UI is kept. |
 | Is `reactions` a `Feature` | No. The `Feature` contract is about creating pururu entities (`entity_keys`, `build()`, translations, icons), and reactions create none. It's a device key, as `area`, in its own module. It doesn't count as a feature: a device still needs one. Programs' spec rejected a special device key because it would be a second path around `_creatable`, renames and stale removal; reactions have no entities of their own for those to handle, and they read `_creatable`'s result rather than going around it. |
@@ -91,11 +91,11 @@ One per reaction, in the order of `devices:` then `reactions:`:
 
 ```yaml
 - id: pururu_laundry_lights_reaction_washer_done
-  alias: Luzes da lavanderia Lavadora terminou
+  alias: Luzes da despensa Lavadora terminou
   description: "pururu: laundry_lights, washer_done"
   triggers:
     - trigger: state
-      entity_id: binary_sensor.pururu_laundry_washer_appliance_running
+      entity_id: binary_sensor.pururu_clothes_washer_appliance_running
       from: "on"
       to: "off"
   actions: []

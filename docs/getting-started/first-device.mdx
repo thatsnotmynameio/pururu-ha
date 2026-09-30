@@ -13,43 +13,43 @@ This tutorial turns a washing machine on a smart plug into a pururu device. Each
 
 ## Step 1: when is it running?
 
-pururu decides that the washer is running from the plug's power. Above a **threshold** it's running, and at or below it, it's not. Two delays keep that decision steady:
+pururu decides that the washer is running from the plug's power: above `above` it's running, and at or below it, it's not. Two delays keep that decision steady:
 
-- **`on_delay`**: how long the power must stay above the threshold before a cycle starts. It ignores short spikes, such as the display waking up when you press a button.
-- **`off_delay`**: how long the power must stay at or below the threshold before the cycle ends. It carries the cycle through pauses, such as when the drum rests or clothes soak between phases.
+- **`on_delay`**: how long the power must stay above `above` before a cycle starts. It ignores short spikes, such as the display waking up when you press a button.
+- **`off_delay`**: how long the power must stay at or below `above` before the cycle ends. It carries the cycle through pauses, such as when the drum rests or clothes soak between phases.
 
 ### Picking the numbers
 
 Open the plug's power sensor in **History** and look at a full wash:
 
-1. **Threshold**: find what the washer draws while it's idle or off, often 0 to 2 W. Then find the lowest it draws while working, outside the pauses. Pick a number between the two. A few watts above standby is usually right.
+1. **`above`**: find what the washer draws while it's idle or off, often 0 to 2 W. Then find the lowest it draws while working, outside the pauses. Pick a number between the two. A few watts above standby is usually right.
 2. **`on_delay`**: longer than any spike you see while the washer is idle. One minute is a safe start.
 3. **`off_delay`**: longer than the longest pause in the middle of a wash. A pause longer than `off_delay` ends the cycle early, and the rest of the wash then starts a second one. If your washer soaks for 5 minutes, use 6 or more.
 
 ```yaml title="configuration.yaml"
 pururu:
   devices:
-    laundry_washer:                 # the device's key: it becomes part of every entity ID
-      name: Máquina de lavar        # the name Home Assistant shows
+    clothes_washer:                 # the device's key: it becomes part of every entity ID
+      name: Tanquinho        # the name Home Assistant shows
       appliance:                    # a feature: an appliance on a power-measuring plug
         power: sensor.washer_plug_power
-        running:
-          threshold: 4              # in the power sensor's unit, usually W
+        running_program:
+          above: 4                  # in the power sensor's unit, usually W
           on_delay: {minutes: 1}
           off_delay: {minutes: 2}
 ```
 
-Reload with **Developer tools → YAML → Pururu**. Open **Settings → Devices & services → Devices** and you'll find **Máquina de lavar** with these entities:
+Reload with **Developer tools → YAML → Pururu**. Open **Settings → Devices & services → Devices** and you'll find **Tanquinho** with these entities:
 
 | Entity | |
 |---|---|
-| `sensor.pururu_laundry_washer_appliance_power` | The plug's power, repeated inside this device |
-| `binary_sensor.pururu_laundry_washer_appliance_running` | On while a cycle runs |
-| `sensor.pururu_laundry_washer_appliance_last_cycle_start` | When the last cycle started |
-| `sensor.pururu_laundry_washer_appliance_last_cycle_end` | When it ended |
-| `sensor.pururu_laundry_washer_appliance_last_cycle_duration` | How long it took, in minutes |
-| `sensor.pururu_laundry_washer_appliance_cycles_total` | Cycles counted since you added the device |
-| `sensor.pururu_laundry_washer_appliance_runtime_total` | Hours it has run since you added the device |
+| `sensor.pururu_clothes_washer_appliance_power` | The plug's power, repeated inside this device |
+| `binary_sensor.pururu_clothes_washer_appliance_running` | On while a cycle runs |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_start` | When the last cycle started |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_end` | When it ended |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_duration` | How long it took, in minutes |
+| `sensor.pururu_clothes_washer_appliance_cycles_total` | Cycles counted since you added the device |
+| `sensor.pururu_clothes_washer_appliance_runtime_total` | Hours it has run since you added the device |
 
 Every entity ID follows the same pattern, `<platform>.pururu_<device key>_<namespace>_<entity key>`, where the namespace is the feature's (`appliance` here), so you can predict it before it exists. See [Entity IDs](/concepts/entity-ids).
 
@@ -62,68 +62,61 @@ Add the plug's energy counter to measure how much each cycle uses. Add `statisti
 ```yaml title="configuration.yaml"
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         energy: sensor.washer_plug_energy
-        running:
-          threshold: 4
+        running_program:
+          above: 4
           on_delay: {minutes: 1}
           off_delay: {minutes: 2}
-        statistics:
-          runtime: [week, month]
-          cycles: [month, year]
+          statistics:
+            runtime: [week, month]
+            cycles: [month, year]
 ```
 
 After a reload, the device also has:
 
 | Entity | |
 |---|---|
-| `sensor.pururu_laundry_washer_appliance_energy_total` | The plug's energy counter, repeated inside this device |
-| `sensor.pururu_laundry_washer_appliance_last_cycle_energy` | Energy the last cycle used, always in kWh |
-| `sensor.pururu_laundry_washer_appliance_runtime_week`, `_runtime_month` | Hours run this week and this month |
-| `sensor.pururu_laundry_washer_appliance_cycles_month`, `_cycles_year` | Cycles this month and this year |
+| `sensor.pururu_clothes_washer_appliance_energy_total` | The plug's energy counter, repeated inside this device |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_energy` | Energy the last cycle used, always in kWh |
+| `sensor.pururu_clothes_washer_appliance_runtime_week`, `_runtime_month` | Hours run this week and this month |
+| `sensor.pururu_clothes_washer_appliance_cycles_month`, `_cycles_year` | Cycles this month and this year |
 
 Each period restarts on its own: `today` at midnight, `week` on Monday, `month` on the 1st and `year` on 1 January.
 
 ## Step 3: the phase of the wash
 
-A washer draws very different power as it works. Heating the water takes a lot, spinning takes some, and tumbling takes little. The [`phases`](/features/phases) feature turns those levels into a named phase:
+A washer draws very different power as it works. Warming the water takes a lot, wringing takes some, and tumbling takes little. `running_program`'s **phases** turn those levels into a named phase of the cycle:
 
 ```yaml title="configuration.yaml"
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         energy: sensor.washer_plug_energy
-        running:
-          threshold: 4
+        running_program:
+          above: 4
           on_delay: {minutes: 1}
           off_delay: {minutes: 2}
-        statistics:
-          runtime: [week, month]
-          cycles: [month, year]
-      phases:
-        cycle_from: appliance         # follow the cycle of this device's appliance feature
-        sensor: sensor.washer_plug_power
-        defaults:
-          stopped: idle               # the phase when no cycle runs
-          running: washing            # the phase in a cycle when no band holds
-        bands:
-          heating: {above: 1000}
-          spinning: {above: 50, below: 1000, for: {minutes: 3}}
+          statistics:
+            runtime: [week, month]
+            cycles: [month, year]
+          phases:
+            warming: {name: Aquecendo, above: 1000}
+            wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
 ```
 
-- `cycle_from: appliance` says whose cycle to follow: this device's `appliance` feature. Phases only change while that cycle runs.
-- Each **band** is a range of the sensor's value. `heating` holds as soon as the power goes above 1000 W. `spinning` holds once the power has stayed between 50 and 1000 W for 3 minutes.
-- When several bands hold, **the first one listed wins**. When none holds, the phase is `running`'s default, `washing`.
+- Each **phase** is a band of the same power sensor. `warming` holds as soon as the power goes above 1000 W. `wringing` holds once the power has stayed between 50 and 1000 W for 3 minutes (`on_delay`, as the program's own).
+- **Bands may overlap**, and when both hold at once, both phases run: nothing picks a winner. When neither holds, the phase is `other`, the built-in phase for the program's band outside every one you named. Outside a cycle, the phase is `idle`.
 
-You now have `sensor.pururu_laundry_washer_phase_current`. It shows `idle` outside a cycle and `washing`, `heating` or `spinning` during one. Its `seen` attribute lists the bands the current (or last) cycle went through.
+You now have `sensor.pururu_clothes_washer_appliance_phase_current`. It shows `idle` outside a cycle, `warming` or `wringing` while one of those holds, and `other` in between. Its `name` attribute is the running phase's `name` ("Aquecendo"), and its `seen` attribute lists the phases the current (or last) cycle went through, and `binary_sensor.pururu_clothes_washer_appliance_phase_warming` is on while `warming` runs.
 
-Watch a wash in **History** and tune the bands to your machine. Your own names work too: a name the translations don't know, such as `soaking`, is shown as written.
+Watch a wash in **History** and tune the bands to your machine. [Detected programs and phases](/concepts/detected-programs) covers overlapping bands, dips and idle gaps in full.
 
 ## Step 4: put it in a room
 
@@ -136,35 +129,29 @@ pururu:
       name: Térreo
       level: 0
   areas:
-    lavanderia:
-      name: Lavanderia
+    despensa:
+      name: Despensa
       floor: terreo
   devices:
-    laundry_washer:
-      name: Máquina de lavar
-      area: lavanderia
+    clothes_washer:
+      name: Tanquinho
+      area: despensa
       appliance:
         power: sensor.washer_plug_power
         energy: sensor.washer_plug_energy
-        running:
-          threshold: 4
+        running_program:
+          above: 4
           on_delay: {minutes: 1}
           off_delay: {minutes: 2}
-        statistics:
-          runtime: [week, month]
-          cycles: [month, year]
-      phases:
-        cycle_from: appliance
-        sensor: sensor.washer_plug_power
-        defaults:
-          stopped: idle
-          running: washing
-        bands:
-          heating: {above: 1000}
-          spinning: {above: 50, below: 1000, for: {minutes: 3}}
+          statistics:
+            runtime: [week, month]
+            cycles: [month, year]
+          phases:
+            warming: {name: Aquecendo, above: 1000}
+            wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
 ```
 
-After a reload, Home Assistant has a floor **Térreo** with the ID `terreo`, and an area **Lavanderia** with the ID `lavanderia` on it. The washer is in that area.
+After a reload, Home Assistant has a floor **Térreo** with the ID `terreo`, and an area **Despensa** with the ID `despensa` on it. The washer is in that area.
 
 <Info>
   The **key** is the ID: pururu makes sure the floor's ID is `terreo`, not whatever Home Assistant would derive from its name. A device's `area` must be one of the keys under `areas:`. Anything else is a configuration error. See [Floors and areas](/concepts/floors-and-areas).
@@ -179,7 +166,7 @@ pururu:
   config:
     notify: notify.mobile_app_phone
   devices:
-    laundry_washer:
+    clothes_washer:
       # ... as above
       appliance:
         # ... as above
@@ -187,13 +174,13 @@ pururu:
           finished:
 ```
 
-For a message with the cycle's numbers, write the automation yourself. `sensor.pururu_laundry_washer_appliance_last_cycle_end` changes once per finished cycle, and it's **written last**. By the time it changes, the cycle's start, duration and energy and `cycles_total` are already up to date, so an automation that triggers on it can read them:
+For a message with the cycle's numbers, write the automation yourself. `sensor.pururu_clothes_washer_appliance_last_cycle_end` changes once per finished cycle, and it's **written last**. By the time it changes, the cycle's start, duration and energy and `cycles_total` are already up to date, so an automation that triggers on it can read them:
 
 ```yaml title="automations.yaml"
 - alias: Laundry is done
   triggers:
     - trigger: state
-      entity_id: sensor.pururu_laundry_washer_appliance_last_cycle_end
+      entity_id: sensor.pururu_clothes_washer_appliance_last_cycle_end
       not_to: [unknown, unavailable]
   conditions:
     # Ignore a restart or a reload: only a real change from a known value counts
@@ -206,18 +193,18 @@ For a message with the cycle's numbers, write the automation yourself. `sensor.p
       data:
         title: Laundry is done
         message: >-
-          {{ states('sensor.pururu_laundry_washer_appliance_last_cycle_duration') }} min,
-          {{ states('sensor.pururu_laundry_washer_appliance_last_cycle_energy') }} kWh.
+          {{ states('sensor.pururu_clothes_washer_appliance_last_cycle_duration') }} min,
+          {{ states('sensor.pururu_clothes_washer_appliance_last_cycle_energy') }} kWh.
 ```
 
 Swap `persistent_notification.create` for your phone's `notify` action to get a push notification.
 
 ## What you built
 
-A **Máquina de lavar** device in the **Lavanderia** area. It knows when it runs, which phase it's in, how long and how much each wash took, and how many washes it did this month, and all of that comes from one plug. Every change after this is a YAML edit and a reload.
+A **Tanquinho** device in the **Despensa** area. It knows when it runs, which phase it's in, how long and how much each wash took, and how many washes it did this month, and all of that comes from one plug. Every change after this is a YAML edit and a reload.
 
 Next:
 
-- [`appliance`](/features/appliance) and [`phases`](/features/phases) list every setting and entity.
+- [`appliance`](/features/appliance) lists every setting and entity; [Detected programs and phases](/concepts/detected-programs) covers `running_program` in full.
 - [Devices and features](/concepts/devices-and-features) explains how a device is put together.
 - [Troubleshooting](/reference/troubleshooting) covers what to do when something doesn't appear.

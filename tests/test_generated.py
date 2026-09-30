@@ -80,7 +80,7 @@ AUTOMATION = Case(
     one="an automation", plural="automations", source="reactions and notifications",
     kind="AUTOMATIONS", empty=[],
     device="lights", namespace="reaction", block="reactions",
-    feature={"lights": {"teto": {"entity": "light.demo_teto", "name": "Teto"}}},
+    feature={"lights": {"teto": {"entity": "light.dummy_teto", "name": "Teto"}}},
     item={"name": "Noite", "at": "22:00"},
     process="homeassistant.components.automation._async_process_config",
 )
@@ -88,9 +88,9 @@ SCRIPT = Case(
     domain="script", folder="pururu/scripts", file="pururu/scripts/programs.yaml",
     merge="named", issue="scripts_not_included", data_key="scripts",
     one="a script", plural="scripts", source="programs", kind="SCRIPTS", empty={},
-    device="pool", namespace="program", block="programs",
-    feature={"switches": {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}},
-    item={"name": "Limpar", "sequence": [{"turn_on": "switch_pump"}]},
+    device="greenhouse", namespace="program", block="programs",
+    feature={"switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}},
+    item={"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}]},
     process="homeassistant.components.script._async_process_config",
 )
 

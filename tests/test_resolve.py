@@ -15,7 +15,7 @@ HOUSE: dict[str, Any] = {
         "name": "Washer",
         "appliance": {
             "power": "sensor.washer_power",
-            "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+            "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
             "alerts": {"offline": None},
         },
         "switches": {"plug": {"entity": "switch.washer_plug", "name": "Plug"}},

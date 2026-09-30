@@ -10,8 +10,8 @@ import voluptuous as vol
 from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 
-from ....core.feature import TEXT, Item, bounded, finite_float
-from ....core.roles import Counters
+from ....core.feature import EACH, TEXT, Item, Path, bounded, finite_float
+from ....core.roles import Counted
 from ..last import LAST_CYCLE
 
 # The current phase while none runs
@@ -44,16 +44,68 @@ NAMED: dict[str, Platform] = {
     **{f"{PHASE}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
     **{f"{PHASE}_{OTHER}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
 }
-# Each phase's totals, for the statistics aspect to meter (D2 mounts it); energy needs `energy`
-COUNTERS = Counters({"runtime": None, "cycles": None, "energy": "energy"})
+# Each phase's totals, for the statistics aspect to meter; energy needs the builder's `energy`
+PHASE_COUNTERS: dict[str, str | None] = {
+    "runtime": None,
+    "cycles": None,
+    "energy": "energy",
+}
+
+
+def phase_slug(key: str) -> str:
+    """A phase's entity keys' slug: phase_<key>, the one rule every phase key uses."""
+    return f"{PHASE}_{key}"
+
+
+def _phase_item(key: str, phase: Mapping[str, Any]) -> Item:
+    """A configured phase's item: phase_<key>, named by its name."""
+    return Item(slug=phase_slug(key), name=phase["name"])
+
+
+def _other_item(*_: Any) -> Item:
+    """Other's item: phase_other; its entities are named by their own translations."""
+    return Item(slug=f"{PHASE}_{OTHER}", name=OTHER)
+
+
+def counted(at: Path) -> tuple[Counted, ...]:
+    """Where a detected program at `at` counts: its own runtime and cycles, each phase's and other's.
+
+    The program's own totals are its builder's (the appliance's runtime_total,
+    cycles_total); a phase's and other's are phase_<key>_<counter>_total,
+    other's meters named by their own translations (phase_other_*).
+    """
+    return (
+        Counted(needs={"runtime": None, "cycles": None}, at=at),
+        Counted(needs=PHASE_COUNTERS, at=(*at, "phases", EACH), item=_phase_item),
+        Counted(
+            needs=PHASE_COUNTERS,
+            at=(*at, OTHER),
+            item=_other_item,
+            named=f"{PHASE}_{OTHER}",
+        ),
+    )
 
 
 def phase_keys(key: str) -> dict[str, Platform]:
     """Every entity key phase `key` can create: its binary sensor, then its cycle entities."""
-    slug = f"{PHASE}_{key}"
+    slug = phase_slug(key)
     return {
         slug: Platform.BINARY_SENSOR,
         **{f"{slug}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
+    }
+
+
+def keys_of(config: Mapping[str, Any]) -> dict[str, Platform]:
+    """Every entity key a program block's phases create, other's too: none without phases."""
+    if "phases" not in config:
+        return {}
+    return {
+        **FIXED,
+        **{
+            entity_key: platform
+            for key in (*config["phases"], OTHER)
+            for entity_key, platform in phase_keys(key).items()
+        },
     }
 
 
@@ -95,7 +147,7 @@ BAND: dict[vol.Marker, Any] = {
     vol.Optional("above"): finite_float,
     vol.Optional("below"): finite_float,
 }
-# A phase is a program without phases (and without statistics until D2 mounts them)
+# A phase is a program without phases; its statistics are the statistics aspect's
 PHASE_SCHEMA = vol.All(
     vol.Schema({vol.Required("name"): TEXT, **BAND, **_delays(timedelta(0))}),
     bounded("phase"),
@@ -162,7 +214,7 @@ class Phase:
     @property
     def item(self) -> Item:
         """Its entity keys' item: phase_<key>_<suffix>."""
-        return Item(slug=f"{PHASE}_{self.key}", name=self.name)
+        return Item(slug=phase_slug(self.key), name=self.name)
 
     @property
     def other(self) -> bool:
@@ -196,6 +248,8 @@ def program_of(config: Mapping[str, Any]) -> Program:
     if phases:
         other = config.get(OTHER, {"on_delay": OTHER_DELAY, "off_delay": OTHER_DELAY})
         # other's band has no bounds: only its delays count; `Detector.read` decides where it holds.
-        # Its name is only its item's: its entities are named by their own translations
-        phases.append(Phase(key=OTHER, name=OTHER, band=Band(**other)))
+        # Its name is only its item's: its entities are named by their own translations.
+        # Only its delays: the mounted block holds its statistics too
+        band = Band(on_delay=other["on_delay"], off_delay=other["off_delay"])
+        phases.append(Phase(key=OTHER, name=OTHER, band=band))
     return Program(band=_band(config), phases=tuple(phases))

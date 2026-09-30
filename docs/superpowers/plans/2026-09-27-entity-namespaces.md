@@ -29,7 +29,7 @@
 2. A translation or icon left under its old local key (`running`) — a person expects "Running", not a name made up from the entity ID. Tests in Task 1 (`test_every_translated_entity_key_is_created`, plus the existing `friendly_name` assertions in `test_appliance.py` and `test_phases.py`).
 3. `phases` taking its cycle from `appliance` across two namespaces, also after `running` is renamed in the UI — a person expects the phase to follow. Tests in Task 1 (`test_phases.py::test_follows_a_renamed_cycle`, and `test_init.py::test_a_capability_reaches_the_feature_that_requires_it`, whose `echo` also pins the key-equals-namespace rule).
 4. A switch keyed like an `appliance` entity key (`power`, `running`, `runtime_month`) — a person expects it accepted now, next to the appliance's. Test in Task 1 (`test_a_key_of_another_feature_is_accepted`).
-5. A device key ending in a namespace (`pool_switch`) next to a device whose switch key starts with it (`pool` + `switch_pump`) — a person expects a configuration error naming both, not one entity silently missing. Test in Task 1 (`test_two_devices_giving_one_entity_id_are_refused`).
+5. A device key ending in a namespace (`greenhouse_switch`) next to a device whose switch key starts with it (`greenhouse` + `switch_sprinkler`) — a person expects a configuration error naming both, not one entity silently missing. Test in Task 1 (`test_two_devices_giving_one_entity_id_are_refused`).
 
 ---
 
@@ -101,18 +101,18 @@ def test_every_translated_entity_key_is_created(features: dict[str, Any]) -> Non
 Constants at the top become (the made-up features get namespaces `gauge`, `echo`, `tags`; `echo`'s only entity key is its namespace, so it is written once):
 
 ```python
-LEVEL = "sensor.pururu_demo_widget_gauge_level"
-ACTIVE = "binary_sensor.pururu_demo_widget_gauge_active"
-ECHO = "sensor.pururu_demo_widget_echo"
-GAUGE = {"source": "sensor.demo_source"}
-WIDGET = {"name": "Widget", "gauge": GAUGE}
+LEVEL = "sensor.pururu_dummy_gizmo_gauge_level"
+ACTIVE = "binary_sensor.pururu_dummy_gizmo_gauge_active"
+ECHO = "sensor.pururu_dummy_gizmo_echo"
+GAUGE = {"source": "sensor.dummy_source"}
+GIZMO = {"name": "Gizmo", "gauge": GAUGE}
 PANEL = {"name": "Panel", "gauge": GAUGE}
-FIRST = "sensor.pururu_demo_widget_tags_first"
-SECOND = "sensor.pururu_demo_widget_tags_second"
+FIRST = "sensor.pururu_dummy_gizmo_tags_first"
+SECOND = "sensor.pururu_dummy_gizmo_tags_second"
 TAGS = {"first": {"name": "First"}, "second": {"name": "Second"}}
 ```
 
-In the `demo` fixture, add `namespace=` to each made-up `Feature`, right after `schema=`:
+In the `dummy` fixture, add `namespace=` to each made-up `Feature`, right after `schema=`:
 
 ```python
         "gauge": feature.Feature(
@@ -133,7 +133,7 @@ In the `demo` fixture, add `namespace=` to each made-up `Feature`, right after `
 In `test_device_holds_what_its_features_create`, the unique ID and translation key become:
 
 ```python
-    assert entry.unique_id == "pururu_demo_widget_gauge_level"
+    assert entry.unique_id == "pururu_dummy_gizmo_gauge_level"
     assert entry.translation_key == "gauge_level"
 ```
 
@@ -142,7 +142,7 @@ In `test_invalid_device_is_refused`, delete the two parameters with ids `configu
 In `test_a_configured_feature_creates_an_entity_per_key`:
 
 ```python
-    assert entry.unique_id == "pururu_demo_widget_tags_first"
+    assert entry.unique_id == "pururu_dummy_gizmo_tags_first"
 ```
 
 Replace `test_an_entity_key_used_twice_names_both_features` with:
@@ -150,18 +150,18 @@ Replace `test_an_entity_key_used_twice_names_both_features` with:
 ```python
 async def test_a_configured_key_may_be_another_features_entity_key(ha: HomeAssistant) -> None:
     """Each feature has its own namespace: tags' level is not gauge's."""
-    assert await setup(ha, {"demo_widget": {**WIDGET, "tags": {"level": {"name": "Level"},
+    assert await setup(ha, {"dummy_gizmo": {**GIZMO, "tags": {"level": {"name": "Level"},
                                                                "active": {"name": "Active"}}}})
-    assert held(ha, "demo_widget") == {LEVEL, ACTIVE, "sensor.pururu_demo_widget_tags_level",
-                                       "sensor.pururu_demo_widget_tags_active"}
+    assert held(ha, "dummy_gizmo") == {LEVEL, ACTIVE, "sensor.pururu_dummy_gizmo_tags_level",
+                                       "sensor.pururu_dummy_gizmo_tags_active"}
 ```
 
-Every `suggested_object_id="pururu_demo_widget_level"` becomes `suggested_object_id="pururu_demo_widget_gauge_level"`, and every `suggested_object_id="pururu_demo_widget_active"` becomes `suggested_object_id="pururu_demo_widget_gauge_active"` (in `test_a_device_with_nothing_created_has_no_area_to_go_to`, `test_id_of_another_integration_is_an_error_not_a_suffix`, `test_a_renamed_entity_is_still_ours`, `test_what_follows_an_entity_not_created_is_not_created_either`).
+Every `suggested_object_id="pururu_dummy_gizmo_level"` becomes `suggested_object_id="pururu_dummy_gizmo_gauge_level"`, and every `suggested_object_id="pururu_dummy_gizmo_active"` becomes `suggested_object_id="pururu_dummy_gizmo_gauge_active"` (in `test_a_device_with_nothing_created_has_no_area_to_go_to`, `test_id_of_another_integration_is_an_error_not_a_suffix`, `test_a_renamed_entity_is_still_ours`, `test_what_follows_an_entity_not_created_is_not_created_either`).
 
 In `test_reload_that_drops_a_device_removes_it`:
 
 ```python
-    assert er.async_get(ha).async_get("sensor.pururu_demo_panel_gauge_level") is None
+    assert er.async_get(ha).async_get("sensor.pururu_dummy_panel_gauge_level") is None
 ```
 
 In `test_reload_sets_up_a_failed_entry_again`, the replacement `Feature` keeps the namespace:
@@ -182,11 +182,11 @@ async def test_entities_from_before_namespaces_go_at_set_up(
     entry = MockConfigEntry(domain=DOMAIN, title="Pururu")
     entry.add_to_hass(ha)
     old = er.async_get(ha).async_get_or_create(
-        "sensor", DOMAIN, "pururu_demo_widget_level", config_entry=entry,
-        suggested_object_id="pururu_demo_widget_level")
-    assert await setup(ha, {"demo_widget": WIDGET})
+        "sensor", DOMAIN, "pururu_dummy_gizmo_level", config_entry=entry,
+        suggested_object_id="pururu_dummy_gizmo_level")
+    assert await setup(ha, {"dummy_gizmo": GIZMO})
     assert er.async_get(ha).async_get(old.entity_id) is None
-    assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
+    assert held(ha, "dummy_gizmo") == {LEVEL, ACTIVE}
     assert not [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
 ```
 
@@ -195,8 +195,8 @@ async def test_entities_from_before_namespaces_go_at_set_up(
 Constants:
 
 ```python
-PUMP = "switch.pururu_pool_switch_pump"
-HEATER = "switch.pururu_pool_switch_heater"
+SPRINKLER = "switch.pururu_greenhouse_switch_sprinkler"
+HEATER = "switch.pururu_greenhouse_switch_heater"
 ```
 
 Replace `test_a_key_of_another_feature_is_refused` with:
@@ -205,52 +205,52 @@ Replace `test_a_key_of_another_feature_is_refused` with:
 @pytest.mark.parametrize("entity_key", ["power", "running", "runtime_month"])
 async def test_a_key_of_another_feature_is_accepted(ha: HomeAssistant, entity_key: str) -> None:
     """The switch is in the switch namespace, the appliance's entities in theirs."""
-    await fake(ha, REAL_PUMP, "on")
-    switches = {entity_key: {"entity": REAL_PUMP, "name": "Bomba"}}
-    assert await setup(ha, {KEY: {"name": "Piscina", "appliance": APPLIANCE,
+    await fake(ha, REAL_SPRINKLER, "on")
+    switches = {entity_key: {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
+    assert await setup(ha, {KEY: {"name": "Estufa", "appliance": APPLIANCE,
                                   "switches": switches}})
-    assert state(ha, f"switch.pururu_pool_switch_{entity_key}") == "on"
-    assert "binary_sensor.pururu_pool_appliance_running" in held(ha, KEY)
+    assert state(ha, f"switch.pururu_greenhouse_switch_{entity_key}") == "on"
+    assert "binary_sensor.pururu_greenhouse_appliance_running" in held(ha, KEY)
 ```
 
 Replace `test_two_devices_giving_one_entity_id_are_refused` with:
 
 ```python
 @pytest.mark.parametrize(("entity_key", "other"), [
-    pytest.param("switch_pump", {"switches": {"pump": SWITCHES["pump"]}}, id="the same platform"),
+    pytest.param("switch_sprinkler", {"switches": {"sprinkler": SWITCHES["sprinkler"]}}, id="the same platform"),
     pytest.param("appliance_power", {"appliance": APPLIANCE}, id="another platform"),
 ])
 async def test_two_devices_giving_one_entity_id_are_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, entity_key: str,
         other: dict[str, Any]) -> None:
-    """pool + switch_pump and pool_switch + pump are both pururu_pool_switch_switch_pump."""
+    """greenhouse + switch_sprinkler and greenhouse_switch + sprinkler are both pururu_greenhouse_switch_switch_sprinkler."""
     assert not await setup(ha, {
-        KEY: {"name": "Piscina", "switches": {entity_key: SWITCHES["pump"]}},
-        "pool_switch": {"name": "Bomba", **other},
+        KEY: {"name": "Estufa", "switches": {entity_key: SWITCHES["sprinkler"]}},
+        "greenhouse_switch": {"name": "Irrigador", **other},
     })
-    assert (f"device pool_switch: pururu_pool_switch_{entity_key} is already an entity of device pool"
+    assert (f"device greenhouse_switch: pururu_greenhouse_switch_{entity_key} is already an entity of device greenhouse"
             in caplog.text)
 ```
 
 In `test_switches_next_to_another_feature`:
 
 ```python
-    assert {PUMP, "binary_sensor.pururu_pool_appliance_running"} <= held(ha, KEY)
+    assert {SPRINKLER, "binary_sensor.pururu_greenhouse_appliance_running"} <= held(ha, KEY)
 ```
 
 In `test_two_devices_can_stand_for_one_real_switch`:
 
 ```python
-    assert state(ha, "switch.pururu_garden_switch_pump") == "on"
+    assert state(ha, "switch.pururu_orchard_switch_sprinkler") == "on"
 ```
 
 In `test_names_come_from_the_configuration`:
 
 ```python
-    assert entry.unique_id == "pururu_pool_switch_pump"
+    assert entry.unique_id == "pururu_greenhouse_switch_sprinkler"
 ```
 
-In `test_an_id_already_taken_is_an_error`: `suggested_object_id="pururu_pool_switch_pump"`.
+In `test_an_id_already_taken_is_an_error`: `suggested_object_id="pururu_greenhouse_switch_sprinkler"`.
 
 Replace `test_reload_that_moves_an_entity_key_to_a_switch_removes_the_old_entity` with:
 
@@ -258,11 +258,11 @@ Replace `test_reload_that_moves_an_entity_key_to_a_switch_removes_the_old_entity
 async def test_reload_that_swaps_the_appliance_for_a_switch_removes_its_entities(
         ha: HomeAssistant) -> None:
     """A switch keyed like one of the appliance's entities is a new entity; the appliance's go."""
-    assert await setup(ha, {KEY: {"name": "Piscina", "appliance": APPLIANCE}})
-    assert er.async_get(ha).async_get("sensor.pururu_pool_appliance_power") is not None
-    await reload(ha, {KEY: {"name": "Piscina", "switches": {"power": SWITCHES["pump"]}}})
-    assert er.async_get(ha).async_get("sensor.pururu_pool_appliance_power") is None
-    assert held(ha, KEY) == {"switch.pururu_pool_switch_power"}
+    assert await setup(ha, {KEY: {"name": "Estufa", "appliance": APPLIANCE}})
+    assert er.async_get(ha).async_get("sensor.pururu_greenhouse_appliance_power") is not None
+    await reload(ha, {KEY: {"name": "Estufa", "switches": {"power": SWITCHES["sprinkler"]}}})
+    assert er.async_get(ha).async_get("sensor.pururu_greenhouse_appliance_power") is None
+    assert held(ha, KEY) == {"switch.pururu_greenhouse_switch_power"}
 ```
 
 - [ ] **Step 4: Update `tests/test_appliance.py` and `tests/test_phases.py`**
@@ -270,7 +270,7 @@ async def test_reload_that_swaps_the_appliance_for_a_switch_removes_its_entities
 `tests/test_appliance.py`:
 
 ```python
-RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
+RUNNING = "binary_sensor.pururu_dummy_washer_appliance_running"
 ```
 
 ```python
@@ -278,20 +278,20 @@ def sensor(entity_key: str) -> str:
     return f"sensor.pururu_{KEY}_appliance_{entity_key}"
 ```
 
-and the three literal IDs of the second device become `sensor.pururu_demo_other_appliance_cycles_total`, `sensor.pururu_demo_other_appliance_last_cycle_end` and `sensor.pururu_demo_other_appliance_cycles_today`.
+and the three literal IDs of the second device become `sensor.pururu_dummy_other_appliance_cycles_total`, `sensor.pururu_dummy_other_appliance_last_cycle_end` and `sensor.pururu_dummy_other_appliance_cycles_today`.
 
 `tests/test_phases.py`:
 
 ```python
-RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
-PHASE = "sensor.pururu_demo_washer_phase"
+RUNNING = "binary_sensor.pururu_dummy_washer_appliance_running"
+PHASE = "sensor.pururu_dummy_washer_phase"
 ```
 
-and in the taken-ID test: `suggested_object_id="pururu_demo_washer_appliance_running"`, `sensor.pururu_demo_washer_appliance_runtime_total`, `sensor.pururu_demo_washer_appliance_power`.
+and in the taken-ID test: `suggested_object_id="pururu_dummy_washer_appliance_running"`, `sensor.pururu_dummy_washer_appliance_runtime_total`, `sensor.pururu_dummy_washer_appliance_power`.
 
 Then check no old-format ID is left in the tests:
 
-Run: `grep -nE "pururu_(demo_washer|demo_other|pool|garden|demo_widget|demo_panel)_(power|energy_total|running|last_cycle|cycles_|runtime_|pump|heater|level|active|first|second)" tests/*.py`
+Run: `grep -nE "pururu_(dummy_washer|dummy_other|greenhouse|orchard|dummy_gizmo|dummy_panel)_(power|energy_total|running|last_cycle|cycles_|runtime_|sprinkler|heater|level|active|first|second)" tests/*.py`
 Expected: no output.
 
 - [ ] **Step 5: Run the tests to see them fail**
@@ -376,8 +376,8 @@ In `PururuEntity._identify`, the docstring's second paragraph and the translatio
 def _entity_ids_distinct(config: dict[str, Any]) -> dict[str, Any]:
     """Refuse two devices whose entities would share an ID.
 
-    Device `pool` with the switch `switch_pump` and device `pool_switch` with
-    the switch `pump` would both have pururu_pool_switch_switch_pump.
+    Device `greenhouse` with the switch `switch_sprinkler` and device `greenhouse_switch` with
+    the switch `sprinkler` would both have pururu_greenhouse_switch_switch_sprinkler.
     """
     owners: dict[str, str] = {}  # object ID -> the device that has it
     for key, device in config[CONF_DEVICES].items():
@@ -522,7 +522,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `docs/index.mdx`, `docs/getting-started/first-device.mdx`, `docs/concepts/entity-ids.mdx`, `docs/concepts/devices-and-features.mdx`, `docs/features/appliance.mdx`, `docs/features/switches.mdx`, `docs/reference/configuration.mdx`, `docs/reference/troubleshooting.mdx`, `docs/develop/testing.mdx`, `README.md`
 
 **Interfaces:**
-- Consumes: the ID format and the error messages of Task 1 (`device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`).
+- Consumes: the ID format and the error messages of Task 1 (`device greenhouse_switch: pururu_greenhouse_switch_switch_sprinkler is already an entity of device greenhouse`).
 
 - [ ] **Step 1: Rewrite appliance's IDs everywhere**
 
@@ -536,7 +536,7 @@ from pathlib import Path
 KEYS = (r"power|energy_total|running|last_cycle_(?:start|end|duration|energy)"
         r"|cycles_(?:total|today|week|month|year|<period>)"
         r"|runtime_(?:total|today|week|month|year|<period>)")
-PATTERN = re.compile(rf"(pururu_(?:laundry_washer|dishwasher|<key>)_)({KEYS})(?![a-z0-9_])")
+PATTERN = re.compile(rf"(pururu_(?:clothes_washer|dishwasher|<key>)_)({KEYS})(?![a-z0-9_])")
 FILES = ["docs/index.mdx", "docs/getting-started/first-device.mdx", "docs/concepts/entity-ids.mdx",
          "docs/concepts/devices-and-features.mdx", "docs/features/appliance.mdx",
          "docs/reference/troubleshooting.mdx", "docs/develop/testing.mdx", "README.md"]
@@ -550,7 +550,7 @@ EOF
 
 Expected: a non-zero count for each file. Then:
 
-Run: `grep -rnE "pururu_(laundry_washer|dishwasher|<key>)_(power|energy_total|running|last_cycle|cycles_|runtime_)" docs README.md --include=*.mdx --include=README.md`
+Run: `grep -rnE "pururu_(clothes_washer|dishwasher|<key>)_(power|energy_total|running|last_cycle|cycles_|runtime_)" docs README.md --include=*.mdx --include=README.md`
 Expected: no output.
 
 - [ ] **Step 2: `concepts/entity-ids.mdx`, the pattern**
@@ -573,26 +573,26 @@ Every entity pururu creates has the ID
 
 | Feature | Namespace | Example |
 |---|---|---|
-| [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_laundry_washer_appliance_running` |
-| [`phases`](/features/phases) | `phase` | `sensor.pururu_laundry_washer_phase` |
-| [`switches`](/features/switches) | `switch` | `switch.pururu_pool_switch_pump` |
+| [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_clothes_washer_appliance_running` |
+| [`phases`](/features/phases) | `phase` | `sensor.pururu_clothes_washer_phase` |
+| [`switches`](/features/switches) | `switch` | `switch.pururu_greenhouse_switch_sprinkler` |
 
-An entity key that is its feature's namespace isn't written twice: the only entity of `phases`, `phase`, is `sensor.pururu_laundry_washer_phase`.
+An entity key that is its feature's namespace isn't written twice: the only entity of `phases`, `phase`, is `sensor.pururu_clothes_washer_phase`.
 
-So the `running` entity of the device `laundry_washer` is always `binary_sensor.pururu_laundry_washer_appliance_running`. You can write automations and dashboards against it before the device even exists.
+So the `running` entity of the device `clothes_washer` is always `binary_sensor.pururu_clothes_washer_appliance_running`. You can write automations and dashboards against it before the device even exists.
 
-The entity's **unique ID** is the same text without the platform: `pururu_laundry_washer_appliance_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
+The entity's **unique ID** is the same text without the platform: `pururu_clothes_washer_appliance_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
 
 <Info>
-  Before pururu 0.1.5, IDs had no namespace (`binary_sensor.pururu_laundry_washer_running`, `switch.pururu_pool_pump`). Updating removes those entities, with their history, and creates the new ones. Update the automations and dashboards that name them.
+  Before pururu 0.1.5, IDs had no namespace (`binary_sensor.pururu_clothes_washer_running`, `switch.pururu_greenhouse_sprinkler`). Updating removes those entities, with their history, and creates the new ones. Update the automations and dashboards that name them.
 </Info>
 ````
 
 - [ ] **Step 3: `features/switches.mdx`**
 
-- `This creates `switch.pururu_pool_pump`, shown as **Piscina Bomba**, and `switch.pururu_pool_heater`, shown as **Piscina Aquecedor**.` → `This creates `switch.pururu_pool_switch_pump`, shown as **Piscina Bomba**, and `switch.pururu_pool_switch_heater`, shown as **Piscina Aquecedor**.`
-- `The key is a slug, and it becomes the end of the entity ID: `pump` → `switch.pururu_pool_pump`.` → `The key is a slug, and it ends the entity ID, after the namespace `switch`: `pump` → `switch.pururu_pool_switch_pump`.`
-- Replace the paragraph starting `A switch's key can't be an entity key of another feature of the same device.` with: `A switch's key can be one another feature uses, such as `power` next to `appliance`: each feature has its own [namespace](/concepts/entity-ids#the-pattern), so `switch.pururu_pool_switch_power` and `sensor.pururu_pool_appliance_power` are two entities.`
+- `This creates `switch.pururu_greenhouse_sprinkler`, shown as **Estufa Irrigador**, and `switch.pururu_greenhouse_heater`, shown as **Estufa Aquecedor**.` → `This creates `switch.pururu_greenhouse_switch_sprinkler`, shown as **Estufa Irrigador**, and `switch.pururu_greenhouse_switch_heater`, shown as **Estufa Aquecedor**.`
+- `The key is a slug, and it becomes the end of the entity ID: `sprinkler` → `switch.pururu_greenhouse_sprinkler`.` → `The key is a slug, and it ends the entity ID, after the namespace `switch`: `sprinkler` → `switch.pururu_greenhouse_switch_sprinkler`.`
+- Replace the paragraph starting `A switch's key can't be an entity key of another feature of the same device.` with: `A switch's key can be one another feature uses, such as `power` next to `appliance`: each feature has its own [namespace](/concepts/entity-ids#the-pattern), so `switch.pururu_greenhouse_switch_power` and `sensor.pururu_greenhouse_appliance_power` are two entities.`
 - The table header `| The real switch | `switch.pururu_<key>_<entity key>` |` → `| The real switch | `switch.pururu_<key>_switch_<entity key>` |`.
 
 - [ ] **Step 4: `reference/configuration.mdx`**
@@ -600,18 +600,18 @@ The entity's **unique ID** is the same text without the platform: `pururu_laundr
 Delete the rule starting `- In a device, every entity key is different:`. Replace the rule starting `- No two devices give an entity the same ID.` with:
 
 ```mdx
-- No two devices give an entity the same ID. Device `pool` with the switch `switch_pump` and device `pool_switch` with the switch `pump` would both have `switch.pururu_pool_switch_switch_pump`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `pool` with the switch `appliance_energy_total` is refused next to a device `pool_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
+- No two devices give an entity the same ID. Device `greenhouse` with the switch `switch_sprinkler` and device `greenhouse_switch` with the switch `sprinkler` would both have `switch.pururu_greenhouse_switch_switch_sprinkler`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `greenhouse` with the switch `appliance_energy_total` is refused next to a device `greenhouse_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
 ```
 
 - [ ] **Step 5: `reference/troubleshooting.mdx`**
 
 - Delete the line `- A switch whose key is already an entity key of another feature of the device: `switches: power is already an entity key of appliance`.`
-- The next line becomes: `- Two devices that would give an entity the same ID: `device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`. Rename a device key or a switch key.`
-- In the code block under `### `… is a pururu switch: name the real one; not creating …``: `switch.aquecedor is a pururu switch: name the real one; not creating switch.pururu_pool_switch_pump`.
+- The next line becomes: `- Two devices that would give an entity the same ID: `device greenhouse_switch: pururu_greenhouse_switch_switch_sprinkler is already an entity of device greenhouse`. Rename a device key or a switch key.`
+- In the code block under `### `… is a pururu switch: name the real one; not creating …``: `switch.aquecedor is a pururu switch: name the real one; not creating switch.pururu_greenhouse_switch_sprinkler`.
 
 - [ ] **Step 6: Check nothing else is left**
 
-Run: `grep -rnE "switch\.pururu_(pool|garden)_(pump|heater|power)|pururu_laundry_washer_running|already an entity key of|pururu_pool_pump_heater|pool_energy" docs README.md --include=*.mdx --include=README.md`
+Run: `grep -rnE "switch\.pururu_(greenhouse|orchard)_(sprinkler|heater|power)|pururu_clothes_washer_running|already an entity key of|pururu_greenhouse_sprinkler_heater|greenhouse_energy" docs README.md --include=*.mdx --include=README.md`
 Expected: one line only, the `<Info>` note in `docs/concepts/entity-ids.mdx`, which names the IDs from before 0.1.5 on purpose (the `docs/superpowers` folder is `.md`, not matched).
 
 Run: `npx --yes @docs.page/cli check`
@@ -642,7 +642,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Replace the paragraph starting `It also checks that every entity key of the device is different:` with:
 
 ```mdx
-It doesn't compare entity keys between features. Each feature has its own `namespace`, and the entity keys it creates are in it (`appliance_power`, `switch_power`), so they can't meet. The contract test checks that namespaces are distinct slugs and that none is another's followed by `_`. Between devices, `_entity_ids_distinct` still refuses two that would give an entity one ID: `pool` with the switch `switch_pump` and `pool_switch` with the switch `pump`.
+It doesn't compare entity keys between features. Each feature has its own `namespace`, and the entity keys it creates are in it (`appliance_power`, `switch_power`), so they can't meet. The contract test checks that namespaces are distinct slugs and that none is another's followed by `_`. Between devices, `_entity_ids_distinct` still refuses two that would give an entity one ID: `greenhouse` with the switch `switch_sprinkler` and `greenhouse_switch` with the switch `sprinkler`.
 ```
 
 - Replace the paragraph starting `When a feature requires a capability, `_build` looks up` with:
@@ -676,7 +676,7 @@ OPENINGS = Feature(
     schema=SCHEMA,
     entity_keys={"total": Platform.SENSOR},
     build=build,
-    example={"sensor": "binary_sensor.demo_contact"},
+    example={"sensor": "binary_sensor.dummy_contact"},
     namespace="openings",
 )
 ```

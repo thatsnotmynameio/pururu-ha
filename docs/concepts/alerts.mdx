@@ -16,11 +16,11 @@ pururu **detects** the problem and, with `notify`, says what to tell. [Alert2](h
 ```yaml
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
-        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+        running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
       alerts:
         long_cycle:
           name: Ciclo longo
@@ -29,17 +29,17 @@ pururu:
           for: {hours: 3}
           priority: medium
           notify:
-            message: A máquina está rodando há mais de 3h!
+            message: A máquina passou de 3 horas ligada!
             done_message: A máquina terminou.
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
         plug_offline: {name: Tomada offline, when: appliance_power, is: unavailable, for: {minutes: 10}}
 ```
 
-This creates `binary_sensor.pururu_laundry_washer_alert_long_cycle`, shown as **Máquina de lavar Ciclo longo**, and one alert for each other key.
+This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **Tanquinho Ciclo longo**, and one alert for each other key.
 
 ## Settings
 
-`alerts` is a map of **alert key → alert**, with at least one alert. The key is a slug, and it ends the entity ID after the namespace `alert`: `long_cycle` → `binary_sensor.pururu_laundry_washer_alert_long_cycle`.
+`alerts` is a map of **alert key → alert**, with at least one alert. The key is a slug, and it ends the entity ID after the namespace `alert`: `long_cycle` → `binary_sensor.pururu_clothes_washer_alert_long_cycle`.
 
 <Property name="name" type="string" required>
   The name shown after the device's name. It can't be empty, and it's the same in every language.
@@ -48,13 +48,13 @@ This creates `binary_sensor.pururu_laundry_washer_alert_long_cycle`, shown as **
 ---
 
 <Property name="when" type="entity key" required>
-  The entity of **this device** the alert watches, written as its entity ID ends after the device key: `appliance_running`, `appliance_power`, `phase_current`, `switch_pump`. It must be an entity of another feature of the device, or a program's or reaction's statistic; not an alert. See [Entity IDs](/concepts/entity-ids#the-pattern).
+  The entity of **this device** the alert watches, written as its entity ID ends after the device key: `appliance_running`, `appliance_power`, `appliance_phase_current`, `switch_sprinkler`. It must be an entity of another feature of the device, or a program's or reaction's statistic; not an alert. See [Entity IDs](/concepts/entity-ids#the-pattern).
 </Property>
 
 ---
 
 <Property name="is" type="state" optional>
-  The state that is a problem: `"on"`, `"off"`, a phase such as `spinning`, `unavailable`, or a number.
+  The state that is a problem: `"on"`, `"off"`, a phase such as `wringing`, `unavailable`, or a number.
 
   - `on` and `off` work with or without quotes. Without quotes, YAML also reads `yes`/`true` as `on` and `no`/`false` as `off`.
   - A number without quotes is compared as a number: `is: 1` matches a state of `1`, `1.0` or `1.00`. In quotes (`is: "1"`) it's compared as text.
@@ -107,7 +107,7 @@ A feature may offer alerts for what usually goes wrong, such as the appliance's 
 ```yaml
 appliance:
   power: sensor.washer_plug_power
-  running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+  running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   alerts:
     offline:                                          # every default
     long_cycle: {for: {hours: 3}, priority: high}
@@ -115,7 +115,7 @@ appliance:
 
 - Each one takes `for`, `priority`, `notify` and `lights`, as a written alert does, and nothing else. What it watches and when it's on are the ready-made alert's own.
 - Its defaults are its own too: its `for` (some need one), its `priority`, and texts of its own in Home Assistant's language, which `notify` replaces.
-- Each one is `binary_sensor.pururu_<key>_<namespace>_alert_<name>`, in the feature's namespace: `binary_sensor.pururu_laundry_washer_appliance_alert_offline`.
+- Each one is `binary_sensor.pururu_<key>_<namespace>_alert_<name>`, in the feature's namespace: `binary_sensor.pururu_clothes_washer_appliance_alert_offline`.
 - A [reaction](/concepts/reactions) may watch one (`when: appliance_alert_offline`). An alert can't: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
 - Which ones a feature offers, what each watches and its defaults: the [appliance's table](/features/appliance#ready-made-alerts).
 
@@ -150,22 +150,22 @@ For the `long_cycle` alert above, pururu writes:
 
 ```yaml
 - domain: pururu
-  name: laundry_washer_alert_long_cycle
-  friendly_name: Máquina de lavar Ciclo longo
-  condition_on: "{{ is_state('binary_sensor.pururu_laundry_washer_alert_long_cycle', 'on') }}"
-  condition_off: "{{ is_state('binary_sensor.pururu_laundry_washer_alert_long_cycle', 'off') }}"
+  name: clothes_washer_alert_long_cycle
+  friendly_name: Tanquinho Ciclo longo
+  condition_on: "{{ is_state('binary_sensor.pururu_clothes_washer_alert_long_cycle', 'on') }}"
+  condition_off: "{{ is_state('binary_sensor.pururu_clothes_washer_alert_long_cycle', 'off') }}"
   priority: medium
-  message: A máquina está rodando há mais de 3h!
+  message: A máquina passou de 3 horas ligada!
   done_message: A máquina terminou.
 ```
 
 - **What each alert says** comes from its `notify`. **How** it's told is the same for every alert, in Alert2's `defaults`: who is told, reminders, acknowledging. See Alert2's documentation.
-- Each Alert2 alert is named after the rest of the pururu alert's ID: `binary_sensor.pururu_laundry_washer_alert_long_cycle` becomes `alert2.pururu_laundry_washer_alert_long_cycle`, even after you rename the pururu alert.
+- Each Alert2 alert is named after the rest of the pururu alert's ID: `binary_sensor.pururu_clothes_washer_alert_long_cycle` becomes `alert2.pururu_clothes_washer_alert_long_cycle`, even after you rename the pururu alert.
 - Only the alerts with `notify` are written, and only those that are created.
 - A message or name with `{` is shown as you wrote it, not as a template.
 - `condition_on` and `condition_off`, rather than one `condition`, keep the Alert2 alert as it is while the pururu alert is briefly `unavailable`, as during a pururu reload.
 - Until the line is there, **Settings → Repairs** shows **Alert2 doesn't run pururu's alerts**, with the line to add. See [Troubleshooting](/reference/troubleshooting#alert2-doesnt-run-pururus-alerts).
-- If an alert has `notify` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
+- If an alert has `notify` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_clothes_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
 
 <Warning>
   `alerts:` is the include alone: a YAML list can't be both written out and included. Create **your own** Alert2 alerts in Alert2's UI instead. Don't put files in `pururu/alert2` and don't edit `alerts.yaml`: the include loads every file there, and pururu rewrites it whenever the configuration changes.
@@ -180,8 +180,8 @@ pururu 0.1.11 and earlier asked for a `generator` in Alert2's `alerts`. Replace 
 ```yaml
 alert:
   washer_long_cycle:
-    name: Máquina de lavar Ciclo longo
-    entity_id: binary_sensor.pururu_laundry_washer_alert_long_cycle
+    name: Tanquinho Ciclo longo
+    entity_id: binary_sensor.pururu_clothes_washer_alert_long_cycle
     repeat: 30
     notifiers: [mobile_app_phone]
 ```

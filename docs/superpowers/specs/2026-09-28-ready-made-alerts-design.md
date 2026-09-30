@@ -9,8 +9,8 @@ A feature knows what usually goes wrong with it. An appliance's plug goes offlin
 This spec builds the mechanism, generic in `Feature`, and the **appliance's** catalogue. Other features get theirs later, each in a small change.
 
 ```yaml
-laundry_washer:
-  name: Máquina de lavar
+clothes_washer:
+  name: Tanquinho
   appliance:
     power: sensor.washer_plug_power
     running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
@@ -20,8 +20,8 @@ laundry_washer:
       no_cycle: {for: {days: 2}}
       finished: {lasts: {minutes: 30}, priority: medium}
       no_power:
-        notify: {message: A geladeira desligou!, done_message: Voltou.}
-# → binary_sensor.pururu_laundry_washer_appliance_alert_offline   "Máquina de lavar Sem conexão"
+        notify: {message: O congelador desligou!, done_message: Voltou.}
+# → binary_sensor.pururu_clothes_washer_appliance_alert_offline   "Tanquinho Sem conexão"
 # → one per other enabled alert, and each one's Alert2 alert in pururu/alert2/alerts.yaml
 ```
 
@@ -143,7 +143,7 @@ The `friendly_name` of a ready-made alert is `<device name> <translated name>`, 
 | `offline` | The plug is offline. / A tomada está sem conexão. | The plug is back. / A tomada voltou. |
 | `no_power` | There's no power. / Está sem energia. | Power is back. / A energia voltou. |
 | `long_cycle` | The cycle is taking too long. / O ciclo está demorando demais. | The cycle ended. / O ciclo terminou. |
-| `no_cycle` | It hasn't run in a while. / Não roda há um tempo. | It's running again. / Voltou a rodar. |
+| `no_cycle` | It hasn't run in a while. / Não roda há um tempo. | It's running again. / Voltou a funcionar. |
 | `finished` | The cycle finished. / O ciclo terminou. | Done. / Pronto. |
 
 ## Edge cases

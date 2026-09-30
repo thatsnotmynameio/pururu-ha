@@ -89,7 +89,7 @@ import pytest
 from helpers import module
 
 TERREO = {"name": "Térreo", "level": 0, "icon": "mdi:home-floor-0", "aliases": ["embaixo"]}
-COZINHA = {"name": "Cozinha", "floor": "terreo", "icon": "mdi:stove", "aliases": ["copa"]}
+ATELIE = {"name": "Ateliê", "floor": "terreo", "icon": "mdi:palette", "aliases": ["copa"]}
 
 
 def sync(hass: HomeAssistant, floors: dict[str, Any], areas: dict[str, Any],
@@ -120,23 +120,23 @@ def errors(caplog: pytest.LogCaptureFixture) -> str:
 
 
 async def test_floor_and_area_get_the_ids_of_their_keys(ha: HomeAssistant) -> None:
-    managed = sync(ha, {"terreo": TERREO}, {"cozinha": COZINHA})
-    assert managed == {"floors": ["terreo"], "areas": ["cozinha"]}
+    managed = sync(ha, {"terreo": TERREO}, {"atelie": ATELIE})
+    assert managed == {"floors": ["terreo"], "areas": ["atelie"]}
     created = floor(ha, "terreo")
     assert created is not None
     assert (created.name, created.level, created.icon, created.aliases) == (
         "Térreo", 0, "mdi:home-floor-0", {"embaixo"})
-    kitchen = area(ha, "cozinha")
-    assert kitchen is not None
-    assert (kitchen.name, kitchen.floor_id, kitchen.icon, kitchen.aliases) == (
-        "Cozinha", "terreo", "mdi:stove", {"copa"})
+    atelier = area(ha, "atelie")
+    assert atelier is not None
+    assert (atelier.name, atelier.floor_id, atelier.icon, atelier.aliases) == (
+        "Ateliê", "terreo", "mdi:palette", {"copa"})
 
 
 async def test_an_area_without_a_floor(ha: HomeAssistant) -> None:
-    assert sync(ha, {}, {"quintal": {"name": "Quintal"}}) == {"floors": [], "areas": ["quintal"]}
-    garden = area(ha, "quintal")
-    assert garden is not None
-    assert garden.floor_id is None
+    assert sync(ha, {}, {"patio": {"name": "Pátio"}}) == {"floors": [], "areas": ["patio"]}
+    orchard = area(ha, "patio")
+    assert orchard is not None
+    assert orchard.floor_id is None
 
 
 async def test_what_has_the_id_is_adopted_and_follows_the_configuration(ha: HomeAssistant) -> None:
@@ -144,96 +144,96 @@ async def test_what_has_the_id_is_adopted_and_follows_the_configuration(ha: Home
     areas = ar.async_get(ha)
     assert floors.async_create("Terreo", level=3, icon="mdi:home", aliases={"velho"}).floor_id == "terreo"
     basement = floors.async_create("Porão")
-    assert areas.async_create("Cozinha", floor_id=basement.floor_id, icon="mdi:home",
-                              aliases={"velha"}).id == "cozinha"
+    assert areas.async_create("Ateliê", floor_id=basement.floor_id, icon="mdi:home",
+                              aliases={"velha"}).id == "atelie"
 
     managed = sync(ha, {"terreo": {"name": "Térreo"}},
-                   {"cozinha": {"name": "Cozinha nova", "floor": "terreo"}})
+                   {"atelie": {"name": "Ateliê nova", "floor": "terreo"}})
 
-    assert managed == {"floors": ["terreo"], "areas": ["cozinha"]}
+    assert managed == {"floors": ["terreo"], "areas": ["atelie"]}
     adopted = floor(ha, "terreo")
     assert adopted is not None
     assert (adopted.name, adopted.level, adopted.icon, adopted.aliases) == ("Térreo", None, None, set())
-    kitchen = area(ha, "cozinha")
-    assert kitchen is not None
-    assert (kitchen.name, kitchen.floor_id, kitchen.icon, kitchen.aliases) == (
-        "Cozinha nova", "terreo", None, set())
+    atelier = area(ha, "atelie")
+    assert atelier is not None
+    assert (atelier.name, atelier.floor_id, atelier.icon, atelier.aliases) == (
+        "Ateliê nova", "terreo", None, set())
     assert floor(ha, basement.floor_id) == basement  # not configured: untouched
 
 
 async def test_what_the_configuration_drops_is_deleted_and_the_rest_kept(ha: HomeAssistant) -> None:
     theirs = fr.async_get(ha).async_create("Sótão")
     managed = sync(ha, {"terreo": TERREO, "primeiro": {"name": "Primeiro andar"}},
-                   {"cozinha": COZINHA, "quarto": {"name": "Quarto", "floor": "primeiro"}})
-    renamed = {**COZINHA, "name": "Cozinha grande"}
+                   {"atelie": ATELIE, "quarto": {"name": "Quarto", "floor": "primeiro"}})
+    renamed = {**ATELIE, "name": "Ateliê grande"}
 
-    managed = sync(ha, {"terreo": TERREO}, {"cozinha": renamed}, managed)
+    managed = sync(ha, {"terreo": TERREO}, {"atelie": renamed}, managed)
 
-    assert managed == {"floors": ["terreo"], "areas": ["cozinha"]}
+    assert managed == {"floors": ["terreo"], "areas": ["atelie"]}
     assert floor(ha, "primeiro") is None
     assert area(ha, "quarto") is None
-    kitchen = area(ha, "cozinha")
-    assert kitchen is not None
-    assert (kitchen.name, kitchen.floor_id) == ("Cozinha grande", "terreo")
+    atelier = area(ha, "atelie")
+    assert atelier is not None
+    assert (atelier.name, atelier.floor_id) == ("Ateliê grande", "terreo")
     assert floor(ha, theirs.floor_id) == theirs  # never managed: kept
 
 
 async def test_a_new_id_for_the_same_name(ha: HomeAssistant) -> None:
-    managed = sync(ha, {"terreo": {"name": "Térreo"}}, {"cozinha": {"name": "Cozinha", "floor": "terreo"}})
+    managed = sync(ha, {"terreo": {"name": "Térreo"}}, {"atelie": {"name": "Ateliê", "floor": "terreo"}})
 
-    managed = sync(ha, {"ground": {"name": "Térreo"}},
-                   {"kitchen": {"name": "Cozinha", "floor": "ground"}}, managed)
+    managed = sync(ha, {"mezzanine": {"name": "Térreo"}},
+                   {"atelier": {"name": "Ateliê", "floor": "mezzanine"}}, managed)
 
-    assert managed == {"floors": ["ground"], "areas": ["kitchen"]}
+    assert managed == {"floors": ["mezzanine"], "areas": ["atelier"]}
     assert floor(ha, "terreo") is None
-    assert area(ha, "cozinha") is None
-    ground = floor(ha, "ground")
-    assert ground is not None
-    assert ground.name == "Térreo"
-    kitchen = area(ha, "kitchen")
-    assert kitchen is not None
-    assert kitchen.floor_id == "ground"
+    assert area(ha, "atelie") is None
+    mezzanine = floor(ha, "mezzanine")
+    assert mezzanine is not None
+    assert mezzanine.name == "Térreo"
+    atelier = area(ha, "atelier")
+    assert atelier is not None
+    assert atelier.floor_id == "mezzanine"
 
 
 async def test_a_name_another_floor_has_is_an_error_and_the_rest_is_created(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     theirs = fr.async_get(ha).async_create("Térreo")  # ID terreo, not configured
 
-    managed = sync(ha, {"ground": {"name": "Térreo"}, "first": {"name": "Primeiro"}},
-                   {"kitchen": {"name": "Cozinha", "floor": "ground"},
+    managed = sync(ha, {"mezzanine": {"name": "Térreo"}, "first": {"name": "Primeiro"}},
+                   {"atelier": {"name": "Ateliê", "floor": "mezzanine"},
                     "bedroom": {"name": "Quarto", "floor": "first"}})
 
     assert managed == {"floors": ["first"], "areas": ["bedroom"]}
-    assert floor(ha, "ground") is None
-    assert area(ha, "kitchen") is None
+    assert floor(ha, "mezzanine") is None
+    assert area(ha, "atelier") is None
     assert floor(ha, theirs.floor_id) == theirs
     bedroom = area(ha, "bedroom")
     assert bedroom is not None
     assert bedroom.floor_id == "first"
-    assert "ground" in errors(caplog)
-    assert "kitchen" in errors(caplog)
+    assert "mezzanine" in errors(caplog)
+    assert "atelier" in errors(caplog)
 
 
 async def test_a_name_another_area_has_is_an_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    theirs = ar.async_get(ha).async_create("Cozinha")  # ID cozinha, not configured
+    theirs = ar.async_get(ha).async_create("Ateliê")  # ID atelie, not configured
 
-    assert sync(ha, {}, {"kitchen": {"name": "Cozinha"}}) == {"floors": [], "areas": []}
+    assert sync(ha, {}, {"atelier": {"name": "Ateliê"}}) == {"floors": [], "areas": []}
 
-    assert area(ha, "kitchen") is None
+    assert area(ha, "atelier") is None
     assert area(ha, theirs.id) == theirs
-    assert "kitchen" in errors(caplog)
+    assert "atelier" in errors(caplog)
 
 
 async def test_a_key_that_is_another_floors_name_leaves_nothing_behind(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     floors = fr.async_get(ha)
-    theirs = floors.async_update(floors.async_create("Ground").floor_id, name="Terreo")
-    assert theirs.floor_id == "ground"
+    theirs = floors.async_update(floors.async_create("Mezzanine").floor_id, name="Terreo")
+    assert theirs.floor_id == "mezzanine"
 
     assert sync(ha, {"terreo": {"name": "Térreo"}}, {}) == {"floors": [], "areas": []}
 
-    assert [f.floor_id for f in floors.async_list_floors()] == ["ground"]
+    assert [f.floor_id for f in floors.async_list_floors()] == ["mezzanine"]
     assert "terreo" in errors(caplog)
 
 
@@ -271,12 +271,12 @@ async def test_swapping_names_is_logged_not_raised(
 async def test_remove_deletes_only_what_is_managed(ha: HomeAssistant) -> None:
     theirs = fr.async_get(ha).async_create("Sótão")
     their_area = ar.async_get(ha).async_create("Garagem")
-    managed = sync(ha, {"terreo": TERREO}, {"cozinha": COZINHA})
+    managed = sync(ha, {"terreo": TERREO}, {"atelie": ATELIE})
 
     module("places").async_remove(ha, managed)
 
     assert floor(ha, "terreo") is None
-    assert area(ha, "cozinha") is None
+    assert area(ha, "atelie") is None
     assert floor(ha, theirs.floor_id) == theirs
     assert area(ha, their_area.id) == their_area
 ```
@@ -557,48 +557,48 @@ from helpers import DOMAIN, device_of, module, reload, setup
 
 
 async def test_floors_and_areas_alone_create_the_entry(ha: HomeAssistant) -> None:
-    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"atelie": ATELIE})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.state is ConfigEntryState.LOADED
-    assert entry.data == {"floors": ["terreo"], "areas": ["cozinha"]}
-    kitchen = area(ha, "cozinha")
-    assert kitchen is not None
-    assert kitchen.floor_id == "terreo"
+    assert entry.data == {"floors": ["terreo"], "areas": ["atelie"]}
+    atelier = area(ha, "atelie")
+    assert atelier is not None
+    assert atelier.floor_id == "terreo"
 
 
 async def test_floors_and_areas_next_to_devices(ha: HomeAssistant) -> None:
     appliance = module("features").FEATURES["appliance"].example
-    assert await setup(ha, {"demo_washer": {"name": "Washer", "appliance": appliance}},
-                       floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    assert await setup(ha, {"dummy_washer": {"name": "Washer", "appliance": appliance}},
+                       floors={"terreo": TERREO}, areas={"atelie": ATELIE})
     assert len(ha.config_entries.async_entries(DOMAIN)) == 1
-    assert device_of(ha, "demo_washer") is not None
+    assert device_of(ha, "dummy_washer") is not None
     assert floor(ha, "terreo") is not None
 
 
 async def test_a_reload_that_drops_a_floor_deletes_it(ha: HomeAssistant) -> None:
     assert await setup(ha, {}, floors={"terreo": TERREO, "primeiro": {"name": "Primeiro"}},
-                       areas={"cozinha": COZINHA})
+                       areas={"atelie": ATELIE})
     await reload(ha, {}, floors={"terreo": TERREO})
     assert floor(ha, "primeiro") is None
-    assert area(ha, "cozinha") is None
+    assert area(ha, "atelie") is None
     assert floor(ha, "terreo") is not None
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.data == {"floors": ["terreo"], "areas": []}
 
 
 async def test_a_reload_without_anything_deletes_them_all(ha: HomeAssistant) -> None:
-    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"atelie": ATELIE})
     await reload(ha, {})
     assert floor(ha, "terreo") is None
-    assert area(ha, "cozinha") is None
+    assert area(ha, "atelie") is None
 
 
 @pytest.mark.parametrize(("floors", "areas"), [
-    pytest.param({}, {"cozinha": COZINHA}, id="area on a floor not in floors"),
+    pytest.param({}, {"atelie": ATELIE}, id="area on a floor not in floors"),
     pytest.param({"terreo": {"level": 0}}, {}, id="floor without a name"),
-    pytest.param({"terreo": {**TERREO, "level": "ground"}}, {}, id="level not an integer"),
+    pytest.param({"terreo": {**TERREO, "level": "mezzanine"}}, {}, id="level not an integer"),
     pytest.param({"terreo": {**TERREO, "colour": "red"}}, {}, id="unknown floor key"),
-    pytest.param({}, {"quintal": {"name": "Quintal", "picture": "x"}}, id="unknown area key"),
+    pytest.param({}, {"patio": {"name": "Pátio", "picture": "x"}}, id="unknown area key"),
     pytest.param({"Térreo": TERREO}, {}, id="key not a slug"),
 ])
 async def test_invalid_floors_and_areas_are_refused(
@@ -609,23 +609,23 @@ async def test_invalid_floors_and_areas_are_refused(
 
 
 async def test_invalid_reload_keeps_floors_and_areas(ha: HomeAssistant) -> None:
-    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
-    await reload(ha, {}, areas={"cozinha": COZINHA})  # its floor is no longer declared
+    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"atelie": ATELIE})
+    await reload(ha, {}, areas={"atelie": ATELIE})  # its floor is no longer declared
     assert floor(ha, "terreo") is not None
-    kitchen = area(ha, "cozinha")
-    assert kitchen is not None
-    assert kitchen.floor_id == "terreo"
+    atelier = area(ha, "atelie")
+    assert atelier is not None
+    assert atelier.floor_id == "terreo"
 
 
 async def test_deleting_the_entry_deletes_only_its_floors_and_areas(ha: HomeAssistant) -> None:
     theirs = fr.async_get(ha).async_create("Sótão")
     their_area = ar.async_get(ha).async_create("Garagem")
-    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
+    assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"atelie": ATELIE})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     await ha.config_entries.async_remove(entry.entry_id)
     await ha.async_block_till_done()
     assert floor(ha, "terreo") is None
-    assert area(ha, "cozinha") is None
+    assert area(ha, "atelie") is None
     assert floor(ha, theirs.floor_id) == theirs
     assert area(ha, their_area.id) == their_area
 ```
@@ -785,12 +785,12 @@ pururu:
       icon: mdi:home-floor-0
       aliases: [embaixo]
   areas:
-    cozinha:                 # the area's ID in HA
-      name: Cozinha
+    atelie:                 # the area's ID in HA
+      name: Ateliê
       floor: terreo          # a key of floors:
-      icon: mdi:stove
-    quintal:
-      name: Quintal          # no floor
+      icon: mdi:palette
+    patio:
+      name: Pátio          # no floor
 ```
 
 | Key | | |

@@ -10,18 +10,18 @@ from homeassistant.util import dt as dt_util
 import pytest
 import yaml
 
-from helpers import capture, fake, held, module, reload, restart, setup, tick
+from helpers import capture, fake, held, module, reload, restart, setup, snapshot, tick
 
-KEY = "demo_washer"
-POWER = "sensor.demo_plug_power"
+KEY = "dummy_washer"
+POWER = "sensor.dummy_plug_power"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 
 
 def devices(enabled: Any, **device: Any) -> dict[str, Any]:
-    return {KEY: {"name": "Demo washer", "appliance": {**APPLIANCE, "alerts": enabled}, **device}}
+    return {KEY: {"name": "Dummy washer", "appliance": {**APPLIANCE, "alerts": enabled}, **device}}
 
 
 # --- configuration ------------------------------------------------------------------------
@@ -70,7 +70,7 @@ async def test_finished_as_an_alert_is_an_unknown_alert(ha: HomeAssistant,
 
 async def test_without_alerts_none_is_enabled(ha: HomeAssistant) -> None:
     """A block without `alerts` enables no ready-made alert, and nothing is refused."""
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": APPLIANCE}})
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": APPLIANCE}})
     assert not [entity_id for entity_id in held(ha, KEY) if "_alert_" in entity_id]
 
 
@@ -133,10 +133,10 @@ async def test_no_power_turns_on_at_zero_and_keeps_its_state_without_a_reading(
 async def test_its_name_attributes_and_default_texts(ha: HomeAssistant) -> None:
     assert await setup(ha, devices({"offline": {"priority": "high"}}))
     found = ha.states.get(alert("offline"))
-    assert found.attributes["friendly_name"] == "Demo washer Offline"
+    assert found.attributes["friendly_name"] == "Dummy washer Offline"
     assert found.attributes["device_class"] == "problem"
     assert found.attributes["priority"] == "high"
-    assert found.attributes["watches"] == "sensor.pururu_demo_washer_appliance_power"
+    assert found.attributes["watches"] == "sensor.pururu_dummy_washer_appliance_power"
     assert found.attributes["message"] == "The plug is offline."
     assert found.attributes["done_message"] == "The plug is back."
 
@@ -169,8 +169,8 @@ async def test_it_is_an_alert2_alert(ha: HomeAssistant) -> None:
     [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert entry == {
         "domain": "pururu",
-        "name": "demo_washer_appliance_alert_offline",
-        "friendly_name": "Demo washer Offline",
+        "name": "dummy_washer_appliance_alert_offline",
+        "friendly_name": "Dummy washer Offline",
         "condition_on": f"{{{{ is_state('{alert('offline')}', 'on') }}}}",
         "condition_off": f"{{{{ is_state('{alert('offline')}', 'off') }}}}",
         "priority": "medium",
@@ -223,7 +223,7 @@ async def test_long_cycle_turns_on_after_for_and_off_when_the_cycle_ends(
 async def test_long_cycle_counts_the_time_before_a_restart(ha: HomeAssistant, freezer: Any) -> None:
     since = dt_util.utcnow() - timedelta(minutes=50)
     await restart(ha, devices({"long_cycle": {"for": {"hours": 1}}}),
-                  (State(RUNNING, "on"), {"since": since.isoformat(), "since_energy": None}))
+                  (State(RUNNING, "on"), snapshot(since.isoformat())))
     await fake(ha, POWER, "120")
     await tick(ha, freezer, 599)
     assert state(ha, alert("long_cycle")) == "off"
@@ -267,7 +267,7 @@ async def test_no_cycle_does_not_flicker_at_a_cycle_end(ha: HomeAssistant, freez
 async def test_no_cycle_counts_across_a_restart(ha: HomeAssistant, freezer: Any) -> None:
     end = (dt_util.utcnow() - timedelta(minutes=50)).isoformat()
     await restart(ha, devices({"no_cycle": {"for": {"hours": 1}}}),
-                  (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+                  (State(RUNNING, "off"), snapshot(None)),
                   (State(LAST_END, end),
                    {"native_value": {"__type": "<class 'datetime.datetime'>", "isoformat": end},
                     "native_unit_of_measurement": None}))
@@ -282,7 +282,7 @@ async def test_no_cycle_counts_from_now_after_an_impossible_creation(
         ha: HomeAssistant, freezer: Any) -> None:
     """A hand-edited .storage: a well-formed but impossible creation date is none, and the alert is created now."""
     await restart(ha, devices({"no_cycle": {"for": {"hours": 1}}}),
-                  (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+                  (State(RUNNING, "off"), snapshot(None)),
                   (State(alert("no_cycle"), "off"), {"at": "2026-02-30T10:00:00+00:00"}))
     await fake(ha, POWER, "1")
     await tick(ha, freezer, 3599)
@@ -311,7 +311,7 @@ async def test_time_alerts_watch_running_and_are_alert2_alerts(ha: HomeAssistant
     assert found.attributes["message"] == "It hasn't run in a while."
     path = Path(ha.config.path("pururu/alert2/alerts.yaml"))
     [entry] = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert entry["name"] == "demo_washer_appliance_alert_no_cycle"
+    assert entry["name"] == "dummy_washer_appliance_alert_no_cycle"
 
 
 async def test_no_cycle_does_not_flicker_at_a_reload(ha: HomeAssistant, freezer: Any) -> None:

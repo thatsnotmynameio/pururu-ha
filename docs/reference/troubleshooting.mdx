@@ -9,12 +9,15 @@ pururu reports problems in **Settings → System → Logs**, under the **Pururu*
 
 The configuration is probably invalid. Home Assistant logs the reason as `Invalid config for 'pururu'`, and pururu keeps everything as it was. Common causes:
 
-- A typo in a key, such as `floor:` for `floors:` or `treshold:` for `threshold:`.
-- A key that isn't a slug, such as `Laundry Washer:` instead of `laundry_washer:`.
+- A typo in a key, such as `floor:` for `floors:` or `running:` for `running_program:` (an old key is `'running' is an invalid option`), or the appliance's `statistics: runtime`/`cycles` still in the block instead of in `running_program` (`'cycles' is an invalid option`).
+- A key that isn't a slug, such as `Laundry Washer:` instead of `clothes_washer:`.
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
 - A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
-- `cycle_from` naming a feature that isn't on the same device.
-- A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
+- A `running_program` with a `name` (`running_program takes no name: it is the appliance running`), or with neither `above` nor `below` (`a program needs above, below or both`).
+- A phase without `name`, keyed `idle` or `other` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's, `other`'s or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
+- `other:` without `phases` (`other is the program outside every phase: it needs phases`).
+- Two entities of one device with one unique ID, such as a phase's key and another phase's meter (`device clothes_washer: pururu_clothes_washer_appliance_phase_resfriar_cycles_today would be two entities`).
+- `statistics.energy` on a phase without the appliance's `energy` (`statistics.energy needs energy`).
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
 - A door or window whose `contact` isn't a `binary_sensor.*` entity (`sensor.x is not a binary_sensor`) or is a pururu binary sensor (`binary_sensor.pururu_… is a pururu binary_sensor: name the real one`); an event whose `entity` isn't an `event.*` entity, whose `types` is empty or means something other than `opening`, `denied` or `ring`, or whose `fields` names something other than `who`, `how` or `direction`.
 - A light whose `entity` isn't a `light.*` or `switch.*` entity (`sensor.x is not a light or switch`), is a pururu light or switch, or has no `name` or an empty one.
@@ -24,15 +27,15 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - An alert's `notify` without `message` or `done_message`, with an empty one, or with another key.
 - A ready-made alert the feature doesn't offer (`nope is not a ready-made alert: offline, no_power, long_cycle, no_cycle`), `long_cycle` or `no_cycle` without `for`, or `lasts` (`'lasts' is an invalid option`).
 - A ready-made notification the feature doesn't offer: `nope is not a ready-made notification of appliance: finished`. A feature that offers none takes no `notifications` (`'notifications' is an invalid option`).
-- A message that goes nowhere: `device laundry_washer: reactions: door_open: message needs notify, here or in config.notify`. Add `config.notify`, or a `notify` to that reaction or notification. A reaction's `notify` without `message` is refused too, and so is a `notify` that isn't `notify.<name>`.
+- A message that goes nowhere: `device clothes_washer: reactions: door_open: message needs notify, here or in config.notify`. Add `config.notify`, or a `notify` to that reaction or notification. A reaction's `notify` without `message` is refused too, and so is a `notify` that isn't `notify.<name>`.
 - An alert whose `when` is a ready-made alert: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
-- A program step naming something that isn't an entity of another feature of the device: `programs: switch_pool_pump is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_pump`), not as an entity ID.
+- A program step naming something that isn't an entity of another feature of the device: `programs: switch_greenhouse_sprinkler is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_sprinkler`), not as an entity ID.
 - A program step whose entity doesn't take the action: `programs: appliance_power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
 - A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`.
 - A reaction with no source or two (`a reaction needs one source: when, entity, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `device` without `when`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`. A `retry` on a reaction to an entity (`a reaction's retry goes with at or sun`), with `times × every` over 12 hours (`a reaction's retries must end within 12 hours`), with `every` under a minute or not in whole seconds (`a reaction's retry every must be whole seconds`), or with `times` not a whole number (`a reaction's retry times must be a whole number`).
-- A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device laundry_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
+- A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device clothes_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
 - Two reactions whose automations would share an ID: `device lights_reaction_b: automation.pururu_lights_reaction_b_reaction_c is already a reaction of device lights`. Rename a device key or a reaction key.
-- Two devices that would give an entity the same ID: `device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool`. Rename a device key or a switch key.
+- Two devices that would give an entity the same ID: `device greenhouse_switch: pururu_greenhouse_switch_switch_sprinkler is already an entity of device greenhouse`. Rename a device key or a switch key.
 
 **Developer tools → YAML → Check configuration** shows the same error before you reload.
 
@@ -85,7 +88,7 @@ If `Unloading the platforms of a failed setup …` follows it, taking some entit
 ### `… is already taken by …; not creating it`
 
 ```
-sensor.pururu_laundry_washer_appliance_power is already taken by the template integration; not creating it
+sensor.pururu_clothes_washer_appliance_power is already taken by the template integration; not creating it
 ```
 
 Another integration's entity, or an entity without a unique ID, already has that ID. pururu [never takes an ID](/concepts/entity-ids#an-id-already-taken) that belongs to someone else, and it never suffixes one with `_2`.
@@ -95,7 +98,7 @@ Another integration's entity, or an entity without a unique ID, already has that
 ### `… follows …, which is not created; not creating it`
 
 ```
-sensor.pururu_laundry_washer_phase_current follows binary_sensor.pururu_laundry_washer_appliance_running, which is not created; not creating it
+sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it
 ```
 
 This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. A [program](/concepts/programs) acting on a switch that isn't created isn't created either.
@@ -103,7 +106,7 @@ This entity depends on one that couldn't be created, usually because of the erro
 ### `automation.… runs script.…, which is not generated; not generating it`
 
 ```
-automation.pururu_pool_reaction_morning runs script.pururu_pool_program_clean, which is not generated; not generating it
+automation.pururu_greenhouse_reaction_morning runs script.pururu_greenhouse_program_clean, which is not generated; not generating it
 ```
 
 A [reaction](/concepts/reactions#starting-a-program)'s `then` names a program whose script isn't generated: an entity it acts on isn't created or is disabled, or its ID is taken. The line logged just before says which. The reaction's automation isn't generated either, since it would start a missing script. When the program is only waiting for a disabled entity, the reaction waits with it and comes back as you left it.
@@ -113,7 +116,7 @@ A [reaction](/concepts/reactions#starting-a-program)'s `then` names a program wh
 ### `… watches …, which this device's settings don't create …`
 
 ```
-binary_sensor.pururu_laundry_washer_alert_month watches sensor.pururu_laundry_washer_appliance_runtime_month, which this device's settings don't create (turn it on, or watch another entity); not creating it
+binary_sensor.pururu_clothes_washer_alert_month watches sensor.pururu_clothes_washer_appliance_runtime_month, which this device's settings don't create (turn it on, or watch another entity); not creating it
 ```
 
 An [alert](/concepts/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance_runtime_month` without `month` in `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is.
@@ -123,7 +126,7 @@ An [alert](/concepts/alerts)'s `when` names an entity its feature can create, bu
 ### `… has notify, but Alert2 isn't set up to deliver it`
 
 ```
-binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
+binary_sensor.pururu_clothes_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
 ```
 
 An alert with `notify` is delivered by [Alert2](/concepts/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told. A [ready-made alert](/features/appliance#ready-made-alerts)'s own texts never log this: only a `notify` you wrote does.
@@ -158,8 +161,8 @@ pururu couldn't write the file, usually because of permissions on the configurat
 ### `… is a pururu switch (or light): name the real one; not creating …`
 
 ```
-switch.aquecedor is a pururu switch: name the real one; not creating switch.pururu_pool_switch_pump
-light.teto is a pururu light: name the real one; not creating light.pururu_sala_light_abajur
+switch.aquecedor is a pururu switch: name the real one; not creating switch.pururu_greenhouse_switch_sprinkler
+light.teto is a pururu light: name the real one; not creating light.pururu_biblioteca_light_abajur
 ```
 
 A switch's or a light's `entity:` names one of pururu's own entities that you renamed in the UI, so it no longer starts with `switch.pururu_` or `light.pururu_`. A [switch](/features/switches) or a [light](/features/lights) stands for a real one.
@@ -170,7 +173,7 @@ A switch's or a light's `entity:` names one of pururu's own entities that you re
 
 ```
 switch.aquecedor is this switch itself: name the real one
-light.sala_luminaria is this light itself: name the real one
+light.biblioteca_luminaria is this light itself: name the real one
 ```
 
 You renamed a pururu switch or light in the UI to the entity its own `entity:` names, so it stands for itself. It's kept, with your rename, but it's `unavailable`: there's nothing real to follow.
@@ -180,7 +183,7 @@ You renamed a pururu switch or light in the UI to the entity its own `entity:` n
 ### `… is a pururu binary sensor: name the real contact; … stands for nothing`
 
 ```
-binary_sensor.lavadora_rodando is a pururu binary sensor: name the real contact; binary_sensor.pururu_clausura_frente_door_open stands for nothing
+binary_sensor.lavadora_rodando is a pururu binary sensor: name the real contact; binary_sensor.pururu_cercado_frente_door_open stands for nothing
 ```
 
 A door's or window's `contact:` names one of pururu's own binary sensors that you renamed in the UI, so it no longer starts with `binary_sensor.pururu_`. The door is kept, but its `open` is `unavailable` and it records no openings.
@@ -190,7 +193,7 @@ A door's or window's `contact:` names one of pururu's own binary sensors that yo
 ### `…: Already running`
 
 ```
-Piscina Limpar: Already running
+Estufa Limpar: Already running
 ```
 
 A [program](/concepts/programs) was started while it was still running, for example during its `delay`. The start is ignored; the running program goes on. `script.turn_on` returns at once when it starts the program, but not when it's ignored: an automation calling it then stays on that action until the running program's next step or its end, up to its longest `delay` — Home Assistant's behaviour for any single-mode script.
@@ -221,8 +224,8 @@ Turning a borrowed light on or off failed: its integration refused the call. Fol
 ### The cycle ends too early, or never starts
 
 - **Ends in the middle of a wash:** the appliance paused for longer than `off_delay`. Increase `off_delay`.
-- **Never starts:** the power never stays above `threshold` for `on_delay`. Check the power sensor's history, and lower the threshold or shorten `on_delay`.
-- **Starts on its own:** standby spikes last longer than `on_delay`, or the threshold is below the standby power.
+- **Never starts:** the power never stays above `above` for `on_delay`. Check the power sensor's history, and lower `above` or shorten `on_delay`.
+- **Starts on its own:** standby spikes last longer than `on_delay`, or `above` is below the standby power.
 
 See [Picking the numbers](/getting-started/first-device#picking-the-numbers).
 
@@ -231,7 +234,7 @@ See [Picking the numbers](/getting-started/first-device#picking-the-numbers).
 ### `Device … is not placed: its area … is not created`
 
 ```
-Device laundry_washer is not placed: its area lavanderia is not created
+Device clothes_washer is not placed: its area despensa is not created
 ```
 
 The device's area exists in the YAML, but Home Assistant refused to create it (see [Floors and areas](#floors-and-areas) below). The device and its entities are still created, in the area they already had. Fix the area's error and reload.
@@ -241,7 +244,7 @@ The device's area exists in the YAML, but Home Assistant refused to create it (s
 ### `Floor … is left out: …` and `Area … is left out: …`
 
 ```
-Area cozinha is left out: The name Cozinha (cozinha) is already in use
+Area atelie is left out: The name Ateliê (atelie) is already in use
 ```
 
 Home Assistant refused to create a **new** floor or area, because its name, or its key, is already the name of a floor or area that isn't in the YAML. Nothing is created for it.
@@ -255,7 +258,7 @@ The same refusal for a floor or area that **already exists**. It keeps its curre
 ### `Area … is not synced: its floor … is not created`
 
 ```
-Area cozinha is not synced: its floor terreo is not created
+Area atelie is not synced: its floor terreo is not created
 ```
 
 The area's floor was left out (see above), so the area isn't created or updated either. Fix the floor and the area follows.
@@ -291,7 +294,7 @@ The reactions' and the ready-made notifications' automations are one file, `puru
 ### `automation.… follows …, which is not created; not generating it`
 
 ```
-automation.pururu_laundry_lights_reaction_month follows sensor.pururu_laundry_washer_appliance_runtime_month, which is not created; not generating it
+automation.pururu_laundry_lights_reaction_month follows sensor.pururu_clothes_washer_appliance_runtime_month, which is not created; not generating it
 ```
 
 The reaction's `when` names a pururu entity that isn't created: its ID is taken, or the device's settings don't create it. Fix that entity, or point `when` at another one, then reload pururu.
@@ -323,7 +326,7 @@ The scripts of pururu's programs are not loaded: add "script pururu: !include_di
 ### `script.… follows …, which is not created; not generating it`
 
 ```
-script.pururu_pool_program_clean follows switch.pururu_pool_switch_pump, which is not created; not generating it
+script.pururu_greenhouse_program_clean follows switch.pururu_greenhouse_switch_sprinkler, which is not created; not generating it
 ```
 
 An entity the program acts on isn't created, usually because its ID is taken. Fix that entity, then reload pururu.
@@ -331,7 +334,7 @@ An entity the program acts on isn't created, usually because its ID is taken. Fi
 ### `script.… acts on …, which is disabled; not generating it`
 
 ```
-script.pururu_pool_program_clean acts on switch.pururu_pool_switch_pump, which is disabled; not generating it
+script.pururu_greenhouse_program_clean acts on switch.pururu_greenhouse_switch_sprinkler, which is disabled; not generating it
 ```
 
 You disabled an entity the program acts on. Until you enable it again, the script is `unavailable` and starting it does nothing. Enable it again and the program comes back, with what you set on its script (disabled, entity ID, area).
@@ -339,7 +342,7 @@ You disabled an entity the program acts on. Until you enable it again, the scrip
 ### `script.… is already taken by …; not generating it`
 
 ```
-script.pururu_pool_program_clean is already taken by script.mine, a script with the same ID; not generating it
+script.pururu_greenhouse_program_clean is already taken by script.mine, a script with the same ID; not generating it
 ```
 
 A script of your own, or of another integration, has the program's ID. pururu never takes it over: rename or remove the other script, or give the program another key.
