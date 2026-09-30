@@ -232,7 +232,7 @@ async def test_renaming_a_ready_made_notification_reloads(ha: HomeAssistant) -> 
         "name": "Washer",
         "appliance": {
             "power": "sensor.washer_power",
-            "running": {"threshold": 4, "on_delay": 1, "off_delay": 1},
+            "running_program": {"above": 4, "on_delay": 1, "off_delay": 1},
             "notifications": {"finished": None},
         },
     }

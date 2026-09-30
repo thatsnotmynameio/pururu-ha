@@ -35,7 +35,7 @@ BLUE = {"color_name": "blue", "brightness_pct": 100, "effect": "breathe"}
 GREEN = {"color_name": "green", "brightness_pct": 50}
 APPLIANCE: dict[str, Any] = {
     "power": "sensor.lavadora_power",
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 
 

@@ -85,7 +85,7 @@ async def test_appliance_meters(ha: HomeAssistant, language: str) -> None:
     block = {
         "power": "sensor.demo_plug_power",
         "energy": "sensor.demo_plug_energy",
-        "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+        "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
         "statistics": {counter: list(PERIODS) for counter in APPLIANCE_COUNTERS},
     }
     assert await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
@@ -177,7 +177,7 @@ async def test_modes_meters(ha: HomeAssistant, language: str) -> None:
             "name": MODE_NAME,
             "appliance": {
                 "power": power,
-                "running": {"threshold": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2}},
+                "running_program": {"above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2}},
             },
             "modes": {
                 "cycle_from": "appliance",
@@ -318,7 +318,7 @@ async def test_reactions_meters(ha: HomeAssistant, language: str) -> None:
 
 APPLIANCE_MINIMAL = {
     "power": "sensor.demo_plug_power",
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 MODES_MINIMAL = {
     "cycle_from": "appliance",

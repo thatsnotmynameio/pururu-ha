@@ -10,13 +10,13 @@ from homeassistant.util import dt as dt_util
 import pytest
 import yaml
 
-from helpers import capture, fake, held, module, reload, restart, setup, tick
+from helpers import capture, fake, held, module, reload, restart, setup, snapshot, tick
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 
 
@@ -223,7 +223,7 @@ async def test_long_cycle_turns_on_after_for_and_off_when_the_cycle_ends(
 async def test_long_cycle_counts_the_time_before_a_restart(ha: HomeAssistant, freezer: Any) -> None:
     since = dt_util.utcnow() - timedelta(minutes=50)
     await restart(ha, devices({"long_cycle": {"for": {"hours": 1}}}),
-                  (State(RUNNING, "on"), {"since": since.isoformat(), "since_energy": None}))
+                  (State(RUNNING, "on"), snapshot(since.isoformat())))
     await fake(ha, POWER, "120")
     await tick(ha, freezer, 599)
     assert state(ha, alert("long_cycle")) == "off"
@@ -267,7 +267,7 @@ async def test_no_cycle_does_not_flicker_at_a_cycle_end(ha: HomeAssistant, freez
 async def test_no_cycle_counts_across_a_restart(ha: HomeAssistant, freezer: Any) -> None:
     end = (dt_util.utcnow() - timedelta(minutes=50)).isoformat()
     await restart(ha, devices({"no_cycle": {"for": {"hours": 1}}}),
-                  (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+                  (State(RUNNING, "off"), snapshot(None)),
                   (State(LAST_END, end),
                    {"native_value": {"__type": "<class 'datetime.datetime'>", "isoformat": end},
                     "native_unit_of_measurement": None}))
@@ -282,7 +282,7 @@ async def test_no_cycle_counts_from_now_after_an_impossible_creation(
         ha: HomeAssistant, freezer: Any) -> None:
     """A hand-edited .storage: a well-formed but impossible creation date is none, and the alert is created now."""
     await restart(ha, devices({"no_cycle": {"for": {"hours": 1}}}),
-                  (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+                  (State(RUNNING, "off"), snapshot(None)),
                   (State(alert("no_cycle"), "off"), {"at": "2026-02-30T10:00:00+00:00"}))
     await fake(ha, POWER, "1")
     await tick(ha, freezer, 3599)

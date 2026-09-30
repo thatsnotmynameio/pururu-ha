@@ -10,7 +10,7 @@ from helpers import DOMAIN, module
 
 APPLIANCE: dict[str, Any] = {
     "power": "sensor.washer_power",
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 PUMP = {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}
 

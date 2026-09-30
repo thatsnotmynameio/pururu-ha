@@ -17,7 +17,7 @@ SWITCHES: dict[str, Any] = {"pump": {"entity": REAL_PUMP, "name": "Bomba"},
                             "heater": {"entity": REAL_HEATER, "name": "Aquecedor"}}
 DEVICES = {KEY: {"name": "Piscina", "switches": SWITCHES}}
 APPLIANCE = {"power": "sensor.pool_pump_power",
-             "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
+             "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
 
 
 def state(hass: HomeAssistant, entity_id: str) -> str:

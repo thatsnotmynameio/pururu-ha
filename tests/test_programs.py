@@ -31,7 +31,7 @@ TWO_HOURS = 2 * 60 * 60
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
     {"turn_on": "switch_pump"}, {"delay": {"hours": 2}}, {"turn_off": "switch_pump"}]}
 APPLIANCE = {"power": "sensor.pool_pump_power",
-             "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
+             "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
 
 
 def devices(**programs: Any) -> dict[str, Any]:

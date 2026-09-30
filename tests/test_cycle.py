@@ -14,7 +14,7 @@ POWER = "sensor.demo_plug_power"
 RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 DEVICES = {KEY: {"name": "Demo washer", "appliance": APPLIANCE}}
 
@@ -24,7 +24,7 @@ DOOR_KEY = "demo_door"
 MODE_KEY = "demo_filter"
 MODE_APPLIANCE: dict[str, Any] = {
     "power": POWER,
-    "running": {"threshold": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2}},
 }
 # gelar and quente, so watts(1000) hands gelar straight over to quente: no idle in between
 MODES: dict[str, Any] = {

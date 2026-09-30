@@ -46,7 +46,7 @@ from helpers import fake, setup, tick
 
 WASHER = {"laundry_washer": {"name": "Washer", "appliance": {
     "power": "sensor.plug_power",
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }}}
 
 

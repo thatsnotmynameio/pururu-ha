@@ -13,7 +13,7 @@ pururu:
       appliance:
         power: sensor.filter_plug_power
         energy: sensor.filter_plug_energy
-        running: {threshold: 2.9, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
+        running_program: {above: 2.9, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
       modes:
         cycle_from: appliance
         sensor: sensor.filter_plug_power

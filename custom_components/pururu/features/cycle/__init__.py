@@ -45,10 +45,9 @@ def end_signal(device: Device, item: Item | None = None) -> SignalType[Cycle]:
 class CycleSource(PururuEntity):
     """An entity whose finished cycles are sent on its cycle and end signals, state written first.
 
-    `Running`, `Open`, `Runs`, and the detector's `Carrier` and `PhaseRunning`
-    set the signals up once, in `__init__`; `Current`
-    (modes) has one running mode at a time, so it sets them up again for each
-    item it sends.
+    `Open`, `Runs`, and the detector's `Carrier` and `PhaseRunning` set the
+    signals up once, in `__init__`; `Current` (modes) has one running mode at
+    a time, so it sets them up again for each item it sends.
     """
 
     def _cycle_signals(self, device: Device, item: Item | None = None) -> None:

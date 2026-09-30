@@ -75,7 +75,7 @@ pururu:
       area: lavanderia
       appliance:
         power: sensor.washer_plug_power
-        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+        running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
 ```
 
 - The device is put in its area **at every start and reload**. If you move it in the UI, it stays there until the next reload.

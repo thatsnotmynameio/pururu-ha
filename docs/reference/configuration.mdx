@@ -30,8 +30,8 @@ pururu:
       appliance:
         power: sensor.washer_plug_power
         energy: sensor.washer_plug_energy
-        running:
-          threshold: 4
+        running_program:
+          above: 4
           on_delay: {minutes: 1}
           off_delay: {minutes: 2}
         statistics:

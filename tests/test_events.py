@@ -20,7 +20,7 @@ ENERGY_TOTAL = "sensor.pururu_demo_washer_appliance_energy_total"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
     "energy": ENERGY,
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 DEVICES = {KEY: {"name": "Demo washer", "appliance": APPLIANCE}}
 BOTH = ["state_changed", "reading"]

@@ -13,8 +13,8 @@ pururu:
       appliance:
         power: sensor.washer_plug_power
         energy: sensor.washer_plug_energy
-        running:
-          threshold: 4
+        running_program:
+          above: 4
           on_delay: {minutes: 1}
           off_delay: {minutes: 2}
         statistics:
@@ -145,7 +145,7 @@ An appliance offers alerts for what usually goes wrong. They're **off** until yo
 ```yaml
 appliance:
   power: sensor.washer_plug_power
-  running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+  running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   alerts:
     offline:                          # every default
     long_cycle: {for: {hours: 3}}
@@ -182,7 +182,7 @@ An appliance offers one notification, off until you enable it in its `notificati
 ```yaml
 appliance:
   power: sensor.washer_plug_power
-  running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+  running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   notifications:
     finished:
 ```

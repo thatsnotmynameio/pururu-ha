@@ -8,7 +8,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 import pytest
 
-from helpers import fake, reload, restart, setup, tick
+from helpers import fake, reload, restart, setup, snapshot, tick
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
@@ -16,7 +16,7 @@ RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
 PHASE = "sensor.pururu_demo_washer_phase_current"
 IDLE_W = 1.4
 APPLIANCE = {"power": POWER,
-             "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
+             "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
 PHASES: dict[str, Any] = {
     "cycle_from": "appliance",
     "sensor": POWER,
@@ -209,7 +209,7 @@ async def test_restart_holds_the_phase_until_the_first_reading(ha: HomeAssistant
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     await restart(
         ha, DEVICES,
-        (State(RUNNING, "on"), {"since": since, "since_energy": None}),
+        (State(RUNNING, "on"), snapshot(since)),
         (State(PHASE, "heating", {"seen": ["heating"]}), {}),
     )
     assert phase(ha) == ("heating", ["heating"])

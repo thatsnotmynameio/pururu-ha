@@ -26,7 +26,7 @@ TETO = "light.demo_teto"
 MIRROR = "sensor.pururu_washer_appliance_power"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 DOOR_OPENS = {"name": "Porta abriu", "entity": DOOR, "to": "on"}
 OVERLOAD = {"name": "Sobrecarga", "device": WASHER, "when": "appliance_power", "above": 2500}

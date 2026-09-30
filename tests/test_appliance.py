@@ -8,7 +8,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 import pytest
 
-from helpers import capture, fake, held, reload, restart, setup, tick
+from helpers import capture, fake, held, reload, restart, setup, snapshot, tick
 
 KEY = "demo_washer"
 POWER = "sensor.demo_plug_power"
@@ -18,7 +18,7 @@ IDLE_W = 1.4
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
     "energy": ENERGY,
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 DEVICES = {KEY: {"name": "Demo washer", "appliance": APPLIANCE}}
 
@@ -50,9 +50,9 @@ async def washer(ha: HomeAssistant, freezer: Any) -> HomeAssistant:
 
 
 async def start_cycle(hass: HomeAssistant, freezer: Any) -> None:
-    """Long enough above the threshold to run, then the drum's pause (~7 W)."""
+    """Exactly on_delay above, so the cycle starts now (the carrier dates it when on_delay passed), then the drum's pause (~7 W)."""
     await watts(hass, 120)
-    await tick(hass, freezer, 65)
+    await tick(hass, freezer, 60)
     assert running(hass) == "on"
     await watts(hass, 7)
 
@@ -71,14 +71,17 @@ async def end_cycle(hass: HomeAssistant, freezer: Any) -> None:
     pytest.param({**APPLIANCE, "statistics": {"cycles": ["daily"]}}, id="unknown period"),
     pytest.param({key: value for key, value in APPLIANCE.items() if key != "energy"}
                  | {"statistics": {"idle_energy": ["today"]}}, id="idle_energy without energy"),
-    pytest.param({**APPLIANCE, "running": {"threshold": 4, "on_delay": {"minutes": 1}}},
-                 id="no off_delay"),
-    pytest.param({"running": APPLIANCE["running"]}, id="no power"),
+    pytest.param({**APPLIANCE, "running_program": {"on_delay": {"minutes": 1}}}, id="no bound"),
+    pytest.param({"running_program": APPLIANCE["running_program"]}, id="no power"),
     pytest.param({**APPLIANCE, "watts": POWER}, id="unknown key"),
-    pytest.param({**APPLIANCE, "running": {**APPLIANCE["running"], "threshold": "nan"}},
-                 id="threshold not a number"),
-    pytest.param({**APPLIANCE, "running": {**APPLIANCE["running"], "threshold": "inf"}},
-                 id="threshold infinite"),
+    pytest.param({**APPLIANCE, "running_program": {**APPLIANCE["running_program"], "above": "nan"}},
+                 id="above not a number"),
+    pytest.param({**APPLIANCE, "running_program": {**APPLIANCE["running_program"], "above": "inf"}},
+                 id="above infinite"),
+    pytest.param({"power": POWER, "running": {"on_delay": 60, "off_delay": 120, "threshold": 4}},
+                 id="running is now running_program"),
+    pytest.param({**APPLIANCE, "running_program": {**APPLIANCE["running_program"], "name": "X"}},
+                 id="running_program takes no name"),
 ])
 async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]) -> None:
     assert not await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
@@ -150,7 +153,7 @@ async def test_holds_off_while_the_plug_has_no_value(washer: HomeAssistant, free
 async def test_restart_restores_running(ha: HomeAssistant, freezer: Any) -> None:
     """Saved on: still on after the restart until the plug says otherwise."""
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
-    await restart(ha, DEVICES, (State(RUNNING, "on"), {"since": since, "since_energy": 100.0}))
+    await restart(ha, DEVICES, (State(RUNNING, "on"), snapshot(since, since_energy=100.0)))
     assert running(ha) == "on"
     await watts(ha, "unavailable")
     await tick(ha, freezer, 600)
@@ -158,14 +161,30 @@ async def test_restart_restores_running(ha: HomeAssistant, freezer: Any) -> None
     await end_cycle(ha, freezer)
 
 
-async def test_restart_with_an_impossible_start_restores_running(
+async def test_restart_with_an_impossible_start_is_no_cycle(
         ha: HomeAssistant, freezer: Any) -> None:
-    """A hand-edited .storage: a well-formed but impossible date is no start, and the cycle goes on."""
+    """A hand-edited .storage: a well-formed but impossible start is none, and a program without a start doesn't run (D1 ruling 15); the power starts the next cycle."""
     await restart(ha, DEVICES, (State(RUNNING, "on"),
-                                {"since": "2020-02-30T10:00:00+00:00", "since_energy": 100.0}))
-    assert running(ha) == "on"
+                                snapshot("2020-02-30T10:00:00+00:00", since_energy=100.0)))
+    assert running(ha) == "off"
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    await start_cycle(ha, freezer)
     await end_cycle(ha, freezer)
     assert ha.states.get(sensor("cycles_total")).state == "1"
+
+
+async def test_an_old_running_restore_is_no_cycle(ha: HomeAssistant, freezer: Any) -> None:
+    """What 0.1.23's running saved (its CycleStart) is no snapshot: no cycle is restored, and the next one counts from its own start (the update step: update while stopped)."""
+    since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
+    await restart(ha, DEVICES, (State(RUNNING, "on"), {"since": since, "since_energy": 100.0}))
+    assert running(ha) == "off"
+    assert "cycle_start" not in ha.states.get(RUNNING).attributes
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    started = dt_util.utcnow() + timedelta(seconds=60)
+    await start_cycle(ha, freezer)
+    assert ha.states.get(RUNNING).attributes["cycle_start"] == started
 
 
 # --- mirrors, entities, names --------------------------------------------------
@@ -280,8 +299,8 @@ async def test_restart_during_off_delay_keeps_when_the_power_went_down(
         ha: HomeAssistant, freezer: Any) -> None:
     now = dt_util.utcnow()
     since, dropped = now - timedelta(minutes=20), now - timedelta(minutes=1)
-    await restart(ha, DEVICES, (State(RUNNING, "on"), {
-        "since": since.isoformat(), "since_energy": None, "until": dropped.isoformat()}))
+    await restart(ha, DEVICES, (State(RUNNING, "on"), snapshot(
+        since.isoformat(), until=dropped.isoformat())))
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     assert dt_util.parse_datetime(value(ha, "last_cycle_end")) == dropped
@@ -391,7 +410,7 @@ async def test_restart_mid_cycle_keeps_its_start(ha: HomeAssistant, freezer: Any
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     await restart(
         ha, DEVICES,
-        (State(RUNNING, "on"), {"since": since, "since_energy": 100.0}),
+        (State(RUNNING, "on"), snapshot(since, since_energy=100.0)),
         (State(sensor("cycles_total"), "5"),
          {"native_value": 5, "native_unit_of_measurement": None}),
     )
@@ -615,7 +634,7 @@ async def test_two_devices_have_their_own_meters(ha: HomeAssistant, freezer: Any
 
 async def test_cycle_start_is_shown_while_running(washer: HomeAssistant, freezer: Any) -> None:
     assert "cycle_start" not in washer.states.get(RUNNING).attributes
-    started = dt_util.utcnow() + timedelta(seconds=65)
+    started = dt_util.utcnow() + timedelta(seconds=60)
     await start_cycle(washer, freezer)
     assert washer.states.get(RUNNING).attributes["cycle_start"] == started
     await end_cycle(washer, freezer)
@@ -639,7 +658,7 @@ async def test_cycle_end_is_shown_while_the_end_is_pending(washer: HomeAssistant
 async def test_cycle_start_is_kept_across_a_restart(ha: HomeAssistant) -> None:
     since = dt_util.utcnow() - timedelta(minutes=20)
     await restart(ha, DEVICES, (State(RUNNING, "on"),
-                                {"since": since.isoformat(), "since_energy": 100.0}))
+                                snapshot(since.isoformat(), since_energy=100.0)))
     assert ha.states.get(RUNNING).attributes["cycle_start"] == since
 
 
@@ -737,7 +756,7 @@ async def test_idle_energy_restores_without_the_time_ha_was_down(ha: HomeAssista
     """The counter's reading at the start may be from before the restart: count from the next."""
     await kwh(ha, 100.4)
     await restart(ha, {KEY: {"name": "Demo washer", "appliance": IDLE}},
-                  (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+                  (State(RUNNING, "off"), snapshot(None)),
                   (State(sensor("idle_energy_total"), "1.5"),
                    {"native_value": 1.5, "native_unit_of_measurement": "kWh"}))
     assert idle_kwh(ha) == 1.5

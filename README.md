@@ -19,7 +19,7 @@ pururu:
       name: Lava-louças
       appliance:
         power: sensor.dishwasher_plug_power
-        running: {threshold: 3, on_delay: {minutes: 1}, off_delay: {minutes: 5}}
+        running_program: {above: 3, on_delay: {minutes: 1}, off_delay: {minutes: 5}}
 ```
 
 This creates the device **Lava-louças**, with `binary_sensor.pururu_dishwasher_appliance_running`, its last cycle's start, end and duration, and its total runtime and cycle count.

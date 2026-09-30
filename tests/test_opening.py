@@ -300,7 +300,7 @@ async def test_the_last_opening_restores(ha: HomeAssistant, kind: str) -> None:
 
 WASHER = {"name": "Lavadora", "appliance": {
     "power": "sensor.lavadora_power",
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }}
 
 

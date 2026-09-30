@@ -1,8 +1,7 @@
-"""features/cycle/program's entities, in HA, through a test-only builder in the appliance's namespace.
+"""features/cycle/program's entities, in HA, through the appliance's running_program.
 
-No feature uses the detector until D2: `detecting` swaps FEATURES["appliance"]
-for a builder whose block is `power`, `energy` and `running_program`, so the
-entity IDs are D2's: <platform>.pururu_<device>_appliance_phase_<key>_<suffix>.
+The carrier is the appliance's `running`; the phases' entity IDs are
+<platform>.pururu_<device>_appliance_phase_<key>_<suffix>.
 """
 
 import asyncio
@@ -10,16 +9,14 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 import pytest
-import voluptuous as vol
 
-from helpers import capture, fake, held, module, reload, restart, setup, tick
+from helpers import capture, fake, held, module, reload, restart, setup, snapshot, tick
 
 KEY = "demo_filter"
 POWER = "sensor.demo_plug_power"
@@ -48,52 +45,29 @@ LAST_CYCLE = ("last_cycle_start", "last_cycle_end", "last_cycle_duration", "last
 SUFFIXES = (*LAST_CYCLE, "cycles_total", "runtime_total", "energy_total")
 
 
-def builder() -> Any:
-    """A builder reading `power` through the detector, as D2's appliance will; only for these tests."""
-    program = module("features.cycle.program")
+def sensor(entity_key: str) -> str:
+    return f"sensor.{PREFIX}_{entity_key}"
 
-    def build(hass: HomeAssistant, device: Any, config: dict[str, Any],
-              inputs: Any) -> list[Any]:
-        return program.build(hass, device, program.program_of(config["running_program"]),
-                             key="running", reading=config["power"],
-                             energy=config.get("energy"))
 
-    return module("core.feature").Feature(
-        schema=vol.Schema({vol.Required("power"): cv.entity_id,
-                           vol.Optional("energy"): cv.entity_id,
-                           vol.Required("running_program"): program.SCHEMA}),
-        entity_keys={"running": Platform.BINARY_SENSOR, **program.FIXED},
-        build=build,
-        example={"power": POWER, "running_program": {"above": 4}},
-        namespace="appliance",
-    )
+# The appliance's own, beside its running program's phases
+OWN = {RUNNING, *(sensor(key) for key in (
+    "power", "energy_total", *LAST_CYCLE, "cycles_total", "runtime_total", "idle_energy_total"))}
 
 
 @pytest.fixture
-def detecting(ha: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> HomeAssistant:
-    """`ha` with the test builder as the appliance."""
-    monkeypatch.setitem(module("features").FEATURES, "appliance", builder())
-    return ha
-
-
-@pytest.fixture
-async def purifier(detecting: HomeAssistant, freezer: Any) -> HomeAssistant:
+async def purifier(ha: HomeAssistant, freezer: Any) -> HomeAssistant:
     """Idle at 1 W, long enough to count as not running."""
-    assert await setup(detecting, DEVICES)
-    await watts(detecting, IDLE_W)
-    await tick(detecting, freezer, 125)
-    assert state(detecting, RUNNING) == "off"
-    return detecting
+    assert await setup(ha, DEVICES)
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    assert state(ha, RUNNING) == "off"
+    return ha
 
 
 def state(hass: HomeAssistant, entity_id: str) -> str:
     found = hass.states.get(entity_id)
     assert found is not None, entity_id
     return found.state
-
-
-def sensor(entity_key: str) -> str:
-    return f"sensor.{PREFIX}_{entity_key}"
 
 
 async def watts(hass: HomeAssistant, value: float | str) -> None:
@@ -115,44 +89,45 @@ async def cool(hass: HomeAssistant, freezer: Any) -> None:
 # --- what it creates ----------------------------------------------------------------
 
 
-async def test_its_entities_and_their_ids(detecting: HomeAssistant) -> None:
+async def test_its_entities_and_their_ids(ha: HomeAssistant) -> None:
     """The carrier under the builder's key, the current and last phase, and per phase (other too) its binary sensor and cycle entities."""
-    assert await setup(detecting, DEVICES)
+    assert await setup(ha, DEVICES)
     phases = ("gelar", "quente", "other")
-    assert held(detecting, KEY) == {
-        RUNNING, CURRENT, LAST,
+    assert held(ha, KEY) == {
+        *OWN, CURRENT, LAST,
         *(f"binary_sensor.{PREFIX}_phase_{phase}" for phase in phases),
         *(sensor(f"phase_{phase}_{suffix}") for phase in phases for suffix in SUFFIXES),
     }
-    registry = er.async_get(detecting)
+    registry = er.async_get(ha)
     assert registry.async_get(GELAR).unique_id == f"{PREFIX}_phase_gelar"
     assert registry.async_get(sensor("phase_other_cycles_total")).unique_id == (
         f"{PREFIX}_phase_other_cycles_total")
 
 
-async def test_without_energy_no_energy_per_phase(detecting: HomeAssistant) -> None:
+async def test_without_energy_no_energy_per_phase(ha: HomeAssistant) -> None:
     appliance = {"power": POWER, "running_program": RUNNING_PROGRAM}
-    assert await setup(detecting, {KEY: {"name": "Demo filter", "appliance": appliance}})
-    assert detecting.states.get(sensor("phase_gelar_energy_total")) is None
-    assert detecting.states.get(sensor("phase_gelar_last_cycle_energy")) is None
-    assert detecting.states.get(sensor("phase_gelar_cycles_total")) is not None
+    assert await setup(ha, {KEY: {"name": "Demo filter", "appliance": appliance}})
+    assert ha.states.get(sensor("phase_gelar_energy_total")) is None
+    assert ha.states.get(sensor("phase_gelar_last_cycle_energy")) is None
+    assert ha.states.get(sensor("phase_gelar_cycles_total")) is not None
 
 
-async def test_without_phases_only_the_carrier(detecting: HomeAssistant) -> None:
+async def test_without_phases_no_phase_entity(ha: HomeAssistant) -> None:
     appliance = {"power": POWER, "running_program": {"above": 4}}
-    assert await setup(detecting, {KEY: {"name": "Demo filter", "appliance": appliance}})
-    assert held(detecting, KEY) == {RUNNING}
+    assert await setup(ha, {KEY: {"name": "Demo filter", "appliance": appliance}})
+    assert held(ha, KEY) == {RUNNING, *(sensor(key) for key in (
+        "power", *LAST_CYCLE[:3], "cycles_total", "runtime_total"))}
 
 
 async def test_nothing_of_the_phases_when_the_carrier_is_not_created(
-        detecting: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """The carrier's ID belongs to another integration: every phase entity follows it, so none is created."""
-    er.async_get(detecting).async_get_or_create(
+    er.async_get(ha).async_get_or_create(
         "binary_sensor", "template", "someone_else", suggested_object_id=f"{PREFIX}_running")
-    assert await setup(detecting, DEVICES)
-    assert detecting.states.get(CURRENT) is None
-    assert detecting.states.get(GELAR) is None
-    assert detecting.states.get(sensor("phase_gelar_cycles_total")) is None
+    assert await setup(ha, DEVICES)
+    assert ha.states.get(CURRENT) is None
+    assert ha.states.get(GELAR) is None
+    assert ha.states.get(sensor("phase_gelar_cycles_total")) is None
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(GELAR in message and RUNNING in message for message in errors), errors
 
@@ -293,38 +268,31 @@ async def test_an_energy_entity_without_a_state(purifier: HomeAssistant, freezer
 # --- restarts and reloads ------------------------------------------------------------
 
 
-def snapshot(since: str, **phases: dict[str, Any]) -> dict[str, Any]:
-    return {"program": {"since": since, "since_energy": None, "until": None, "gap": False},
-            "phases": {key: {"since_energy": None, "until": None, "gap": False, **run}
-                       for key, run in phases.items()},
-            "order": list(phases), "seen": list(phases)}
-
-
-async def test_a_restart_keeps_the_running_phase(detecting: HomeAssistant, freezer: Any) -> None:
+async def test_a_restart_keeps_the_running_phase(ha: HomeAssistant, freezer: Any) -> None:
     """The phase shows from the first write (no off in between) and counts from the restart, not from before."""
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
-    changes = capture(detecting, "state_changed")
+    changes = capture(ha, "state_changed")
     await restart(
-        detecting, DEVICES,
+        ha, DEVICES,
         (State(RUNNING, "on"), snapshot(since, gelar={"since": since})),
         (State(GELAR, "on"), {}),
         (State(CURRENT, "gelar"), {}),
     )
-    assert state(detecting, GELAR) == "on"
-    assert state(detecting, CURRENT) == "gelar"
+    assert state(ha, GELAR) == "on"
+    assert state(ha, CURRENT) == "gelar"
     shown = [event.data["new_state"].state for event in changes
              if event.data["entity_id"] in (GELAR, CURRENT)]
     assert "off" not in shown, shown
     assert "idle" not in shown, shown
-    await watts(detecting, 120)
-    await tick(detecting, freezer, 600)
-    await watts(detecting, IDLE_W)
-    await tick(detecting, freezer, 35)
-    assert state(detecting, CURRENT) == "idle"
-    assert float(state(detecting, sensor("phase_gelar_last_cycle_duration"))) == pytest.approx(
+    await watts(ha, 120)
+    await tick(ha, freezer, 600)
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 35)
+    assert state(ha, CURRENT) == "idle"
+    assert float(state(ha, sensor("phase_gelar_last_cycle_duration"))) == pytest.approx(
         30, abs=0.2)
-    assert state(detecting, sensor("phase_gelar_cycles_total")) == "1"
-    assert float(state(detecting, sensor("phase_gelar_runtime_total"))) == pytest.approx(
+    assert state(ha, sensor("phase_gelar_cycles_total")) == "1"
+    assert float(state(ha, sensor("phase_gelar_runtime_total"))) == pytest.approx(
         600 / 3600, abs=0.0005)
 
 
@@ -336,7 +304,7 @@ async def test_a_restart_keeps_the_running_phase(detecting: HomeAssistant, freez
                  id="unusable: its phase"),
 ])
 async def test_the_current_phase_restored_before_the_carrier(
-        detecting: HomeAssistant, monkeypatch: pytest.MonkeyPatch,
+        ha: HomeAssistant, monkeypatch: pytest.MonkeyPatch,
         attributes: dict[str, Any], running: list[str], seen: list[str]) -> None:
     """The carrier held until phase_current is written: it shows its restored phase, and its running and seen, until the carrier restored the detector."""
     entities = module("features.cycle.program.entities")
@@ -346,7 +314,7 @@ async def test_the_current_phase_restored_before_the_carrier(
     def current_written(_event: Any) -> None:
         written.set()
 
-    async_track_state_change_event(detecting, [CURRENT], current_written)
+    async_track_state_change_event(ha, [CURRENT], current_written)
     added = entities.Carrier.async_added_to_hass
 
     async def after_current(self: Any) -> None:
@@ -355,9 +323,9 @@ async def test_the_current_phase_restored_before_the_carrier(
 
     monkeypatch.setattr(entities.Carrier, "async_added_to_hass", after_current)
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
-    changes = capture(detecting, "state_changed")
+    changes = capture(ha, "state_changed")
     await restart(
-        detecting, DEVICES,
+        ha, DEVICES,
         (State(RUNNING, "on"), snapshot(since, gelar={"since": since})),
         (State(CURRENT, "gelar", attributes), {}),
     )
@@ -368,8 +336,8 @@ async def test_the_current_phase_restored_before_the_carrier(
                  if event.data["entity_id"] == CURRENT)
     assert (first.attributes["running"], first.attributes["seen"]) == (running, seen)
     assert (CURRENT, "idle") not in shown, shown
-    assert state(detecting, CURRENT) == "gelar"
-    assert state(detecting, RUNNING) == "on"
+    assert state(ha, CURRENT) == "gelar"
+    assert state(ha, RUNNING) == "on"
 
 
 # Every delay at its default, 0: a reading ends or starts a phase at once
@@ -385,50 +353,50 @@ AT_ONCE: dict[str, Any] = {
     pytest.param("gelar", 1000, "gelar", QUENTE, id="gelar leaves, quente starts"),
 ])
 async def test_a_restart_ending_a_phase_at_once_counts_its_cycle(
-        detecting: HomeAssistant, restored: str, watts_now: float, ended: str,
+        ha: HomeAssistant, restored: str, watts_now: float, ended: str,
         now_running: str) -> None:
     """The reading already ends the restored phase: its cycle reaches its entities, as every view listens before the carrier's first step."""
     devices = {KEY: {"name": "Demo filter",
                      "appliance": {"power": POWER, "running_program": AT_ONCE}}}
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     phase_since = dt_util.utcnow() - timedelta(minutes=10)
-    detecting.states.async_set(POWER, str(watts_now))
+    ha.states.async_set(POWER, str(watts_now))
     await restart(
-        detecting, devices,
+        ha, devices,
         (State(RUNNING, "on"), snapshot(since, **{restored: {"since": phase_since.isoformat()}})),
         (State(f"binary_sensor.{PREFIX}_phase_{restored}", "on"), {}),
         (State(CURRENT, restored), {}),
     )
-    assert state(detecting, now_running) == "on"
-    assert state(detecting, f"binary_sensor.{PREFIX}_phase_{ended}") == "off"
-    assert state(detecting, sensor(f"phase_{ended}_cycles_total")) == "1"
+    assert state(ha, now_running) == "on"
+    assert state(ha, f"binary_sensor.{PREFIX}_phase_{ended}") == "off"
+    assert state(ha, sensor(f"phase_{ended}_cycles_total")) == "1"
     assert dt_util.parse_datetime(
-        state(detecting, sensor(f"phase_{ended}_last_cycle_start"))) == phase_since
+        state(ha, sensor(f"phase_{ended}_last_cycle_start"))) == phase_since
     assert dt_util.parse_datetime(
-        state(detecting, sensor(f"phase_{ended}_last_cycle_end"))) == dt_util.utcnow()
-    assert state(detecting, LAST) == ended
+        state(ha, sensor(f"phase_{ended}_last_cycle_end"))) == dt_util.utcnow()
+    assert state(ha, LAST) == ended
 
 
-async def test_the_program_ends_after_its_phases(detecting: HomeAssistant, freezer: Any) -> None:
+async def test_the_program_ends_after_its_phases(ha: HomeAssistant, freezer: Any) -> None:
     """Both end in the program's step: the phases' ends are written first, the program's off and its end signal last."""
     program = {**RUNNING_PROGRAM, "off_delay": {"seconds": 30},
                "phases": {**RUNNING_PROGRAM["phases"],
                           "gelar": {**RUNNING_PROGRAM["phases"]["gelar"],
                                     "off_delay": {"minutes": 1}}}}
-    assert await setup(detecting, {KEY: {"name": "Demo filter", "appliance": {
+    assert await setup(ha, {KEY: {"name": "Demo filter", "appliance": {
         "power": POWER, "running_program": program}}})
-    await watts(detecting, IDLE_W)
-    await tick(detecting, freezer, 35)
-    await cool(detecting, freezer)
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 35)
+    await cool(ha, freezer)
     device = module("core.feature").Device(key=KEY, name="Demo filter", namespace="appliance")
     seen: list[tuple[str, ...]] = []
     async_dispatcher_connect(
-        detecting, module("features.cycle").end_signal(device),
-        callback(lambda _cycle: seen.append(tuple(state(detecting, each)
+        ha, module("features.cycle").end_signal(device),
+        callback(lambda _cycle: seen.append(tuple(state(ha, each)
                                                   for each in (RUNNING, GELAR, CURRENT, LAST)))))
-    changes = capture(detecting, "state_changed")
-    await watts(detecting, IDLE_W)
-    await tick(detecting, freezer, 35)
+    changes = capture(ha, "state_changed")
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 35)
     assert seen == [("off", "off", "idle", "gelar")]
     order = [event.data["entity_id"] for event in changes
              if event.data["entity_id"] in (RUNNING, GELAR, CURRENT, LAST)
@@ -442,45 +410,45 @@ async def test_the_program_ends_after_its_phases(detecting: HomeAssistant, freez
     pytest.param({"program": {"since": "2020-02-30T10:00:00+00:00"}}, id="an impossible date"),
 ])
 async def test_a_snapshot_the_detector_cannot_use_is_ignored(
-        detecting: HomeAssistant, freezer: Any, extra: Any) -> None:
+        ha: HomeAssistant, freezer: Any, extra: Any) -> None:
     """A hand-edited .storage: the carrier starts from nothing, and the phases follow the readings."""
-    await restart(detecting, DEVICES, (State(RUNNING, "on"), extra), (State(CURRENT, "gelar"), {}))
-    assert state(detecting, RUNNING) == "off"
-    assert state(detecting, CURRENT) == "idle"
-    await watts(detecting, 120)
-    await tick(detecting, freezer, 35)
-    assert state(detecting, RUNNING) == "on"
-    assert state(detecting, CURRENT) == "gelar"
+    await restart(ha, DEVICES, (State(RUNNING, "on"), extra), (State(CURRENT, "gelar"), {}))
+    assert state(ha, RUNNING) == "off"
+    assert state(ha, CURRENT) == "idle"
+    await watts(ha, 120)
+    await tick(ha, freezer, 35)
+    assert state(ha, RUNNING) == "on"
+    assert state(ha, CURRENT) == "gelar"
 
 
 async def test_a_phases_impossible_date_is_no_start(
-        detecting: HomeAssistant, freezer: Any) -> None:
+        ha: HomeAssistant, freezer: Any) -> None:
     """A hand-edited .storage: the program and its phase run on, the phase without a start, and end with the readings."""
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
-    await restart(detecting, DEVICES,
+    await restart(ha, DEVICES,
                   (State(RUNNING, "on"), snapshot(since, gelar={"since": "2020-02-30T10:00:00+00:00"})),
                   (State(CURRENT, "gelar"), {}))
-    assert state(detecting, RUNNING) == "on"
-    assert state(detecting, CURRENT) == "gelar"
-    await watts(detecting, IDLE_W)
-    await tick(detecting, freezer, 125)
-    assert state(detecting, RUNNING) == "off"
-    assert state(detecting, CURRENT) == "idle"
-    assert state(detecting, sensor("phase_gelar_cycles_total")) == "1"
-    assert state(detecting, sensor("phase_gelar_last_cycle_start")) == "unknown"
+    assert state(ha, RUNNING) == "on"
+    assert state(ha, CURRENT) == "gelar"
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    assert state(ha, RUNNING) == "off"
+    assert state(ha, CURRENT) == "idle"
+    assert state(ha, sensor("phase_gelar_cycles_total")) == "1"
+    assert state(ha, sensor("phase_gelar_last_cycle_start")) == "unknown"
 
 
-async def test_a_disabled_carrier_leaves_the_phases_idle(detecting: HomeAssistant) -> None:
+async def test_a_disabled_carrier_leaves_the_phases_idle(ha: HomeAssistant) -> None:
     """The carrier is disabled: the detector never runs, so phase_current is idle as every phase is off, not its restored phase."""
-    er.async_get(detecting).async_get_or_create(
+    er.async_get(ha).async_get_or_create(
         "binary_sensor", "pururu", f"{PREFIX}_running",
         suggested_object_id=f"{PREFIX}_running",
         disabled_by=er.RegistryEntryDisabler.USER)
-    await restart(detecting, DEVICES, (State(CURRENT, "gelar", {"running": ["gelar"]}), {}))
-    assert detecting.states.get(RUNNING) is None
-    assert state(detecting, GELAR) == "off"
-    assert state(detecting, CURRENT) == "idle"
-    assert detecting.states.get(CURRENT).attributes["running"] == []
+    await restart(ha, DEVICES, (State(CURRENT, "gelar", {"running": ["gelar"]}), {}))
+    assert ha.states.get(RUNNING) is None
+    assert state(ha, GELAR) == "off"
+    assert state(ha, CURRENT) == "idle"
+    assert ha.states.get(CURRENT).attributes["running"] == []
 
 
 def forward_then_fail(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -496,7 +464,7 @@ def forward_then_fail(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 async def test_an_entry_failing_after_its_platforms_drops_the_waiting_carrier(
-        detecting: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        ha: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The platforms unloaded: the carrier, removed while it waits, never starts; a reload brings it back, following the reading."""
     started: list[Any] = []
     carrier = module("features.cycle.program.entities").Carrier
@@ -508,38 +476,38 @@ async def test_an_entry_failing_after_its_platforms_drops_the_waiting_carrier(
 
     monkeypatch.setattr(carrier, "_start", spy)
     with monkeypatch.context() as failing:
-        forward_then_fail(detecting, failing)
-        assert await setup(detecting, DEVICES)
-    [entry] = detecting.config_entries.async_entries("pururu")
+        forward_then_fail(ha, failing)
+        assert await setup(ha, DEVICES)
+    [entry] = ha.config_entries.async_entries("pururu")
     assert entry.state is ConfigEntryState.SETUP_ERROR
-    removed = detecting.states.get(RUNNING)
+    removed = ha.states.get(RUNNING)
     assert removed is not None
     assert removed.state == "unavailable"
     assert removed.attributes["restored"]  # HA's placeholder: the entity is gone
     assert not started
-    await reload(detecting, DEVICES)
+    await reload(ha, DEVICES)
     assert started
     assert entry.state is ConfigEntryState.LOADED
-    assert state(detecting, RUNNING) == "off"
-    await cool(detecting, freezer)
+    assert state(ha, RUNNING) == "off"
+    await cool(ha, freezer)
 
 
 async def test_an_entry_failing_after_its_platforms_kept_still_runs_the_carrier(
-        detecting: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch,
+        ha: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture) -> None:
     """The platforms not unloaded either: SETUP_ERROR, HA keeps the entities, and the carrier follows the reading."""
-    forward_then_fail(detecting, monkeypatch)
+    forward_then_fail(ha, monkeypatch)
 
     async def not_unloaded(entry: Any, platforms: Any) -> bool:
         return False
 
-    monkeypatch.setattr(detecting.config_entries, "async_unload_platforms", not_unloaded)
-    assert await setup(detecting, DEVICES)
-    [entry] = detecting.config_entries.async_entries("pururu")
+    monkeypatch.setattr(ha.config_entries, "async_unload_platforms", not_unloaded)
+    assert await setup(ha, DEVICES)
+    [entry] = ha.config_entries.async_entries("pururu")
     assert entry.state is ConfigEntryState.SETUP_ERROR
     assert "Unloading the platforms of a failed setup left some" in caplog.text
-    assert state(detecting, RUNNING) == "off"
-    await cool(detecting, freezer)
+    assert state(ha, RUNNING) == "off"
+    await cool(ha, freezer)
 
 
 async def test_a_reload_mid_phase_counts_one_cycle(purifier: HomeAssistant, freezer: Any) -> None:
@@ -570,10 +538,10 @@ async def test_a_carrier_renamed_mid_phase_follows_the_reading(
     assert state(purifier, sensor("phase_gelar_cycles_total")) == "1"
 
 
-async def test_last_restores(detecting: HomeAssistant) -> None:
-    await restart(detecting, DEVICES, (State(LAST, "quente"), {
+async def test_last_restores(ha: HomeAssistant) -> None:
+    await restart(ha, DEVICES, (State(LAST, "quente"), {
         "native_value": "quente", "native_unit_of_measurement": None}))
-    assert state(detecting, LAST) == "quente"
+    assert state(ha, LAST) == "quente"
 
 
 # --- names ------------------------------------------------------------------------------
@@ -593,12 +561,12 @@ NAMES = {
 
 
 @pytest.mark.parametrize("language", ["en", "pt-BR"])
-async def test_names(detecting: HomeAssistant, language: str) -> None:
+async def test_names(ha: HomeAssistant, language: str) -> None:
     """A phase's binary sensor is its name; its cycle entities carry it; other's and the detector's are translated."""
-    detecting.config.language = language
-    assert await setup(detecting, DEVICES)
+    ha.config.language = language
+    assert await setup(ha, DEVICES)
     for entity_id, name in NAMES[language].items():
-        assert detecting.states.get(entity_id).attributes["friendly_name"] == name, entity_id
+        assert ha.states.get(entity_id).attributes["friendly_name"] == name, entity_id
     if language == "en":
-        assert detecting.states.get(sensor("phase_gelar_cycles_total")).attributes[
+        assert ha.states.get(sensor("phase_gelar_cycles_total")).attributes[
             "unit_of_measurement"] == "cycles"

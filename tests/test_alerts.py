@@ -14,7 +14,7 @@ MIRROR = "sensor.pururu_demo_washer_appliance_power"
 REAL_PUMP = "switch.demo_pump"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
-    "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
+    "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 SWITCHES = {"pump": {"entity": REAL_PUMP, "name": "Bomba"}}
 OVERLOAD = {"name": "Overload", "when": "appliance_power", "above": 2500}

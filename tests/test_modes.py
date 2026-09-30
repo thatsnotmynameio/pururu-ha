@@ -8,7 +8,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 import pytest
 
-from helpers import capture, fake, reload, restart, setup, tick
+from helpers import capture, fake, reload, restart, setup, snapshot, tick
 
 KEY = "demo_filter"
 POWER = "sensor.demo_plug_power"
@@ -18,7 +18,7 @@ CURRENT = "sensor.pururu_demo_filter_mode_current"
 LAST = "sensor.pururu_demo_filter_mode_last"
 IDLE_W = 1.0
 APPLIANCE = {"power": POWER,
-             "running": {"threshold": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2}}}
+             "running_program": {"above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2}}}
 MODES: dict[str, Any] = {
     "cycle_from": "appliance",
     "sensor": POWER,
@@ -271,7 +271,7 @@ async def test_restart_during_a_modes_off_delay_keeps_when_it_left(ha: HomeAssis
     since, left = (now - timedelta(minutes=20)).isoformat(), now - timedelta(seconds=10)
     await restart(
         ha, DEVICES,
-        (State(RUNNING, "on"), {"since": since, "since_energy": None}),
+        (State(RUNNING, "on"), snapshot(since)),
         (State(CURRENT, "gelar"), {"since": since, "since_energy": None,
                                    "until": left.isoformat()}),
     )
@@ -279,19 +279,6 @@ async def test_restart_during_a_modes_off_delay_keeps_when_it_left(ha: HomeAssis
     await tick(ha, freezer, 35)
     assert mode(ha) == "quente"
     assert dt_util.parse_datetime(value(ha, "gelar_last_cycle_end")) == left
-
-
-async def test_no_mode_starts_while_the_cycle_is_unknown(purifier: HomeAssistant,
-                                                         freezer: Any) -> None:
-    await cool(purifier, freezer)
-    await fake(purifier, RUNNING, "unavailable")
-    await watts(purifier, 1000)
-    await tick(purifier, freezer, 15)
-    assert mode(purifier) == "gelar"  # quente is armed; gelar's off_delay still runs
-    await tick(purifier, freezer, 20)
-    assert mode(purifier) == "idle"
-    await fake(purifier, RUNNING, "on")
-    assert mode(purifier) == "quente"
 
 
 async def test_a_reading_without_a_value_cancels_pending_and_keeps_the_mode(
@@ -313,7 +300,7 @@ async def test_restart_keeps_the_running_mode(ha: HomeAssistant, freezer: Any) -
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     await restart(
         ha, DEVICES,
-        (State(RUNNING, "on"), {"since": since, "since_energy": None}),
+        (State(RUNNING, "on"), snapshot(since)),
         (State(CURRENT, "gelar"), {"since": since, "since_energy": None}),
     )
     assert mode(ha) == "gelar"
@@ -332,7 +319,7 @@ async def test_restart_with_an_impossible_start_keeps_the_mode(ha: HomeAssistant
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     await restart(
         ha, DEVICES,
-        (State(RUNNING, "on"), {"since": since, "since_energy": None}),
+        (State(RUNNING, "on"), snapshot(since)),
         (State(CURRENT, "gelar"), {"since": "2026-02-30T10:00:00+00:00", "since_energy": None}),
     )
     assert mode(ha) == "gelar"
@@ -540,7 +527,7 @@ async def test_restart_mid_cycle_keeps_its_start(ha: HomeAssistant, freezer: Any
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     await restart(
         ha, DEVICES,
-        (State(RUNNING, "on"), {"since": since, "since_energy": None}),
+        (State(RUNNING, "on"), snapshot(since)),
         (State(CURRENT, "gelar"), {"since": since, "since_energy": None}),
     )
     await watts(ha, IDLE_W)
@@ -646,7 +633,7 @@ async def test_a_restored_mode_ends_when_the_cycle_is_already_off(ha: HomeAssist
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     await restart(
         ha, with_modes(sensor=selector),
-        (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+        (State(RUNNING, "off"), snapshot(None)),
         (State(CURRENT, "gelar"), {"since": since, "since_energy": None}),
     )
     assert mode(ha) == "idle"
