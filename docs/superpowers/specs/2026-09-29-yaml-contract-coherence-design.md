@@ -308,9 +308,9 @@ The device key `ALERTS` lives in `aspects/alerts.py` because it shares its schem
 | **L0 core** | const, runtime, feature, roles, vocabulary, entity, resolve, texts, messages, files, generated | L0 only |
 | **L1 features** | `features/**` | L0; its own package (`features/<x>/`, or itself for a module `features/<x>.py`); the shared libraries `features/cycle` and `features/standing`. `features/__init__` may import every `features/*` package: it lists `FEATURES`. |
 | **L2 cross-cutting** | `aspects/*`, programs, reactions, device_keys | L0; `features/cycle` (shared machinery, not a feature); another `aspects/*` module. `device_keys` may import programs, reactions and `aspects/alerts`. |
-| **L3 outputs** | alert2_alerts, alert_lights, events, dashboard, places, devices | L0; L2's `aspects/alerts` (Alert2 reads `ProblemAlert`); `features/lights` (alert lights lend `Borrowable` lights) |
+| **L3 outputs** | alert2_alerts, alert_lights, events, dashboard, places, devices | L0; L2's `aspects/problem` (Alert2 and the alert lights read `ProblemAlert`); `features/lights` (alert lights lend `Borrowable` lights) |
 | **L4 wiring** | schema, catalogue, checks, build, generate | L0–L3; the only layer that reads `FEATURES`, `DEVICE_KEYS` and `ASPECTS` |
-| **L5 entry** | `__init__`, config_flow, the platforms | L0–L4; the platforms import only `runtime` and `homeassistant` |
+| **L5 entry** | `__init__`, config_flow, the platforms | L0–L4; the platforms import only `runtime` and `homeassistant`; `__init__` also imports `core.runtime` directly (hassfest's strict-typing check wants the entry named `*ConfigEntry`, `PururuConfigEntry`) |
 
 `runtime.py` is L0: it imports `feature`, `resolve` and `entity` for `Built`'s types, and the platforms import nothing else of pururu. HA's own registries (entity, device, area) are used wherever needed; "walking the lists" above means pururu's four lists.
 

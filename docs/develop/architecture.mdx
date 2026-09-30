@@ -48,6 +48,20 @@ flowchart TD
 
 Finally it listens for entity registry updates (`setup/listener.py`). When one of the entry's entities, or a generated item the entry tracks in `entry.data` (a script, a reaction's or a notification's automation), gets a new entity ID, it schedules a reload of the entry, so that everything that follows it picks up the new ID.
 
+## Layers
+
+The folders above are layers: `core/` (contracts and shared helpers), `features/`, `aspects/` and `device_keys/` (cross-cutting), `outputs/` (the steps after the platforms), `setup/` (the wiring), and the root (Home Assistant's own entry points, the config flow, the constants and the platforms). Each may import only what its layer allows, so nothing imports a later one: `tests/test_code.py` maps every module to its row and fails on any import the table doesn't allow, with two named allowances for one module each. [Testing](/develop/testing#the-layer-table) has the full table; the gist:
+
+- `core/` imports only `core/` and `const`.
+- `features/` imports `core/`, `const`, the shared `features/cycle` and `features/standing`, and its own package; `features/__init__` alone may import every feature, since it lists `FEATURES`.
+- `aspects/` and `device_keys/` import `core/`, `const`, `features/cycle`, and another module of their own package; `device_keys/__init__` may also import `aspects.alerts`, the hand-written alerts' device key.
+- `outputs/` imports `core/`, `const`, `aspects.problem` (Alert2's file and the alert lights read `ProblemAlert`) and `features.lights` (the alert lights lend `Borrowable` lights).
+- `setup/` may import every layer below it: `core`, `features`, `aspects`, `device_keys`, `outputs`, and itself. It's the only layer that reads a folder's `__init__` (`FEATURES`, `ASPECTS`, `DEVICE_KEYS`).
+- `__init__.py` imports `setup/`, `const` and `core.runtime` directly: Home Assistant's entry points and the platforms take the typed entry, and hassfest's strict-typing check wants it named `*ConfigEntry` (`PururuConfigEntry`, in `core/runtime.py`). The platforms import only `core.runtime`.
+- Only `aspects/statistics.py` imports Home Assistant's `utility_meter`.
+
+A new folder needs a row in the table.
+
 ## Features
 
 A device is a name plus one or more **features**. `FEATURES` in `features/__init__.py` maps each configuration key (`appliance`, `phases`) to a `Feature` (`core/feature.py`):
