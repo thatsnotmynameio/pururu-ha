@@ -58,7 +58,7 @@ python3 release.py check                        # the manifest version must be s
 - **Floors and areas** (`outputs/places.py`):
   - HA's registries accept no ID, so a new floor or area is created named after its YAML key (the ID becomes the key), then renamed.
   - Anything with a configured ID is adopted and synced.
-  - The IDs the entry manages live in `entry.data` (`{"floors": [...], "areas": [...], "automations": [...], "scripts": [...]}`, the last two the IDs of the reactions' automations and the programs' scripts). What the YAML drops is deleted, and `async_remove_entry` deletes everything the entry manages.
+  - The IDs the entry manages live in `entry.data` (`{"floors": [...], "areas": [...], "automations": [...], "scripts": [...]}`, the last two the IDs of the reactions' and ready-made notifications' automations and of the programs' scripts). What the YAML drops is deleted, and `async_remove_entry` deletes everything the entry manages.
   - Names HA refuses are logged errors and never fail the setup.
 - **Dashboard** (`outputs/dashboard.py`):
   - HA has no public API for an integration's dashboard. A `LovelaceConfig` subclass goes in `hass.data[LOVELACE_DATA].dashboards["pururu"]`, and a `lovelace` panel in `yaml` mode (read-only in the UI) shows it. This is private lovelace API: keep every use of it in this module.

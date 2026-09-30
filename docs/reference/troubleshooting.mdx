@@ -255,25 +255,17 @@ HA has no public way for an integration to add a dashboard, so pururu relies on 
 
 ## Reactions
 
-### The reactions' automations aren't loaded
+### The reactions' and notifications' automations aren't loaded
 
 **Settings → Repairs** shows it, and the log says:
 
 ```
-The automations of pururu's reactions are not loaded: add "automation pururu: !include_dir_merge_list pururu/automations" to configuration.yaml
+The automations of pururu's reactions and notifications are not loaded: add "automation pururu: !include_dir_merge_list pururu/automations" to configuration.yaml
 ```
 
-**Fix:** add that line to `configuration.yaml`, then reload automations in **Developer tools → YAML → Automations**. See [The include](/concepts/reactions#the-include).
+The reactions' and the ready-made notifications' automations are one file, `pururu/automations/automations.yaml`, so one line loads both and one issue says it's missing.
 
-### The notifications' automations aren't loaded
-
-**Settings → Repairs** shows it, and the log says:
-
-```
-The automations of pururu's notifications are not loaded: add "automation pururu: !include_dir_merge_list pururu/automations" to configuration.yaml
-```
-
-**Fix:** the same line loads the reactions' and the notifications' automations: add it to `configuration.yaml`, then reload automations. See [Notifications: the file and the include](/concepts/notifications#the-file-and-the-include).
+**Fix:** add that line to `configuration.yaml`, then reload automations in **Developer tools → YAML → Automations**. See [The include](/concepts/reactions#the-include) and [Notifications: the file and the include](/concepts/notifications#the-file-and-the-include).
 
 ### `automation.… follows …, which is not created; not generating it`
 
@@ -291,9 +283,9 @@ automation.pururu_laundry_lights_reaction_door is already taken by automation.mi
 
 Another automation already has the entity ID the reaction's automation would have, or one of your own automations has the same `id`. pururu never takes over an automation it didn't write. Rename or delete that one in **Settings → Entities** (or change its `id`), then reload pururu.
 
-### `The automations are not written to pururu/automations/reactions.yaml: …`
+### `The automations are not written to pururu/automations/automations.yaml: …`
 
-pururu couldn't write the file, usually because of permissions on the configuration folder. The devices keep working; the reactions keep their last written automations.
+pururu couldn't write the file, usually because of permissions on the configuration folder. The devices keep working; the reactions and the ready-made notifications keep their last written automations.
 
 ## Programs
 

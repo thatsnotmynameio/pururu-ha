@@ -13,10 +13,10 @@
   - no entity (`keys` empty, `build` returns `[]`);
   - `enabled(device, builders)` stays as the helper `checks` reads (`_generated_ids`, `messages`); `automation_id` as today;
   - `plan(...)` as today.
-- **`setup/generate.py`** holds the two kinds:
+- **`core/generated.py`** holds the two kinds, next to `Kind` (not `setup/generate.py`: `device_keys/` and `aspects/` name their domains and can't import `setup/`):
   - `SCRIPTS` (today's `programs.KIND`, moved);
   - `AUTOMATIONS` (today's `reactions.KIND`, whose data key `automations` and issue `automations_not_included` it keeps, with the file `pururu/automations/automations.yaml` and `source="reactions and notifications"`);
-  - the generate step syncs `AUTOMATIONS` once, with `reactions.plan(...).items + notifications.plan(...).items` and the reactions' held.
+  - `setup/generate.py`'s generate step syncs `AUTOMATIONS` once, with `reactions.plan(...).items + notifications.plan(...).items` and the reactions' held.
 - **`_feature_block` goes.** After B2 (statistics) and B3 (alerts), `notifications` was all it had left; `catalogue.mount` validates every aspect.
 
 **Tech Stack:** Python 3.14, Home Assistant 2026.9.3, voluptuous, pytest, ruff, mypy strict, uv.
@@ -67,7 +67,7 @@
 
 ### Task 2: One automations kind
 
-**Files:** `setup/generate.py` (`SCRIPTS`, `AUTOMATIONS`, one automations sync), `device_keys/programs.py` (`KIND` moves out), `device_keys/reactions.py` (`KIND` moves out; `plan` returns its items as today), `aspects/notifications.py` (`KIND` goes), `setup/lifecycle.py` (the listener's kinds `(SCRIPTS, AUTOMATIONS)`; `async_remove_entry` removes both), `setup/checks.py` (the domains from the kinds), `translations/en.json` and `pt-BR.json` (`notifications_not_included` goes; `automations_not_included` covers both), `tests/test_generated.py` (reads both kinds from `generate`), and the tests that name a kind, a file or the notifications issue.
+**Files:** `core/generated.py` (`SCRIPTS`, `AUTOMATIONS`), `setup/generate.py` (one automations sync), `device_keys/programs.py` (`KIND` moves out), `device_keys/reactions.py` (`KIND` moves out; `plan` returns its items as today), `aspects/notifications.py` (`KIND` goes), `setup/lifecycle.py` (the listener's kinds `(SCRIPTS, AUTOMATIONS)`; `async_remove_entry` removes both), `setup/checks.py` (the domains from the kinds), `translations/en.json` and `pt-BR.json` (`notifications_not_included` goes; `automations_not_included` covers both), `tests/test_generated.py` (reads both kinds from `core.generated`), and the tests that name a kind, a file or the notifications issue.
 
 - [ ] **Step 1 (tests first):**
   - A device with a reaction and a ready-made notification writes both to `pururu/automations/automations.yaml`, and `entry.data["automations"]` holds both IDs. RED: two files today.

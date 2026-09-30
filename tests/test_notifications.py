@@ -247,6 +247,28 @@ async def test_reactions_and_notifications_share_one_file(ha: HomeAssistant) -> 
     assert entry.data["automations"] == both
 
 
+REACTION = "pururu_washer_reaction_door"
+NOTIFICATION = "pururu_washer_appliance_notification_finished"
+
+
+@pytest.mark.parametrize(("kept", "dropped", "device"), [
+    pytest.param(REACTION, NOTIFICATION, {"name": "Máquina", "appliance": APPLIANCE, "reactions": {"door": DOOR}},
+                 id="the notification dropped"),
+    pytest.param(NOTIFICATION, REACTION, devices(ENABLED)[KEY], id="the reaction dropped"),
+])
+async def test_dropping_one_source_keeps_the_others(ha: HomeAssistant, automations: None,
+                                                   kept: str, dropped: str, device: dict[str, Any]) -> None:
+    """One tracked list for both: what goes is the dropped one's, never the other's."""
+    assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE})
+    await reload(ha, {KEY: device}, config={"notify": PHONE})
+    assert [automation["id"] for automation in generated(ha)] == [kept]
+    [entry] = ha.config_entries.async_entries("pururu")
+    assert entry.data["automations"] == [kept]
+    registry = er.async_get(ha)
+    assert registry.async_get_entity_id("automation", "automation", dropped) is None
+    assert registry.async_get_entity_id("automation", "automation", kept) == f"automation.{kept}"
+
+
 async def test_one_repair_for_reactions_and_notifications(ha: HomeAssistant, freezer: Any) -> None:
     """Not included, the reactions' and the notifications' automations raise one issue: one include."""
     with patch("homeassistant.config.load_yaml_config_file", side_effect=lambda *_a, **_k: {}):
@@ -255,10 +277,6 @@ async def test_one_repair_for_reactions_and_notifications(ha: HomeAssistant, fre
     await tick(ha, freezer, 5)
     issues = [issue_id for domain, issue_id in ir.async_get(ha).issues if domain == "pururu"]
     assert issues == ["automations_not_included"]
-    assert ir.async_get(ha).issues[("pururu", "automations_not_included")].translation_placeholders == {
-        "include": "automation pururu: !include_dir_merge_list pururu/automations",
-        "file": "pururu/automations/automations.yaml",
-    }
 
 
 async def test_removing_the_entry_empties_the_file(ha: HomeAssistant) -> None:

@@ -269,12 +269,12 @@ custom_components/pururu/
 ├── texts.py          the translations' common texts (aspects, dashboard)
 ├── messages.py       unchanged
 ├── files.py          unchanged
-├── generated.py      the Kind engine, Planned, async_issue
+├── generated.py      the Kind engine, Planned, async_issue; Kinds SCRIPTS (today's programs.KIND) and AUTOMATIONS, both from B
 ├── schema.py         CONFIG_SCHEMA, _device, CHECKS
 ├── catalogue.py      builders(), keys() (today's _entity_keys), mount(), index()
 ├── checks.py         generic rules: references, one real entity per device, distinct IDs, areas exist
 ├── build.py          plan(): builds, inputs, _creatable
-├── generate.py       Kinds SCRIPTS (today's programs.KIND) and AUTOMATIONS, both from B; the generate step; async_remove
+├── generate.py       the generate step; async_remove
 ├── devices.py        the devices step: _place, _remove_stale
 ├── device_keys.py    DEVICE_KEYS = {alerts, programs, reactions}
 ├── programs.py       device key: schema, script, plan(), Runs, check
@@ -551,7 +551,7 @@ HA looks up `CONFIG_SCHEMA`, `async_setup`, `async_setup_entry`, `async_unload_e
 
 ### Generated files
 
-- **One automations kind** (`generate.AUTOMATIONS`, file `pururu/automations/automations.yaml`, data key `automations`, Repairs issue `automations_not_included`, log word `source="reactions and notifications"`): reactions' items, then notifications'. Today two kinds share the domain `automation`: two files, two Repairs issues with the same include line, two reloads when both change, and a rename rule that missed one of them. `notifications.KIND` and its Repairs issue `notifications_not_included` with its translations go; `automations_not_included`'s title and description (en, pt-BR) stop saying "reactions' automations". `entry.data["notifications"]` stays, unread and harmless (no migration code, D13).
+- **One automations kind** (`generated.AUTOMATIONS` in `core/generated.py`, next to `generated.SCRIPTS`: `device_keys/` and `aspects/` name their domains and can't import `setup/`; file `pururu/automations/automations.yaml`, data key `automations`, Repairs issue `automations_not_included`, log word `source="reactions and notifications"`): reactions' items, then notifications'. Today two kinds share the domain `automation`: two files, two Repairs issues with the same include line, two reloads when both change, and a rename rule that missed one of them. `notifications.KIND` and its Repairs issue `notifications_not_included` with its translations go; `automations_not_included`'s title and description (en, pt-BR) stop saying "reactions' automations". `entry.data["notifications"]` stays, unread and harmless (no migration code, D13).
 - **Alert2 keeps its own engine:** its identity is the alert's name and its reload is a third party's.
 - **`generated.Kind` keeps assuming** the registry platform is the domain. A kind that breaks that (none planned) adds `platform` and `ids()` when it arrives.
 
@@ -563,7 +563,7 @@ HA looks up `CONFIG_SCHEMA`, `async_setup`, `async_setup_entry`, `async_unload_e
 | An aspect | `aspects/x.py`; its translations, once; its page in `docs/concepts/`; a role in `roles.py` if none fits | `ASPECTS` (and `CHECKS` for its rules) |
 | A device key | its module (schema, build, roles); its docs | `DEVICE_KEYS`, `CHECKS` |
 | A role | a dataclass in `roles.py`; its rules in the contract test | none |
-| A generated kind | a `Kind` and its part of the generate step in `generate.py`; `plan()` in the owner | none |
+| A generated kind | a `Kind` in `core/generated.py` and its part of the generate step in `generate.py`; `plan()` in the owner | none |
 | A condition operator | `vocabulary.py` | none |
 
 A new feature is a new cycle source or a new kind of real entity; a thing on a power plug is an `appliance`.
@@ -887,7 +887,7 @@ custom_components/pururu/
 
 **A2b, the model.** `roles.py` and `Feature` with roles; `resolve.py`, `Index`, `Target`, with `Ref` built from 0.1.23's syntax (a reaction's `device:` + `when:`, a light group's `{device: [key]}`), so the old resolvers go now and C only changes the parsing; `CHECKS` at the domain level with paths (error texts and their order may change); `Planned`, and each `plan()` in its owner (`programs.py`, `reactions.py`, `notifications.py`); `Built` gains `builders` and `index`. Docs: `writing-a-feature.mdx`, `testing.mdx`.
 
-**B, the aspects**, in four PRs (B1 to B4 above), split by concern when B started: each is smaller to review and merges on its own, and the owner updates only once 0.2.0 is finished, so the steps between don't matter to them. `aspects/` (statistics, alerts with the `ALERTS` device key, notifications); `features/presets.py`, `features/alerts.py`, `features/elapsed.py`, `features/cycle/statistics.py` and `notifications.py` move there; generic `mount`; `alerts` from `FEATURES` to `DEVICE_KEYS`; one automations kind, and `programs.KIND` moved to `generate.SCRIPTS` next to it (`tests/test_generated.py` reads both from `generate`); the statistics translations owned by the aspect (`<counter>_<period>`, `item_<counter>_<period>` with `{item}`), written so the names shown don't change; `CycleSource`; the contract test's role and aspect rules; the import test's full table; `trigger()` moved to `vocabulary.py`; `presets.validate`'s redirect "{name} is now a notification" goes (D13). Docs: `docs/features/alerts.mdx` to `docs/concepts/alerts.mdx`, a statistics concept page, `docs.json`, `configuration.mdx`.
+**B, the aspects**, in four PRs (B1 to B4 above), split by concern when B started: each is smaller to review and merges on its own, and the owner updates only once 0.2.0 is finished, so the steps between don't matter to them. `aspects/` (statistics, alerts with the `ALERTS` device key, notifications); `features/presets.py`, `features/alerts.py`, `features/elapsed.py`, `features/cycle/statistics.py` and `notifications.py` move there; generic `mount`; `alerts` from `FEATURES` to `DEVICE_KEYS`; one automations kind, and `programs.KIND` moved to `generated.SCRIPTS` next to it, both in `core/generated.py` (`device_keys/` and `aspects/` name their domains and can't import `setup/`; `tests/test_generated.py` reads both from `core.generated`); the statistics translations owned by the aspect (`<counter>_<period>`, `item_<counter>_<period>` with `{item}`), written so the names shown don't change; `CycleSource`; the contract test's role and aspect rules; the import test's full table; `trigger()` moved to `vocabulary.py`; `presets.validate`'s redirect "{name} is now a notification" goes (D13). Docs: `docs/features/alerts.mdx` to `docs/concepts/alerts.mdx`, a statistics concept page, `docs.json`, `configuration.mdx`.
 
 The manual step, in the PR's text: before updating, remove every `notifications:` block and reload pururu (their automations and registry entries go; the new kind would otherwise find them registered under the old data key and treat them as the user's). Update, delete `pururu/automations/reactions.yaml` and `pururu/automations/notifications.yaml` (HA loads every file in the folder, and they'd repeat `automations.yaml`'s IDs), restart. Put the `notifications:` blocks back and reload.
 
