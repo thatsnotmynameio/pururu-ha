@@ -180,7 +180,15 @@ A phase can be added later too, with any key, and its entities' keys begin with 
   `runtime`, `cycles` and `energy` (which needs the appliance's `energy`). See [Statistics](/concepts/statistics).
 </Property>
 
-A phase's key is a slug. `idle` (the state while none runs) and `other` (the built-in phase, below) are **reserved**: `idle is a reserved phase key: name the phase otherwise`. A key whose entities would be another's is refused too, at the configuration:
+A phase's key is a slug. `idle` (the state while none runs) is **reserved**: `idle is a reserved phase key: name the phase otherwise`.
+
+`other` and every key beginning with `other_` are reserved too, for the built-in phase ([below](#other)), in the running program's phases and in a detected program's. Its entities' keys begin with `phase_other` (`phase_other_cycles_total`, and its meters, `phase_other_cycles_today`, once `other:` is written), so a phase keyed `other_cycles_today` would be one of them. It's refused at once, whether `other:` is written yet or not, so writing it later never breaks the configuration:
+
+- `other_cycles_today is reserved for the built-in phase other (other, other_…): name the phase otherwise`.
+
+`others` or `heat_other` is a key like any other.
+
+A key whose entities would be another's is refused too, at the configuration:
 
 - A phase keyed `current` or `last` collides with the detector's own: `phase current would create phase_current, the detector's`.
 - One phase's totals can collide with another phase's key, such as `resfriar` beside a phase keyed `resfriar_cycles_total`: `phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`.

@@ -14,7 +14,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
 - A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
 - A `running_program` with a `name` (`running_program takes no name: it is the appliance running`), or with neither `above` nor `below` (`a program needs above, below or both`).
-- A phase without `name`, keyed `idle` or `other` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's, `other`'s or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
+- A phase without `name`, keyed `idle` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
+- A phase keyed `other` or `other_…`, the built-in phase's, whether `other:` is written yet or not: its meters would be the phase's entities once it is (`other_cycles_today is reserved for the built-in phase other (other, other_…): name the phase otherwise`). Pick a key that doesn't begin with `other_`.
 - `other:` without `phases` (`other is the program outside every phase: it needs phases`).
 - Two entities of one device with one unique ID, such as a phase's key and another phase's meter (`device clothes_washer: pururu_clothes_washer_appliance_phase_resfriar_cycles_today would be two entities`).
 - `statistics.energy` on a phase or a detected program without the appliance's `energy` (`statistics.energy needs energy`).
