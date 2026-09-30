@@ -57,7 +57,9 @@ Once the entities are created, pururu does the rest in steps: `events`, `devices
 - `alert lights`: lights lent to the alerts.
 - `dashboard`: the `/pururu` dashboard.
 
-**Fix:** this is a bug in pururu. [Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the traceback and the configuration of the device it names, if any. A reload tries the step again.
+`Listener failed`, logged the same way after the steps, is the listener that follows renames in the UI: until the next reload, renaming one of pururu's entities, scripts or automations, or disabling an entity a program or an alert's lights follow, doesn't rebuild the entry.
+
+**Fix:** this is a bug in pururu. [Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the traceback and the configuration of the device it names, if any. A reload tries the step, or the listener, again.
 
 ## Entities
 

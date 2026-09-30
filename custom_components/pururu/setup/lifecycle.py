@@ -102,7 +102,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     before the reactions' automations: a reaction starts one. The alert lights start
     after them: their alerts and lights are created. The dashboard comes last:
     it shows them all. The events are set up once the entities are added: they
-    fire their changes.
+    fire their changes. The registry listener comes after the steps, guarded
+    as one.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -148,9 +149,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
             # Failing after the platforms would leave the entry stuck until a
             # restart: HA unloads a non-loaded entry without async_unload_entry
             _LOGGER.exception("Step %s failed", name)
-    listener.async_listen(
-        hass, entry, (generated.SCRIPTS, generated.AUTOMATIONS), targets
-    )
+    try:
+        listener.async_listen(
+            hass, entry, (generated.SCRIPTS, generated.AUTOMATIONS), targets
+        )
+    except Exception:
+        # Guarded as a step: its failure would leave the entry stuck too
+        _LOGGER.exception("Listener failed")
     return True
 
 

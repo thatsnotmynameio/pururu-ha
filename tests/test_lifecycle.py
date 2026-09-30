@@ -73,6 +73,19 @@ async def test_a_failing_first_step_leaves_the_others_and_the_listener(
     reloading.assert_called_once()
 
 
+async def test_a_failing_listener_leaves_the_entry_loaded(
+    ha: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The rename listener raising doesn't fail the setup: logged, the entry loaded with its entities."""
+    with patch.object(module("setup.listener"), "async_listen", side_effect=RuntimeError("boom")):
+        assert await setup(ha, {"pool": SWITCH})
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    assert entry.state is ConfigEntryState.LOADED
+    assert ha.states.get("switch.pururu_pool_switch_pump") is not None
+    assert "Listener failed" in caplog.text
+    caplog.clear()  # expected: the autouse fixture would fail on it
+
+
 async def test_renaming_a_ready_made_notification_reloads(ha: HomeAssistant) -> None:
     """Every generated item the entry tracks follows one rule: renamed, the entry builds again."""
     washer = {

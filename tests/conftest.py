@@ -54,12 +54,13 @@ def ha(hass: HomeAssistant, enable_custom_integrations: None,
 
 @pytest.fixture(autouse=True)
 def no_step_failed(caplog: pytest.LogCaptureFixture) -> Iterator[None]:
-    """Fail a test in which a setup step failed unexpectedly, in a fixture or the test (a test expecting it clears caplog)."""
+    """Fail a test in which a setup step or the listener failed unexpectedly, in a fixture or the test (a test expecting it clears caplog)."""
     yield
     failed = [
         record.getMessage()
         for phase in ("setup", "call")
         for record in caplog.get_records(phase)
-        if record.name.endswith(".lifecycle") and record.getMessage().startswith("Step ")
+        if record.name.endswith(".lifecycle")
+        and record.getMessage().startswith(("Step ", "Listener "))
     ]
     assert not failed, failed

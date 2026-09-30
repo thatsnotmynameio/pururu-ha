@@ -9,6 +9,7 @@ import asyncio
 from datetime import timedelta
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import config_validation as cv, entity_registry as er
@@ -311,7 +312,8 @@ async def test_a_restart_keeps_the_running_phase(detecting: HomeAssistant, freez
     assert state(detecting, CURRENT) == "gelar"
     shown = [event.data["new_state"].state for event in changes
              if event.data["entity_id"] in (GELAR, CURRENT)]
-    assert "off" not in shown and "idle" not in shown, shown
+    assert "off" not in shown, shown
+    assert "idle" not in shown, shown
     await watts(detecting, 120)
     await tick(detecting, freezer, 600)
     await watts(detecting, IDLE_W)
@@ -477,6 +479,24 @@ async def test_a_disabled_carrier_leaves_the_phases_idle(detecting: HomeAssistan
     assert state(detecting, GELAR) == "off"
     assert state(detecting, CURRENT) == "idle"
     assert detecting.states.get(CURRENT).attributes["running"] == []
+
+
+async def test_an_entry_failing_after_its_platforms_still_runs_the_carrier(
+        detecting: HomeAssistant, freezer: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The setup raises once the platforms are added: the entry is SETUP_ERROR, HA keeps the entities, and the carrier follows the reading."""
+    entries = detecting.config_entries
+    forward = entries.async_forward_entry_setups
+
+    async def forward_then_fail(entry: Any, platforms: Any) -> None:
+        await forward(entry, platforms)
+        raise RuntimeError("after the platforms")
+
+    monkeypatch.setattr(entries, "async_forward_entry_setups", forward_then_fail)
+    assert await setup(detecting, DEVICES)
+    [entry] = entries.async_entries("pururu")
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert state(detecting, RUNNING) == "off"
+    await cool(detecting, freezer)
 
 
 async def test_a_reload_mid_phase_counts_one_cycle(purifier: HomeAssistant, freezer: Any) -> None:

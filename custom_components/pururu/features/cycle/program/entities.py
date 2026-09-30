@@ -63,8 +63,10 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
     """On while the program runs: it owns the detector, and the phases' entities show it.
 
     It follows the reading and waits for the detector's next delay, from once
-    its entry is set up: every view listens by then (`subscribe`, and the
-    phases' cycle entities on their signals), so no step's cycle is lost. It
+    its entry's setup is over, whatever it gave: every view listens by then
+    (`subscribe`, and the phases' cycle entities on their signals), so no
+    step's cycle is lost; a setup failing after the platforms leaves the
+    entities, so the carrier runs them all the same. It
     wraps its phases: a step writes its own state, then calls each view with
     the step's changes; a step that ends the program calls the views first,
     then writes its state and sends the program's cycle.
@@ -87,10 +89,11 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
         self.detector = Detector(program)
         self._reading = reading
         self._energy = energy
-        self._views: list[View] = []
+        # Replaced, never changed in place: a step calls the views it started with
+        self._views: tuple[View, ...] = ()
         # Whether the detector holds what was restored: until then, a view shows its own
         self.ready = False
-        # Whether it follows the reading: once its entry is set up
+        # Whether it follows the reading: once its entry's setup is over
         self._started = False
         self._timer: CALLBACK_TYPE | None = None
 
@@ -122,16 +125,22 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
     @callback
     def subscribe(self, view: View) -> CALLBACK_TYPE:
         """Call `view` with each step's changes (after the carrier's state; before it when the program ends); returns the unsubscribe."""
-        self._views.append(view)
-        return partial(self._views.remove, view)
+        self._views = (*self._views, view)
+        return partial(self._unsubscribe, view)
+
+    @callback
+    def _unsubscribe(self, view: View) -> None:
+        self._views = tuple(each for each in self._views if each is not view)
 
     @override
     async def async_added_to_hass(self) -> None:
-        """Restore the detector; follow the reading once the entry is set up, every view listening.
+        """Restore the detector; follow the reading once the entry's setup is over, every view listening.
 
         A step at add could end a restored phase before its entities listen
         (on this platform, added after the carrier; on another, maybe not
-        added yet), and its cycle would be lost.
+        added yet), and its cycle would be lost. Over whatever it gave: HA
+        keeps the entities of an entry that failed after its platforms
+        (SETUP_ERROR), and removing them unsubscribes the wait.
         """
         await super().async_added_to_hass()
         if (extra := await self.async_get_last_extra_data()) is not None:
@@ -139,7 +148,7 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
         self.ready = True
         self.async_on_remove(self._cancel_timer)
         entry = self.platform.config_entry
-        if entry is None or entry.state is ConfigEntryState.LOADED:
+        if entry is None or entry.state is not ConfigEntryState.SETUP_IN_PROGRESS:
             self._start()
         else:
             self.async_on_remove(
@@ -158,7 +167,7 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
     @callback
     def _entry_changed(self, entry: ConfigEntry[Any]) -> None:
         # Not unsubscribed here: HA iterates its callbacks while calling them
-        if not self._started and entry.state is ConfigEntryState.LOADED:
+        if not self._started and entry.state is not ConfigEntryState.SETUP_IN_PROGRESS:
             self._start()
 
     @callback
@@ -207,7 +216,7 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
         )
         if ended is None:
             self.async_write_ha_state()
-        for view in list(self._views):
+        for view in self._views:
             view(changes)
         if ended is not None:
             self._send(ended)
