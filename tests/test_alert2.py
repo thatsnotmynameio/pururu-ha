@@ -343,7 +343,7 @@ async def test_a_failed_reload_at_removal_is_retried_when_pururu_comes_back(
 
 # --- the docs ----------------------------------------------------------------------------
 
-ALERTS_PAGE = Path(__file__).resolve().parents[1] / "docs/features/alerts.mdx"
+ALERTS_PAGE = Path(__file__).resolve().parents[1] / "docs/concepts/alerts.mdx"
 
 
 def test_the_documented_include_is_the_one_pururu_asks_for(ha: HomeAssistant) -> None:

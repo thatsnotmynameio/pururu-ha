@@ -12,7 +12,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A typo in a key, such as `floor:` for `floors:` or `treshold:` for `threshold:`.
 - A key that isn't a slug, such as `Laundry Washer:` instead of `laundry_washer:`.
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
-- A device with no feature.
+- A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
 - `cycle_from` naming a feature that isn't on the same device.
 - A `phases` band with neither `above` nor `below`, with `above` not lower than `below`, or with a name used twice.
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
@@ -95,7 +95,7 @@ A [reaction](/concepts/reactions#starting-a-program)'s `then` names a program wh
 binary_sensor.pururu_laundry_washer_alert_month watches sensor.pururu_laundry_washer_appliance_runtime_month, which this device's settings don't create (turn it on, or watch another entity); not creating it
 ```
 
-An [alert](/features/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance_runtime_month` without `month` in `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is.
+An [alert](/concepts/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance_runtime_month` without `month` in `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is.
 
 **Fix:** turn on the setting that creates the entity, or point `when` at another entity, then reload pururu.
 
@@ -105,9 +105,9 @@ An [alert](/features/alerts)'s `when` names an entity its feature can create, bu
 binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
 ```
 
-An alert with `notify` is delivered by [Alert2](/features/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told. A [ready-made alert](/features/appliance#ready-made-alerts)'s own texts never log this: only a `notify` you wrote does.
+An alert with `notify` is delivered by [Alert2](/concepts/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told. A [ready-made alert](/features/appliance#ready-made-alerts)'s own texts never log this: only a `notify` you wrote does.
 
-**Fix:** install Alert2 and add [the include](/features/alerts#getting-notified) to its `alert2:` block, or remove `notify` from the alert.
+**Fix:** install Alert2 and add [the include](/concepts/alerts#getting-notified) to its `alert2:` block, or remove `notify` from the alert.
 
 ### Alert2 doesn't run pururu's alerts
 
@@ -117,11 +117,11 @@ An alert with `notify` is delivered by [Alert2](/features/alerts#getting-notifie
 Alert2 doesn't run pururu's alerts: add "alerts: !include_dir_merge_list pururu/alert2" to the alert2: block of configuration.yaml
 ```
 
-**Fix:** add that line as the `alerts` of your `alert2:` block, then reload Alert2 in **Developer tools → YAML → Alert2**. See [Getting notified](/features/alerts#getting-notified).
+**Fix:** add that line as the `alerts` of your `alert2:` block, then reload Alert2 in **Developer tools → YAML → Alert2**. See [Getting notified](/concepts/alerts#getting-notified).
 
 ### `Duplicate declaration of alert for domain=pururu …`
 
-Alert2 reports it when its old pururu `generator` is still in its `alerts` next to the include. **Fix:** remove the generator. See [Coming from the generator](/features/alerts#coming-from-the-generator).
+Alert2 reports it when its old pururu `generator` is still in its `alerts` next to the include. **Fix:** remove the generator. See [Coming from the generator](/concepts/alerts#coming-from-the-generator).
 
 ### `Alert2 is not reloaded…`
 

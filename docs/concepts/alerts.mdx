@@ -1,9 +1,11 @@
 ---
-title: alerts
+title: Alerts
 description: Problems on a device's own entities, each a binary sensor that is on while the problem lasts.
 ---
 
 `alerts` says when something is wrong with a device, such as a washer running for too long or a plug gone offline. Each alert watches **one** entity of the same device and becomes a binary sensor: **Problem** while its condition holds, **OK** otherwise.
+
+`alerts` is a device key, like [`reactions`](/concepts/reactions) and [`programs`](/concepts/programs): it isn't a feature, and it doesn't count towards "[a device needs at least one feature](/concepts/devices-and-features#a-feature)".
 
 An alert is for what you find **critical**, and it lasts until it's resolved. For simple news told once, such as the washer finishing, use a [notification](/concepts/notifications).
 

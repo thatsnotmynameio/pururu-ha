@@ -61,9 +61,12 @@ custom_components/pururu/     the integration
     standing.py               what switches and lights share: their schema, is_pururu
     switches.py
   aspects/                    ASPECTS: concerns written once, mounted where a builder offers them
+    alerts.py                 the ready-made alerts (ASPECT) and the hand-written alerts (ALERTS, a device key)
+    elapsed.py                ElapsedAlert: an alert on the time since a milestone
+    problem.py                ProblemAlert, Alert, the shared alert schema
     statistics.py             a total's growth per period, on HA's utility_meter
   device_keys/                DEVICE_KEYS: the device keys that aren't features
-    programs.py, reactions.py, notifications.py
+    programs.py, reactions.py, notifications.py; alerts is aspects.alerts.ALERTS
   outputs/                    what the entry does once its entities exist: each a step
     events.py                 pururu_state_changed and pururu_reading on the bus
     devices.py                each device in its area, nothing stale left

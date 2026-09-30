@@ -96,7 +96,7 @@ alert2:                          # alerts with notify: see alerts
 - A feature's own `alerts` enables its ready-made alerts, one key each: see the [appliance's](/features/appliance#ready-made-alerts). The device's `alerts` is for alerts you write.
 - A feature's own `notifications` enables its ready-made notifications the same way: see [Notifications](/concepts/notifications#ready-made-notifications).
 - A `statistics` counts one of the block's totals per period: in a feature's own block (`appliance`, `door`, `window`), once in a `modes` block, or inside each program or reaction. See [Statistics](/concepts/statistics).
-- An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_pump`). See [alerts](/features/alerts#settings).
+- An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_pump`). See [alerts](/concepts/alerts#settings).
 - A program's steps name entity keys of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/concepts/programs#steps).
 - No two devices give an entity the same ID. Device `pool` with the switch `switch_pump` and device `pool_switch` with the switch `pump` would both have `switch.pururu_pool_switch_switch_pump`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `pool` with the switch `appliance_energy_total` is refused next to a device `pool_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
 - In one device, a real entity is in one of `switches` and `lights` at most: `switches: switch.sonoff_abajur is already in lights`. Two devices can each use it their own way.
@@ -201,6 +201,12 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 
 ---
 
+<Property name="alerts" type="map" optional>
+  A map of **alert key → alert**, each one a binary sensor on while its condition holds. It isn't a feature. See [Alerts](/concepts/alerts#settings).
+</Property>
+
+---
+
 <Property name="<feature>" type="map" required>
   At least one feature, under its own key:
 
@@ -211,7 +217,6 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
   - [`phases`](/features/phases#settings): the phase of a cycle.
   - [`modes`](/features/modes#settings): the kind of each cycle.
   - [`switches`](/features/switches#settings): real switches inside the device.
-  - [`alerts`](/features/alerts#settings): problems on the device's own entities.
 </Property>
 
 ## Actions

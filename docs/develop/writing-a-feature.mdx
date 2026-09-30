@@ -162,7 +162,7 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 `phases.py` is the example to copy.
 
-**On one entity of another feature, named in the configuration:** add `Refers(of)`, `of` a function that returns, from the validated block, a `Ref` (`core/resolve.py`) for each entity key it names, in their namespace: `Ref(None, "appliance_power")` on this device. `checks.references` checks each is another feature's entity key, and `build()` receives its current ID in `inputs` under the reference as written (`Ref.text`, `appliance_power`). Set `follows` on each entity to the keys it reads. [`alerts`](/features/alerts) (`features/alerts.py`) is the example.
+**On one entity of another feature, named in the configuration:** add `Refers(of)`, `of` a function that returns, from the validated block, a `Ref` (`core/resolve.py`) for each entity key it names, in their namespace: `Ref(None, "appliance_power")` on this device. `checks.references` checks each is another feature's entity key, and `build()` receives its current ID in `inputs` under the reference as written (`Ref.text`, `appliance_power`). Set `follows` on each entity to the keys it reads. [`alerts`](/concepts/alerts) (`aspects/alerts.py`, the device key `ALERTS`) is the example.
 
 **Being acted on:** a feature whose entities a [program](/concepts/programs) can act on has `Actions(...)`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `Actions(("turn_on", "turn_off", "toggle"))`.
 
@@ -192,16 +192,16 @@ A feature whose entity carries a cycle (`Provides`) builds it as a `CycleSource`
 **Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Add `Presets(<name → Preset>)` (`Preset` in `core/feature.py`), as `features/appliance/` does with `features/appliance/alerts.py`'s `PRESETS`:
 
 - `watches`: the entity key, in the feature's namespace, it watches.
-- `kind`: a `Condition`, as a hand-written alert's `is`/`above`/`below`, or an `Elapsed`: a state of the watched entity and a milestone, either an entity key whose state is a datetime (`since_key`) or an attribute of the watched entity (`since_attribute`), with `or_since_created` to count from the alert's creation until there's one. A condition alert is an `Alert`; an elapsed one an `ElapsedAlert` (`features/elapsed.py`), which survives restarts.
+- `kind`: a `Condition`, as a hand-written alert's `is`/`above`/`below`, or an `Elapsed`: a state of the watched entity and a milestone, either an entity key whose state is a datetime (`since_key`) or an attribute of the watched entity (`since_attribute`), with `or_since_created` to count from the alert's creation until there's one. A condition alert is an `Alert` (`aspects/problem.py`); an elapsed one an `ElapsedAlert` (`aspects/elapsed.py`), which survives restarts.
 - `priority` and `hold` (the default `for`, or `None` when the user must give it).
 
-Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity key `alert_<name>`, so ID collisions, names and icons are checked as for any entity key. Add its name and icon under `<namespace>_alert_<name>`, and its default texts under `<namespace>_alert_<name>_message` and `_done_message` in the translations' `common` block. `features/presets.py` validates the settings and builds the enabled alerts; nothing else is needed.
+The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The alerts aspect (`aspects/alerts.py`, `ASPECT`) sees the role, adds the `alert_<name>` keys itself (`catalogue.aspects_of`, `catalogue.keys`), validates the block's `alerts` and builds the enabled ones. Add each one's name and icon under `<namespace>_alert_<name>`, and its default texts under `<namespace>_alert_<name>_message` and `_done_message` in the translations' `common` block; nothing else is needed.
 
 **Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Add `Happenings(<name → Happening>)` (`Happening` in `core/feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py`'s `HAPPENINGS` does. It creates no entity: `device_keys/notifications.py` validates that key of the block (`catalogue._feature_block` takes it out before the feature's schema) and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
 
 ## 6. What the contract test checks
 
-`tests/test_features.py` runs over every entry in `FEATURES`, and in `DEVICE_KEYS` (`device_keys/__init__.py`: `programs` and `reactions`, not features of a device, whose statistics a `Feature` each builds), so your feature is covered without changing the test:
+`tests/test_features.py` runs over every entry in `FEATURES`, and in `DEVICE_KEYS` (`device_keys/__init__.py`: `programs` and `reactions`, whose statistics a `Feature` each builds, and `alerts` (`aspects/alerts.py`'s `ALERTS`, the hand-written alerts), none of them a feature of a device), so your feature is covered without changing the test:
 
 | Test | Checks |
 |---|---|
@@ -218,7 +218,7 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 | `test_it_takes_turn_on_turn_off_and_toggle` | `switches` and `lights` have exactly `("turn_on", "turn_off", "toggle")` |
 | `test_items_have_suffixes_and_slugs` | `Items` has suffixes, and the example's items are slugs |
 | `test_every_per_item_name_has_its_placeholder` | Every suffix's name has the `{<namespace>}` placeholder, in both languages |
-| `test_ready_made_alerts_line_up` | Every ready-made alert's key is in `entity_keys`, it watches (and counts from) its own feature's entity keys, has both default texts in both languages, and its settings validate |
+| `test_ready_made_alerts_line_up` | Every ready-made alert's key is the alerts aspect's, not the builder's own (`entity_keys` lacks it, `by == "alerts"`), it watches (and counts from) its own feature's entity keys, has both default texts in both languages, and its settings validate |
 | `test_ready_made_notifications_line_up` | Every ready-made notification watches its own feature's entity key, has its name and message in both languages, and validates |
 | `test_each_role_at_most_once` | No role twice in `roles` |
 | `test_configured_and_items_never_together` | A block's keys are either its entity keys or its items |
@@ -227,6 +227,7 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 | `test_a_generating_builder_generates_from_its_example` | What `Generates` writes carries its device's pururu pattern |
 | `test_a_capability_is_carried_by_a_cycle_source` | What a builder `Provides` is a `CycleSource` |
 | `test_the_other_cycle_sources_are_pinned_too` | `modes`' `Current` and the programs' `Runs` are `CycleSource` too, though no `Provides` names them |
+| `test_the_aspects_each_builder_offers` | Which aspects (`statistics`, `alerts`) each builder offers, pinned: `appliance` offers both, the rest at most `statistics` |
 | `test_an_aspects_keys_are_named_once` | Every key an offered aspect adds has a name and icon in both languages, outside the builder's namespace (`item_<key>` with `{item}` for an `Items` builder) |
 | `test_an_offered_aspect_validates_and_builds` | The builder's example with the aspect's own example goes through `mount`, and the aspect builds only the entity keys it lists |
 | `test_a_builders_own_schema_refuses_an_aspects_key` | The builder's own schema, without `mount`, refuses the aspect's key where it sits: only `mount` may take it out first |
