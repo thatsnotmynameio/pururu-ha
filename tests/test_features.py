@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any
+from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
@@ -11,7 +12,11 @@ from homeassistant.setup import async_setup_component
 import pytest
 import voluptuous as vol
 
-from helpers import module
+from helpers import DOMAIN, module
+
+# A configured feature's block, valid on its own: for devices that need a feature besides
+# the one under test (a non-map programs/appliance block still needs at least one feature)
+SWITCHES = {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}
 
 INTEGRATION = Path(__file__).resolve().parents[1] / "custom_components/pururu"
 
@@ -390,6 +395,52 @@ def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
         for aspect in module("aspects").ASPECTS:
             block = catalogue.mount(feature, name, {aspect.key: item})
             assert set(block) == {aspect.key}, name
+
+
+@pytest.mark.parametrize(("house", "path"), [
+    pytest.param(
+        {"devices": {"washer": {"name": "Washer", "appliance": 5}}},
+        ["devices", "washer", "appliance"],
+        id="a block-placed aspect's block isn't a map"),
+    pytest.param(
+        {"devices": {"pool": {"name": "Pool", "switches": SWITCHES, "programs": 5}}},
+        ["devices", "pool", "programs"],
+        id="an item-placed aspect's block isn't a map"),
+    pytest.param(
+        {"devices": {"pool": {"name": "Pool", "switches": SWITCHES, "programs": {"clean": 5}}}},
+        ["devices", "pool", "programs", "clean"],
+        id="an item isn't a map"),
+])
+def test_mount_refuses_a_block_or_item_that_isnt_a_map(
+    ha: HomeAssistant, house: dict[str, Any], path: list[str]
+) -> None:
+    """A block or item that isn't a map (_taken, _split) is refused cleanly: vol.Invalid, not KeyError/TypeError."""
+    schema = module("setup.schema").CONFIG_SCHEMA
+    with pytest.raises(vol.Invalid) as refused:
+        schema({DOMAIN: house})
+    paths = ([error.path for error in refused.value.errors]
+              if isinstance(refused.value, vol.MultipleInvalid) else [refused.value.path])
+    assert [DOMAIN, *path] in paths
+
+
+def test_mount_skips_an_aspect_without_a_check(features: dict[str, Any]) -> None:
+    """An aspect offering no check (Aspect.check is None) still mounts: _checked skips it (continue)."""
+    catalogue = module("setup.catalogue")
+    Aspect = module("core.feature").Aspect
+    feature = features["appliance"]
+    aspect = Aspect(
+        key="uninspected",
+        offered=lambda builder: builder is feature,
+        schema=lambda builder: (lambda value: value),
+        keys=lambda builder: {},
+        example=lambda builder: {},
+        placed=lambda builder: "block",
+        build=lambda hass, device, builder, block, texts: [],
+        check=None,
+    )
+    with patch.object(catalogue, "ASPECTS", (aspect,)):
+        block = catalogue.mount(feature, "appliance", {**feature.example, "uninspected": {"x": 1}})
+    assert block["uninspected"] == {"x": 1}
 
 
 def test_a_configured_builder_offers_no_block_aspect(features: dict[str, Any]) -> None:
