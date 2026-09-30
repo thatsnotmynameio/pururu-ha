@@ -544,6 +544,10 @@
  "generated": [
   [
    "automations",
+   "pururu_laundry_washer_appliance_notification_finished"
+  ],
+  [
+   "automations",
    "pururu_pool_reaction_morning"
   ],
   [
@@ -553,10 +557,6 @@
   [
    "automations",
    "pururu_sala_reaction_washer_done"
-  ],
-  [
-   "notifications",
-   "pururu_laundry_washer_appliance_notification_finished"
   ],
   [
    "scripts",

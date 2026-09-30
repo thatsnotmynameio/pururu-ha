@@ -8,11 +8,10 @@ import voluptuous as vol
 from homeassistant.const import CONF_NAME, Platform
 
 from ..aspects import ASPECTS
-from ..const import CONF_NOTIFICATIONS
-from ..core.feature import Aspect, Device, Feature, Item, happenings_of
+from ..core.feature import Aspect, Device, Feature, Item
 from ..core.resolve import Index, Target
 from ..core.roles import Actions, Configured, Items
-from ..device_keys import DEVICE_KEYS, notifications
+from ..device_keys import DEVICE_KEYS
 from ..features import FEATURES
 
 
@@ -68,19 +67,13 @@ def _split(
     return rest, places
 
 
-def _validated(builder: Feature, name: str, value: Any) -> Any:
-    """What is left of the block: a feature's (_feature_block), or the device key's schema."""
-    if name in FEATURES:
-        return _feature_block(builder, name, value)
-    return builder.schema(value)
-
-
 def mount(builder: Feature, name: str, value: Any) -> Any:
     """Builder `name`'s block, validated, each offered aspect's value in it where it was.
 
     Each aspect's key is taken out of the block, or out of each item, where the
     aspect says it sits (Aspect.placed), and validated by the aspect: absent,
-    as `{}`, or left out (Aspect.mount_absent). The rest goes to _validated.
+    as `{}`, or left out (Aspect.mount_absent). The rest goes to the
+    builder's own schema.
     This is the first stage: the builder's own schema refusal and each
     aspect's schema refusal are raised together, before either runs a check.
     Once every value is validated and back where it sat, the second stage
@@ -88,13 +81,13 @@ def mount(builder: Feature, name: str, value: Any) -> Any:
     those refusals are raised together too, separately from the first stage's.
     """
     if not (aspects := aspects_of(builder)):
-        return _validated(builder, name, value)
+        return builder.schema(value)
     by_key = {aspect.key: aspect for aspect in aspects}
     rest, places = _split(builder, aspects, value)
     errors: list[vol.Invalid] = []
     block: Any = None
     try:
-        block = _validated(builder, name, rest)
+        block = builder.schema(rest)
     except vol.Invalid as error:
         errors.append(error)
     mounted: Places = {}
@@ -150,25 +143,6 @@ def _flat(errors: list[vol.Invalid]) -> list[vol.Invalid]:
             error.errors if isinstance(error, vol.MultipleInvalid) else [error]
         )
     ]
-
-
-def _feature_block(feature: Feature, key: str, value: Any) -> Any:
-    """A feature's block, `key` in the device: its ready-made notifications (notifications.py), the rest by its schema.
-
-    Only a feature offering them has them: a configured feature (switches,
-    lights) may have an item keyed `notifications`.
-    """
-    if (
-        not (happenings := happenings_of(feature))
-        or not isinstance(value, dict)
-        or CONF_NOTIFICATIONS not in value
-    ):
-        return feature.schema(value)
-    rest = {each: block for each, block in value.items() if each != CONF_NOTIFICATIONS}
-    enabled = vol.Schema({CONF_NOTIFICATIONS: notifications.schema(key, happenings)})(
-        {CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]}
-    )
-    return {**feature.schema(rest), **enabled}
 
 
 def keys(

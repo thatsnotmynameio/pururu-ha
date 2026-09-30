@@ -32,7 +32,7 @@ def expected_lingering_timers() -> bool:
 
 @pytest.fixture
 def hass_config_dir(hass_tmp_config_dir: str) -> str:
-    """A configuration folder per test: pururu writes pururu/automations/reactions.yaml into it."""
+    """A configuration folder per test: pururu writes pururu/automations/automations.yaml into it."""
     return hass_tmp_config_dir
 
 

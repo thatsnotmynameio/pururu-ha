@@ -84,13 +84,13 @@ appliance:
 
 ## The file and the include
 
-pururu writes the ready-made notifications' automations to `pururu/automations/notifications.yaml`, next to the reactions' `reactions.yaml`. The same line of `configuration.yaml` includes both:
+pururu writes the ready-made notifications' automations to `pururu/automations/automations.yaml`, after the reactions': one file for both. One line of `configuration.yaml` includes it:
 
 ```yaml title="configuration.yaml"
 automation pururu: !include_dir_merge_list pururu/automations
 ```
 
-Until it's there, **Settings → Repairs** shows **The notifications' automations aren't loaded**. See [Reactions: the include](/concepts/reactions#the-include).
+Until it's there, **Settings → Repairs** shows **The reactions' and notifications' automations aren't loaded**: one issue for both. See [Reactions: the include](/concepts/reactions#the-include).
 
 ## Coming from the `finished` alert
 

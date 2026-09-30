@@ -20,9 +20,7 @@ import yaml
 
 DOMAIN = "pururu"
 # The automations pururu generates, relative to the configuration folder
-AUTOMATIONS = "pururu/automations/reactions.yaml"
-# The ready-made notifications' automations, in the same folder
-NOTIFICATIONS = "pururu/automations/notifications.yaml"
+AUTOMATIONS = "pururu/automations/automations.yaml"
 # The scripts pururu generates, relative to the configuration folder
 SCRIPTS = "pururu/scripts/programs.yaml"
 # Loop turns settle() gives: far more than any chain of our callbacks needs
@@ -49,14 +47,6 @@ def _config(devices: dict[str, Any], floors: dict[str, Any] | None,
 def generated(hass: HomeAssistant) -> list[dict[str, Any]]:
     """The automations pururu wrote, as configuration.yaml's include reads them."""
     path = Path(hass.config.path(AUTOMATIONS))
-    if not path.is_file():
-        return []
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or []
-
-
-def generated_notifications(hass: HomeAssistant) -> list[dict[str, Any]]:
-    """The ready-made notifications' automations pururu wrote."""
-    path = Path(hass.config.path(NOTIFICATIONS))
     if not path.is_file():
         return []
     return yaml.safe_load(path.read_text(encoding="utf-8")) or []
@@ -92,8 +82,7 @@ async def reload(hass: HomeAssistant, devices: dict[str, Any], *,
     # configuration.yaml includes the generated files' folders: automations and scripts reload from them
     with patch("homeassistant.config.load_yaml_config_file",
                side_effect=lambda *_args, **_kwargs: {**yaml_config,
-                                                      "automation pururu": [*generated(hass),
-                                                                            *generated_notifications(hass)],
+                                                      "automation pururu": generated(hass),
                                                       "script pururu": generated_scripts(hass)}):
         await hass.services.async_call(DOMAIN, "reload", blocking=True)
         await hass.async_block_till_done()

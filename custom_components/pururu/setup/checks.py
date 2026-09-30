@@ -10,6 +10,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from ..aspects import notifications
 from ..const import (
     CONF_AREA,
     CONF_AREAS,
@@ -20,10 +21,10 @@ from ..const import (
     CONF_NOTIFY,
     CONF_REACTIONS,
 )
+from ..core import generated
 from ..core.feature import Feature
 from ..core.resolve import Index, Ref, find
 from ..core.roles import Configured, Generates, Provides, Refers, Requires
-from ..device_keys import notifications
 from ..features import FEATURES
 
 
@@ -141,7 +142,7 @@ def _generated_ids(
                 yield domain, unique_id, generates.what
     for _, feature, notification, _ in notifications.enabled(device, builders):
         yield (
-            notifications.KIND.domain,
+            generated.AUTOMATIONS.domain,
             notifications.automation_id(key, feature.namespace, notification),
             "notification",
         )

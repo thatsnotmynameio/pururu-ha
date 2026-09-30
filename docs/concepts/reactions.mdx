@@ -36,18 +36,18 @@ This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as *
 
 ## The include
 
-pururu writes the automations to `pururu/automations/reactions.yaml`, in a `pururu` folder next to `configuration.yaml`. Home Assistant only loads automations its configuration names, so add this line **once** to `configuration.yaml`:
+pururu writes the automations to `pururu/automations/automations.yaml`, in a `pururu` folder next to `configuration.yaml`. The same file holds the [ready-made notifications'](/concepts/notifications) automations, after the reactions'. Home Assistant only loads automations its configuration names, so add this line **once** to `configuration.yaml`:
 
 ```yaml title="configuration.yaml"
 automation pururu: !include_dir_merge_list pururu/automations
 ```
 
-The line goes in `configuration.yaml` itself, not in a package: an include's path is relative to the file that contains it. It includes the folder, not the file, so Home Assistant still starts when the folder isn't there yet (before pururu first runs): a missing folder is no automations. pururu always writes the file, even without reactions: then it's an empty list. It lives next to your own `automation: !include automations.yaml`, which it doesn't touch. After adding it, restart Home Assistant, or reload automations in **Developer tools → YAML → Automations**.
+The line goes in `configuration.yaml` itself, not in a package: an include's path is relative to the file that contains it. It includes the folder, not the file, so Home Assistant still starts when the folder isn't there yet (before pururu first runs): a missing folder is no automations. pururu always writes the file, even without reactions or notifications: then it's an empty list. It lives next to your own `automation: !include automations.yaml`, which it doesn't touch. After adding it, restart Home Assistant, or reload automations in **Developer tools → YAML → Automations**.
 
-Until the line is there, the automations exist only in the file. **Settings → Repairs** shows **The reactions' automations aren't loaded**, with the line to add, and the log says the same. The repair goes away once the automations load.
+Until the line is there, the automations exist only in the file. **Settings → Repairs** shows **The reactions' and notifications' automations aren't loaded**, with the line to add, and the log says the same. The repair goes away once the automations load.
 
 <Warning>
-  Don't edit `pururu/automations/reactions.yaml`, and don't put your own files in `pururu/automations`: the include loads every file there. pururu rewrites it whenever the configuration changes. The automations show as read-only in the editor because they come from YAML. Change the reaction instead.
+  Don't edit `pururu/automations/automations.yaml`, and don't put your own files in `pururu/automations`: the include loads every file there. pururu rewrites it whenever the configuration changes. The automations show as read-only in the editor because they come from YAML. Change the reaction instead.
 </Warning>
 
 ## Settings
@@ -164,7 +164,7 @@ With `then` and `message`, the program starts first, then the message is told.
 
 A reaction with `then` starts its program's script, but only if it isn't running:
 
-```yaml title="pururu/automations/reactions.yaml"
+```yaml title="pururu/automations/automations.yaml"
 - id: pururu_laundry_lights_reaction_washer_done
   alias: Luzes da lavanderia Lavadora terminou
   triggers: [...]
@@ -208,7 +208,7 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
 - **With `then`**, running means the program started: from this reaction, the UI, a voice assistant, anything.
 - **Without `then`**, it means the automation fired, including a run by hand.
 
-```yaml title="pururu/automations/reactions.yaml"
+```yaml title="pururu/automations/automations.yaml"
 - id: pururu_garden_reaction_afternoon
   alias: Jardim Tarde
   triggers:

@@ -269,12 +269,12 @@ custom_components/pururu/
 ├── texts.py          the translations' common texts (aspects, dashboard)
 ├── messages.py       unchanged
 ├── files.py          unchanged
-├── generated.py      the Kind engine, Planned, async_issue
+├── generated.py      the Kind engine, Planned, async_issue; Kinds SCRIPTS (today's programs.KIND) and AUTOMATIONS, both from B
 ├── schema.py         CONFIG_SCHEMA, _device, CHECKS
 ├── catalogue.py      builders(), keys() (today's _entity_keys), mount(), index()
 ├── checks.py         generic rules: references, one real entity per device, distinct IDs, areas exist
 ├── build.py          plan(): builds, inputs, _creatable
-├── generate.py       Kinds SCRIPTS (today's programs.KIND) and AUTOMATIONS, both from B; the generate step; async_remove
+├── generate.py       the generate step; async_remove
 ├── devices.py        the devices step: _place, _remove_stale
 ├── device_keys.py    DEVICE_KEYS = {alerts, programs, reactions}
 ├── programs.py       device key: schema, script, plan(), Runs, check
@@ -308,9 +308,9 @@ The device key `ALERTS` lives in `aspects/alerts.py` because it shares its schem
 | **L0 core** | const, runtime, feature, roles, vocabulary, entity, resolve, texts, messages, files, generated | L0 only |
 | **L1 features** | `features/**` | L0; its own package (`features/<x>/`, or itself for a module `features/<x>.py`); the shared libraries `features/cycle` and `features/standing`. `features/__init__` may import every `features/*` package: it lists `FEATURES`. |
 | **L2 cross-cutting** | `aspects/*`, programs, reactions, device_keys | L0; `features/cycle` (shared machinery, not a feature); another `aspects/*` module. `device_keys` may import programs, reactions and `aspects/alerts`. |
-| **L3 outputs** | alert2_alerts, alert_lights, events, dashboard, places, devices | L0; L2's `aspects/alerts` (Alert2 reads `ProblemAlert`); `features/lights` (alert lights lend `Borrowable` lights) |
+| **L3 outputs** | alert2_alerts, alert_lights, events, dashboard, places, devices | L0; L2's `aspects/problem` (Alert2 and the alert lights read `ProblemAlert`); `features/lights` (alert lights lend `Borrowable` lights) |
 | **L4 wiring** | schema, catalogue, checks, build, generate | L0–L3; the only layer that reads `FEATURES`, `DEVICE_KEYS` and `ASPECTS` |
-| **L5 entry** | `__init__`, config_flow, the platforms | L0–L4; the platforms import only `runtime` and `homeassistant` |
+| **L5 entry** | `__init__`, config_flow, the platforms | L0–L4; the platforms import only `runtime` and `homeassistant`; `__init__` also imports `core.runtime` directly (hassfest's strict-typing check wants the entry named `*ConfigEntry`, `PururuConfigEntry`) |
 
 `runtime.py` is L0: it imports `feature`, `resolve` and `entity` for `Built`'s types, and the platforms import nothing else of pururu. HA's own registries (entity, device, area) are used wherever needed; "walking the lists" above means pururu's four lists.
 
@@ -551,7 +551,7 @@ HA looks up `CONFIG_SCHEMA`, `async_setup`, `async_setup_entry`, `async_unload_e
 
 ### Generated files
 
-- **One automations kind** (`generate.AUTOMATIONS`, file `pururu/automations/automations.yaml`, data key `automations`, Repairs issue `automations_not_included`, log word `source="reactions and notifications"`): reactions' items, then notifications'. Today two kinds share the domain `automation`: two files, two Repairs issues with the same include line, two reloads when both change, and a rename rule that missed one of them. `notifications.KIND` and its Repairs issue `notifications_not_included` with its translations go; `automations_not_included`'s title and description (en, pt-BR) stop saying "reactions' automations". `entry.data["notifications"]` stays, unread and harmless (no migration code, D13).
+- **One automations kind** (`generated.AUTOMATIONS` in `core/generated.py`, next to `generated.SCRIPTS`: `device_keys/` and `aspects/` name their domains and can't import `setup/`; file `pururu/automations/automations.yaml`, data key `automations`, Repairs issue `automations_not_included`, log word `source="reactions and notifications"`): reactions' items, then notifications'. Today two kinds share the domain `automation`: two files, two Repairs issues with the same include line, two reloads when both change, and a rename rule that missed one of them. `notifications.KIND` and its Repairs issue `notifications_not_included` with its translations go; `automations_not_included`'s title and description (en, pt-BR) stop saying "reactions' automations". `entry.data["notifications"]` stays, unread and harmless (no migration code, D13).
 - **Alert2 keeps its own engine:** its identity is the alert's name and its reload is a third party's.
 - **`generated.Kind` keeps assuming** the registry platform is the domain. A kind that breaks that (none planned) adds `platform` and `ids()` when it arrives.
 
@@ -563,7 +563,7 @@ HA looks up `CONFIG_SCHEMA`, `async_setup`, `async_setup_entry`, `async_unload_e
 | An aspect | `aspects/x.py`; its translations, once; its page in `docs/concepts/`; a role in `roles.py` if none fits | `ASPECTS` (and `CHECKS` for its rules) |
 | A device key | its module (schema, build, roles); its docs | `DEVICE_KEYS`, `CHECKS` |
 | A role | a dataclass in `roles.py`; its rules in the contract test | none |
-| A generated kind | a `Kind` and its part of the generate step in `generate.py`; `plan()` in the owner | none |
+| A generated kind | a `Kind` in `core/generated.py` and its part of the generate step in `generate.py`; `plan()` in the owner | none |
 | A condition operator | `vocabulary.py` | none |
 
 A new feature is a new cycle source or a new kind of real entity; a thing on a power plug is an `appliance`.
@@ -836,7 +836,7 @@ pururu has one user, its author. So:
 
 - No aliases, no deprecation Repairs issue, no migration code, no "From 0.1.x" sections; the existing "From 0.1.14 and before" section goes in PR C.
 - An old key is voluptuous' `extra keys not allowed`, with HA's file and line.
-- One manual step, in PR B (below).
+- One manual step, in PR B (below), carried into PR C's "Updating to 0.2.0" guide.
 - No entity ID or unique ID changes in A1–C; D changes those of today's `modes` and `phases` (D20). Everything else keeps its history, statistics and dashboards.
 - A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under the same version. That is accepted: 0.2.0 is the sum of the seven PRs.
 
@@ -887,13 +887,20 @@ custom_components/pururu/
 
 **A2b, the model.** `roles.py` and `Feature` with roles; `resolve.py`, `Index`, `Target`, with `Ref` built from 0.1.23's syntax (a reaction's `device:` + `when:`, a light group's `{device: [key]}`), so the old resolvers go now and C only changes the parsing; `CHECKS` at the domain level with paths (error texts and their order may change); `Planned`, and each `plan()` in its owner (`programs.py`, `reactions.py`, `notifications.py`); `Built` gains `builders` and `index`. Docs: `writing-a-feature.mdx`, `testing.mdx`.
 
-**B, the aspects**, in four PRs (B1 to B4 above), split by concern when B started: each is smaller to review and merges on its own, and the owner updates only once 0.2.0 is finished, so the steps between don't matter to them. `aspects/` (statistics, alerts with the `ALERTS` device key, notifications); `features/presets.py`, `features/alerts.py`, `features/elapsed.py`, `features/cycle/statistics.py` and `notifications.py` move there; generic `mount`; `alerts` from `FEATURES` to `DEVICE_KEYS`; one automations kind, and `programs.KIND` moved to `generate.SCRIPTS` next to it (`tests/test_generated.py` reads both from `generate`); the statistics translations owned by the aspect (`<counter>_<period>`, `item_<counter>_<period>` with `{item}`), written so the names shown don't change; `CycleSource`; the contract test's role and aspect rules; the import test's full table; `trigger()` moved to `vocabulary.py`; `presets.validate`'s redirect "{name} is now a notification" goes (D13). Docs: `docs/features/alerts.mdx` to `docs/concepts/alerts.mdx`, a statistics concept page, `docs.json`, `configuration.mdx`.
+**B, the aspects**, in four PRs (B1 to B4 above), split by concern when B started: each is smaller to review and merges on its own, and the owner updates only once 0.2.0 is finished, so the steps between don't matter to them. `aspects/` (statistics, alerts with the `ALERTS` device key, notifications); `features/presets.py`, `features/alerts.py`, `features/elapsed.py`, `features/cycle/statistics.py` and `notifications.py` move there; generic `mount`; `alerts` from `FEATURES` to `DEVICE_KEYS`; one automations kind, and `programs.KIND` moved to `generated.SCRIPTS` next to it, both in `core/generated.py` (`device_keys/` and `aspects/` name their domains and can't import `setup/`; `tests/test_generated.py` reads both from `core.generated`); the statistics translations owned by the aspect (`<counter>_<period>`, `item_<counter>_<period>` with `{item}`), written so the names shown don't change; `CycleSource`; the contract test's role and aspect rules; the import test's full table; `trigger()` moved to `vocabulary.py`; `presets.validate`'s redirect "{name} is now a notification" goes (D13). Docs: `docs/features/alerts.mdx` to `docs/concepts/alerts.mdx`, a statistics concept page, `docs.json`, `configuration.mdx`.
 
 The manual step, in the PR's text: before updating, remove every `notifications:` block and reload pururu (their automations and registry entries go; the new kind would otherwise find them registered under the old data key and treat them as the user's). Update, delete `pururu/automations/reactions.yaml` and `pururu/automations/notifications.yaml` (HA loads every file in the folder, and they'd repeat `automations.yaml`'s IDs), restart. Put the `notifications:` blocks back and reload.
 
 **D, programs.** Part 4 whole: `features/cycle/program.py`, `aspects/programs.py`, the `Programs` role, `running_program`, `programs: {detected, executable}`, phases as programs; `modes`, `phases`, `cycle_from`, `Provides`, `Requires` go; the two choices of "Decided when D starts". Docs: `docs/features/modes.mdx` and `phases.mdx` go, a programs concept page replaces `concepts/programs.mdx`, `appliance.mdx`, `docs.json`, `configuration.mdx`.
 
-**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten.
+**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.0" guide, carrying B4's manual step, whose first step comes *before* updating:
+
+1. Before updating, remove every `notifications:` block and reload pururu.
+2. Download the update (in HACS); don't restart yet.
+3. Delete `pururu/automations/reactions.yaml` and `pururu/automations/notifications.yaml`.
+4. Restart.
+5. Put the `notifications:` blocks back and reload.
+6. If step 1 was skipped: in **Settings → Entities**, delete each orphaned `automation.pururu_…_notification_…` (no longer provided), then reload pururu; nothing in pururu removes them otherwise.
 
 ## Tests
 

@@ -19,8 +19,8 @@ from helpers import DOMAIN, setup
 FIXTURES = Path(__file__).parent / "fixtures"
 HOUSE = yaml.safe_load((FIXTURES / "house.yaml").read_text())
 SNAPSHOT = FIXTURES / "house_ids.json"
-# The entry's data keys holding the IDs of generated scripts, reactions' automations and notifications' automations
-GENERATED = ("scripts", "automations", "notifications")
+# The entry's data keys holding the IDs of generated scripts, and reactions' and ready-made notifications' automations
+GENERATED = ("scripts", "automations")
 
 
 def ids(hass: HomeAssistant) -> dict[str, list[list[str]]]:

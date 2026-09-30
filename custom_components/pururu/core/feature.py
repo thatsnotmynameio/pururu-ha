@@ -164,7 +164,8 @@ def happenings_of(feature: Feature) -> Mapping[str, Happening]:
 class Happening:
     """A ready-made notification of a feature: what happens, as a reaction's trigger.
 
-    Off until the device's `notifications` enables it; it creates no entity.
+    Off until its feature's block's `notifications` enables it (the
+    notifications aspect); it creates no entity.
     """
 
     # The entity key, in the feature's namespace, it watches
@@ -212,16 +213,17 @@ type AspectBuild = Callable[
 class Aspect:
     """A concern written once, mounted in the block (or each item) of every builder offering it."""
 
-    # The block key it mounts: "statistics", "alerts"
+    # The block key it mounts: "statistics", "alerts", "notifications"
     key: str
     # Whether this builder offers it: it has what the aspect needs (Counters;
-    # at least one ready-made alert)
+    # at least one ready-made alert; at least one Happening)
     offered: Callable[[Feature], bool]
     # Validates the aspect's value, for this builder and its key in the device,
-    # for an aspect whose messages name the builder (B4's ready-made
-    # notifications); the alerts aspect doesn't need it
+    # for an aspect whose messages name the builder: the notifications
+    # aspect uses it; the alerts and statistics aspects don't need it
     schema: Callable[[Feature, str], Callable[[Any], Any]]
-    # The local entity keys it adds: suffixes for an Items builder
+    # The local entity keys it adds: suffixes for an Items builder; none for
+    # the ready-made notifications (automations)
     keys: Callable[[Feature], Mapping[str, Platform]]
     # The translation key one of its local keys is named under, for this
     # builder: statistics' own at the block level, or under the builder's
@@ -239,5 +241,6 @@ class Aspect:
     check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None
     # Its key absent (or its container not a map): validated as `{}` and
     # mounted (statistics: no counter asks a period), or left out, as nothing
-    # asked (ready-made alerts: none enabled; an explicit `{}` is still refused)
+    # asked (ready-made alerts and notifications: none enabled; an explicit
+    # `{}` is still refused)
     mount_absent: bool = True

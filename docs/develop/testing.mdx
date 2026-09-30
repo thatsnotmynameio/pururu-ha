@@ -93,6 +93,33 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 - **hassfest**, which validates the manifest, services, translations, icons and config flow. It comes from the pinned release's source. `fetch_hassfest.py` downloads it once into `.hassfest/`, before the HA plugin blocks sockets, and you can run it by hand with `uv run fetch_hassfest.py`.
 - **The quality scale**: `quality_scale.yaml` must list every rule of the pinned hassfest. A rule that isn't `done` needs a comment with the reason.
 
+## The layer table
+
+`tests/test_code.py` maps every module to a layer and fails on any import the table doesn't allow (`test_each_module_imports_only_what_its_row_allows`). It's the spec's ["Layers"](/develop/architecture#layers) as code: each folder, and each module at the root, gets a row of what it may import of the integration (`homeassistant` and the stdlib aside). A prefix ending in `.` is a module *inside* that package, never the package itself: only `setup/` reads a folder's `__init__` (`FEATURES`, `ASPECTS`, `DEVICE_KEYS`). An absolute self-import (`from custom_components.pururu.outputs import dashboard`) is checked like the relative one, and importing the package itself (`from custom_components import pururu`) is refused in every folder.
+
+| Folder (or root module) | May import |
+|---|---|
+| `core/` | `core.`, `const` |
+| `features/` | `core.`, `const`, `features.cycle`, `features.standing`, and its own package (`features/<x>/`, or itself for a module `features/<x>.py`) |
+| `aspects/` | `core.`, `const`, `features.cycle`, another `aspects.` module |
+| `device_keys/` | `core.`, `const`, `features.cycle`, another `device_keys.` module |
+| `outputs/` | `core.`, `const`, `aspects.problem` (Alert2's file and the alert lights read `ProblemAlert`), `features.lights` (the alert lights lend `Borrowable` lights) |
+| `setup/` | `const`, `core`, `features`, `aspects`, `device_keys`, `outputs`, `setup` |
+| `__init__.py` | `setup.`, `const` |
+| `config_flow.py` | `const` |
+| `const.py` | nothing of pururu |
+| `sensor.py`, `binary_sensor.py`, `switch.py`, `light.py` | `core.runtime` |
+
+Three named allowances, for one module each, not their whole folder (`ALSO` in `tests/test_code.py`):
+
+- `features/__init__` → every `features.` package: it lists `FEATURES`.
+- `device_keys/__init__` → `aspects.alerts`: the hand-written alerts' device key.
+- `__init__` → `core.runtime`, directly, not through `setup.`: Home Assistant's entry points and the platforms take the typed entry, and hassfest's strict-typing check wants it named `*ConfigEntry` — `PururuConfigEntry`, in `core/runtime.py`.
+
+Only `aspects/statistics.py` imports Home Assistant's `utility_meter` (`test_only_the_statistics_aspect_imports_utility_meter`): the meters are written once.
+
+A new folder needs a row here, in `ALLOWED` (`tests/test_code.py`), or the import test fails with `no row in ALLOWED`.
+
 ## Running tests
 
 ```sh

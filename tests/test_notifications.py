@@ -12,7 +12,7 @@ from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
 
-from helpers import fake, generated, generated_notifications, module, reload, setup, tick
+from helpers import fake, generated, module, reload, setup, tick
 
 KEY = "washer"
 POWER = "sensor.demo_plug_power"
@@ -110,7 +110,7 @@ ENABLED = {"finished": None}
 
 async def test_the_file_holds_the_notifications_automation(ha: HomeAssistant) -> None:
     assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
-    assert generated_notifications(ha) == [{
+    assert generated(ha) == [{
         "id": "pururu_washer_appliance_notification_finished",
         "alias": "Máquina Finished",
         "description": "pururu: washer, appliance notification finished",
@@ -118,13 +118,12 @@ async def test_the_file_holds_the_notifications_automation(ha: HomeAssistant) ->
         "actions": [{"parallel": [{"action": PHONE, "data": {"title": "Máquina", "message": "The cycle finished."},
                                    "continue_on_error": True}]}],
     }]
-    assert generated(ha) == []
 
 
 async def test_in_hass_language(ha: HomeAssistant) -> None:
     ha.config.language = "pt-BR"
     assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
-    [automation] = generated_notifications(ha)
+    [automation] = generated(ha)
     assert automation["alias"] == "Máquina Terminou"
     assert automation["actions"][0]["parallel"][0]["data"]["message"] == "O ciclo terminou."
 
@@ -132,7 +131,7 @@ async def test_in_hass_language(ha: HomeAssistant) -> None:
 async def test_its_own_message_and_notify(ha: HomeAssistant) -> None:
     mine = {"finished": {"message": "Roupa {pronta}!", "notify": ["notify.a", "notify.b"]}}
     assert await setup(ha, devices(mine), config={"notify": PHONE})
-    [automation] = generated_notifications(ha)
+    [automation] = generated(ha)
     told = automation["actions"][0]["parallel"]
     assert [action["action"] for action in told] == ["notify.a", "notify.b"]
     assert told[0]["data"]["message"] == "{% raw %}Roupa {pronta}!{% endraw %}"
@@ -142,21 +141,21 @@ async def test_it_follows_a_renamed_running(ha: HomeAssistant) -> None:
     assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
     er.async_get(ha).async_update_entity(RUNNING, new_entity_id="binary_sensor.washer_running")
     await ha.async_block_till_done()
-    assert generated_notifications(ha)[0]["triggers"][0]["entity_id"] == "binary_sensor.washer_running"
+    assert generated(ha)[0]["triggers"][0]["entity_id"] == "binary_sensor.washer_running"
 
 
 async def test_not_generated_when_running_is_not_created(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     ha.states.async_set(RUNNING, "off")  # another integration's entity holds the ID
     assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
-    assert generated_notifications(ha) == []
+    assert generated(ha) == []
     assert (f"{FINISHED} follows {RUNNING}, which is not created; not generating it") in caplog.text
 
 
 async def test_dropped_from_the_yaml_it_goes(ha: HomeAssistant) -> None:
     assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
     await reload(ha, {KEY: {"name": "Máquina", "appliance": APPLIANCE}}, config={"notify": PHONE})
-    assert generated_notifications(ha) == []
+    assert generated(ha) == []
 
 
 # --- told -----------------------------------------------------------------------------------
@@ -164,9 +163,9 @@ async def test_dropped_from_the_yaml_it_goes(ha: HomeAssistant) -> None:
 
 @pytest.fixture
 async def automations(ha: HomeAssistant) -> AsyncIterator[None]:
-    """HA's automations, from a configuration.yaml whose include merges both of pururu's files."""
+    """HA's automations, from a configuration.yaml whose include merges pururu's file."""
     def both(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {"automation pururu": [*generated(ha), *generated_notifications(ha)]}
+        return {"automation pururu": generated(ha)}
     with patch("homeassistant.config.load_yaml_config_file", side_effect=both):
         assert await async_setup_component(ha, "automation", both())
         yield
@@ -228,12 +227,56 @@ async def test_a_repair_while_the_file_is_not_loaded(ha: HomeAssistant, freezer:
         assert await async_setup_component(ha, "automation", {})
         assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
     await tick(ha, freezer, 5)
-    issue = ir.async_get(ha).async_get_issue("pururu", "notifications_not_included")
+    issue = ir.async_get(ha).async_get_issue("pururu", "automations_not_included")
     assert issue is not None
     assert issue.translation_placeholders == {
         "include": "automation pururu: !include_dir_merge_list pururu/automations",
-        "file": "pururu/automations/notifications.yaml",
+        "file": "pururu/automations/automations.yaml",
     }
+
+
+DOOR = {"name": "Porta", "entity": "binary_sensor.door", "to": "on"}
+
+
+async def test_reactions_and_notifications_share_one_file(ha: HomeAssistant) -> None:
+    """One automations kind: the reactions' then the notifications', tracked under one data key."""
+    assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE})
+    both = ["pururu_washer_reaction_door", "pururu_washer_appliance_notification_finished"]
+    assert [automation["id"] for automation in generated(ha)] == both
+    [entry] = ha.config_entries.async_entries("pururu")
+    assert entry.data["automations"] == both
+
+
+REACTION = "pururu_washer_reaction_door"
+NOTIFICATION = "pururu_washer_appliance_notification_finished"
+
+
+@pytest.mark.parametrize(("kept", "dropped", "device"), [
+    pytest.param(REACTION, NOTIFICATION, {"name": "Máquina", "appliance": APPLIANCE, "reactions": {"door": DOOR}},
+                 id="the notification dropped"),
+    pytest.param(NOTIFICATION, REACTION, devices(ENABLED)[KEY], id="the reaction dropped"),
+])
+async def test_dropping_one_source_keeps_the_others(ha: HomeAssistant, automations: None,
+                                                   kept: str, dropped: str, device: dict[str, Any]) -> None:
+    """One tracked list for both: what goes is the dropped one's, never the other's."""
+    assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE})
+    await reload(ha, {KEY: device}, config={"notify": PHONE})
+    assert [automation["id"] for automation in generated(ha)] == [kept]
+    [entry] = ha.config_entries.async_entries("pururu")
+    assert entry.data["automations"] == [kept]
+    registry = er.async_get(ha)
+    assert registry.async_get_entity_id("automation", "automation", dropped) is None
+    assert registry.async_get_entity_id("automation", "automation", kept) == f"automation.{kept}"
+
+
+async def test_one_repair_for_reactions_and_notifications(ha: HomeAssistant, freezer: Any) -> None:
+    """Not included, the reactions' and the notifications' automations raise one issue: one include."""
+    with patch("homeassistant.config.load_yaml_config_file", side_effect=lambda *_a, **_k: {}):
+        assert await async_setup_component(ha, "automation", {})
+        assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE})
+    await tick(ha, freezer, 5)
+    issues = [issue_id for domain, issue_id in ir.async_get(ha).issues if domain == "pururu"]
+    assert issues == ["automations_not_included"]
 
 
 async def test_removing_the_entry_empties_the_file(ha: HomeAssistant) -> None:
@@ -241,7 +284,7 @@ async def test_removing_the_entry_empties_the_file(ha: HomeAssistant) -> None:
     entry = ha.config_entries.async_entries("pururu")[0]
     await ha.config_entries.async_remove(entry.entry_id)
     await ha.async_block_till_done()
-    assert generated_notifications(ha) == []
+    assert generated(ha) == []
 
 
 # --- the docs ----------------------------------------------------------------------------
