@@ -1,10 +1,10 @@
 # Alert lights — design
 
-Version: 0.1.20 (planned as 0.1.19; the events took it first). Brings the alert lights of ha-config's `alertmanager` package (`pkg_alertmanager_lights`, the colour-lights channel and `light.pkg_home_lights_alert`) into pururu, driven by pururu's own alerts.
+Version: 0.1.20 (planned as 0.1.19; the events took it first). The lights are driven by pururu's own alerts.
 
 ## Goal
 
-While an alert is on, some lights show it: red, orange or blue breathing by priority. When the last alert that uses a light ends, the light turns green for a while, then off, and whoever used it before is told it is free. Today this is a YAML automation in ha-config that watches Alert2's package alerts; pururu's own device alerts never take the lights.
+While an alert is on, some lights show it: red, orange or blue breathing by priority. When the last alert that uses a light ends, the light turns green for a while, then off, and whoever used it before is told it is free. Today pururu's own device alerts never take the lights.
 
 Here pururu does it for its alerts. An alert opts in (`lights: true` or a group's name); a light is borrowed only by the alerts that name it, and handed back only once none of them is on.
 
@@ -29,7 +29,7 @@ pururu:
 
 | Question | Decision |
 |---|---|
-| Which alerts drive lights | pururu's alerts only (`binary_sensor.pururu_*_alert_*`, hand-written and ready-made), read from their own state and `priority`. Not Alert2's: the lights don't depend on Alert2. ha-config's package alerts (the doors) lose their light until they move to pururu. |
+| Which alerts drive lights | pururu's alerts only (`binary_sensor.pururu_*_alert_*`, hand-written and ready-made), read from their own state and `priority`. Not Alert2's: the lights don't depend on Alert2. |
 | Which of them | Opt-in per alert: `lights: true` (the `default` group) or `lights: <group>`. Without `lights`, nothing changes. Rejected: every alert (the washer's `no_cycle` would breathe for days), a priority threshold (mixes seriousness with "deserves a light"), opt-out (changes existing configurations). |
 | How an alert names lights | Named groups under `config.alerts.lights.groups`, each a map of device key → keys of that device's `lights:`. `default` is the group of `lights: true`. Rejected: entity IDs in the alert (real entities outside feature blocks, no validation), a device → lights map in every alert (repeated). |
 | What the manager does to a light | It calls the light's two methods, `turn_on(params)` and `turn_off()`: `light.turn_on` / `light.turn_off` on the pururu light. It never sets colour or brightness itself. |
@@ -202,7 +202,3 @@ The manager sets them and writes the light's state. `alert` is restored (below),
 - `docs/features/lights.mdx`: `alert`/`alerts` attributes, the effect dropped, the light driven by alerts.
 - `docs/reference/configuration.mdx`: `config`.
 - `docs/reference/troubleshooting.mdx`: the new log messages.
-
-## ha-config, after the release
-
-Another PR there: remove `pkg_alertmanager_lights`, `sensor.pkg_alertmanager_channel_color_lights` and `light.pkg_home_lights_alert`; add `config.alerts.lights` (group `default: {pool: [led]}`) to `packages/pururu/pururu.yaml`; add `lights: true` to the washer alerts that should light up. `pkg_alertmanager_ack` stays. `pkg_alertmanager_lights_released` had no listener.

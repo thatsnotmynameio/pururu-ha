@@ -42,9 +42,9 @@ alert2:
 
 | Question | Decision |
 |---|---|
-| Who delivers | Alert2, kept. pururu doesn't send notifications, reminders or acknowledgements. Rejected: pururu replacing the user's alertmanager (a notification subsystem to own), and a first small step with pururu sending one notification. |
+| Who delivers | Alert2, kept. pururu doesn't send notifications, reminders or acknowledgements. Rejected: pururu replacing Alert2 (a notification subsystem to own), and a first small step with pururu sending one notification. |
 | How pururu reaches Alert2 | Attributes on the alert entity, read by one Alert2 `generator` block the user writes once (Alert2's public YAML). Rejected: pururu creating Alert2's alerts in code (Alert2's internal, undocumented `declareCondition`, which can break at any Alert2 release); Alert2's public Python API (`declareEventMulti`/`report`), which only makes event alerts: no on/off state, so no reminders while a problem lasts and no resolved message. |
-| What an alert says | `notify: {message, done_message}`, both required. Every alert of the user's alertmanager has both; the generator always has text to read. Someone who wants no resolved notification turns it off in Alert2 (`done_notifier: false`). Rejected: an optional `done_message` (Alert2's default, English text), and `notifier`/`title` per alert (no alert needs them). |
+| What an alert says | `notify: {message, done_message}`, both required. An alert worth notifying has both; the generator always has text to read. Someone who wants no resolved notification turns it off in Alert2 (`done_notifier: false`). Rejected: an optional `done_message` (Alert2's default, English text), and `notifier`/`title` per alert (no alert needs them). |
 | What stays in Alert2 | What is the same for every alert: notifiers, reminder frequencies, acknowledging, the title from the priority, data (the Ignore button), the lights. Alert2 can't template reminder frequencies or acknowledgement per alert anyway (`reminder_frequency_mins`, `ack_required`, `ack_reminders_only` aren't templates). |
 | Which alerts Alert2 delivers | Those with `notify:`, which alone have a `message` attribute: the generator filters on it. An alert without `notify:` is left to automations or HA's `alert:`. |
 | When pururu complains about Alert2 | Only for an alert with `notify:`, once Home Assistant has started, when Alert2 isn't set up (`alert2` not in `hass.config.components`): an error in the log naming the alert. Nothing else is affected. Rejected: complaining whenever alerts exist (alerts used with automations alone would log an error at every start). |
@@ -96,10 +96,6 @@ logged as an error, once per alert and setup. Detection goes on as without `noti
   - The new log line.
 - `reference/configuration.mdx`: `notify` in the example.
 - `reference/troubleshooting.mdx`: the new error, and its fix (install and set up Alert2, or drop `notify:`).
-
-## Outside this repository
-
-After the release, the user's `packages/alertmanager/alerts.yaml` (ha-config) gains the pururu generator. That's a separate change, in that repository, on the user's request.
 
 ## Release
 
