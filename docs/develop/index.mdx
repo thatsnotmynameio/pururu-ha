@@ -55,7 +55,7 @@ custom_components/pururu/     the integration
     files.py                  the generated files' writer
     generated.py              a Kind per generated domain: sync, include check, removal
   features/                   one module or package per feature, and FEATURES
-    appliance/                running, cycles, runtime, mirrors, alerts
+    appliance/                running, mirrors, alerts, notifications
     lights.py
     phases.py
     standing.py               what switches and lights share: their schema, is_pururu
@@ -76,7 +76,7 @@ custom_components/pururu/     the integration
     listener.py               the registry listener: renames and disabled targets
     schema.py                 CONFIG_SCHEMA: each device, then the checks over the whole house
     checks.py                 the rules beyond each block's own schema
-    catalogue.py              builders(): every builder of a device, and its entity keys
+    catalogue.py              builders(): every builder of a device, and its entity keys; mount wires in the aspects, its main job now
     build.py                  each device's entities, and which can be created
     generate.py               the scripts and automations the entry generates
   translations/               en.json and pt-BR.json, with the same keys

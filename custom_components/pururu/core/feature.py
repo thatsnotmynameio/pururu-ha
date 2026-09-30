@@ -221,8 +221,9 @@ class Aspect:
     key: str
     # Whether this builder offers it: it has the role the aspect needs
     offered: Callable[[Feature], bool]
-    # Validates the aspect's value, for this builder
-    schema: Callable[[Feature], Callable[[Any], Any]]
+    # Validates the aspect's value, for this builder and its key in the device
+    # (a ready-made alert's messages, a notification's, need it)
+    schema: Callable[[Feature, str], Callable[[Any], Any]]
     # The local entity keys it adds: suffixes for an Items builder
     keys: Callable[[Feature], Mapping[str, Platform]]
     # A valid value, for the contract test
@@ -231,6 +232,7 @@ class Aspect:
     placed: Callable[[Feature], Literal["block", "item"]]
     # Its entities, from the builder's validated block
     build: AspectBuild
-    # Refuses (vol.Invalid) what it can't be once validated, given the builder
-    # and each container (the block, or an item) with its value put back
-    check: Callable[[Feature, Mapping[str, Any]], None] | None = None
+    # Refuses (vol.Invalid) what it can't be once validated, given the builder,
+    # its key in the device, and each container (the block, or an item) with
+    # its value put back
+    check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None

@@ -59,7 +59,7 @@ YAML, entity IDs, unique IDs, names and icons don't change.
   - every meter's entity ID and unique ID, the full list: e.g. `sensor.pururu_<key>_appliance_runtime_today`, `sensor.pururu_<key>_mode_<slug>_cycles_week`, `sensor.pururu_<key>_program_<slug>_runtime_month`, `sensor.pururu_<key>_reaction_<slug>_triggered_year`, `sensor.pururu_<key>_door_openings_today`, `sensor.pururu_<key>_window_open_time_week`;
   - its `friendly_name` in `hass.states` with the language `en` and with `pt-BR` (set `hass.config.language` before `setup`; the device's name comes first in the friendly name);
   - its icon from the entity registry or state (the translated icon: read how tests elsewhere check icons, or assert `entity.icon`/the registry's `translation_key`-based icon through `homeassistant.helpers.icon`, whichever the repo already uses; if none, assert the translation key's icon from `icons.json` by reading `registry.async_get(entity_id).translation_key`).
-  - Expected values come from today's `en.json`/`pt-BR.json`/`icons.json`, written as literals in the test (a few per builder, not all 144: one per counter, two periods, both languages).
+  - Expected values come from today's `en.json`/`pt-BR.json`/`icons.json`, written as literals in the test (a few per builder, not all 52 per file: one per counter, two periods, both languages).
 - [ ] **Step 2:** The refusals: `modes` with `statistics: {energy: [today]}` and no `energy` → `statistics.energy needs energy`. `appliance` with `statistics: {idle_energy: [today]}` and no `energy` → `statistics.idle_energy needs energy`. A repeated period → `a period is repeated`. An unknown period and an unknown counter are refused. Asking no period for `energy` without `energy` passes.
 - [ ] **Step 3:** Run. They pass on today's code (they characterize it). Show that one name test and one refusal test would catch a change, by perturbation (copy the file aside with `cp`, edit, run, copy back; no git stash). Commit `tests: today's meters, pinned by name, icon and ID (refactor B2)`.
 
@@ -75,7 +75,7 @@ YAML, entity IDs, unique IDs, names and icons don't change.
   - `setup/schema.py` (`_device` validates every builder with `partial(catalogue.mount, builder, name)`);
   - `setup/build.py` (the offered aspects' builds);
   - the five builders (appliance, opening, modes, programs, reactions: their `statistics` schema, the meter keys in `ENTITY_KEYS`/`PER_*` and the `Meter` loops go; `Counters` comes);
-  - `translations/en.json`, `translations/pt-BR.json`, `icons.json` (the 144 meter keys become the 36 group keys, texts and icons unchanged);
+  - `translations/en.json`, `translations/pt-BR.json`, `icons.json` (the 52 meter keys per file become the 36 group keys, texts and icons unchanged);
   - `tests/test_features.py` (the aspect rules; `named_keys` without the meters).
 
 **Produces:**
@@ -139,7 +139,7 @@ The aspect:
   - `mount` takes the aspect's key out before the rest reaches the builder's schema (which refuses it), and puts the validated value back where it was: in the block, or in each item.
   - `catalogue.keys` expands an aspect's keys per item for an `Items` builder (`item.key(suffix)`, `item=slug`), with `by="statistics"`.
   - `build.build` runs `aspect.build(hass, device, builder, block, texts)` for each offered aspect, with the same `follows`/`sources` handling as the builder's entities.
-  - The 144 translation and icon entries become 36 group keys, with texts and icons copied from today's.
+  - The 52 translation and icon entries per file become 36 group keys, with texts and icons copied from today's.
 - [ ] **Step 3:** `uv run pytest -q` → all pass, Task 1's tests unchanged among them. `tests/test_code.py`'s `NEVER` gains `"aspects": {"device_keys", "outputs", "setup"}`, and `features` gains `"aspects"`. The test checking only `aspects/statistics.py` imports `utility_meter` is new; watch it fail by perturbation. Commit `pururu: statistics is an aspect, written once (refactor B2)`.
 
 ### Task 3: Docs, coverage, final review, PR

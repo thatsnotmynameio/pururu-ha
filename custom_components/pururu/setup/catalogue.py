@@ -83,10 +83,13 @@ def mount(builder: Feature, name: str, value: Any) -> Any:
     """Builder `name`'s block, validated, each offered aspect's value in it where it was.
 
     Each aspect's key is taken out of the block, or out of each item, where the
-    aspect says it sits (Aspect.placed), and validated by the aspect: absent, as
-    `{}`. The rest goes to _validated. Once every value is back, each aspect
-    checks each container it sits in (Aspect.check). Every refusal is told at
-    once, with its path.
+    aspect says it sits (Aspect.placed), and validated by the aspect: absent,
+    as `{}`. The rest goes to _validated. This is the first stage: the
+    builder's own schema refusal and each aspect's schema refusal are raised
+    together, before either runs a check. Once every value is validated and
+    back where it sat, the second stage runs: each aspect checks each
+    container it sits in (Aspect.check), and those refusals are raised
+    together too, separately from the first stage's.
     """
     if not (aspects := aspects_of(builder)):
         return _validated(builder, name, value)
@@ -101,7 +104,7 @@ def mount(builder: Feature, name: str, value: Any) -> Any:
     mounted: Places = {}
     for (path, key), taken in places.items():
         try:
-            mounted[path, key] = by_key[key].schema(builder)(taken)
+            mounted[path, key] = by_key[key].schema(builder, name)(taken)
         except vol.Invalid as error:
             error.prepend([*path, key])
             errors.append(error)
@@ -109,13 +112,14 @@ def mount(builder: Feature, name: str, value: Any) -> Any:
         raise vol.MultipleInvalid(_flat(errors))
     for (path, key), each in mounted.items():
         block = _put(block, path, key, each)
-    if errors := _checked(builder, by_key, block, mounted.keys()):
+    if errors := _checked(builder, name, by_key, block, mounted.keys()):
         raise vol.MultipleInvalid(_flat(errors))
     return block
 
 
 def _checked(
     builder: Feature,
+    name: str,
     aspects: Mapping[str, Aspect],
     block: dict[str, Any],
     places: Iterable[tuple[Place, str]],
@@ -126,7 +130,7 @@ def _checked(
         if (check := aspects[key].check) is None:
             continue
         try:
-            check(builder, block[path[0]] if path else block)
+            check(builder, name, block[path[0]] if path else block)
         except vol.Invalid as error:
             error.prepend(list(path))
             errors.append(error)

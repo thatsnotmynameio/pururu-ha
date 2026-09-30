@@ -1,10 +1,10 @@
 """Characterizes today's meters: entity IDs, translated names and icons, and refusals.
 
-Five builders build per-period `Meter` entities (features/cycle/statistics.py):
-appliance, door, window, modes, programs, reactions. This file pins what each shows
-today - the full list of IDs, a few names in `en` and `pt-BR`, a few icons, and the
-schema's refusal texts - so PR B2's Task 2 (one Aspect, replacing five copies) can't
-change any of them unnoticed.
+Six builders build per-period `Meter` entities through the statistics aspect
+(aspects/statistics.py): appliance, door, window, modes, programs, reactions.
+This file pins what each shows today - the full list of IDs, a few names in
+`en` and `pt-BR`, a few icons, and the schema's refusal texts - so a change to
+the aspect can't move any of them unnoticed.
 """
 
 from collections.abc import AsyncIterator

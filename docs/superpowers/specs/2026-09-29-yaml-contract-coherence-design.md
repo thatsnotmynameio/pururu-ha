@@ -427,7 +427,9 @@ class Aspect:                                   # 3 instances; deletes the 5 cop
     schema: Callable[[Feature, str], Callable[[Any], Any]]   # (builder, its key in the device, for messages)
     keys: Callable[[Feature], Mapping[str, Platform]]        # local entity keys it can add to the builder
     example: Callable[[Feature], Any]           # a valid value, for the contract test
-    build: AspectBuild | None = None
+    placed: Callable[[Feature], Literal["block", "item"]]    # where its key sits: the block, or each item
+    build: AspectBuild
+    check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None  # (builder, its key, container)
     generates: Callable[[str, Feature, Any], Iterable[tuple[str, str]]] | None = None
 
 type AspectBuild = Callable[
@@ -642,7 +644,6 @@ Small choices that don't change the model:
 ### Not in 0.2.0
 
 Deferred to 0.2.1 (the owner, 2026-09-29):
-
 
 - `phases` on an executable program (its steps could be its phases): refused until needed.
 - A detected program from another source than a band of a reading (a smart washer's program sensor).
@@ -903,7 +904,6 @@ The manual step, in the PR's text: before updating, remove every `notifications:
 ## Open decisions
 
 No deadline; each stays as it is today until a need comes up (the owner, 2026-09-29):
-
 
 - **The `STEPS` guard** trades failing loudly for availability; the autouse fixture keeps bugs visible in tests. Keep unless it hides a real failure.
 - A reaction with several triggers (`when:` as a list).

@@ -90,6 +90,22 @@ def test_the_core_imports_only_the_core() -> None:
                    for name in imported), (path.name, imported)
 
 
+# An aspect (aspects/) is written once for every builder offering it: it may read
+# the core's contracts and const, share cycle code with features/cycle/ (an
+# Items-repeated aspect's meters can use it), and other aspects, but never a
+# specific feature or a device key
+ASPECTS = "aspects"
+ASPECTS_ALLOWED = (CORE, "const", "features.cycle", ASPECTS)
+
+
+def test_aspects_import_only_the_core_and_features_cycle() -> None:
+    for path in (PROJECT / CODE / ASPECTS).rglob("*.py"):
+        imported = imports_of(path)
+        assert all(name in ASPECTS_ALLOWED
+                   or any(name.startswith(f"{allowed}.") for allowed in ASPECTS_ALLOWED)
+                   for name in imported), (path.name, imported)
+
+
 # Each folder never imports these, until B enforces the whole layer table
 NEVER = {
     "features": {"aspects", "device_keys", "outputs", "setup"},

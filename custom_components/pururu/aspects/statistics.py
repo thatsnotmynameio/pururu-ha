@@ -27,7 +27,6 @@ from ..const import DOMAIN
 from ..core.entity import PururuEntity
 from ..core.feature import Aspect, Device, Feature, Item, item_key
 from ..core.roles import Counters, Items
-from ..core.texts import Texts
 
 # The block key, in the block or in each item
 KEY = "statistics"
@@ -124,8 +123,12 @@ def _counters(builder: Feature) -> Counters:
     return counters
 
 
-def _schema(builder: Feature) -> vol.Schema:
-    """`statistics:`: counter -> its periods; a schema of its own, so an unknown counter is refused."""
+def _schema(builder: Feature, _name: str) -> vol.Schema:
+    """`statistics:`: counter -> its periods; a schema of its own, so an unknown counter is refused.
+
+    Statistics doesn't need the builder's key in the device (`_name`): it names
+    nothing to a person, unlike a ready-made alert's or notification's messages.
+    """
     return vol.Schema(
         {
             vol.Optional(counter, default=[]): PERIOD_LIST
@@ -172,9 +175,14 @@ def _placed(builder: Feature) -> Literal["block", "item"]:
 
 
 def _build(
-    hass: HomeAssistant, device: Device, builder: Feature, block: Any, texts: Texts
+    hass: HomeAssistant, device: Device, builder: Feature, block: Any, *_: Any
 ) -> list[PururuEntity]:
-    """The meters asked for; per item for an Items builder, from the item's or the block's statistics."""
+    """The meters asked for; per item for an Items builder, from the item's or the block's statistics.
+
+    Statistics is the only aspect today, so AspectBuild's `texts` (the common
+    texts a ready-made alert's or notification's messages need) has nothing to
+    build from here; `*_` takes it without naming it.
+    """
     if (items := builder.role(Items)) is None:
         return list(_meters(hass, device, block[KEY], None))
     in_items = _placed(builder) == "item"
@@ -187,7 +195,7 @@ def _build(
     ]
 
 
-def _check(builder: Feature, container: Mapping[str, Any]) -> None:
+def _check(builder: Feature, _name: str, container: Mapping[str, Any]) -> None:
     """Refuse a counter with periods whose setting (Counters.needs) isn't in its block (or item)."""
     for counter, setting in _counters(builder).needs.items():
         if setting is not None and container[KEY][counter] and setting not in container:
