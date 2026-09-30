@@ -21,6 +21,7 @@ from .schema import (
     Band,
     Phase,
     Program,
+    keys_of,
     phase_keys,
     program_of,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "Run",
     "Started",
     "build",
+    "keys_of",
     "phase_keys",
     "program_of",
 ]

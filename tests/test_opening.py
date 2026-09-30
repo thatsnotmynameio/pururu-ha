@@ -321,22 +321,6 @@ async def test_a_renamed_pururu_contact_stands_for_nothing(
             f"{entity(kind, 'open', 'binary_sensor')} stands for nothing") in caplog.text
 
 
-async def test_the_openings_are_a_cycle_for_phases(ha: HomeAssistant, kind: str) -> None:
-    """`cycle_from: door` (window): a phase runs while it's open."""
-    await contact(ha, "off")
-    phases = {"cycle_from": kind, "sensor": "sensor.vento",
-              "defaults": {"stopped": "parada", "running": "aberta"},
-              "bands": {"ventania": {"above": 50}}}
-    assert await setup(ha, {KEY: {"name": NAME, kind: {"contact": CONTACT}, "phases": phases}})
-    await fake(ha, "sensor.vento", "10")
-    phase = f"sensor.pururu_{KEY}_phase_current"
-    assert ha.states.get(phase).state == "parada"
-    await contact(ha, "on")
-    assert ha.states.get(phase).state == "aberta"
-    await contact(ha, "off")
-    assert ha.states.get(phase).state == "parada"
-
-
 # --- events -------------------------------------------------------------------------
 
 ACCESS = "event.clausura_frente_access"

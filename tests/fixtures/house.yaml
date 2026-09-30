@@ -18,7 +18,13 @@ devices:
     appliance:
       power: sensor.washer_plug_power
       energy: sensor.washer_plug_energy
-      running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+      running_program:
+        above: 4
+        on_delay: {minutes: 1}
+        off_delay: {minutes: 2}
+        phases:
+          heating: {name: Aquecendo, above: 1000}
+          spinning: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
       statistics:
         runtime: [today, week, month, year]
         cycles: [today, week, month, year]
@@ -30,17 +36,10 @@ devices:
         no_cycle: {for: {days: 2}}
       notifications:
         finished:
-    phases:
-      cycle_from: appliance
-      sensor: sensor.washer_plug_power
-      defaults: {stopped: idle, running: washing}
-      bands:
-        heating: {above: 1000}
-        spinning: {above: 50, below: 1000, for: {minutes: 3}}
     alerts:
       stuck:
         name: Travada
-        when: phase_current
+        when: appliance_phase_current
         is: spinning
         for: {hours: 1}
         priority: medium
@@ -52,18 +51,13 @@ devices:
     appliance:
       power: sensor.filter_plug_power
       energy: sensor.filter_plug_energy
-      running_program: {above: 2.9, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
-    modes:
-      cycle_from: appliance
-      sensor: sensor.filter_plug_power
-      energy: sensor.filter_plug_energy
-      modes:
-        gelar: {name: Gelar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
-        quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
-      statistics:
-        runtime: [today, week, month, year]
-        cycles: [today, week, month, year]
-        energy: [today, week, month, year]
+      running_program:
+        above: 2.9
+        on_delay: {seconds: 1}
+        off_delay: {minutes: 1}
+        phases:
+          gelar: {name: Gelar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
+          quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
   porta_frente:
     name: Porta da frente
     area: entrada

@@ -16,7 +16,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 import pytest
 
-from helpers import capture, fake, held, module, reload, restart, setup, snapshot, tick
+from helpers import capture, fake, generated, held, module, reload, restart, setup, snapshot, tick
 
 KEY = "demo_filter"
 POWER = "sensor.demo_plug_power"
@@ -119,17 +119,20 @@ async def test_without_phases_no_phase_entity(ha: HomeAssistant) -> None:
         "power", *LAST_CYCLE[:3], "cycles_total", "runtime_total"))}
 
 
-async def test_nothing_of_the_phases_when_the_carrier_is_not_created(
+async def test_nothing_that_follows_the_carrier_when_it_is_not_created(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    """The carrier's ID belongs to another integration: every phase entity follows it, so none is created."""
+    """The carrier's ID belongs to another integration: no phase entity, nor the appliance's cycle entities, is created; its mirrors are."""
     er.async_get(ha).async_get_or_create(
         "binary_sensor", "template", "someone_else", suggested_object_id=f"{PREFIX}_running")
     assert await setup(ha, DEVICES)
     assert ha.states.get(CURRENT) is None
     assert ha.states.get(GELAR) is None
     assert ha.states.get(sensor("phase_gelar_cycles_total")) is None
+    assert ha.states.get(sensor("runtime_total")) is None
+    assert ha.states.get(sensor("power")) is not None
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(GELAR in message and RUNNING in message for message in errors), errors
+    assert any(sensor("runtime_total") in message and RUNNING in message for message in errors), errors
 
 
 # --- what they show -------------------------------------------------------------------
@@ -263,6 +266,47 @@ async def test_an_energy_entity_without_a_state(purifier: HomeAssistant, freezer
     assert state(purifier, sensor("phase_gelar_cycles_total")) == "1"
     assert state(purifier, sensor("phase_gelar_last_cycle_energy")) == "unknown"
     assert float(state(purifier, sensor("phase_gelar_energy_total"))) == 0.0
+
+
+async def test_a_phases_energy_adds_its_cycles_and_skips_the_unknown(
+        purifier: HomeAssistant, freezer: Any) -> None:
+    """A cycle whose counter had no reading at its start adds nothing; the others add theirs."""
+    for start, end in ((100.0, 100.05), ("unavailable", 100.2), (100.2, 100.23)):
+        await kwh(purifier, start)
+        await cool(purifier, freezer)
+        await kwh(purifier, end)
+        await watts(purifier, IDLE_W)
+        await tick(purifier, freezer, 125)
+    assert state(purifier, sensor("phase_gelar_cycles_total")) == "3"
+    assert float(state(purifier, sensor("phase_gelar_energy_total"))) == pytest.approx(0.08)
+
+
+async def test_short_phases_add_up_their_energy(purifier: HomeAssistant, freezer: Any) -> None:
+    """A sip uses a fraction of a Wh: rounding each cycle to 0.001 kWh would add nothing."""
+    for start, end in ((100.0, 100.0004), (100.0004, 100.0008)):
+        await kwh(purifier, start)
+        await cool(purifier, freezer)
+        await kwh(purifier, end)
+        await watts(purifier, IDLE_W)
+        await tick(purifier, freezer, 125)
+    assert float(state(purifier, sensor("phase_gelar_energy_total"))) == pytest.approx(0.0008, abs=1e-6)
+    assert state(purifier, sensor("phase_gelar_last_cycle_energy")) == "0.0"
+
+
+async def test_each_phases_runtime_counts_from_its_start(purifier: HomeAssistant, freezer: Any) -> None:
+    """gelar from 30 s to 635 s; quente, armed at 645 s after the dip, starts when gelar ends (665 s), dated 645 s, until 965 s."""
+    await cool(purifier, freezer)
+    await tick(purifier, freezer, 600)
+    await watts(purifier, 1000)
+    await tick(purifier, freezer, 10)
+    await tick(purifier, freezer, 20)
+    await tick(purifier, freezer, 300)
+    await watts(purifier, IDLE_W)
+    await tick(purifier, freezer, 30)
+    await tick(purifier, freezer, 95)
+    assert float(state(purifier, sensor("phase_gelar_runtime_total"))) == pytest.approx(605 / 3600, abs=0.0005)
+    assert float(state(purifier, sensor("phase_quente_runtime_total"))) == pytest.approx(320 / 3600, abs=0.0005)
+    assert float(state(purifier, sensor("phase_other_runtime_total"))) == 0
 
 
 # --- restarts and reloads ------------------------------------------------------------
@@ -538,6 +582,32 @@ async def test_a_carrier_renamed_mid_phase_follows_the_reading(
     assert state(purifier, sensor("phase_gelar_cycles_total")) == "1"
 
 
+async def test_a_phases_totals_restore(ha: HomeAssistant) -> None:
+    await restart(
+        ha, DEVICES,
+        (State(sensor("phase_gelar_cycles_total"), "7"), {"native_value": 7, "native_unit_of_measurement": None}),
+        (State(sensor("phase_gelar_energy_total"), "1.2"), {"native_value": 1.2, "native_unit_of_measurement": "kWh"}),
+        (State(sensor("phase_gelar_runtime_total"), "3.5"), {"native_value": 3.5, "native_unit_of_measurement": "h"}),
+    )
+    assert state(ha, sensor("phase_gelar_cycles_total")) == "7"
+    assert float(state(ha, sensor("phase_gelar_energy_total"))) == 1.2
+    assert float(state(ha, sensor("phase_gelar_runtime_total"))) == 3.5
+
+
+async def test_a_reload_while_a_phase_is_pending(
+        purifier: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """A delay pending at the reload dies with its carrier: no error, no phase from it; the new carrier counts from its first reading."""
+    await watts(purifier, 120)
+    await tick(purifier, freezer, 25)
+    assert state(purifier, RUNNING) == "on"
+    await reload(purifier, DEVICES)
+    await tick(purifier, freezer, 10)
+    assert [r.getMessage() for r in caplog.records if r.levelname == "ERROR"] == []
+    assert state(purifier, CURRENT) == "idle"
+    await tick(purifier, freezer, 25)
+    assert state(purifier, CURRENT) == "gelar"
+
+
 async def test_last_restores(ha: HomeAssistant) -> None:
     await restart(ha, DEVICES, (State(LAST, "quente"), {
         "native_value": "quente", "native_unit_of_measurement": None}))
@@ -570,3 +640,70 @@ async def test_names(ha: HomeAssistant, language: str) -> None:
     if language == "en":
         assert ha.states.get(sensor("phase_gelar_cycles_total")).attributes[
             "unit_of_measurement"] == "cycles"
+
+
+# --- what refers to a phase ------------------------------------------------------------
+
+HOT = "binary_sensor.pururu_demo_filter_alert_hot"
+
+
+def with_alert(**alert: Any) -> dict[str, Any]:
+    return {KEY: {**DEVICES[KEY], "alerts": {"hot": {"name": "Esquentando", **alert}}}}
+
+
+async def test_an_alert_can_watch_the_current_phase(ha: HomeAssistant, freezer: Any) -> None:
+    assert await setup(ha, with_alert(when="appliance_phase_current", **{"is": "quente"}))
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    assert state(ha, HOT) == "off"
+    await watts(ha, 1000)
+    await tick(ha, freezer, 25)
+    assert state(ha, HOT) == "on"
+
+
+async def test_an_alert_can_watch_a_phases_total(ha: HomeAssistant) -> None:
+    assert await setup(ha, with_alert(when="appliance_phase_quente_cycles_total", above=10))
+    assert state(ha, HOT) == "off"
+
+
+async def test_a_reaction_can_watch_a_phase(ha: HomeAssistant) -> None:
+    devices = {KEY: {**DEVICES[KEY], "reactions": {
+        "hot": {"name": "Quente", "when": "appliance_phase_quente", "to": "on"}}}}
+    assert await setup(ha, devices)
+    assert generated(ha)[0]["triggers"][0]["entity_id"] == QUENTE
+
+
+@pytest.mark.parametrize("when", [
+    pytest.param("appliance_phase_morno_cycles_total", id="a phase not configured"),
+    pytest.param("appliance_phase_morno", id="its binary sensor"),
+])
+async def test_a_reference_to_a_phase_not_configured_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, when: str) -> None:
+    assert not await setup(ha, with_alert(when=when, above=10))
+    assert f"alerts: {when} is not an entity key of another feature of this device" in caplog.text
+
+
+async def test_no_phase_keys_without_phases(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Without phases the appliance creates no phase entity, so none can be named."""
+    devices = {KEY: {"name": "Demo filter",
+                     "appliance": {"power": POWER, "running_program": {"above": 4}},
+                     "alerts": {"hot": {"name": "Esquentando", "when": "appliance_phase_current",
+                                        "is": "quente"}}}}
+    assert not await setup(ha, devices)
+    assert ("alerts: appliance_phase_current is not an entity key of another feature "
+            "of this device") in caplog.text
+
+
+async def test_a_renamed_phase_is_followed(purifier: HomeAssistant, freezer: Any) -> None:
+    """Renamed in the UI: the entry reloads, and the phase's runtime follows the new ID."""
+    renamed = "binary_sensor.demo_filter_gelar"
+    er.async_get(purifier).async_update_entity(GELAR, new_entity_id=renamed)
+    await purifier.async_block_till_done()
+    await cool(purifier, freezer)
+    assert state(purifier, renamed) == "on"
+    await tick(purifier, freezer, 600)
+    await watts(purifier, IDLE_W)
+    await tick(purifier, freezer, 35)
+    assert float(state(purifier, sensor("phase_gelar_runtime_total"))) == pytest.approx(
+        605 / 3600, abs=0.0005)

@@ -1,7 +1,7 @@
 """Characterizes today's meters: entity IDs, translated names and icons, and refusals.
 
-Six builders build per-period `Meter` entities through the statistics aspect
-(aspects/statistics.py): appliance, door, window, modes, programs, reactions.
+Five builders build per-period `Meter` entities through the statistics aspect
+(aspects/statistics.py): appliance, door, window, programs, reactions.
 This file pins what each shows today - the full list of IDs, a few names in
 `en` and `pt-BR`, a few icons, and the schema's refusal texts - so a change to
 the aspect can't move any of them unnoticed.
@@ -138,73 +138,6 @@ async def test_opening_meters(ha: HomeAssistant, kind: str, language: str) -> No
         assert friendly_name(ha, opening_sensor(kind, suffix)) == f"{OPENING_NAME} {expected}"
 
 
-# --- modes -----------------------------------------------------------------------------
-
-MODE_KEY = "demo_filter"
-MODE_NAME = "Demo filter"
-MODE_SLUG = "quente"
-MODE_ITEM_NAME = "Água quente"
-MODE_COUNTERS = ("runtime", "cycles", "energy")
-MODE_ICONS = {
-    "runtime_today": "mdi:timer-sand",
-    "cycles_week": "mdi:counter",
-    "energy_month": "mdi:lightning-bolt",
-}
-MODE_NAMES = {
-    "en": {
-        "runtime_today": f"{MODE_ITEM_NAME} runtime today",
-        "cycles_week": f"{MODE_ITEM_NAME} cycles this week",
-        "energy_month": f"{MODE_ITEM_NAME} energy this month",
-    },
-    "pt-BR": {
-        "runtime_today": f"Tempo de {MODE_ITEM_NAME} hoje",
-        "cycles_week": f"Ciclos de {MODE_ITEM_NAME} na semana",
-        "energy_month": f"Energia de {MODE_ITEM_NAME} no mês",
-    },
-}
-
-
-def mode_sensor(suffix: str) -> str:
-    return f"sensor.pururu_{MODE_KEY}_mode_{MODE_SLUG}_{suffix}"
-
-
-@pytest.mark.parametrize("language", ["en", "pt-BR"])
-async def test_modes_meters(ha: HomeAssistant, language: str) -> None:
-    ha.config.language = language
-    power = "sensor.demo_plug_power"
-    devices: dict[str, Any] = {
-        MODE_KEY: {
-            "name": MODE_NAME,
-            "appliance": {
-                "power": power,
-                "running_program": {"above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2}},
-            },
-            "modes": {
-                "cycle_from": "appliance",
-                "sensor": power,
-                "energy": "sensor.demo_plug_energy",
-                "modes": {
-                    MODE_SLUG: {
-                        "name": MODE_ITEM_NAME,
-                        "above": 300,
-                        "on_delay": {"seconds": 10},
-                        "off_delay": {"seconds": 30},
-                    }
-                },
-                "statistics": {counter: list(PERIODS) for counter in MODE_COUNTERS},
-            },
-        }
-    }
-    assert await setup(ha, devices)
-    for counter in MODE_COUNTERS:
-        for period in PERIODS:
-            assert_meter(ha, mode_sensor(f"{counter}_{period}"))
-    for suffix, icon in MODE_ICONS.items():
-        assert icon_of(ha, mode_sensor(suffix)) == icon
-    for suffix, expected in MODE_NAMES[language].items():
-        assert friendly_name(ha, mode_sensor(suffix)) == f"{MODE_NAME} {expected}"
-
-
 # --- programs --------------------------------------------------------------------------
 
 PROGRAM_KEY = "pool"
@@ -320,40 +253,12 @@ APPLIANCE_MINIMAL = {
     "power": "sensor.demo_plug_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-MODES_MINIMAL = {
-    "cycle_from": "appliance",
-    "sensor": "sensor.demo_plug_power",
-    "modes": {
-        MODE_SLUG: {
-            "name": MODE_ITEM_NAME,
-            "above": 300,
-            "on_delay": {"seconds": 10},
-            "off_delay": {"seconds": 30},
-        }
-    },
-}
-
-
 async def test_idle_energy_without_energy_is_refused(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     block = {**APPLIANCE_MINIMAL, "statistics": {"idle_energy": ["today"]}}
     assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
     assert "statistics.idle_energy needs energy" in caplog.text
-
-
-async def test_mode_energy_without_energy_is_refused(
-    ha: HomeAssistant, caplog: pytest.LogCaptureFixture
-) -> None:
-    devices = {
-        MODE_KEY: {
-            "name": MODE_NAME,
-            "appliance": APPLIANCE_MINIMAL,
-            "modes": {**MODES_MINIMAL, "statistics": {"energy": ["today"]}},
-        }
-    }
-    assert not await setup(ha, devices)
-    assert "statistics.energy needs energy" in caplog.text
 
 
 async def test_a_repeated_period_is_refused(
@@ -375,14 +280,3 @@ async def test_an_unknown_period_is_refused(ha: HomeAssistant) -> None:
 async def test_an_unknown_counter_is_refused(ha: HomeAssistant) -> None:
     block = {**APPLIANCE_MINIMAL, "statistics": {"closings": ["today"]}}
     assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
-
-
-async def test_no_period_for_energy_without_energy_passes(ha: HomeAssistant) -> None:
-    devices = {
-        MODE_KEY: {
-            "name": MODE_NAME,
-            "appliance": APPLIANCE_MINIMAL,
-            "modes": {**MODES_MINIMAL, "statistics": {"energy": []}},
-        }
-    }
-    assert await setup(ha, devices)

@@ -57,6 +57,20 @@ def phase_keys(key: str) -> dict[str, Platform]:
     }
 
 
+def keys_of(config: Mapping[str, Any]) -> dict[str, Platform]:
+    """Every entity key a program block's phases create, other's too: none without phases."""
+    if "phases" not in config:
+        return {}
+    return {
+        **FIXED,
+        **{
+            entity_key: platform
+            for key in (*config["phases"], OTHER)
+            for entity_key, platform in phase_keys(key).items()
+        },
+    }
+
+
 def _reserved(phases: dict[str, Any]) -> dict[str, Any]:
     """Refuse idle (the current phase while none runs) and other (the built-in phase) as keys."""
     for key in (IDLE, OTHER):

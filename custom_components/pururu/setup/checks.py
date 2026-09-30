@@ -24,28 +24,7 @@ from ..const import (
 from ..core import generated
 from ..core.feature import Feature
 from ..core.resolve import Index, Ref, find
-from ..core.roles import Configured, Generates, Provides, Refers, Requires
-from ..features import FEATURES
-
-
-def capabilities_provided(device: dict[str, Any], names: list[str]) -> None:
-    """Refuse a <capability>_from that names no feature of the device providing it."""
-    for name in names:
-        if (requires := FEATURES[name].role(Requires)) is None:
-            continue
-        capability = requires.capability
-        source = device[name][f"{capability}_from"]
-        if source not in names or not _provides(FEATURES[source], capability):
-            raise vol.Invalid(
-                f"{name}: {capability}_from must name a feature of this device "
-                f"that provides {capability}"
-            )
-
-
-def _provides(feature: Feature, capability: str) -> bool:
-    return (provides := feature.role(Provides)) is not None and (
-        provides.capability == capability
-    )
+from ..core.roles import Configured, Generates, Refers
 
 
 def references(

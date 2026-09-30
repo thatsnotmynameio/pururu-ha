@@ -92,7 +92,7 @@ def test_namespaces_are_distinct_slugs(features: dict[str, Any]) -> None:
 
 
 def test_no_entity_key_repeats_its_namespace(features: dict[str, Any]) -> None:
-    """phases' `phase` would be sensor.pururu_<key>_phase_phase: its key is `current`."""
+    """An appliance's `appliance` would be sensor.pururu_<key>_appliance_appliance: a fixed key never repeats its namespace."""
     for name, feature in features.items():
         assert feature.namespace not in named_keys(feature), name
 
@@ -170,56 +170,47 @@ def test_every_platform_is_set_up(features: dict[str, Any]) -> None:
                 f"{name}'s configured entities are on {configured.platform}, not in PLATFORMS")
 
 
-def test_capabilities_line_up(features: dict[str, Any]) -> None:
-    provided = {p.capability for feature in features.values() if (p := role(feature, "Provides"))}
-    for name, feature in features.items():
-        if (provides := role(feature, "Provides")) is not None:
-            assert provides.key in feature.entity_keys, f"{name} provides {provides.capability} by unknown {provides.key}"
-            assert role(feature, "Configured") is None, f"{name} is configured: its entity keys can't carry a capability"
-        if (requires := role(feature, "Requires")) is not None:
-            capability = requires.capability
-            assert capability in provided, f"{name} requires {capability}, nobody provides it"
-            assert f"{capability}_from" in feature.example, f"{name}'s example lacks {capability}_from"
-
-
-def test_a_capability_is_carried_by_a_cycle_source(
+def test_what_a_last_cycle_follows_is_a_cycle_source(
     ha: HomeAssistant, features: dict[str, Any]
 ) -> None:
-    """What a builder provides (appliance's running, door/window's open) sends its cycles as a CycleSource."""
+    """Each last cycle follows the entity sending its cycles, a CycleSource: the appliance's running and each phase, a door's or a window's open, a program's runs."""
     cycle_source = module("features.cycle").CycleSource
+    last_cycle = module("features.cycle.last").LastCycleValue
     device_cls = module("core.feature").Device
+    mount = module("setup.catalogue").mount
+    following: dict[str, set[str]] = {}
     for name, feature in features.items():
-        if (provides := role(feature, "Provides")) is None:
+        if role(feature, "Counters") is None:  # counts no cycle
             continue
         device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
-        config = feature.schema(dict(feature.example))
-        built = {entity.key: entity for entity in feature.build(ha, device, config, {})}
-        carrier = built[device.qualified(provides.key)]
-        assert isinstance(carrier, cycle_source), name
+        block = mount(feature, name, dict(feature.example))
+        built = {entity.key: entity for entity in feature.build(ha, device, block, {})}
+        for entity in built.values():
+            if isinstance(entity, last_cycle):
+                (source,) = entity.sources
+                assert isinstance(built[device.qualified(source)], cycle_source), (name, entity.key)
+                following.setdefault(name, set()).add(source)
+    assert set(following) == {"appliance", "door", "window", "programs"}
+    assert following["appliance"] == {"running", "phase_heating", "phase_other"}
 
 
-def test_the_other_cycle_sources_are_pinned_too(
-    ha: HomeAssistant, features: dict[str, Any]
-) -> None:
-    """The modes' Current and the programs' Runs are CycleSource too, though no Provides names them."""
-    cycle_source = module("features.cycle").CycleSource
+def test_a_derived_key_is_in_the_index(ha: HomeAssistant, features: dict[str, Any]) -> None:
+    """What a validated block adds (roles.Derived) is listed by catalogue.keys, and the example builds only listed keys."""
+    catalogue = module("setup.catalogue")
     device_cls = module("core.feature").Device
-    current_cls = module("features.modes.current").Current
-    runs_cls = module("device_keys.programs").Runs
-
-    modes = features["modes"]
-    device = device_cls(key="dev", name="Dev", namespace=modes.namespace)
-    config = modes.schema(dict(modes.example))
-    built = modes.build(ha, device, config, {"cycle": "binary_sensor.demo_cycle"})
-    current = next(entity for entity in built if isinstance(entity, current_cls))
-    assert isinstance(current, cycle_source)
-
-    programs = features["programs"]
-    device = device_cls(key="dev", name="Dev", namespace=programs.namespace)
-    config = programs.schema(dict(programs.example))
-    built = programs.build(ha, device, config, {})
-    runs = next(entity for entity in built if isinstance(entity, runs_cls))
-    assert isinstance(runs, cycle_source)
+    deriving = [name for name, feature in features.items() if role(feature, "Derived")]
+    assert deriving == ["appliance"]
+    for name in deriving:
+        feature = features[name]
+        block = catalogue.mount(feature, name, dict(feature.example))
+        derived = role(feature, "Derived").of(block)
+        assert derived, f"{name}'s example derives no key"
+        assert not set(derived) & set(feature.entity_keys), name
+        listed = {entity_key for _, entity_key, _, _, _ in catalogue.keys({name: block})}
+        assert set(derived) <= listed, name
+        device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
+        built = {entity.key for entity in feature.build(ha, device, block, {})}
+        assert built <= {device.qualified(key) for key in listed}, name
 
 
 async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, features: dict[str, Any]) -> None:
@@ -382,9 +373,9 @@ def test_configured_and_items_never_together(features: dict[str, Any]) -> None:
         assert not (role(feature, "Configured") and role(feature, "Items")), name
 
 
-def test_a_device_key_neither_provides_requires_nor_acts(ha: HomeAssistant) -> None:
+def test_a_device_key_neither_acts_nor_derives(ha: HomeAssistant) -> None:
     for name, feature in module("device_keys").DEVICE_KEYS.items():
-        for kind in ("Provides", "Requires", "Actions"):
+        for kind in ("Actions", "Derived"):
             assert role(feature, kind) is None, f"{name} has {kind}"
 
 
@@ -524,7 +515,6 @@ def test_the_aspects_each_builder_offers(features: dict[str, Any]) -> None:
         "appliance": {"statistics", "alerts", "notifications"},
         "door": {"statistics"},
         "window": {"statistics"},
-        "modes": {"statistics"},
         "programs": {"statistics"},
         "reactions": {"statistics"},
     }
@@ -597,7 +587,7 @@ def test_a_configured_builder_offers_no_block_aspect(features: dict[str, Any]) -
 def test_a_counter_is_totalled(features: dict[str, Any]) -> None:
     """Each counter's total, <counter>_total, is one of the builder's keys: its meters meter it."""
     counting = [name for name, feature in features.items() if role(feature, "Counters")]
-    assert set(counting) == {"appliance", "door", "window", "modes", "programs", "reactions"}
+    assert set(counting) == {"appliance", "door", "window", "programs", "reactions"}
     for name in counting:
         feature = features[name]
         items = role(feature, "Items")

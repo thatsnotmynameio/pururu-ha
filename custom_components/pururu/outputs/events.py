@@ -3,7 +3,7 @@
 pururu speaks no HTTP: whatever consumes HA's events takes them from there (for
 a webhook, a rest_command in the user's automation). Two classes, each enabled
 on its own in `events`: the change of an entity with a state_class is a reading
-(a series: power, totals, meters), any other a change (a fact: running, a mode,
+(a series: power, totals, meters), any other a change (a fact: running, a phase,
 the last cycle's end). Each event carries its device's states when it is fired:
 a cycle's end (last_cycle_end, written last) comes with that cycle's values.
 """

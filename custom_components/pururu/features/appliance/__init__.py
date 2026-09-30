@@ -15,7 +15,7 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Device, Feature
-from ...core.roles import Counters, Happenings, Presets, Provides
+from ...core.roles import Counters, Derived, Happenings, Presets
 from ..cycle import program
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal
@@ -105,15 +105,19 @@ APPLIANCE = Feature(
     build=build,
     example={
         "power": "sensor.demo_plug_power",
+        # One phase and other: the contract test reaches every derived key
         RUNNING_PROGRAM: {
             "above": 4,
             "on_delay": {"minutes": 1},
             "off_delay": {"minutes": 2},
+            "phases": {"heating": {"name": "Heating", "above": 1000}},
+            "other": {},
         },
     },
     namespace="appliance",
     roles=(
-        Provides("cycle", CARRIER),
+        # Its running program's phases' keys (none without phases)
+        Derived(lambda config: program.keys_of(config[RUNNING_PROGRAM])),
         # Metered by the statistics aspect; idle energy needs the plug's energy
         Counters({"runtime": None, "cycles": None, "idle_energy": "energy"}),
         # Enabled in its block's `alerts`: the alerts aspect

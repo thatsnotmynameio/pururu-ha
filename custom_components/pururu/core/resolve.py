@@ -37,7 +37,7 @@ class Target:
     # The key of the aspect that adds it ("alerts", "statistics"); None for
     # the builder's own
     by: str | None
-    # The item that owns the key (a mode, a program, a reaction); None: none
+    # The item that owns the key (a program, a reaction); None: none
     item: str | None
     # Its builder's actions, for a program's step; () without
     actions: tuple[str, ...]

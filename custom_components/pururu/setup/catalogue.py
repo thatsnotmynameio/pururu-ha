@@ -10,7 +10,7 @@ from homeassistant.const import CONF_NAME, Platform
 from ..aspects import ASPECTS
 from ..core.feature import Aspect, Device, Feature, Item
 from ..core.resolve import Index, Target
-from ..core.roles import Actions, Configured, Items
+from ..core.roles import Actions, Configured, Derived, Items
 from ..device_keys import DEVICE_KEYS
 from ..features import FEATURES
 
@@ -165,6 +165,11 @@ def keys(
             yield from (
                 (name, entity_key, configured.platform, None, None)
                 for entity_key in device[name]
+            )
+        if (derived := feature.role(Derived)) is not None:
+            yield from (
+                (name, entity_key, platform, None, None)
+                for entity_key, platform in derived.of(device[name]).items()
             )
         each: list[Item] | None = None
         if (items := feature.role(Items)) is not None:

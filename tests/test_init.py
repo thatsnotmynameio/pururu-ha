@@ -1,11 +1,9 @@
-"""pururu: the configuration, devices, capabilities, taken IDs, reloads and the entry.
+"""pururu: the configuration, devices, references, taken IDs, reloads and the entry.
 
-Four made-up features stand in for real ones: `gauge` creates a sensor and a
-binary sensor, can create a `spare` sensor it never builds, and provides
-`activity` (its binary sensor); `echo` requires `activity` and shows the entity
-ID it gets; `tags` is configured: a sensor per key of its block, named by the
-block; `watch` refers to one entity key of the device (`of`) and shows its
-current entity ID.
+Three made-up features stand in for real ones: `gauge` creates a sensor and a
+binary sensor, and can create a `spare` sensor it never builds; `tags` is
+configured: a sensor per key of its block, named by the block; `watch` refers
+to one entity key of the device (`of`) and shows its current entity ID.
 """
 
 from collections.abc import Iterator
@@ -32,7 +30,6 @@ from helpers import DOMAIN, device_of, held, module, reload, setup
 
 LEVEL = "sensor.pururu_demo_widget_gauge_level"
 ACTIVE = "binary_sensor.pururu_demo_widget_gauge_active"
-ECHO = "sensor.pururu_demo_widget_echo_echo"
 SEEN = "sensor.pururu_demo_widget_watch_seen"
 GAUGE = {"source": "sensor.demo_source"}
 WIDGET = {"name": "Widget", "gauge": GAUGE}
@@ -44,7 +41,7 @@ TAGS = {"first": {"name": "First"}, "second": {"name": "Second"}}
 
 @pytest.fixture(autouse=True)
 def demo(ha: HomeAssistant) -> Iterator[None]:
-    """Put `gauge` and `echo` in FEATURES for the test."""
+    """Put `gauge`, `tags` and `watch` in FEATURES for the test."""
     feature = module("core.feature")
     roles = module("core.roles")
     entity = module("core.entity")
@@ -60,11 +57,6 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
         def __init__(self, device: Any) -> None:
             self._identify(device, Platform.BINARY_SENSOR, "active")
             self._attr_is_on = True
-
-    class Echo(entity.PururuEntity, SensorEntity):
-        def __init__(self, device: Any, activity: str) -> None:
-            self._identify(device, Platform.SENSOR, "echo")
-            self._attr_native_value = activity
 
     class Tag(entity.PururuEntity, SensorEntity):
         def __init__(self, device: Any, entity_key: str, name: str) -> None:
@@ -89,15 +81,6 @@ def demo(ha: HomeAssistant) -> Iterator[None]:
             build=lambda hass, device, config, inputs: [Level(device, config["source"]),
                                                         Active(device)],
             example=GAUGE,
-            roles=(roles.Provides("activity", "active"),),
-        ),
-        "echo": feature.Feature(
-            schema=vol.Schema({vol.Required("activity_from"): cv.slug}),
-            namespace="echo",
-            entity_keys={"echo": Platform.SENSOR},
-            build=lambda hass, device, config, inputs: [Echo(device, inputs["activity"])],
-            example={"activity_from": "gauge"},
-            roles=(roles.Requires("activity"),),
         ),
         "tags": feature.Feature(
             schema=vol.All(vol.Schema({cv.slug: vol.Schema({vol.Required("name"): cv.string})}),
@@ -148,12 +131,6 @@ async def test_device_holds_what_its_features_create(ha: HomeAssistant) -> None:
     assert ha.states.get(LEVEL).attributes["source"] == "sensor.demo_source"
 
 
-async def test_a_capability_reaches_the_feature_that_requires_it(ha: HomeAssistant) -> None:
-    assert await setup(ha, {"demo_widget": {**WIDGET, "echo": {"activity_from": "gauge"}}})
-    assert ha.states.get(ECHO).state == ACTIVE
-    assert held(ha, "demo_widget") == {LEVEL, ACTIVE, ECHO}
-
-
 @pytest.mark.parametrize("device", [
     pytest.param({"gauge": GAUGE}, id="no name"),
     pytest.param({"name": "Widget"}, id="no feature"),
@@ -162,8 +139,6 @@ async def test_a_capability_reaches_the_feature_that_requires_it(ha: HomeAssista
     pytest.param({**WIDGET, "area": True}, id="area a boolean"),
     pytest.param({**WIDGET, "area": 123}, id="area a number not in areas"),
     pytest.param({"name": "Widget", "gauge": {"source": "not an entity"}}, id="bad feature block"),
-    pytest.param({"name": "Widget", "echo": {"activity_from": "gauge"}}, id="from a missing feature"),
-    pytest.param({**WIDGET, "echo": {"activity_from": "echo"}}, id="from one that doesn't provide it"),
 ])
 async def test_invalid_device_is_refused(ha: HomeAssistant, device: dict[str, Any]) -> None:
     assert not await setup(ha, {"demo_widget": device})
@@ -343,19 +318,6 @@ async def test_a_renamed_entity_is_still_ours(
     assert not any("kitchen_level" in message for message in errors), errors
 
 
-async def test_what_follows_an_entity_not_created_is_not_created_either(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    """Echo would follow the other integration's entity: it isn't created, and the log says why."""
-    other = er.async_get(ha).async_get_or_create(
-        "binary_sensor", "template", "someone_else", suggested_object_id="pururu_demo_widget_gauge_active")
-    assert other.entity_id == ACTIVE
-    assert await setup(ha, {"demo_widget": {**WIDGET, "echo": {"activity_from": "gauge"}}})
-    assert ha.states.get(ECHO) is None
-    assert held(ha, "demo_widget") == {LEVEL}
-    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-    assert any(ECHO in message and ACTIVE in message for message in errors), errors
-
-
 async def test_what_refers_to_an_entity_not_created_is_not_created_either(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
@@ -384,15 +346,6 @@ async def test_a_renamed_entity_reaches_what_refers_to_it(ha: HomeAssistant) -> 
     er.async_get(ha).async_update_entity(LEVEL, new_entity_id="sensor.kitchen_level")
     await ha.async_block_till_done()
     assert ha.states.get(SEEN).state == "sensor.kitchen_level"
-
-
-async def test_a_renamed_capability_reaches_the_feature_that_requires_it(ha: HomeAssistant) -> None:
-    """Renamed in the UI: the entry reloads, and echo gets the new ID."""
-    assert await setup(ha, {"demo_widget": {**WIDGET, "echo": {"activity_from": "gauge"}}})
-    er.async_get(ha).async_update_entity(ACTIVE, new_entity_id="binary_sensor.kitchen_active")
-    await ha.async_block_till_done()
-    assert ha.states.get(ECHO).state == "binary_sensor.kitchen_active"
-    assert held(ha, "demo_widget") == {LEVEL, "binary_sensor.kitchen_active", ECHO}
 
 
 async def test_renaming_another_integrations_entity_does_not_reload(ha: HomeAssistant) -> None:
@@ -430,10 +383,10 @@ async def test_reload_with_the_same_devices_keeps_them(ha: HomeAssistant) -> Non
 
 
 async def test_reload_that_drops_a_feature_removes_its_entities(ha: HomeAssistant) -> None:
-    assert await setup(ha, {"demo_widget": {**WIDGET, "echo": {"activity_from": "gauge"}}})
+    assert await setup(ha, {"demo_widget": {**WIDGET, "watch": {"of": "gauge_level"}}})
     await reload(ha, {"demo_widget": WIDGET})
-    assert er.async_get(ha).async_get(ECHO) is None
-    assert ha.states.get(ECHO) is None
+    assert er.async_get(ha).async_get(SEEN) is None
+    assert ha.states.get(SEEN) is None
     assert held(ha, "demo_widget") == {LEVEL, ACTIVE}
 
 

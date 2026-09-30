@@ -12,28 +12,21 @@ if TYPE_CHECKING:  # feature.py imports this module
 
 
 @dataclass(frozen=True)
-class Provides:
-    """A capability others take through <capability>_from, carried by one of its entity keys."""
-
-    capability: str
-    key: str
-
-
-@dataclass(frozen=True)
-class Requires:
-    """A capability it takes through <capability>_from: build() gets its current entity ID.
-
-    Its entities aren't created when the provider's entity isn't.
-    """
-
-    capability: str
-
-
-@dataclass(frozen=True)
 class Configured:
     """Its entity keys are its block's keys, all on this platform, named by each block's `name`."""
 
     platform: Platform
+
+
+@dataclass(frozen=True)
+class Derived:
+    """Entity keys its validated block adds beyond entity_keys: the appliance's phases'.
+
+    `of` takes the validated block. catalogue.keys lists them, so the index
+    knows them: an alert, a reaction or a `when:` can name one.
+    """
+
+    of: Callable[[Any], Mapping[str, Platform]]
 
 
 @dataclass(frozen=True)
@@ -48,7 +41,7 @@ class Items:
     """Its block is a map of items, each with entity keys of its own: <slug>_<suffix>.
 
     Each is named by the suffix's translation, with the item's name as the
-    placeholder named after the namespace ({mode}).
+    placeholder named after the namespace ({program}).
     """
 
     keys: Mapping[str, Platform]
@@ -109,9 +102,8 @@ class Generates:
 
 
 type Role = (
-    Provides
-    | Requires
-    | Configured
+    Configured
+    | Derived
     | Actions
     | Items
     | Counters

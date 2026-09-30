@@ -88,7 +88,7 @@ class PururuEntity(Entity):
         "light"), else the translation of the key in its namespace. With `item`,
         `entity_key` is a suffix (roles.Items): the entity key is the
         item's, and its name the suffix's translation, the item's name as the
-        placeholder named after the namespace ({mode}). With `translation` (an
+        placeholder named after the namespace ({program}). With `translation` (an
         aspect's key, named once for every builder), the name is that
         translation key's, the item's name as the placeholder {item}.
         """

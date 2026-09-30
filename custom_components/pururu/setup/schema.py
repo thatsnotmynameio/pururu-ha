@@ -33,7 +33,6 @@ from . import catalogue, checks
 def _device(value: Any) -> dict[str, Any]:
     """A device: a name, maybe an area, at least one feature.
 
-    Every <capability>_from names a feature of this device that provides it.
     Each builder's block goes through catalogue.mount, with the aspects it
     offers. What its blocks refer to is checked over the whole house (CHECKS).
     """
@@ -46,12 +45,10 @@ def _device(value: Any) -> dict[str, Any]:
         },
     }
     device: dict[str, Any] = vol.Schema(schema)(value)
-    names = [name for name in FEATURES if name in device]
-    if not names:
+    if not any(name in device for name in FEATURES):
         raise vol.Invalid(
             f"a device needs at least one feature ({', '.join(FEATURES)})"
         )
-    checks.capabilities_provided(device, names)
     return device
 
 

@@ -46,7 +46,7 @@ def state_text(value: Any) -> str:
 
 
 def bounded(what: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """A band of a sensor's value (`what`: band, mode): above, below or both, above lower."""
+    """A band of a sensor's value (`what`: program, phase): above, below or both, above lower."""
 
     def validate(band: dict[str, Any]) -> dict[str, Any]:
         if "above" not in band and "below" not in band:
@@ -69,7 +69,7 @@ def qualified(namespace: str, entity_key: str) -> str:
 
 @dataclass(frozen=True, kw_only=True)
 class Item:
-    """An item of a feature's block with entity keys of its own (roles.Items): a mode."""
+    """An item of a feature's block with entity keys of its own (roles.Items): a program, a reaction."""
 
     slug: str
     name: str

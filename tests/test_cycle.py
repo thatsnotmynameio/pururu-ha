@@ -1,4 +1,4 @@
-"""features/cycle: CycleSource, the base every cycle's source (Running, Open, Runs, Current) shares."""
+"""features/cycle: CycleSource, the base every cycle's source (the detector's Carrier and PhaseRunning, Open, Runs) shares."""
 
 from collections.abc import Callable
 from typing import Any
@@ -20,37 +20,6 @@ DEVICES = {KEY: {"name": "Demo washer", "appliance": APPLIANCE}}
 
 CONTACT = "binary_sensor.demo_contact"
 DOOR_KEY = "demo_door"
-
-MODE_KEY = "demo_filter"
-MODE_APPLIANCE: dict[str, Any] = {
-    "power": POWER,
-    "running_program": {"above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2}},
-}
-# gelar and quente, so watts(1000) hands gelar straight over to quente: no idle in between
-MODES: dict[str, Any] = {
-    "cycle_from": "appliance",
-    "sensor": POWER,
-    "modes": {
-        "gelar": {
-            "name": "Gelar",
-            "above": 40,
-            "below": 300,
-            "on_delay": {"seconds": 30},
-            "off_delay": {"seconds": 30},
-        },
-        "quente": {
-            "name": "Água quente",
-            "above": 300,
-            "on_delay": {"seconds": 10},
-            "off_delay": {"seconds": 30},
-        },
-    },
-}
-MODE_DEVICES = {
-    MODE_KEY: {"name": "Demo filter", "appliance": MODE_APPLIANCE, "modes": MODES}
-}
-CURRENT = "sensor.pururu_demo_filter_mode_current"
-
 
 async def watts(hass: HomeAssistant, value: float | str) -> None:
     await fake(hass, POWER, str(value))
@@ -125,30 +94,6 @@ async def test_a_cycle_is_sent_after_its_state_door_or_window(
     await fake(ha, CONTACT, "off", {"device_class": "door"})
     assert ha_state(ha, open_entity) == "off"
     assert seen == [("cycle", "off"), ("end", "off")]
-
-
-async def test_a_cycle_is_sent_after_its_state_a_mode_ending_into_the_next(
-    ha: HomeAssistant, freezer: Any
-) -> None:
-    """Same order for a mode's own cycle: gelar already handed over to quente when its signals fire."""
-    cycle = module("features.cycle")
-    device = module("core.feature").Device(
-        key=MODE_KEY, name="Demo filter", namespace="mode"
-    )
-    item = module("core.feature").Item(slug="gelar", name="Gelar")
-    assert await setup(ha, MODE_DEVICES)
-    await watts(ha, 120)
-    await tick(ha, freezer, 35)
-    assert ha_state(ha, CURRENT) == "gelar"
-
-    seen, listen = _order(ha, CURRENT)
-    listen("cycle", cycle.cycle_signal(device, item))
-    listen("end", cycle.end_signal(device, item))
-
-    await watts(ha, 1000)
-    await tick(ha, freezer, 30)
-    assert ha_state(ha, CURRENT) == "quente"
-    assert seen == [("cycle", "quente"), ("end", "quente")]
 
 
 def test_a_cycle_entity_takes_a_translation(ha: HomeAssistant) -> None:
