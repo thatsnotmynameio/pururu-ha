@@ -11,6 +11,7 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
+from ..aspects import notifications
 from ..const import (
     CONF_AREAS,
     CONF_DEVICES,
@@ -22,7 +23,7 @@ from ..const import (
 from ..core import generated
 from ..core.runtime import Built, PururuConfigEntry, Step
 from ..core.texts import async_texts
-from ..device_keys import notifications, programs, reactions
+from ..device_keys import programs, reactions
 from ..outputs import (
     alert2_alerts,
     alert_lights,

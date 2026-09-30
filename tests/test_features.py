@@ -268,18 +268,22 @@ def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
             catalogue.mount(feature, name, {**feature.example, "alerts": {"not_an_alert": None}})
 
 
-def test_ready_made_alerts_are_offered_only_with_one(features: dict[str, Any]) -> None:
-    """The alerts aspect is offered for at least one ready-made alert, the rule alert_lights reads (presets_of).
+@pytest.mark.parametrize(("name", "kind"), [
+    pytest.param("alerts", "Presets", id="ready-made alerts"),
+    pytest.param("notifications", "Happenings", id="ready-made notifications"),
+])
+def test_ready_made_are_offered_only_with_one(features: dict[str, Any], name: str, kind: str) -> None:
+    """A ready-made aspect is offered for at least one of them: alerts with presets_of (the rule alert_lights reads), notifications with happenings_of.
 
-    An empty Presets offers nothing: no key to mount, no example to give.
+    An empty role offers nothing: no key to mount, no example to give.
     """
-    roles = module("core.roles")
-    aspect = module("aspects.alerts").ASPECT
+    cls = getattr(module("core.roles"), kind)
+    aspect = module(f"aspects.{name}").ASPECT
     appliance = features["appliance"]
     assert aspect.offered(appliance)
     empty = dataclasses.replace(appliance, roles=tuple(
-        roles.Presets({}) if isinstance(each, roles.Presets) else each for each in appliance.roles))
-    assert role(empty, "Presets") is not None
+        cls({}) if isinstance(each, cls) else each for each in appliance.roles))
+    assert role(empty, kind) is not None
     assert not aspect.offered(empty)
     assert aspect not in module("setup.catalogue").aspects_of(empty)
 
@@ -312,8 +316,13 @@ def test_alerts_is_a_device_key_not_a_feature(ha: HomeAssistant) -> None:
 
 
 def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:
-    """Every ready-made notification watches its own feature's entity key and has both texts."""
+    """Every ready-made notification watches its own feature's entity key, has both texts, and mounts through its aspect.
+
+    The notifications aspect adds no entity key: each enabled one is an automation.
+    """
     feature_module = module("core.feature")
+    catalogue = module("setup.catalogue")
+    aspect = module("aspects.notifications").ASPECT
     en, pt = load("translations/en.json"), load("translations/pt-BR.json")
     offering = [name for name, feature in features.items() if role(feature, "Happenings")]
     assert offering, "no feature offers ready-made notifications"
@@ -327,10 +336,15 @@ def test_ready_made_notifications_line_up(features: dict[str, Any]) -> None:
             for translations in (en, pt):
                 assert translations["common"][f"{key}_name"], key
                 assert translations["common"][f"{key}_message"], key
-        validate = module("device_keys.notifications").schema(name, happenings)
-        assert validate(dict.fromkeys(happenings)) == {notification: {} for notification in happenings}
-        with pytest.raises(vol.Invalid):
-            validate({"not_a_notification": None})
+        assert aspect in catalogue.aspects_of(feature), name
+        assert not aspect.keys(feature), name
+        block = catalogue.mount(feature, name, {**feature.example, "notifications": dict.fromkeys(happenings)})
+        assert block["notifications"] == {notification: {} for notification in happenings}
+        with pytest.raises(vol.MultipleInvalid) as refused:
+            catalogue.mount(feature, name, {**feature.example, "notifications": {"not_a_notification": None}})
+        (error,) = refused.value.errors
+        assert error.path == ["notifications", "not_a_notification"]
+        assert f"is not a ready-made notification of {name}: " in error.msg
 
 
 def test_each_role_at_most_once(features: dict[str, Any]) -> None:
@@ -415,7 +429,8 @@ def test_an_offered_aspect_validates_and_builds(
         device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
         # The common texts: a ready-made alert's default messages are read from them
         built = aspect.build(ha, device, feature, block, load("translations/en.json")["common"])
-        assert built, name
+        # An aspect adding no entity key (ready-made notifications: automations) builds none
+        assert bool(built) == bool(aspect.keys(feature)), name
         listed = {device.qualified(entity_key)
                   for _, entity_key, _, by, _ in catalogue.keys({name: block}) if by == aspect.key}
         assert {entity.key for entity in built} <= listed, name
@@ -438,7 +453,7 @@ def test_a_builders_own_schema_refuses_an_aspects_key(features: dict[str, Any]) 
 
 
 def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
-    """In a block of items, a key alike an aspect's is an item: a program keyed `statistics` is a program."""
+    """In a block of items, a key alike an aspect's is an item: a program keyed `statistics` is a program, a switch keyed `notifications` a switch."""
     catalogue = module("setup.catalogue")
     for name, feature in features.items():
         in_items = any(aspect.placed(feature) == "item" for aspect in catalogue.aspects_of(feature))
@@ -477,12 +492,12 @@ def test_mount_refuses_a_block_or_item_that_isnt_a_map(
 
 
 def test_the_aspects_each_builder_offers(features: dict[str, Any]) -> None:
-    """Statistics where a builder counts, ready-made alerts where it offers them: appliance both."""
+    """Statistics where a builder counts, ready-made alerts and notifications where it offers them: appliance all three."""
     aspects_of = module("setup.catalogue").aspects_of
     offering = {name: {aspect.key for aspect in aspects_of(feature)}
                 for name, feature in features.items() if aspects_of(feature)}
     assert offering == {
-        "appliance": {"statistics", "alerts"},
+        "appliance": {"statistics", "alerts", "notifications"},
         "door": {"statistics"},
         "window": {"statistics"},
         "modes": {"statistics"},
@@ -491,17 +506,35 @@ def test_the_aspects_each_builder_offers(features: dict[str, Any]) -> None:
     }
 
 
-def test_an_absent_aspect_key(features: dict[str, Any]) -> None:
-    """Absent, statistics is mounted as `{}` (no counter asks a period); ready-made alerts are left out (none enabled).
+def test_the_aspects_in_build_order(ha: HomeAssistant) -> None:
+    """A builder's ready-made alerts, then its meters, then its ready-made notifications (no entity)."""
+    assert [aspect.key for aspect in module("aspects").ASPECTS] == ["alerts", "statistics", "notifications"]
 
+
+def test_an_absent_aspect_key(features: dict[str, Any]) -> None:
+    """Absent, statistics is mounted as `{}` (no counter asks a period); ready-made alerts and notifications are left out (none enabled).
+
+    One left out absent still refuses an explicit empty value, `{}` or null.
     A block that isn't a map is refused by the builder's schema alone: no
     aspect adds a refusal of its own for a key it can't find.
     """
     mount = module("setup.catalogue").mount
+    left_out = {aspect.key for aspect in module("aspects").ASPECTS if not aspect.mount_absent}
+    assert left_out == {"alerts", "notifications"}
+    for aspect, name, feature in offered(features):
+        block = mount(feature, name, dict(feature.example))
+        containers = [block] if aspect.placed(feature) == "block" else list(block.values())
+        assert all((aspect.key in each) == aspect.mount_absent for each in containers), (aspect.key, name)
+        if aspect.mount_absent:
+            continue
+        for empty in ({}, None):
+            with pytest.raises(vol.MultipleInvalid) as refused:
+                mount(feature, name, placed(aspect, feature, empty, dict(feature.example)))
+            assert refused.value.errors, (aspect.key, name)
+            assert all(error.path[-1] == aspect.key for error in refused.value.errors), (aspect.key, name)
     appliance = features["appliance"]
     block = mount(appliance, "appliance", dict(appliance.example))
     assert block["statistics"] == dict.fromkeys(role(appliance, "Counters").needs, [])
-    assert "alerts" not in block
     with pytest.raises(vol.MultipleInvalid) as refused:
         mount(appliance, "appliance", 5)
     assert [error.path for error in refused.value.errors] == [[]]

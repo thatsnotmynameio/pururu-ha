@@ -10,6 +10,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from ..aspects import notifications
 from ..const import (
     CONF_AREA,
     CONF_AREAS,
@@ -23,7 +24,6 @@ from ..const import (
 from ..core.feature import Feature
 from ..core.resolve import Index, Ref, find
 from ..core.roles import Configured, Generates, Provides, Refers, Requires
-from ..device_keys import notifications
 from ..features import FEATURES
 
 

@@ -212,16 +212,17 @@ type AspectBuild = Callable[
 class Aspect:
     """A concern written once, mounted in the block (or each item) of every builder offering it."""
 
-    # The block key it mounts: "statistics", "alerts"
+    # The block key it mounts: "statistics", "alerts", "notifications"
     key: str
     # Whether this builder offers it: it has what the aspect needs (Counters;
-    # at least one ready-made alert)
+    # at least one ready-made alert, or notification)
     offered: Callable[[Feature], bool]
     # Validates the aspect's value, for this builder and its key in the device,
-    # for an aspect whose messages name the builder (B4's ready-made
-    # notifications); the alerts aspect doesn't need it
+    # for an aspect whose messages name the builder (the ready-made
+    # notifications'); the alerts aspect doesn't need it
     schema: Callable[[Feature, str], Callable[[Any], Any]]
-    # The local entity keys it adds: suffixes for an Items builder
+    # The local entity keys it adds: suffixes for an Items builder; none for
+    # the ready-made notifications (automations)
     keys: Callable[[Feature], Mapping[str, Platform]]
     # The translation key one of its local keys is named under, for this
     # builder: statistics' own at the block level, or under the builder's
@@ -239,5 +240,6 @@ class Aspect:
     check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None
     # Its key absent (or its container not a map): validated as `{}` and
     # mounted (statistics: no counter asks a period), or left out, as nothing
-    # asked (ready-made alerts: none enabled; an explicit `{}` is still refused)
+    # asked (ready-made alerts and notifications: none enabled; an explicit
+    # `{}` is still refused)
     mount_absent: bool = True
