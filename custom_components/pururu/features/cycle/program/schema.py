@@ -10,6 +10,7 @@ import voluptuous as vol
 from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 
+from ....const import CONF_DETECTED, CONF_PROGRAMS
 from ....core.feature import EACH, TEXT, Item, Path, at, bounded, finite_float
 from ....core.roles import Counted
 from ..last import LAST_CYCLE
@@ -43,6 +44,15 @@ NAMED: dict[str, Platform] = {
     f"{PHASE}_{OTHER}": Platform.BINARY_SENSOR,
     **{f"{PHASE}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
     **{f"{PHASE}_{OTHER}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
+}
+# Where a feature's detected programs sit in its block: `programs: detected:`,
+# the programs aspect's key (aspects/programs.py)
+DETECTED_AT: Path = (CONF_PROGRAMS, CONF_DETECTED, EACH)
+# A detected program's translations, once for every builder, all with {item},
+# its name: detected_<suffix> for its cycle entities
+DETECTED = "detected"
+DETECTED_NAMED: dict[str, Platform] = {
+    f"{DETECTED}_{suffix}": platform for suffix, platform in SUFFIXES.items()
 }
 # Each phase's totals, for the statistics aspect to meter; energy needs the builder's `energy`
 PHASE_COUNTERS: dict[str, str | None] = {
@@ -84,6 +94,29 @@ def counted(where: Path) -> tuple[Counted, ...]:
             named=f"{PHASE}_{OTHER}",
         ),
     )
+
+
+def _detected_item(block: Any, path: Path) -> Item:
+    """The detected program at `path` of the builder's block: its key, named by its name."""
+    return Item(slug=path[-1], name=at(block, path)["name"])
+
+
+def counted_each(where: Path) -> tuple[Counted, ...]:
+    """Where each detected program of the map at `where` counts: its runtime, cycles and energy, as its item's.
+
+    Unlike running_program's (the builder's own totals), a detected program's
+    totals are its own: <key>_runtime_total, <key>_cycles_total,
+    <key>_energy_total (energy needs the builder's `energy`, ruling 7).
+    """
+    return (Counted(needs=PHASE_COUNTERS, at=where, item=_detected_item),)
+
+
+def detected_keys(key: str, config: Mapping[str, Any]) -> dict[str, Platform]:
+    """Every entity key detected program `key` can create: its carrier, then its cycle entities."""
+    return {
+        key: Platform.BINARY_SENSOR,
+        **{f"{key}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
+    }
 
 
 def phase_keys(key: str) -> dict[str, Platform]:
@@ -162,6 +195,13 @@ def _other_needs_phases(program: dict[str, Any]) -> dict[str, Any]:
     return program
 
 
+def _named(block: Any) -> Any:
+    """Refuse a detected program without a name: it names its entities."""
+    if isinstance(block, dict) and "name" not in block:
+        raise vol.Invalid("a detected program needs a name: it names its entities")
+    return block
+
+
 # A schema of its own at each level: ALLOW_EXTRA would let a key that isn't a slug through
 SCHEMA = vol.All(
     vol.Schema(
@@ -181,6 +221,9 @@ SCHEMA = vol.All(
     bounded("program"),
     _other_needs_phases,
 )
+
+# A detected program of `programs: detected:`: a program with a name
+DETECTED_SCHEMA = vol.All(_named, SCHEMA)
 
 
 @dataclass(frozen=True, kw_only=True)

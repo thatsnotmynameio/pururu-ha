@@ -3,12 +3,17 @@
 `schema` validates a program's block and describes it (`Program`); `detector`
 is pure (readings and time in, cycles out); `entities` puts it in HA: the
 program's carrier, and per phase a binary sensor and its cycle entities. A
-builder reading a sensor calls `build` (D2: the appliance's `running_program`).
+builder reading a sensor calls `build` (the appliance's `running_program`), or
+`build_detected` for a detected program of `programs: detected:` (the programs
+aspect).
 """
 
 from .detector import Change, Detector, Ended, Run, Started
-from .entities import build
+from .entities import build, build_detected
 from .schema import (
+    DETECTED_AT,
+    DETECTED_NAMED,
+    DETECTED_SCHEMA,
     FIXED,
     IDLE,
     NAMED,
@@ -22,12 +27,17 @@ from .schema import (
     Phase,
     Program,
     counted,
+    counted_each,
+    detected_keys,
     keys_of,
     phase_keys,
     program_of,
 )
 
 __all__ = [
+    "DETECTED_AT",
+    "DETECTED_NAMED",
+    "DETECTED_SCHEMA",
     "FIXED",
     "IDLE",
     "NAMED",
@@ -46,7 +56,10 @@ __all__ = [
     "Run",
     "Started",
     "build",
+    "build_detected",
     "counted",
+    "counted_each",
+    "detected_keys",
     "keys_of",
     "phase_keys",
     "program_of",

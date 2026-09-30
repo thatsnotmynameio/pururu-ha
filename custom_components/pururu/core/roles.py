@@ -30,6 +30,19 @@ class Derived:
 
 
 @dataclass(frozen=True)
+class Programs:
+    """It takes detected programs, `programs: detected:` in its block: each a band of the setting `reading`.
+
+    `energy` is the setting giving each cycle's kWh, None: none. The programs
+    aspect (aspects/programs.py) mounts `programs:`, lists their keys and
+    builds them.
+    """
+
+    reading: str
+    energy: str | None = None
+
+
+@dataclass(frozen=True)
 class Actions:
     """Services its entities take on their own platform: what a program's step may call."""
 
@@ -116,6 +129,7 @@ class Generates:
 type Role = (
     Configured
     | Derived
+    | Programs
     | Actions
     | Items
     | Counters

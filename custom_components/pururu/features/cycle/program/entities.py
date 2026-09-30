@@ -36,13 +36,13 @@ from homeassistant.util import dt as dt_util
 
 from ....const import DOMAIN
 from ....core.entity import PururuEntity, reading
-from ....core.feature import Device
+from ....core.feature import Device, Item
 from .. import Cycle, CycleSource, cycle_signal
 from ..energy import kwh_now
 from ..last import LAST_CYCLE, LastCycleValue
 from ..totals import CyclesTotal, EnergyTotal, RuntimeTotal
 from .detector import Change, Detector, Ended
-from .schema import IDLE, OTHER, PHASE, Phase, Program
+from .schema import DETECTED, IDLE, OTHER, PHASE, Phase, Program, program_of
 
 type View = Callable[[list[Change]], None]
 
@@ -85,10 +85,17 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
         program: Program,
         reading: str,
         energy: str | None,
+        of: Item | None = None,
     ) -> None:
-        """`program` read from `reading`, as `key` of `device`; `energy` gives each cycle's kWh."""
-        self._identify(device, Platform.BINARY_SENSOR, key)
-        self._cycle_signals(device)
+        """`program` read from `reading`, as `key` of `device`; `energy` gives each cycle's kWh.
+
+        `of`: a detected program's item, naming the carrier and its signals;
+        None: the builder's running program, named by `key`'s translation.
+        """
+        self._identify(
+            device, Platform.BINARY_SENSOR, key, None if of is None else of.name
+        )
+        self._cycle_signals(device, of)
         self.detector = Detector(program)
         self._reading = reading
         self._energy = energy
@@ -487,13 +494,17 @@ def build(
     key: str,
     reading: str,
     energy: str | None,
+    of: Item | None = None,
 ) -> list[PururuEntity]:
     """The program's carrier as `key`; with phases, the current and last phase and each phase's entities.
 
     The carrier comes first: its platform adds it, and it restores the
-    detector, before the phases' binary sensors.
+    detector, before the phases' binary sensors. `of`: a detected program's
+    item (Carrier), None the builder's running program.
     """
-    carrier = Carrier(device, key, program=program, reading=reading, energy=energy)
+    carrier = Carrier(
+        device, key, program=program, reading=reading, energy=energy, of=of
+    )
     entities: list[PururuEntity] = [carrier]
     if not program.phases:
         return entities
@@ -502,4 +513,55 @@ def build(
     for phase in program.phases:
         entities.append(PhaseRunning(device, carrier, phase, source=key))
         entities.extend(_cycle_entities(hass, device, phase, energy))
+    return entities
+
+
+def build_detected(
+    hass: HomeAssistant,
+    device: Device,
+    key: str,
+    config: Mapping[str, Any],
+    *,
+    reading: str,
+    energy: str | None,
+) -> list[PururuEntity]:
+    """Detected program `key` of a builder's `programs: detected:`: its carrier and phases, then its own cycle entities.
+
+    Its carrier is `key`, named by the program's name; its last cycle and
+    totals are its item's (<key>_<suffix>), named detected_<suffix> with {item}.
+    """
+    of = Item(slug=key, name=config["name"])
+    entities = build(
+        hass, device, program_of(config), key=key, reading=reading, energy=energy, of=of
+    )
+    for description in LAST_CYCLE:
+        if energy is not None or description.key != "last_cycle_energy":
+            entities.append(
+                LastCycleValue(
+                    device,
+                    description,
+                    source=key,
+                    item=of,
+                    translation=f"{DETECTED}_{description.key}",
+                )
+            )
+    entities.append(
+        CyclesTotal(device, source=key, item=of, translation=f"{DETECTED}_cycles_total")
+    )
+    entities.append(
+        RuntimeTotal(
+            device,
+            device.current_entity_id(hass, Platform.BINARY_SENSOR, key),
+            STATE_ON,
+            source=key,
+            item=of,
+            translation=f"{DETECTED}_runtime_total",
+        )
+    )
+    if energy is not None:
+        entities.append(
+            EnergyTotal(
+                device, source=key, item=of, translation=f"{DETECTED}_energy_total"
+            )
+        )
     return entities

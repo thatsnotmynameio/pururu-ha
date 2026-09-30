@@ -26,6 +26,10 @@
   ],
   [
    "binary_sensor",
+   "pururu_clothes_washer_appliance_cotton"
+  ],
+  [
+   "binary_sensor",
    "pururu_clothes_washer_appliance_phase_other"
   ],
   [
@@ -79,6 +83,82 @@
   [
    "sensor",
    "pururu_biblioteca_reaction_washer_done_triggered_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_cycles_today"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_cycles_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_energy_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_energy_today"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_energy_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_energy_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_last_cycle_duration"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_last_cycle_end"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_last_cycle_energy"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_last_cycle_start"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_runtime_today"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cotton_runtime_year"
   ],
   [
    "sensor",

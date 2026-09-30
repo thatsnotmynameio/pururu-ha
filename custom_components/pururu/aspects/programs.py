@@ -1,4 +1,9 @@
-"""Programs: the executable ones of a device, as Home Assistant scripts.
+"""Programs: a feature's detected ones (ASPECT), and a device's executable ones, as Home Assistant scripts.
+
+A detected program (`programs: detected:` in the block of a builder with the
+Programs role) is a band of the builder's reading, built with the detector
+(features/cycle/program): ASPECT mounts `programs:`, lists each one's keys
+and builds it.
 
 An executable program (`programs: executable:` at the device) is a method of
 its device: something starts it, and it turns the device's own switches and
@@ -10,6 +15,7 @@ device (PROGRAMS, the device key).
 """
 
 from collections.abc import Collection, Hashable, Iterable, Iterator, Mapping
+from functools import partial
 import logging
 from typing import Any, override
 
@@ -36,12 +42,23 @@ from ..const import (
 )
 from ..core import generated, vocabulary
 from ..core.entity import PururuEntity
-from ..core.feature import EACH, Device, Feature, Item, Path, at, qualified
+from ..core.feature import (
+    EACH,
+    Aspect,
+    Device,
+    Feature,
+    Item,
+    Path,
+    Place,
+    at,
+    qualified,
+)
 from ..core.generated import SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
-from ..core.roles import Counted, Counters, Generates, Items
+from ..core.roles import Counted, Counters, Generates, Items, Programs
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
+from ..features.cycle.program import DETECTED_SCHEMA, build_detected, detected_keys
 from ..features.cycle.totals import CyclesTotal, RuntimeTotal
 
 _LOGGER = logging.getLogger(__name__)
@@ -380,3 +397,86 @@ def _disabled(
             )
             return True
     return False
+
+
+# --- detected programs: the aspect ---------------------------------------------
+
+
+def _detected_only(block: Any) -> Any:
+    """Refuse `executable:` in a feature's block: an executable program is its device's."""
+    if isinstance(block, dict) and CONF_EXECUTABLE in block:
+        raise vol.Invalid(
+            "a feature's programs are detected: executable programs are the device's",
+            path=[CONF_EXECUTABLE],
+        )
+    return block
+
+
+# `programs:` in a feature's block; schemas of their own, as the device key's.
+# Its only key is `detected`, so an empty block is refused where it is
+DETECTED = vol.All(
+    _detected_only,
+    vol.Schema(
+        {
+            vol.Optional(CONF_DETECTED): vol.All(
+                vol.Schema({cv.slug: DETECTED_SCHEMA}), vol.Length(min=1)
+            )
+        }
+    ),
+    vol.Length(min=1, msg=f"a feature's {CONF_PROGRAMS} needs {CONF_DETECTED}"),
+)
+
+
+def _derived(value: Mapping[str, Any]) -> Iterator[tuple[str, Platform]]:
+    """Every entity key the detected programs of a validated `programs:` create.
+
+    A key two of them create comes twice: checks.keys_distinct refuses it
+    (cotton's cotton_cycles_total beside a program keyed cotton_cycles_total).
+    """
+    for key, config in value[CONF_DETECTED].items():
+        yield from detected_keys(key, config).items()
+
+
+def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
+    """`programs:` sits in the block; its keys are the detected programs' (derived).
+
+    It names nothing to a person (`_name`); `named` is never asked, as it adds
+    no fixed key.
+    """
+    return (
+        Place(
+            schema=DETECTED,
+            keys={},
+            named=partial(qualified, builder.namespace),
+            example={CONF_DETECTED: {"cotton": {"name": "Cotton", "above": 1500}}},
+            derived=_derived,
+        ),
+    )
+
+
+def _build(
+    hass: HomeAssistant, device: Device, builder: Feature, block: Any, *_: Any
+) -> list[PururuEntity]:
+    """Each detected program, in the configuration's order, reading the builder's settings (Programs)."""
+    if CONF_PROGRAMS not in block:
+        return []
+    role = builder.role(Programs)
+    assert role is not None  # ASPECT.offered checked it
+    energy = None if role.energy is None else block.get(role.energy)
+    return [
+        entity
+        for key, config in block[CONF_PROGRAMS][CONF_DETECTED].items()
+        for entity in build_detected(
+            hass, device, key, config, reading=block[role.reading], energy=energy
+        )
+    ]
+
+
+ASPECT = Aspect(
+    key=CONF_PROGRAMS,
+    offered=lambda builder: builder.role(Programs) is not None,
+    places=_places,
+    build=_build,
+    # Absent: no detected program; an explicit {} or null is refused
+    mount_absent=False,
+)
