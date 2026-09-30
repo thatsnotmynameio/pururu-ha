@@ -71,7 +71,8 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
     the step's changes; a step that ends the program calls the views first,
     then writes its state and sends the program's cycle. A reading's step
     comes after, in its own step, the delays a late timer missed: a program
-    ended and started again by one reading shows `off` in between.
+    ended and started again by one reading shows `off` in between, and the
+    same for a phase ending late and starting again on that one reading.
     """
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING

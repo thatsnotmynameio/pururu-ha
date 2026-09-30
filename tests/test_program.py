@@ -1,8 +1,8 @@
 """features/cycle/program: a detected program and its phases, the detector alone (no HA entity).
 
-Times are seconds from T0. Each scenario of today's modes and phases tests is
-replayed here with the same readings, the washer's 10 s later (see washer()):
-the same cycles, starts and ends.
+Times are seconds from T0. Each scenario of 0.1's `modes` and `phases` tests
+(removed in D2) is replayed here with the same readings, the washer's 10 s
+later (see washer()): the same cycles, starts and ends.
 """
 
 import csv
@@ -227,7 +227,7 @@ MODES: dict[str, Any] = {
 
 
 def purifier() -> Drive:
-    """test_modes' purifier: idle at 1 W, then 120 W from 125 s: the program at 145, resfriar at 155."""
+    """The purifier of 0.1's modes tests: idle at 1 W, then 120 W from 125 s: the program at 145, resfriar at 155."""
     drive = Drive(MODES)
     drive.read(0, 1)
     drive.read(125, 120)
@@ -465,10 +465,10 @@ WASHER: dict[str, Any] = {
 
 
 def washer(config: dict[str, Any] = WASHER) -> Drive:
-    """test_phases' washer: idle at 1.4 W; 120 W from 125 s runs it at 185, then 7 W at 190.
+    """The washer of 0.1's phases tests: idle at 1.4 W; 120 W from 125 s runs it at 185, then 7 W at 190.
 
-    Each scenario's first reading comes 10 s after the 7 W (test_phases writes
-    it at the same instant), so every instant is 10 s later than there.
+    Its first reading came at the same instant as the 7 W, so every instant
+    here is 10 s later.
     """
     drive = Drive(config)
     drive.read(0, 1.4)

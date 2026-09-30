@@ -173,6 +173,8 @@ async def test_a_phase_runs_and_ends(purifier: HomeAssistant, freezer: Any) -> N
     assert float(state(purifier, sensor("phase_resfriar_runtime_total"))) == pytest.approx(
         605 / 3600, abs=0.0005)
     assert state(purifier, sensor("phase_quente_cycles_total")) == "0"
+    for key in LAST_CYCLE:
+        assert state(purifier, sensor(f"phase_quente_{key}")) == "unknown", key
 
 
 async def test_a_phases_cycle_is_sent_after_its_state_its_end_last(
@@ -182,6 +184,7 @@ async def test_a_phases_cycle_is_sent_after_its_state_its_end_last(
     feature = module("core.feature")
     device = feature.Device(key=KEY, name="Dummy station", namespace="appliance")
     item = feature.Item(slug="phase_resfriar", name="Resfriar")
+    await kwh(purifier, 100.0)
     await cool(purifier, freezer)
     seen: list[tuple[str, str]] = []
     for name, signal in (("cycle", cycle.cycle_signal(device, item)),
@@ -196,6 +199,7 @@ async def test_a_phases_cycle_is_sent_after_its_state_its_end_last(
     watched = {LAST, *(sensor(f"phase_resfriar_{key}") for key in LAST_CYCLE)}
     order = [event.data["entity_id"] for event in changes if event.data["entity_id"] in watched]
     assert order[-1] == sensor("phase_resfriar_last_cycle_end"), order
+    assert set(order) == watched, order
 
 
 async def test_the_programs_cycle_is_sent_on_the_carriers_signals(
@@ -681,6 +685,16 @@ def with_alert(**alert: Any) -> dict[str, Any]:
 
 async def test_an_alert_can_watch_the_current_phase(ha: HomeAssistant, freezer: Any) -> None:
     assert await setup(ha, with_alert(when="appliance_phase_current", **{"is": "quente"}))
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 125)
+    assert state(ha, HOT) == "off"
+    await watts(ha, 1000)
+    await tick(ha, freezer, 25)
+    assert state(ha, HOT) == "on"
+
+
+async def test_an_alert_can_watch_a_phases_binary_sensor(ha: HomeAssistant, freezer: Any) -> None:
+    assert await setup(ha, with_alert(when="appliance_phase_quente", **{"is": "on"}))
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     assert state(ha, HOT) == "off"

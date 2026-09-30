@@ -180,7 +180,7 @@ def test_what_a_last_cycle_follows_is_a_cycle_source(
     mount = module("setup.catalogue").mount
     following: dict[str, set[str]] = {}
     for name, feature in features.items():
-        if role(feature, "Counters") is None:  # counts no cycle
+        if role(feature, "Refers") is not None:  # build needs inputs, e.g. alerts
             continue
         device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
         block = mount(feature, name, dict(feature.example))
@@ -413,7 +413,7 @@ def test_an_aspects_keys_are_named_once(features: dict[str, Any]) -> None:
     namespace; or under the builder's own, as the ready-made alerts' are),
     by reading Aspect.named itself rather than a naming rule hard-coded here.
     Exhaustive over aspect.keys(feature), not just an example: a
-    settings-gated counter's meters (idle_energy, a mode's energy) and every
+    settings-gated counter's meters (idle_energy, a phase's energy) and every
     period (week, month, year) are checked too, not only what the builder's
     minimal example asks for.
     """

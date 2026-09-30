@@ -202,7 +202,7 @@ class Detector:
         Called before `read` at the same `now`, it splits one reading's step
         in two, and `read` then passes none of them again: a late timer's end
         comes before what the reading starts, a program ended and started
-        again by one reading (on_delay 0) too.
+        again by one reading (on_delay 0) too, and the same for a phase alone.
         """
         return self._pass(now, kwh, at_now=False)
 

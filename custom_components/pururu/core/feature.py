@@ -69,7 +69,7 @@ def qualified(namespace: str, entity_key: str) -> str:
 
 @dataclass(frozen=True, kw_only=True)
 class Item:
-    """An item of a feature's block with entity keys of its own (roles.Items): a program, a reaction."""
+    """An item of a feature's block with entity keys of its own (roles.Items): a program, a reaction; the detector names each phase's entities with one too (Phase.item)."""
 
     slug: str
     name: str

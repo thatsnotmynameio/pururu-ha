@@ -253,6 +253,8 @@ APPLIANCE_MINIMAL = {
     "power": "sensor.dummy_plug_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
+
+
 async def test_idle_energy_without_energy_is_refused(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
