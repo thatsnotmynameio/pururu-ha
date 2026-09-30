@@ -235,14 +235,14 @@ And in the `then` section, after `test_it_follows_the_script_renamed`:
 ```python
 async def test_the_condition_follows_the_script_renamed(ha: HomeAssistant) -> None:
     """With the old ID, last_triggered would be none and every try would run."""
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, pool(clean={"name": "Tarde", "at": "13:00", "then": "clean",
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse(clean={"name": "Tarde", "at": "13:00", "then": "clean",
                                        "retry": {"times": 1, "every": {"hours": 1}}}))
-    er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+    er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_estufa")
     await ha.async_block_till_done()
     assert generated(ha)[0]["conditions"] == module("reactions").conditions(
-        {"retry": {"times": 1, "every": timedelta(hours=1)}}, "script.limpar_piscina")
-    assert "script.limpar_piscina" in generated(ha)[0]["conditions"][0]["value_template"]
+        {"retry": {"times": 1, "every": timedelta(hours=1)}}, "script.limpar_estufa")
+    assert "script.limpar_estufa" in generated(ha)[0]["conditions"][0]["value_template"]
 ```
 
 - [ ] **Step 2: Run them to see them fail**
@@ -381,7 +381,7 @@ Real automations and scripts, from the generated files, with frozen time (the `h
 - Modify (only if a test fails): `custom_components/pururu/reactions.py`
 
 **Interfaces:**
-- Consumes: the fixtures `automations` and `both`, `capture`, `tick`, `fake`, `settle`, `setup`, `generated`, `pool`, `CLEAN`, `REAL_PUMP` from `tests/test_reactions.py` and `tests/helpers.py`.
+- Consumes: the fixtures `automations` and `both`, `capture`, `tick`, `fake`, `settle`, `setup`, `generated`, `greenhouse`, `CLEAN`, `REAL_SPRINKLER` from `tests/test_reactions.py` and `tests/helpers.py`.
 
 - [ ] **Step 1: Write the tests**
 
@@ -470,8 +470,8 @@ async def test_a_restart_keeps_the_occurrences_run(ha: HomeAssistant, freezer: A
 async def test_a_busy_program_is_started_by_a_try(ha: HomeAssistant, freezer: Any,
                                                   both: None) -> None:
     """Started by hand at 10:00, it runs 2 hours: 10:05 and 11:05 find it running, 12:05 starts it."""
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse(clean={"name": "Logo", "at": "10:05", "then": "clean",
                                        "retry": {"times": 3, "every": {"hours": 1}}}))
     await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
     await settle()
@@ -490,15 +490,15 @@ async def test_a_busy_program_is_started_by_a_try(ha: HomeAssistant, freezer: An
 
 async def test_a_program_started_after_the_occurrence_skips_the_tries(
         ha: HomeAssistant, freezer: Any, both: None) -> None:
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, pool(clean={"name": "Logo", "at": "10:05", "then": "clean",
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse(clean={"name": "Logo", "at": "10:05", "then": "clean",
                                        "retry": {"times": 2, "every": {"hours": 3}}}))
     await ha.services.async_call("automation", "turn_off",
-                                 {"entity_id": "automation.pururu_pool_reaction_clean"},
+                                 {"entity_id": "automation.pururu_greenhouse_reaction_clean"},
                                  blocking=True)
     await tick(ha, freezer, 300)    # 10:05, off
     await ha.services.async_call("automation", "turn_on",
-                                 {"entity_id": "automation.pururu_pool_reaction_clean"},
+                                 {"entity_id": "automation.pururu_greenhouse_reaction_clean"},
                                  blocking=True)
     await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
     await settle()                  # started by hand at 10:05, ends at 12:05
@@ -595,8 +595,8 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
 - **Without `then`**, it means the automation fired, including a run by hand.
 
 ```yaml title="pururu/automations/reactions.yaml"
-- id: pururu_garden_reaction_afternoon
-  alias: Jardim Tarde
+- id: pururu_orchard_reaction_afternoon
+  alias: Pomar Tarde
   triggers:
     - {trigger: time, at: "13:00:00"}
     - {trigger: time, at: "14:00:00", id: retry_1, variables: {since: 3660}}
@@ -605,7 +605,7 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
   conditions:
     - condition: template
       value_template: >-
-        {% set last = state_attr('script.pururu_garden_program_water', 'last_triggered') %}
+        {% set last = state_attr('script.pururu_orchard_program_water', 'last_triggered') %}
         {{ since is not defined or last is none or as_datetime(last) < now() - timedelta(seconds=since) }}
   actions: [...]
 ```

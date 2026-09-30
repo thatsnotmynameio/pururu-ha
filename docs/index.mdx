@@ -16,15 +16,15 @@ Say your washing machine is plugged into a smart plug that measures power. Home 
 | `sensor.washer_plug_power` | `1843.2 W` |
 | `sensor.washer_plug_energy` | `412.77 kWh` |
 
-That tells you how many watts the washer draws right now. It doesn't tell you whether it's washing, when it finished, how long the last wash took or how much it cost. You'd have to build that yourself out of template sensors, `history_stats`, `utility_meter` and a few automations. It's fragile, and you'd do it again for every appliance.
+That tells you how many watts the washer draws right now. It doesn't tell you whether it's soaking, when it finished, how long the last wash took or how much it cost. You'd have to build that yourself out of template sensors, `history_stats`, `utility_meter` and a few automations. It's fragile, and you'd do it again for every appliance.
 
 With pururu you write this:
 
 ```yaml title="configuration.yaml"
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         energy: sensor.washer_plug_energy
@@ -34,22 +34,22 @@ pururu:
       phases:
         cycle_from: appliance
         sensor: sensor.washer_plug_power
-        defaults: {stopped: idle, running: washing}
+        defaults: {stopped: idle, running: soaking}
         bands:
-          heating: {above: 1000}
-          spinning: {above: 50, below: 1000, for: {minutes: 3}}
+          warming: {above: 1000}
+          wringing: {above: 50, below: 1000, for: {minutes: 3}}
 ```
 
-and you get a device called **Máquina de lavar** with these entities:
+and you get a device called **Tanquinho** with these entities:
 
 | Entity | What it tells you |
 |---|---|
-| `binary_sensor.pururu_laundry_washer_appliance_running` | Whether the washer is running a cycle right now |
-| `sensor.pururu_laundry_washer_phase_current` | `idle`, `washing`, `heating` or `spinning` |
-| `sensor.pururu_laundry_washer_appliance_last_cycle_end` | When the last wash finished: trigger your "laundry is done" automation on it |
-| `sensor.pururu_laundry_washer_appliance_last_cycle_duration` | How long it took, in minutes |
-| `sensor.pururu_laundry_washer_appliance_last_cycle_energy` | How much energy it used, in kWh |
-| `sensor.pururu_laundry_washer_appliance_cycles_month` | How many washes this month |
+| `binary_sensor.pururu_clothes_washer_appliance_running` | Whether the washer is running a cycle right now |
+| `sensor.pururu_clothes_washer_phase_current` | `idle`, `soaking`, `warming` or `wringing` |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_end` | When the last wash finished: trigger your "laundry is done" automation on it |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_duration` | How long it took, in minutes |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_energy` | How much energy it used, in kWh |
+| `sensor.pururu_clothes_washer_appliance_cycles_month` | How many washes this month |
 | … | [and more](/features/appliance#entities) |
 
 Change the YAML, reload, and the device follows.

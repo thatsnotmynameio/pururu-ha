@@ -634,7 +634,7 @@ In `reload`, make the patched configuration include both files:
 Replace `tests/test_programs.py` entirely with:
 
 ```python
-"""Programs: a made-up pool's cleaning, turning its pump on for two hours, as an HA script."""
+"""Programs: a made-up greenhouse's cleaning, turning its sprinkler on for two hours, as an HA script."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -650,23 +650,23 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from helpers import capture, fake, generated_scripts, held, reload, settle, setup, tick
 
-KEY = "pool"
-REAL_PUMP = "switch.pool_pump"
-PUMP = "switch.pururu_pool_switch_pump"
-CLEAN = "script.pururu_pool_program_clean"
-SWITCHES: dict[str, Any] = {"pump": {"entity": REAL_PUMP, "name": "Bomba"}}
+KEY = "greenhouse"
+REAL_SPRINKLER = "switch.greenhouse_sprinkler"
+SPRINKLER = "switch.pururu_greenhouse_switch_sprinkler"
+CLEAN = "script.pururu_greenhouse_program_clean"
+SWITCHES: dict[str, Any] = {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
 TWO_HOURS = 2 * 60 * 60
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
-    {"turn_on": "switch_pump"}, {"delay": {"hours": 2}}, {"turn_off": "switch_pump"}]}
-APPLIANCE = {"power": "sensor.pool_pump_power",
+    {"turn_on": "switch_sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switch_sprinkler"}]}
+APPLIANCE = {"power": "sensor.greenhouse_sprinkler_power",
              "running": {"threshold": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
 
 
 def devices(**programs: Any) -> dict[str, Any]:
-    return {KEY: {"name": "Piscina", "switches": SWITCHES, "programs": programs or {"clean": CLEANING}}}
+    return {KEY: {"name": "Estufa", "switches": SWITCHES, "programs": programs or {"clean": CLEANING}}}
 
 
-def reached(calls: list[Event], entity_id: str = REAL_PUMP) -> list[str]:
+def reached(calls: list[Event], entity_id: str = REAL_SPRINKLER) -> list[str]:
     """The services called on `entity_id`, in order."""
     found = []
     for event in calls:
@@ -692,8 +692,8 @@ async def scripts(ha: HomeAssistant) -> AsyncIterator[HomeAssistant]:
 
 
 @pytest.fixture
-async def pool(scripts: HomeAssistant) -> HomeAssistant:
-    await fake(scripts, REAL_PUMP, "off")
+async def greenhouse(scripts: HomeAssistant) -> HomeAssistant:
+    await fake(scripts, REAL_SPRINKLER, "off")
     assert await setup(scripts, devices())
     return scripts
 
@@ -704,16 +704,16 @@ async def pool(scripts: HomeAssistant) -> HomeAssistant:
 @pytest.mark.parametrize("program", [
     pytest.param({"name": "Limpar"}, id="no sequence"),
     pytest.param({"name": "Limpar", "sequence": []}, id="empty sequence"),
-    pytest.param({"sequence": [{"turn_on": "switch_pump"}]}, id="no name"),
-    pytest.param({"name": " ", "sequence": [{"turn_on": "switch_pump"}]}, id="blank name"),
+    pytest.param({"sequence": [{"turn_on": "switch_sprinkler"}]}, id="no name"),
+    pytest.param({"name": " ", "sequence": [{"turn_on": "switch_sprinkler"}]}, id="blank name"),
     pytest.param({"name": "Limpar", "sequence": [{"action": "switch.turn_on"}]}, id="an HA action"),
-    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switch_pump", "delay": 5}]},
+    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler", "delay": 5}]},
                  id="two keys in a step"),
     pytest.param({"name": "Limpar", "sequence": [{}]}, id="an empty step"),
     pytest.param({"name": "Limpar", "sequence": ["turn_on"]}, id="a step that isn't a mapping"),
     pytest.param({"name": "Limpar", "sequence": [{"delay": -5}]}, id="a negative delay"),
-    pytest.param({"name": "Limpar", "sequence": [{"turn_on": REAL_PUMP}]}, id="a real entity ID"),
-    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switch_pump"}], "icon": "mdi:pool"},
+    pytest.param({"name": "Limpar", "sequence": [{"turn_on": REAL_SPRINKLER}]}, id="a real entity ID"),
+    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}], "icon": "mdi:greenhouse"},
                  id="unknown key"),
 ])
 async def test_invalid_program_is_refused(ha: HomeAssistant, program: dict[str, Any]) -> None:
@@ -721,7 +721,7 @@ async def test_invalid_program_is_refused(ha: HomeAssistant, program: dict[str, 
 
 
 @pytest.mark.parametrize("target", [
-    pytest.param("switch_pool_pump", id="not an entity key of the device"),
+    pytest.param("switch_greenhouse_sprinkler", id="not an entity key of the device"),
     pytest.param("switch_heater", id="a switch the device doesn't have"),
     pytest.param("program_clean", id="a program"),
 ])
@@ -733,29 +733,29 @@ async def test_a_target_not_of_another_feature_is_refused(
 
 async def test_programs_alone_are_not_a_feature(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    assert not await setup(ha, {KEY: {"name": "Piscina", "programs": {"clean": CLEANING}}})
+    assert not await setup(ha, {KEY: {"name": "Estufa", "programs": {"clean": CLEANING}}})
     assert "a device needs at least one feature" in caplog.text
 
 
 async def test_an_action_the_target_does_not_take_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     program = {"name": "Ligar", "sequence": [{"turn_on": "appliance_power"}]}
-    assert not await setup(ha, {KEY: {"name": "Piscina", "appliance": APPLIANCE,
+    assert not await setup(ha, {KEY: {"name": "Estufa", "appliance": APPLIANCE,
                                       "programs": {"start": program}}})
     assert "programs: appliance_power does not take turn_on" in caplog.text
 
 
 async def test_two_programs_with_one_script_id_are_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    """pool's b_program_c and pool_program_b's c would both be pururu_pool_program_b_program_c."""
+    """greenhouse's b_program_c and greenhouse_program_b's c would both be pururu_greenhouse_program_b_program_c."""
     config = devices(b_program_c=CLEANING)
-    config["pool_program_b"] = {
-        "name": "Outra", "switches": {"x": {"entity": "switch.demo_x", "name": "X"}},
+    config["greenhouse_program_b"] = {
+        "name": "Outra", "switches": {"x": {"entity": "switch.dummy_x", "name": "X"}},
         "programs": {"c": {"name": "C", "sequence": [{"turn_on": "switch_x"}]}},
     }
     assert not await setup(ha, config)
-    assert ("device pool_program_b: script.pururu_pool_program_b_program_c is already "
-            "a program of device pool") in caplog.text
+    assert ("device greenhouse_program_b: script.pururu_greenhouse_program_b_program_c is already "
+            "a program of device greenhouse") in caplog.text
 
 
 # --- the generated script ------------------------------------------------------------
@@ -763,63 +763,63 @@ async def test_two_programs_with_one_script_id_are_refused(
 
 async def test_the_file_holds_a_script_per_program(ha: HomeAssistant) -> None:
     assert await setup(ha, devices())
-    assert generated_scripts(ha) == {"pururu_pool_program_clean": {
-        "alias": "Piscina Limpar",
-        "description": "pururu: pool, clean",
+    assert generated_scripts(ha) == {"pururu_greenhouse_program_clean": {
+        "alias": "Estufa Limpar",
+        "description": "pururu: greenhouse, clean",
         "mode": "single",
         "sequence": [
-            {"action": "switch.turn_on", "target": {"entity_id": PUMP}},
+            {"action": "switch.turn_on", "target": {"entity_id": SPRINKLER}},
             {"delay": "02:00:00"},
-            {"action": "switch.turn_off", "target": {"entity_id": PUMP}},
+            {"action": "switch.turn_off", "target": {"entity_id": SPRINKLER}},
         ],
     }}
-    cv.SCRIPT_SCHEMA(generated_scripts(ha)["pururu_pool_program_clean"]["sequence"])
+    cv.SCRIPT_SCHEMA(generated_scripts(ha)["pururu_greenhouse_program_clean"]["sequence"])
 
 
-async def test_it_is_a_script_named_by_the_configuration(pool: HomeAssistant) -> None:
-    state = pool.states.get(CLEAN)
+async def test_it_is_a_script_named_by_the_configuration(greenhouse: HomeAssistant) -> None:
+    state = greenhouse.states.get(CLEAN)
     assert state is not None
     assert state.state == "off"
-    assert state.attributes["friendly_name"] == "Piscina Limpar"
-    entry = er.async_get(pool).async_get(CLEAN)
+    assert state.attributes["friendly_name"] == "Estufa Limpar"
+    entry = er.async_get(greenhouse).async_get(CLEAN)
     assert entry is not None
-    assert (entry.platform, entry.unique_id) == ("script", "pururu_pool_program_clean")
-    assert held(pool, KEY) == {PUMP}
-    assert pool.states.async_entity_ids("button") == []
+    assert (entry.platform, entry.unique_id) == ("script", "pururu_greenhouse_program_clean")
+    assert held(greenhouse, KEY) == {SPRINKLER}
+    assert greenhouse.states.async_entity_ids("button") == []
 
 
 async def test_it_is_in_its_devices_area(scripts: HomeAssistant) -> None:
     config = devices()
-    config[KEY]["area"] = "quintal"
-    assert await setup(scripts, config, areas={"quintal": {"name": "Quintal"}})
+    config[KEY]["area"] = "patio"
+    assert await setup(scripts, config, areas={"patio": {"name": "Pátio"}})
     entry = er.async_get(scripts).async_get(CLEAN)
     assert entry is not None
-    assert entry.area_id == "quintal"
+    assert entry.area_id == "patio"
 
 
 # --- running -------------------------------------------------------------------------
 
 
-async def test_turning_it_on_runs_the_sequence(pool: HomeAssistant, freezer: Any) -> None:
-    calls = capture(pool, "call_service")
-    await start(pool)
+async def test_turning_it_on_runs_the_sequence(greenhouse: HomeAssistant, freezer: Any) -> None:
+    calls = capture(greenhouse, "call_service")
+    await start(greenhouse)
     assert reached(calls) == ["turn_on"]
-    await tick(pool, freezer, TWO_HOURS - 1)
+    await tick(greenhouse, freezer, TWO_HOURS - 1)
     assert reached(calls) == ["turn_on"]
-    await tick(pool, freezer, 1)
+    await tick(greenhouse, freezer, 1)
     assert reached(calls) == ["turn_on", "turn_off"]
 
 
 async def test_toggle_flips_the_switch(scripts: HomeAssistant) -> None:
-    await fake(scripts, REAL_PUMP, "on")
-    assert await setup(scripts, devices(flip={"name": "Inverter", "sequence": [{"toggle": "switch_pump"}]}))
+    await fake(scripts, REAL_SPRINKLER, "on")
+    assert await setup(scripts, devices(flip={"name": "Inverter", "sequence": [{"toggle": "switch_sprinkler"}]}))
     calls = capture(scripts, "call_service")
-    await start(scripts, "script.pururu_pool_program_flip")
+    await start(scripts, "script.pururu_greenhouse_program_flip")
     assert reached(calls) == ["turn_off"]
 
 
 @pytest.mark.parametrize(("real", "attributes"), [
-    pytest.param("light.sala_teto", {"supported_color_modes": ["onoff"], "color_mode": "onoff"},
+    pytest.param("light.biblioteca_teto", {"supported_color_modes": ["onoff"], "color_mode": "onoff"},
                  id="a real light"),
     pytest.param("switch.sonoff_teto", {}, id="a relay driving a lamp"),
 ])
@@ -828,52 +828,52 @@ async def test_it_turns_a_light_on_and_off(
     await fake(scripts, real, "off", attributes)
     evening = {"name": "Noite", "sequence": [
         {"turn_on": "light_teto"}, {"delay": {"minutes": 30}}, {"turn_off": "light_teto"}]}
-    assert await setup(scripts, {"sala": {"name": "Sala",
+    assert await setup(scripts, {"biblioteca": {"name": "Biblioteca",
                                           "lights": {"teto": {"entity": real, "name": "Teto"}},
                                           "programs": {"evening": evening}}})
     calls = capture(scripts, "call_service")
-    await start(scripts, "script.pururu_sala_program_evening")
+    await start(scripts, "script.pururu_biblioteca_program_evening")
     await tick(scripts, freezer, 30 * 60)
     assert reached(calls, real) == ["turn_on", "turn_off"]
 
 
-async def test_it_returns_at_once_and_is_on_while_it_runs(pool: HomeAssistant) -> None:
+async def test_it_returns_at_once_and_is_on_while_it_runs(greenhouse: HomeAssistant) -> None:
     """As before with the button: an automation starting it doesn't wait two hours."""
     async with asyncio.timeout(5):
-        await pool.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
+        await greenhouse.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
     await settle()
-    assert pool.states.get(CLEAN).state == "on"
+    assert greenhouse.states.get(CLEAN).state == "on"
 
 
-async def test_turning_it_off_stops_it(pool: HomeAssistant, freezer: Any) -> None:
-    calls = capture(pool, "call_service")
-    await start(pool)
-    await tick(pool, freezer, 60)
-    await pool.services.async_call("script", "turn_off", {"entity_id": CLEAN}, blocking=True)
+async def test_turning_it_off_stops_it(greenhouse: HomeAssistant, freezer: Any) -> None:
+    calls = capture(greenhouse, "call_service")
+    await start(greenhouse)
+    await tick(greenhouse, freezer, 60)
+    await greenhouse.services.async_call("script", "turn_off", {"entity_id": CLEAN}, blocking=True)
     await settle()
-    assert pool.states.get(CLEAN).state == "off"
-    await tick(pool, freezer, TWO_HOURS)
+    assert greenhouse.states.get(CLEAN).state == "off"
+    await tick(greenhouse, freezer, TWO_HOURS)
     assert reached(calls) == ["turn_on"]
 
 
-async def test_what_it_does_carries_the_callers_context(pool: HomeAssistant) -> None:
+async def test_what_it_does_carries_the_callers_context(greenhouse: HomeAssistant) -> None:
     """The logbook names who started it."""
-    calls = capture(pool, "call_service")
+    calls = capture(greenhouse, "call_service")
     context = Context()
-    await start(pool, context=context)
+    await start(greenhouse, context=context)
     real = [event for event in calls if reached([event]) == ["turn_on"]]
     assert real
     assert all(context.id in (event.context.id, event.context.parent_id) for event in real)
 
 
 async def test_starting_it_while_it_runs_is_ignored(
-        pool: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
-    calls = capture(pool, "call_service")
-    await start(pool)
-    await tick(pool, freezer, 60)
-    await start(pool)
-    assert "Piscina Limpar: Already running" in caplog.text
-    await tick(pool, freezer, TWO_HOURS)
+        greenhouse: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    calls = capture(greenhouse, "call_service")
+    await start(greenhouse)
+    await tick(greenhouse, freezer, 60)
+    await start(greenhouse)
+    assert "Estufa Limpar: Already running" in caplog.text
+    await tick(greenhouse, freezer, TWO_HOURS)
     assert reached(calls) == ["turn_on", "turn_off"]
 
 
@@ -883,19 +883,19 @@ async def test_an_unavailable_switch_does_not_stop_it(scripts: HomeAssistant, fr
     calls = capture(scripts, "call_service")
     await start(scripts)
     await tick(scripts, freezer, TWO_HOURS)
-    assert reached(calls, PUMP) == ["turn_on", "turn_off"]
+    assert reached(calls, SPRINKLER) == ["turn_on", "turn_off"]
 
 
 async def test_a_failing_step_stops_it_and_is_logged(
-        pool: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
-    calls = capture(pool, "call_service")
+        greenhouse: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    calls = capture(greenhouse, "call_service")
     with patch("homeassistant.components.group.switch.SwitchGroup.async_turn_on",
                side_effect=HomeAssistantError("the relay is stuck")):
-        await start(pool)
-    await tick(pool, freezer, TWO_HOURS)
-    assert reached(calls, PUMP) == ["turn_on"]
+        await start(greenhouse)
+    await tick(greenhouse, freezer, TWO_HOURS)
+    assert reached(calls, SPRINKLER) == ["turn_on"]
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-    assert any("Piscina Limpar" in message and "the relay is stuck" in message
+    assert any("Estufa Limpar" in message and "the relay is stuck" in message
                for message in errors), errors
 
 
@@ -909,85 +909,85 @@ async def disable(hass: HomeAssistant, entity_id: str, disabled: bool = True) ->
 
 
 async def test_a_disabled_target_drops_the_program(
-        pool: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+        greenhouse: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
     """A script that looks usable and does part of its job would mislead: it goes, logged."""
-    await disable(pool, PUMP)
-    await tick(pool, freezer, 31)  # HA reloads the entry once an entity of it is disabled
-    await pool.async_block_till_done()
-    assert generated_scripts(pool) == {}
-    assert pool.states.get(CLEAN) is None
-    assert er.async_get(pool).async_get(CLEAN) is None
-    assert f"{CLEAN} acts on {PUMP}, which is disabled; not generating it" in caplog.text
+    await disable(greenhouse, SPRINKLER)
+    await tick(greenhouse, freezer, 31)  # HA reloads the entry once an entity of it is disabled
+    await greenhouse.async_block_till_done()
+    assert generated_scripts(greenhouse) == {}
+    assert greenhouse.states.get(CLEAN) is None
+    assert er.async_get(greenhouse).async_get(CLEAN) is None
+    assert f"{CLEAN} acts on {SPRINKLER}, which is disabled; not generating it" in caplog.text
 
 
-async def test_it_comes_back_when_the_target_is_enabled(pool: HomeAssistant, freezer: Any) -> None:
-    await disable(pool, PUMP)
-    await tick(pool, freezer, 31)
-    await disable(pool, PUMP, disabled=False)
-    await tick(pool, freezer, 31)
-    await pool.async_block_till_done()
-    calls = capture(pool, "call_service")
-    await start(pool)
+async def test_it_comes_back_when_the_target_is_enabled(greenhouse: HomeAssistant, freezer: Any) -> None:
+    await disable(greenhouse, SPRINKLER)
+    await tick(greenhouse, freezer, 31)
+    await disable(greenhouse, SPRINKLER, disabled=False)
+    await tick(greenhouse, freezer, 31)
+    await greenhouse.async_block_till_done()
+    calls = capture(greenhouse, "call_service")
+    await start(greenhouse)
     assert reached(calls) == ["turn_on"]
 
 
 # --- reloads, renames, taken IDs, upgrades ------------------------------------------------
 
 
-async def test_a_reload_keeps_an_unchanged_program_running(pool: HomeAssistant, freezer: Any) -> None:
-    calls = capture(pool, "call_service")
-    await start(pool)
-    await reload(pool, devices())
-    await tick(pool, freezer, TWO_HOURS)
+async def test_a_reload_keeps_an_unchanged_program_running(greenhouse: HomeAssistant, freezer: Any) -> None:
+    calls = capture(greenhouse, "call_service")
+    await start(greenhouse)
+    await reload(greenhouse, devices())
+    await tick(greenhouse, freezer, TWO_HOURS)
     assert reached(calls) == ["turn_on", "turn_off"]
 
 
-async def test_a_reload_that_changes_the_program_stops_it(pool: HomeAssistant, freezer: Any) -> None:
-    """HA loads the new script: what the old one did stays, the pump stays on."""
+async def test_a_reload_that_changes_the_program_stops_it(greenhouse: HomeAssistant, freezer: Any) -> None:
+    """HA loads the new script: what the old one did stays, the sprinkler stays on."""
     longer = {**CLEANING, "sequence": [
-        {"turn_on": "switch_pump"}, {"delay": {"hours": 3}}, {"turn_off": "switch_pump"}]}
-    calls = capture(pool, "call_service")
-    await start(pool)
-    await reload(pool, devices(clean=longer))
-    await tick(pool, freezer, TWO_HOURS)
+        {"turn_on": "switch_sprinkler"}, {"delay": {"hours": 3}}, {"turn_off": "switch_sprinkler"}]}
+    calls = capture(greenhouse, "call_service")
+    await start(greenhouse)
+    await reload(greenhouse, devices(clean=longer))
+    await tick(greenhouse, freezer, TWO_HOURS)
     assert reached(calls) == ["turn_on"]
-    assert pool.states.get(CLEAN).state == "off"
+    assert greenhouse.states.get(CLEAN).state == "off"
 
 
-async def test_a_reload_that_drops_it_removes_it(pool: HomeAssistant) -> None:
-    await reload(pool, {KEY: {"name": "Piscina", "switches": SWITCHES}})
-    assert generated_scripts(pool) == {}
-    assert pool.states.get(CLEAN) is None
-    assert er.async_get(pool).async_get(CLEAN) is None
-    assert pool.config_entries.async_entries("pururu")[0].data["scripts"] == []
+async def test_a_reload_that_drops_it_removes_it(greenhouse: HomeAssistant) -> None:
+    await reload(greenhouse, {KEY: {"name": "Estufa", "switches": SWITCHES}})
+    assert generated_scripts(greenhouse) == {}
+    assert greenhouse.states.get(CLEAN) is None
+    assert er.async_get(greenhouse).async_get(CLEAN) is None
+    assert greenhouse.config_entries.async_entries("pururu")[0].data["scripts"] == []
 
 
-async def test_it_follows_its_target_renamed(pool: HomeAssistant) -> None:
-    er.async_get(pool).async_update_entity(PUMP, new_entity_id="switch.piscina_bomba")
-    await pool.async_block_till_done()
-    calls = capture(pool, "call_service")
-    await start(pool)
-    assert reached(calls, "switch.piscina_bomba") == ["turn_on"]
+async def test_it_follows_its_target_renamed(greenhouse: HomeAssistant) -> None:
+    er.async_get(greenhouse).async_update_entity(SPRINKLER, new_entity_id="switch.estufa_irrigador")
+    await greenhouse.async_block_till_done()
+    calls = capture(greenhouse, "call_service")
+    await start(greenhouse)
+    assert reached(calls, "switch.estufa_irrigador") == ["turn_on"]
     assert reached(calls) == ["turn_on"]
 
 
-async def test_renamed_it_still_runs_and_stays_renamed(pool: HomeAssistant) -> None:
-    er.async_get(pool).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
-    await pool.async_block_till_done()
-    calls = capture(pool, "call_service")
-    await start(pool, "script.limpar_piscina")
+async def test_renamed_it_still_runs_and_stays_renamed(greenhouse: HomeAssistant) -> None:
+    er.async_get(greenhouse).async_update_entity(CLEAN, new_entity_id="script.limpar_estufa")
+    await greenhouse.async_block_till_done()
+    calls = capture(greenhouse, "call_service")
+    await start(greenhouse, "script.limpar_estufa")
     assert reached(calls) == ["turn_on"]
-    await reload(pool, devices())
-    renamed = er.async_get(pool).async_get("script.limpar_piscina")
+    await reload(greenhouse, devices())
+    renamed = er.async_get(greenhouse).async_get("script.limpar_estufa")
     assert renamed is not None
-    assert renamed.unique_id == "pururu_pool_program_clean"
-    assert pool.states.get(CLEAN) is None
+    assert renamed.unique_id == "pururu_greenhouse_program_clean"
+    assert greenhouse.states.get(CLEAN) is None
 
 
 async def test_an_id_taken_by_another_integration_is_not_generated(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
-        "script", "template", "someone_else", suggested_object_id="pururu_pool_program_clean")
+        "script", "template", "someone_else", suggested_object_id="pururu_greenhouse_program_clean")
     assert await setup(ha, devices())
     assert generated_scripts(ha) == {}
     assert (f"{CLEAN} is already taken by the template integration; "
@@ -997,7 +997,7 @@ async def test_an_id_taken_by_another_integration_is_not_generated(
 async def test_a_script_of_ones_own_with_the_same_id_is_not_adopted(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
-        "script", "script", "pururu_pool_program_clean", suggested_object_id="mine")
+        "script", "script", "pururu_greenhouse_program_clean", suggested_object_id="mine")
     assert await setup(ha, devices())
     assert generated_scripts(ha) == {}
     assert (f"{CLEAN} is already taken by script.mine, a script with the same ID; "
@@ -1007,10 +1007,10 @@ async def test_a_script_of_ones_own_with_the_same_id_is_not_adopted(
 async def test_a_program_whose_target_is_not_created_is_not_generated(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
-        "switch", "template", "someone_else", suggested_object_id="pururu_pool_switch_pump")
+        "switch", "template", "someone_else", suggested_object_id="pururu_greenhouse_switch_sprinkler")
     assert await setup(ha, devices())
     assert generated_scripts(ha) == {}
-    assert f"{CLEAN} follows {PUMP}, which is not created; not generating it" in caplog.text
+    assert f"{CLEAN} follows {SPRINKLER}, which is not created; not generating it" in caplog.text
 
 
 async def test_the_old_button_is_removed(ha: HomeAssistant) -> None:
@@ -1018,16 +1018,16 @@ async def test_the_old_button_is_removed(ha: HomeAssistant) -> None:
     entry = MockConfigEntry(domain="pururu", source="import", data={})
     entry.add_to_hass(ha)
     er.async_get(ha).async_get_or_create(
-        "button", "pururu", "pururu_pool_program_clean", config_entry=entry,
-        suggested_object_id="pururu_pool_program_clean")
+        "button", "pururu", "pururu_greenhouse_program_clean", config_entry=entry,
+        suggested_object_id="pururu_greenhouse_program_clean")
     assert await setup(ha, devices())
-    assert er.async_get(ha).async_get("button.pururu_pool_program_clean") is None
+    assert er.async_get(ha).async_get("button.pururu_greenhouse_program_clean") is None
 ```
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_programs.py -n 0 -q`
-Expected: FAIL: most tests fail on `generated_scripts(...) == {}` or a missing `script.pururu_pool_program_clean` state (programs still builds buttons).
+Expected: FAIL: most tests fail on `generated_scripts(...) == {}` or a missing `script.pururu_greenhouse_program_clean` state (programs still builds buttons).
 
 - [ ] **Step 4: `const.py`**
 
@@ -1443,7 +1443,7 @@ AUTOMATION = Case(
     merge="list", issue="automations_not_included", data_key="automations",
     one="an automation", plural="automations", source="reactions", empty=[],
     device="lights", namespace="reaction", block="reactions",
-    feature={"lights": {"teto": {"entity": "light.demo_teto", "name": "Teto"}}},
+    feature={"lights": {"teto": {"entity": "light.dummy_teto", "name": "Teto"}}},
     item={"name": "Noite", "at": "22:00"},
     process="homeassistant.components.automation._async_process_config",
 )
@@ -1451,9 +1451,9 @@ SCRIPT = Case(
     domain="script", folder="pururu/scripts", file="pururu/scripts/programs.yaml",
     merge="named", issue="scripts_not_included", data_key="scripts",
     one="a script", plural="scripts", source="programs", empty={},
-    device="pool", namespace="program", block="programs",
-    feature={"switches": {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}},
-    item={"name": "Limpar", "sequence": [{"turn_on": "switch_pump"}]},
+    device="greenhouse", namespace="program", block="programs",
+    feature={"switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}},
+    item={"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}]},
     process="homeassistant.components.script._async_process_config",
 )
 
@@ -1835,25 +1835,25 @@ title: Programs
 description: Sequences of actions on a device's own entities, each one a Home Assistant script.
 ---
 
-`programs` gives a device things it knows how to do, such as a pool's cleaning: turn the pump on, wait two hours, turn it off. pururu writes each program as a Home Assistant **script**, and Home Assistant runs it. Its steps act on that device's own entities only.
+`programs` gives a device things it knows how to do, such as a greenhouse's cleaning: turn the sprinkler on, wait two hours, turn it off. pururu writes each program as a Home Assistant **script**, and Home Assistant runs it. Its steps act on that device's own entities only.
 
 ```yaml
 pururu:
   devices:
-    pool:
-      name: Piscina
+    greenhouse:
+      name: Estufa
       switches:
-        pump: {entity: switch.pool_pump, name: Bomba}
+        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
       programs:
         clean:
           name: Limpar
           sequence:
-            - turn_on: switch_pump
+            - turn_on: switch_sprinkler
             - delay: {hours: 2}
-            - turn_off: switch_pump
+            - turn_off: switch_sprinkler
 ```
 
-This writes `script.pururu_pool_program_clean`, shown as **Piscina Limpar**, to `pururu/scripts/programs.yaml`.
+This writes `script.pururu_greenhouse_program_clean`, shown as **Estufa Limpar**, to `pururu/scripts/programs.yaml`.
 
 ## The include
 
@@ -1867,7 +1867,7 @@ Until it's there, **Settings → Repairs** says so. pururu rewrites the file on 
 
 ## Settings
 
-`programs` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after the namespace `program`: `clean` → `script.pururu_pool_program_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
+`programs` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after the namespace `program`: `clean` → `script.pururu_greenhouse_program_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
 
 <Property name="name" type="string" required>
   The name shown after the device's name. It can't be empty, and it's the same in every language.
@@ -1890,9 +1890,9 @@ Each step has exactly one key:
 | `toggle: <entity key>` | Turns it on if it's off, off if it's on |
 | `delay: <time period>` | Waits, such as `{hours: 2}`, `"00:30:00"` or `90` (seconds) |
 
-An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_pump` for `switch.pururu_pool_switch_pump`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps.
+An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_sprinkler` for `switch.pururu_greenhouse_switch_sprinkler`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps.
 
-Anything else is a configuration error: an entity ID (`switch.pool_pump`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
+Anything else is a configuration error: an entity ID (`switch.greenhouse_sprinkler`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
 
 ## Only its own device
 
@@ -1907,8 +1907,8 @@ A program is a method of its device. It acts only on its device's entities, and 
 `script.pururu_<key>_program_<program key>`, in the device's area. Home Assistant keeps a script from YAML out of any device, so it isn't on the device's page.
 
 - **Starting it:** `script.turn_on`, or **Run** in the UI. It returns at once: an automation starting it doesn't wait for it to end.
-- **While it runs**, its state is `on`, and `script.turn_off` stops it. What it already did stays: if the pump was on, it stays on.
-- **Started while it runs**, it's ignored, and the log says `Piscina Limpar: Already running`.
+- **While it runs**, its state is `on`, and `script.turn_off` stops it. What it already did stays: if the sprinkler was on, it stays on.
+- **Started while it runs**, it's ignored, and the log says `Estufa Limpar: Already running`.
 - **Its traces**, in the script's menu, show each step it ran.
 - **A step that fails**, such as a real switch reporting an error, stops it, and the log and the trace say why. A switch that's `unavailable` doesn't stop it: that step does nothing and the program goes on.
 - **A reload** of pururu stops a running program only if you changed that program: Home Assistant then loads its new script.
@@ -1932,7 +1932,7 @@ Programs were buttons, `button.pururu_<key>_program_<program key>`, pressed with
 
 - `docs/index.mdx:66`: "A [program](/concepts/programs) starts only when one of them presses it;" → "A [program](/concepts/programs) is a script that starts only when one of them runs it;".
 - `docs/concepts/devices-and-features.mdx`: line 37, delete ", or, for [`programs`](/concepts/programs), runs steps on the device's own entities"; delete the `programs` rows at lines 47 and 82; after the table at line 47 add "A device can also have [`reactions`](/concepts/reactions) and [`programs`](/concepts/programs). They aren't features: they write Home Assistant automations and scripts, and a device still needs a feature."
-- `docs/concepts/entity-ids.mdx`: line 14, "`switch`, `light` or `button`" → "`switch` or `light`"; line 26, the `programs` row → `| [`programs`](/concepts/programs) | `program` | `script.pururu_pool_program_clean` (a Home Assistant script) |`; line 42, "an [alert](/features/alerts)'s or a [program](/concepts/programs)'s" → "or an [alert](/features/alerts)'s", and add after that paragraph "A [program](/concepts/programs)'s script is named `<device name> <name:>` too."
+- `docs/concepts/entity-ids.mdx`: line 14, "`switch`, `light` or `button`" → "`switch` or `light`"; line 26, the `programs` row → `| [`programs`](/concepts/programs) | `program` | `script.pururu_greenhouse_program_clean` (a Home Assistant script) |`; line 42, "an [alert](/features/alerts)'s or a [program](/concepts/programs)'s" → "or an [alert](/features/alerts)'s", and add after that paragraph "A [program](/concepts/programs)'s script is named `<device name> <name:>` too."
 - `docs/getting-started/install.mdx:63`: after the reactions sentence add "Using [programs](/concepts/programs)? Also add `script pururu: !include_dir_merge_named pururu/scripts`: pururu writes the programs' scripts to that folder."
 - `docs/reference/configuration.mdx:70`: add a line after it: `script pururu: !include_dir_merge_named pururu/scripts`; line 167: "[`programs`](/concepts/programs#settings): sequences of actions on the device's own entities, as Home Assistant scripts."
 - `docs/reference/troubleshooting.mdx`: line 106, "was pressed while it was still running, for example during its `delay`. The press is ignored" → "was started while it was still running, for example during its `delay`. The start is ignored". After the `## Reactions` section's last entry, add a `## Programs` section:
@@ -1953,7 +1953,7 @@ The scripts of pururu's programs are not loaded: add "script pururu: !include_di
 ### `script.… follows …, which is not created; not generating it`
 
 ```
-script.pururu_pool_program_clean follows switch.pururu_pool_switch_pump, which is not created; not generating it
+script.pururu_greenhouse_program_clean follows switch.pururu_greenhouse_switch_sprinkler, which is not created; not generating it
 ```
 
 An entity the program acts on isn't created, usually because its ID is taken. Fix that entity, then reload pururu.
@@ -1961,7 +1961,7 @@ An entity the program acts on isn't created, usually because its ID is taken. Fi
 ### `script.… acts on …, which is disabled; not generating it`
 
 ```
-script.pururu_pool_program_clean acts on switch.pururu_pool_switch_pump, which is disabled; not generating it
+script.pururu_greenhouse_program_clean acts on switch.pururu_greenhouse_switch_sprinkler, which is disabled; not generating it
 ```
 
 You disabled an entity the program acts on. Enable it again and the program comes back.
@@ -1969,7 +1969,7 @@ You disabled an entity the program acts on. Enable it again and the program come
 ### `script.… is already taken by …; not generating it`
 
 ```
-script.pururu_pool_program_clean is already taken by script.mine, a script with the same ID; not generating it
+script.pururu_greenhouse_program_clean is already taken by script.mine, a script with the same ID; not generating it
 ```
 
 A script of your own, or of another integration, has the program's ID. pururu never takes it over: rename or remove the other script, or give the program another key.
@@ -1985,7 +1985,7 @@ A script of your own, or of another integration, has the program's ID. pururu ne
 - Step 3 of the architecture list: platforms `(sensor.py, binary_sensor.py, switch.py, light.py)`.
 - Step 6: "Generate the reactions' automations and the programs' scripts (`generated.py`, a `Kind` per domain): `pururu/automations/reactions.yaml` and `pururu/scripts/programs.yaml`, whose folders `configuration.yaml` includes (`automation pururu: !include_dir_merge_list pururu/automations`, `script pururu: !include_dir_merge_named pururu/scripts`, as a missing folder loads as nothing while a missing file stops HA's configuration), entity IDs pre-registered (an ID the entry doesn't manage is the user's, never taken over), a script in its device's area, the domain reloaded when the file changed or HA doesn't run it (retried at the next reload), in an entry task, a Repairs issue while it isn't included (checked again on the domain's state changes, the warning logged once). A dropped item's registry entry goes once HA no longer runs it: a restored placeholder state doesn't count. `reactions` and `programs` are device keys, not `Feature`s; a program isn't generated while an entity it acts on is not created or disabled."
 - The `entry.data` bullet: `{"floors": [...], "areas": [...], "automations": [...], "scripts": [...]}`, the last two the IDs of the reactions' automations and the programs' scripts.
-- Features: delete the bullet "A feature can act on those entities (a program's `turn_on: switch_pump`)…"; in the `configured` bullet, `(switches, lights, alerts)`; add under Features: "A feature's `actions` (switches and lights: `turn_on`, `turn_off`, `toggle`) are what a program's step can do to its entities; `_programs_on_this_device` checks them."
+- Features: delete the bullet "A feature can act on those entities (a program's `turn_on: switch_sprinkler`)…"; in the `configured` bullet, `(switches, lights, alerts)`; add under Features: "A feature's `actions` (switches and lights: `turn_on`, `turn_off`, `toggle`) are what a program's step can do to its entities; `_programs_on_this_device` checks them."
 
 - [ ] **Step 6: Version**
 

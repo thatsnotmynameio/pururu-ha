@@ -9,10 +9,10 @@ A reaction at a time of day (`at`) or on the sun (`sun`) fires once. If it didn'
 ```yaml
 pururu:
   devices:
-    garden:
-      name: Jardim
+    orchard:
+      name: Pomar
       switches:
-        valve: {entity: switch.garden_valve, name: Válvula}
+        valve: {entity: switch.orchard_valve, name: Válvula}
       programs:
         water:
           name: Regar
@@ -23,7 +23,7 @@ pururu:
           at: "13:00"
           then: water
           retry: {times: 3, every: {hours: 1}}
-# → automation.pururu_garden_reaction_afternoon triggers at 13:00, and at 14:00, 15:00, 16:00
+# → automation.pururu_orchard_reaction_afternoon triggers at 13:00, and at 14:00, 15:00, 16:00
 #   only while water hasn't started since 13:00
 ```
 
@@ -68,9 +68,9 @@ With `retry`, each try is the occurrence's trigger again, later:
 Each try has `id: retry_<k>` and a trigger variable `since`, the window in seconds (`k × every` plus 60). One template condition lets the occurrence through and a try only without a run in its window:
 
 ```yaml
-- id: pururu_garden_reaction_afternoon
-  alias: Jardim Tarde
-  description: "pururu: garden, afternoon"
+- id: pururu_orchard_reaction_afternoon
+  alias: Pomar Tarde
+  description: "pururu: orchard, afternoon"
   triggers:
     - {trigger: time, at: "13:00:00"}
     - {trigger: time, at: "14:00:00", id: retry_1, variables: {since: 3660}}
@@ -78,10 +78,10 @@ Each try has `id: retry_<k>` and a trigger variable `since`, the window in secon
     - {trigger: time, at: "16:00:00", id: retry_3, variables: {since: 10860}}
   conditions:
     - condition: template
-      value_template: "{{ since is not defined or as_timestamp(state_attr('script.pururu_garden_program_water', 'last_triggered'), 0) < now().timestamp() - since }}"
+      value_template: "{{ since is not defined or as_timestamp(state_attr('script.pururu_orchard_program_water', 'last_triggered'), 0) < now().timestamp() - since }}"
   actions:
-    - if: [{condition: state, entity_id: script.pururu_garden_program_water, state: "off"}]
-      then: [{action: script.turn_on, target: {entity_id: script.pururu_garden_program_water}}]
+    - if: [{condition: state, entity_id: script.pururu_orchard_program_water, state: "off"}]
+      then: [{action: script.turn_on, target: {entity_id: script.pururu_orchard_program_water}}]
 ```
 
 - Timestamps, not `as_datetime`: HA gives `last_triggered` as a `datetime`, which `as_datetime` refuses; `as_timestamp(…, 0)` takes it, and a script or automation that never ran (`none`) is 0.

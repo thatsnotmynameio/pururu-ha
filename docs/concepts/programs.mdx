@@ -3,25 +3,25 @@ title: Programs
 description: Sequences of actions on a device's own entities, each one a Home Assistant script.
 ---
 
-`programs` gives a device things it knows how to do, such as a pool's cleaning: turn the pump on, wait two hours, turn it off. pururu writes each program as a Home Assistant **script**, and Home Assistant runs it. Its steps act on that device's own entities only.
+`programs` gives a device things it knows how to do, such as a greenhouse's cleaning: turn the sprinkler on, wait two hours, turn it off. pururu writes each program as a Home Assistant **script**, and Home Assistant runs it. Its steps act on that device's own entities only.
 
 ```yaml
 pururu:
   devices:
-    pool:
-      name: Piscina
+    greenhouse:
+      name: Estufa
       switches:
-        pump: {entity: switch.pool_pump, name: Bomba}
+        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
       programs:
         clean:
           name: Limpar
           sequence:
-            - turn_on: switch_pump
+            - turn_on: switch_sprinkler
             - delay: {hours: 2}
-            - turn_off: switch_pump
+            - turn_off: switch_sprinkler
 ```
 
-This writes `script.pururu_pool_program_clean`, shown as **Piscina Limpar**, to `pururu/scripts/programs.yaml`.
+This writes `script.pururu_greenhouse_program_clean`, shown as **Estufa Limpar**, to `pururu/scripts/programs.yaml`.
 
 ## The include
 
@@ -35,7 +35,7 @@ Until it's there, **Settings → Repairs** says so. pururu rewrites the file on 
 
 ## Settings
 
-`programs` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after the namespace `program`: `clean` → `script.pururu_pool_program_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
+`programs` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after the namespace `program`: `clean` → `script.pururu_greenhouse_program_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
 
 <Property name="name" type="string" required>
   The name shown after the device's name. It can't be empty, and it's the same in every language.
@@ -64,9 +64,9 @@ Each step has exactly one key:
 | `toggle: <entity key>` | Turns it on if it's off, off if it's on |
 | `delay: <time period>` | Waits, such as `{hours: 2}`, `"00:30:00"` or `90` (seconds) |
 
-An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_pump` for `switch.pururu_pool_switch_pump`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps.
+An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_sprinkler` for `switch.pururu_greenhouse_switch_sprinkler`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps.
 
-Anything else is a configuration error: an entity ID (`switch.pool_pump`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
+Anything else is a configuration error: an entity ID (`switch.greenhouse_sprinkler`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
 
 ## Only its own device
 
@@ -81,8 +81,8 @@ A program is a method of its device. It acts only on its device's entities, and 
 `script.pururu_<key>_program_<program key>`, in the device's area. Home Assistant keeps a script from YAML out of any device, so it isn't on the device's page.
 
 - **Starting it:** `script.turn_on`, or **Run** in the UI. It returns at once: an automation starting it doesn't wait for it to end.
-- **While it runs**, its state is `on`, and `script.turn_off` stops it. What it already did stays: if the pump was on, it stays on.
-- **Started while it runs**, it's ignored, and the log says `Piscina Limpar: Already running`. That `script.turn_on` doesn't return at once: an automation calling it stays on that action until the running program's next step or its end — in this example, up to its two-hour `delay`. This is Home Assistant's behaviour for any single-mode script, not something pururu changes.
+- **While it runs**, its state is `on`, and `script.turn_off` stops it. What it already did stays: if the sprinkler was on, it stays on.
+- **Started while it runs**, it's ignored, and the log says `Estufa Limpar: Already running`. That `script.turn_on` doesn't return at once: an automation calling it stays on that action until the running program's next step or its end — in this example, up to its two-hour `delay`. This is Home Assistant's behaviour for any single-mode script, not something pururu changes.
 - **Its traces**, in the script's menu, show each step it ran.
 - **A step that fails**, such as a real switch reporting an error, stops it, and the log and the trace say why. A switch that's `unavailable` doesn't stop it: that step does nothing and the program goes on.
 - **A reload** of pururu stops a running program only if you changed that program: Home Assistant then loads its new script.
@@ -105,7 +105,7 @@ Each run of a program is a **cycle**, as an [appliance](/features/appliance)'s: 
 | `sensor.pururu_<key>_program_<program>_runtime_total` | h | Hours running, all time |
 | `sensor.pururu_<key>_program_<program>_runtime_<period>`, `…_cycles_<period>` | h, cycles | This period's [statistics](/concepts/statistics), one per `statistics` entry |
 
-They're named after the program: **Piscina Limpar cycles**.
+They're named after the program: **Estufa Limpar cycles**.
 
 - **Every run counts**, whoever started it: a [reaction](/concepts/reactions#starting-a-program), you, a voice assistant. What's measured is the script.
 - **A pururu reload while it runs** counts the run once, with its real start.

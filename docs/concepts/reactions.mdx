@@ -8,23 +8,23 @@ A device **reacts** to what happens around it: one of its own entities changing,
 ```yaml title="configuration.yaml"
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
     laundry_lights:
-      name: Luzes da lavanderia
+      name: Luzes da despensa
       lights:
-        teto: {entity: light.lavanderia_teto, name: Teto}
+        teto: {entity: light.despensa_teto, name: Teto}
       programs:
         blink:
           name: Piscar
           sequence: [{turn_on: light_teto}, {delay: 2}, {turn_off: light_teto}]
       reactions:
         teto_on:     {name: Teto acendeu, when: light_teto, to: "on"}
-        washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off", then: blink}
-        door:        {name: Porta abriu, entity: binary_sensor.porta_lavanderia, to: "on", for: {minutes: 5}}
+        washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off", then: blink}
+        door:        {name: Porta abriu, entity: binary_sensor.porta_despensa, to: "on", for: {minutes: 5}}
         night:       {name: Noite, at: "22:00"}
         dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
 
@@ -32,7 +32,7 @@ automation pururu: !include_dir_merge_list pururu/automations
 script pururu: !include_dir_merge_named pururu/scripts   # the programs a reaction starts
 ```
 
-This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da lavanderia Lavadora terminou**, which blinks the ceiling light when the washer finishes, and one automation for each other reaction.
+This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da despensa Lavadora terminou**, which blinks the ceiling light when the washer finishes, and one automation for each other reaction.
 
 ## The include
 
@@ -69,13 +69,13 @@ A reaction listens to **exactly one** of these sources.
 ### An entity of another device
 
 <Property name="device" type="device key">
-  The key of another device under `devices:`, with `when` naming one of **its** entities: `device: laundry_washer`, `when: appliance_running`.
+  The key of another device under `devices:`, with `when` naming one of **its** entities: `device: clothes_washer`, `when: appliance_running`.
 </Property>
 
 ### Any entity
 
 <Property name="entity" type="entity ID">
-  Any entity in Home Assistant: `binary_sensor.porta_lavanderia`.
+  Any entity in Home Assistant: `binary_sensor.porta_despensa`.
 </Property>
 
 ### What an entity must do
@@ -83,7 +83,7 @@ A reaction listens to **exactly one** of these sources.
 For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 
 <Property name="to" type="state" optional>
-  The state it changes to: `"on"`, `"off"`, `spinning`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: 1` matches a state of `1`, not `1.0`.
+  The state it changes to: `"on"`, `"off"`, `wringing`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: 1` matches a state of `1`, not `1.0`.
 </Property>
 
 ---
@@ -166,7 +166,7 @@ A reaction with `then` starts its program's script, but only if it isn't running
 
 ```yaml title="pururu/automations/automations.yaml"
 - id: pururu_laundry_lights_reaction_washer_done
-  alias: Luzes da lavanderia Lavadora terminou
+  alias: Luzes da despensa Lavadora terminou
   triggers: [...]
   actions:
     - if:
@@ -188,7 +188,7 @@ A reaction with `then` starts its program's script, but only if it isn't running
 | You disabled the program's script | The reaction still fires, and the `if` isn't taken |
 | You renamed the program's script | Followed: pururu reloads and rewrites the automation with its new ID |
 
-A reaction always runs its **own** device's program, even when it listens to another device (`device: laundry_washer`). Programs run one at a time for now: a program already running isn't started again, nor queued.
+A reaction always runs its **own** device's program, even when it listens to another device (`device: clothes_washer`). Programs run one at a time for now: a program already running isn't started again, nor queued.
 
 ## Trying again
 
@@ -209,8 +209,8 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
 - **Without `then`**, it means the automation fired, including a run by hand.
 
 ```yaml title="pururu/automations/automations.yaml"
-- id: pururu_garden_reaction_afternoon
-  alias: Jardim Tarde
+- id: pururu_orchard_reaction_afternoon
+  alias: Pomar Tarde
   triggers:
     - {trigger: time, at: "13:00:00"}
     - {trigger: time, at: "14:00:00", id: retry_1, variables: {since: 3660}}
@@ -218,7 +218,7 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
     - {trigger: time, at: "16:00:00", id: retry_3, variables: {since: 10860}}
   conditions:
     - condition: template
-      value_template: "{{ since is not defined or as_timestamp(state_attr('script.pururu_garden_program_water', 'last_triggered'), 0) < now().timestamp() - since }}"
+      value_template: "{{ since is not defined or as_timestamp(state_attr('script.pururu_orchard_program_water', 'last_triggered'), 0) < now().timestamp() - since }}"
   actions: [...]
 ```
 
@@ -253,7 +253,7 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 
 ## Statistics
 
-Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reaction_<reaction>_triggered_total`, named **Luzes da lavanderia Lavadora terminou triggers**. It survives restarts and is `total_increasing`. With `statistics.triggered`, one [statistics](/concepts/statistics) sensor per period: `…_triggered_month`.
+Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reaction_<reaction>_triggered_total`, named **Luzes da despensa Lavadora terminou triggers**. It survives restarts and is `total_increasing`. With `statistics.triggered`, one [statistics](/concepts/statistics) sensor per period: `…_triggered_month`.
 
 - **Every trigger counts**, including one whose program was already running and so didn't start.
 - **A try skipped** because the reaction already ran isn't a trigger: its condition failed. A try that runs counts.

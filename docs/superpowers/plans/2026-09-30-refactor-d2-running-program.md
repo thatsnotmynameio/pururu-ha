@@ -18,7 +18,7 @@ D2 stops before D3: no `programs: {detected, executable}`, no `Programs` role, n
 - **Aspects at places** (`core/feature.py`): an aspect no longer sits in "the block or each item". It sits at **places**: a `Place` is a path from the block (`()`, `("running_program",)`, `("running_program", "phases", EACH)`), with the schema, keys, names, example, item and check the aspect has there. `Aspect.places(builder, name)` replaces `schema`, `keys`, `named`, `example`, `placed` and `check`. `walk(block, path)` finds the containers a path names. `catalogue.mount`, `_split`, `_put`, `_checked` and `keys` walk paths. The alerts and notifications aspects sit at `()`, as today.
 - **`Counters` becomes a tuple of `Counted` places** (`core/roles.py`): each place has its counters (`needs`), its path, the item a container there is (a program, a phase) and, for the phase `other`, its own translation prefix. The appliance's are its block (`idle_energy`), `running_program` (`runtime`, `cycles`: the appliance's totals, IDs unchanged), each phase and `other` (`runtime`, `cycles`, `energy`). `program.counted(at)` gives a detected program's three places, so D3 reuses it for `programs: detected:`.
 - **What goes:** `features/modes/`, `features/phases.py`, `features/appliance/running.py`, `Provides`, `Requires`, `checks.capabilities_provided`, `build._inputs`' capability branch, and the translations and icons of `mode_*`. Door and window lose `Provides("cycle", "open")`: nothing takes their cycle any more (a door's opening as a detected program is "Not in 0.2.0").
-- **A new check, `checks.keys_distinct`:** two entities of one device with one unique ID are refused. A phase's binary sensor is `phase_<key>` alone, so phase `gelar_cycles_today`'s would be phase `gelar`'s meter `phase_gelar_cycles_today`.
+- **A new check, `checks.keys_distinct`:** two entities of one device with one unique ID are refused. A phase's binary sensor is `phase_<key>` alone, so phase `resfriar_cycles_today`'s would be phase `resfriar`'s meter `phase_resfriar_cycles_today`.
 
 **Tech Stack:** Python 3.14, Home Assistant 2026.9.3, voluptuous, pytest (pytest-homeassistant-custom-component), ruff, mypy strict, uv, docs.page (pnpm).
 
@@ -68,7 +68,7 @@ The five places most likely to bite, each with the tests that pin it:
 1. **The carrier replacing `Running` keeps every behaviour of the appliance's `running`.** Same IDs, the `cycle_start`/`cycle_end` attributes the ready-made `long_cycle` alert reads, `idle_energy` split at the same instants, the off_delay dated from when the power went down, a plug without a value holding the state. What changes: the restored extra data is the detector's snapshot, not a `CycleStart`, and the carrier follows the power only once its entry's setup is over (D1 ruling 15). Pinned: every test of `tests/test_appliance.py` and `tests/test_presets.py`, ported to `running_program` with their assertions unchanged (Task 1), and `test_an_old_running_restore_is_no_cycle` (Task 1).
 2. **Mounting at a path.** `statistics:` is taken out of the block, of `running_program`, of each phase and of `other` before the builders' schemas see them, validated per place, put back at the same path, and checked against the builder's whole block (`energy`). A block, a program or a phase that isn't a map is refused cleanly; a phase keyed `statistics` is a phase. Pinned (Task 3): `tests/test_catalogue.py` (new), the contract test's place rules, `test_a_phases_energy_needs_the_appliances_energy`.
 3. **IDs.** The appliance's own entities and meters keep their unique IDs, and a user's customisations of them survive (not removed as stale). Only the listed modes and phases IDs go. Pinned: `tests/test_ids.py` with the exact diff checked by a script (Tasks 2 and 3), `test_the_appliances_meters_keep_their_ids` (Task 3).
-4. **What refers to a phase.** An alert on `appliance_phase_current`, on `appliance_phase_gelar` or on a phase's total; a reaction on a phase; a reference to a phase that isn't configured, or to `appliance_phase_current` on an appliance without phases, is refused at the configuration. Pinned (Task 2): `test_an_alert_can_watch_the_current_phase`, `test_an_alert_can_watch_a_phases_total`, `test_a_reaction_can_watch_a_phase`, `test_a_reference_to_a_phase_not_configured_is_refused`, `test_no_phase_keys_without_phases`, `test_a_derived_key_is_in_the_index`; a phase key that would be two entities (Task 3): `test_a_check_says_where[two entities of one device]`.
+4. **What refers to a phase.** An alert on `appliance_phase_current`, on `appliance_phase_resfriar` or on a phase's total; a reaction on a phase; a reference to a phase that isn't configured, or to `appliance_phase_current` on an appliance without phases, is refused at the configuration. Pinned (Task 2): `test_an_alert_can_watch_the_current_phase`, `test_an_alert_can_watch_a_phases_total`, `test_a_reaction_can_watch_a_phase`, `test_a_reference_to_a_phase_not_configured_is_refused`, `test_no_phase_keys_without_phases`, `test_a_derived_key_is_in_the_index`; a phase key that would be two entities (Task 3): `test_a_check_says_where[two entities of one device]`.
 5. **Names.** Phase meters carry the phase's name (`{item}`); `other`'s are named by their own translations; the appliance's meters keep their names. A `mode_*` translation left over, or a meter without a name or an icon, fails the contract. Pinned: `test_statistics.py`'s name tests in en and pt-BR (Task 3), the contract's `test_an_aspects_keys_are_named_once` and `test_every_translated_entity_key_is_created`.
 
 ## Rulings
@@ -96,16 +96,16 @@ Where the spec is silent, decided here:
    - each phase and `other`: `runtime`, `cycles`, `energy` (needs the appliance's `energy`), the totals D1 built (`COUNTERS`).
 10. **`other` takes `statistics`** (spec item 4: "the full set of phase entities and statistics"), in `running_program.other.statistics`; D1's `other:` took only delays. Its meters are named by their own translations, `phase_other_<counter>_<period>` (12 keys, en and pt-BR, with icons), as D1 ruling 6 names other's entities; `Counted(named="phase_other")` says so. To ask for them, `other:` is written.
 11. **The appliance's example has one phase and `other: {}`** (Tasks 2 and 3), so the contract test reaches every place and every derived key. `other: {}` is valid and changes nothing but gives `other`'s place a container.
-12. **A new check, `checks.keys_distinct`:** two entities of one device may not share a unique ID. The index is a map by qualified key and would silently keep one of them. Only phases can meet so today: a phase keyed `gelar_cycles_today` has the binary sensor `phase_gelar_cycles_today`, phase `gelar`'s meter's unique ID (on another platform). D1's `_apart` can't see meters (L1 doesn't know the periods). Refused with `device <key>: <unique ID> would be two entities`.
+12. **A new check, `checks.keys_distinct`:** two entities of one device may not share a unique ID. The index is a map by qualified key and would silently keep one of them. Only phases can meet so today: a phase keyed `resfriar_cycles_today` has the binary sensor `phase_resfriar_cycles_today`, phase `resfriar`'s meter's unique ID (on another platform). D1's `_apart` can't see meters (L1 doesn't know the periods). Refused with `device <key>: <unique ID> would be two entities`.
 13. **D1's test-only builder retires in Task 1.** `tests/test_program_entities.py` runs on the real appliance and keeps its name: its tests are the detector's entities, whoever builds them. D1's `snapshot()` helper moves to `tests/helpers.py`, which every restart of `running` now needs.
 14. **The modes' and phases' tests:** each scenario D1 replayed in `tests/test_program.py` (pure) or covered in `tests/test_program_entities.py` goes with its file; the rest is ported to the appliance's phases (Task 2 lists each test and where it went).
 15. **Door and window drop `Provides("cycle", "open")`**: nothing takes their cycle any more. `test_opening.py`'s `test_the_openings_are_a_cycle_for_phases` goes (a door's opening as a detected program is "Not in 0.2.0"). The contract's cycle-source rule, which found carriers through `Provides`, becomes: what every last-cycle entity follows is a `CycleSource`.
 16. **The Guide's concept page is `docs/concepts/detected-programs.mdx`** ("Detected programs and phases"), in the sidebar before "Programs". `concepts/programs.mdx` stays the executable programs' page until D3, which merges both into one programs page (spec PR D's docs).
-17. **Events and the dashboard.** The events' `event_name` is `<device>.<qualified key>`: the phases' are `water_filter.appliance_phase_current`, `water_filter.appliance_phase_gelar_cycles_total`…, and the old `water_filter.mode_*` and `laundry_washer.phase_current` go with their IDs (D20). The dashboard lists floors, areas, devices and generated items, not entities: nothing changes. The listener's rename rule covers every entity of the entry, the phases' too: a renamed phase binary sensor reloads the entry, and its runtime total follows the new ID (`test_a_renamed_phase_is_followed`, Task 2).
+17. **Events and the dashboard.** The events' `event_name` is `<device>.<qualified key>`: the phases' are `water_station.appliance_phase_current`, `water_station.appliance_phase_resfriar_cycles_total`…, and the old `water_station.mode_*` and `clothes_washer.phase_current` go with their IDs (D20). The dashboard lists floors, areas, devices and generated items, not entities: nothing changes. The listener's rename rule covers every entity of the entry, the phases' too: a renamed phase binary sensor reloads the entry, and its runtime total follows the new ID (`test_a_renamed_phase_is_followed`, Task 2).
 18. **Translations:** `mode_*` (names, states, icons) go; `phase_current` stays (D1 owns it, with its states). No `phases` feature translation is left: `phase_current` is the detector's key since D1.
 19. **`test_init.py`'s made-up `echo` goes with `Requires`** (Task 2). Its tests pin the mechanism D2 deletes: a capability reaching its feature, a renamed capability, what follows a provider not created, and two refusal params (`from a missing feature`, `from one that doesn't provide it`). The made-up `watch` (`Refers`) already pins the same three behaviours for references: `test_a_feature_gets_the_entity_key_it_refers_to`, `test_a_renamed_entity_reaches_what_refers_to_it`, `test_what_refers_to_an_entity_not_created_is_not_created_either`. `test_reload_that_drops_a_feature_removes_its_entities` drops `watch` instead of `echo`; `gauge` loses `Provides`.
 20. **Two contract rules replace the capability rules** (Task 2, `tests/test_features.py`):
-    - `test_what_a_last_cycle_follows_is_a_cycle_source` (ruling 15's rule): for each builder with `Counters`, built from its mounted example, each `LastCycleValue`'s source is a `CycleSource`. It reaches the appliance's `running`, `phase_heating` and `phase_other` (the example's phase and other, ruling 11), a door's and a window's `open`, and a program's `<key>_cycles_total` (`Runs`). It replaces `test_capabilities_line_up`, `test_a_capability_is_carried_by_a_cycle_source` and `test_the_other_cycle_sources_are_pinned_too` (whose `Runs` half it covers).
+    - `test_what_a_last_cycle_follows_is_a_cycle_source` (ruling 15's rule): for each builder with `Counters`, built from its mounted example, each `LastCycleValue`'s source is a `CycleSource`. It reaches the appliance's `running`, `phase_warming` and `phase_other` (the example's phase and other, ruling 11), a door's and a window's `open`, and a program's `<key>_cycles_total` (`Runs`). It replaces `test_capabilities_line_up`, `test_a_capability_is_carried_by_a_cycle_source` and `test_the_other_cycle_sources_are_pinned_too` (whose `Runs` half it covers).
     - `test_a_derived_key_is_in_the_index`: a `Derived` builder's example derives keys, none of them in `entity_keys`, all listed by `catalogue.keys`, and its build creates only listed keys. The derived keys are named by the detector (`NAMED`, checked by `test_the_detectors_keys_are_named`), not in the builder's namespace, so `named_keys` leaves them out.
 21. **The manual update step goes in the PR text** (the owner, 2026-09-30), and PR C's "Updating to 0.2.1" guide carries it next to B4's; D2 adds no page for it. Its text, final once Task 3 lands (Task 1's first version has steps 1, 2's first sentence and 6):
     1. Before updating, wait until every appliance is stopped: a cycle running during the update is lost, its phases' too (ruling 5).
@@ -117,7 +117,7 @@ Where the spec is silent, decided here:
 22. **`EACH` is the string `"*"`, and a `Path` a `tuple[str, ...]`** (Task 3). No slug is `*`, so `Counted.at` (L0 `roles.py`, which imports `feature.py` only for typing) and `Place.path` share one plain type. `walk` yields each container with its concrete path, a key made text as the builder's schema makes it (`cv.slug`: YAML's `1` is `"1"`), so a value is put back where the validated block has it.
 23. **`program_of` builds other's band from its delays alone** (Task 3). The block `build` gets is the mounted one, with `statistics` at each place; D1's `Band(**other)` raised `TypeError` on it. The prototype found it through the dashboard and places tests, which set up the appliance's example (`other: {}`, ruling 11). A phase's band was already read field by field (`_band`).
 24. **The contract's `{item}` rule is per place** (Task 3): a place's names carry `{item}` all or none, and none without `Place.item`. Other has an item (its keys are `phase_other_*`, as D1's `_cycle_entities` makes them) but is named on its own (ruling 10), so "every key of an item's place has `{item}`" would be false; before D2 the rule was per `Items` builder.
-25. **A place's check gets the builder's whole block and its container** (`Place.check(block, container)`, ruling 8): a phase's `energy` counter needs the appliance's `energy`. The refusal's path is the container's (`running_program > phases > gelar`), its text as today (`statistics.energy needs energy`). The alerts and notifications aspects have no check, as today.
+25. **A place's check gets the builder's whole block and its container** (`Place.check(block, container)`, ruling 8): a phase's `energy` counter needs the appliance's `energy`. The refusal's path is the container's (`running_program > phases > resfriar`), its text as today (`statistics.energy needs energy`). The alerts and notifications aspects have no check, as today.
 26. **The appliance's counters move, and the old places refuse them** (Task 3): `runtime`/`cycles` in the appliance's `statistics:` are unknown counters now, `idle_energy` in `running_program`'s too (`test_the_appliances_counters_sit_where_they_count`). The tests asking for them move them; `test_appliance.py`'s and `test_statistics.py`'s `repeated period`/`unknown period` move too, lest they pass as unknown counters.
 27. **What `Counters` replaces** (Task 3): `catalogue._per_item` goes for aspects (their keys come per container of each place; `Items`' own keys stay in `keys()`); D1's `program.COUNTERS` becomes `PHASE_COUNTERS` (the needs) and `counted(at)`; the opening and the programs keep a module-level `COUNTED`, which their `ENTITY_KEYS` read. `Counted.item` for programs and reactions is their `Items` item, so a program's meter keeps its key and name.
 
@@ -301,7 +301,7 @@ def snapshot(since: str | None, *, since_energy: float | None = None,
       return entities
   ```
 
-  `APPLIANCE`: `example` becomes `{"power": "sensor.demo_plug_power", RUNNING_PROGRAM: {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}`; `Provides("cycle", CARRIER)`; the other roles as today. Delete `features/appliance/running.py`: nothing imports it.
+  `APPLIANCE`: `example` becomes `{"power": "sensor.dummy_plug_power", RUNNING_PROGRAM: {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}`; `Provides("cycle", CARRIER)`; the other roles as today. Delete `features/appliance/running.py`: nothing imports it.
 
   The carrier comes first in `program.build`'s list, and the platforms keep `build`'s order, so it restores the detector before any phase's binary sensor is added (D1 ruling 15).
 
@@ -408,7 +408,7 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
   ```python
   # --- what refers to a phase ------------------------------------------------------------
 
-  HOT = "binary_sensor.pururu_demo_filter_alert_hot"
+  HOT = "binary_sensor.pururu_dummy_station_alert_hot"
 
 
   def with_alert(**alert: Any) -> dict[str, Any]:
@@ -450,7 +450,7 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
   async def test_no_phase_keys_without_phases(
           ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
       """Without phases the appliance creates no phase entity, so none can be named."""
-      devices = {KEY: {"name": "Demo filter",
+      devices = {KEY: {"name": "Dummy station",
                        "appliance": {"power": POWER, "running_program": {"above": 4}},
                        "alerts": {"hot": {"name": "Esquentando", "when": "appliance_phase_current",
                                           "is": "quente"}}}}
@@ -461,15 +461,15 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
 
   async def test_a_renamed_phase_is_followed(purifier: HomeAssistant, freezer: Any) -> None:
       """Renamed in the UI: the entry reloads, and the phase's runtime follows the new ID."""
-      renamed = "binary_sensor.demo_filter_gelar"
-      er.async_get(purifier).async_update_entity(GELAR, new_entity_id=renamed)
+      renamed = "binary_sensor.dummy_station_resfriar"
+      er.async_get(purifier).async_update_entity(RESFRIAR, new_entity_id=renamed)
       await purifier.async_block_till_done()
       await cool(purifier, freezer)
       assert state(purifier, renamed) == "on"
       await tick(purifier, freezer, 600)
       await watts(purifier, IDLE_W)
       await tick(purifier, freezer, 35)
-      assert float(state(purifier, sensor("phase_gelar_runtime_total"))) == pytest.approx(
+      assert float(state(purifier, sensor("phase_resfriar_runtime_total"))) == pytest.approx(
           605 / 3600, abs=0.0005)
   ```
 
@@ -497,7 +497,7 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
                   assert isinstance(built[device.qualified(source)], cycle_source), (name, entity.key)
                   following.setdefault(name, set()).add(source)
       assert set(following) == {"appliance", "door", "window", "programs"}
-      assert following["appliance"] == {"running", "phase_heating", "phase_other"}
+      assert following["appliance"] == {"running", "phase_warming", "phase_other"}
 
 
   def test_a_derived_key_is_in_the_index(ha: HomeAssistant, features: dict[str, Any]) -> None:
@@ -579,7 +579,7 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
               "above": 4,
               "on_delay": {"minutes": 1},
               "off_delay": {"minutes": 2},
-              "phases": {"heating": {"name": "Heating", "above": 1000}},
+              "phases": {"warming": {"name": "Warming", "above": 1000}},
               "other": {},
           },
   ```
@@ -660,7 +660,7 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
   | `test_reload_while_a_band_is_pending` | ported: `test_a_reload_while_a_phase_is_pending` |
   | `test_follows_a_renamed_cycle` | D1 `test_a_carrier_renamed_mid_phase_follows_the_reading` |
   | `test_no_phase_when_its_cycle_is_not_created` | D1's test, renamed below and given its appliance asserts |
-  | `test_names_its_states_in_portuguese` | D1 `test_names` (pt-BR "Demo filter Fase") |
+  | `test_names_its_states_in_portuguese` | D1 `test_names` (pt-BR "Dummy station Fase") |
 
   The ports, in `tests/test_program_entities.py`: before `# --- restarts and reloads ---`,
 
@@ -674,8 +674,8 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
           await kwh(purifier, end)
           await watts(purifier, IDLE_W)
           await tick(purifier, freezer, 125)
-      assert state(purifier, sensor("phase_gelar_cycles_total")) == "3"
-      assert float(state(purifier, sensor("phase_gelar_energy_total"))) == pytest.approx(0.08)
+      assert state(purifier, sensor("phase_resfriar_cycles_total")) == "3"
+      assert float(state(purifier, sensor("phase_resfriar_energy_total"))) == pytest.approx(0.08)
 
 
   async def test_short_phases_add_up_their_energy(purifier: HomeAssistant, freezer: Any) -> None:
@@ -686,12 +686,12 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
           await kwh(purifier, end)
           await watts(purifier, IDLE_W)
           await tick(purifier, freezer, 125)
-      assert float(state(purifier, sensor("phase_gelar_energy_total"))) == pytest.approx(0.0008, abs=1e-6)
-      assert state(purifier, sensor("phase_gelar_last_cycle_energy")) == "0.0"
+      assert float(state(purifier, sensor("phase_resfriar_energy_total"))) == pytest.approx(0.0008, abs=1e-6)
+      assert state(purifier, sensor("phase_resfriar_last_cycle_energy")) == "0.0"
 
 
   async def test_each_phases_runtime_counts_from_its_start(purifier: HomeAssistant, freezer: Any) -> None:
-      """gelar from 30 s to 635 s; quente, armed at 645 s after the dip, starts when gelar ends (665 s), dated 645 s, until 965 s."""
+      """resfriar from 30 s to 635 s; quente, armed at 645 s after the dip, starts when resfriar ends (665 s), dated 645 s, until 965 s."""
       await cool(purifier, freezer)
       await tick(purifier, freezer, 600)
       await watts(purifier, 1000)
@@ -701,7 +701,7 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
       await watts(purifier, IDLE_W)
       await tick(purifier, freezer, 30)
       await tick(purifier, freezer, 95)
-      assert float(state(purifier, sensor("phase_gelar_runtime_total"))) == pytest.approx(605 / 3600, abs=0.0005)
+      assert float(state(purifier, sensor("phase_resfriar_runtime_total"))) == pytest.approx(605 / 3600, abs=0.0005)
       assert float(state(purifier, sensor("phase_quente_runtime_total"))) == pytest.approx(320 / 3600, abs=0.0005)
       assert float(state(purifier, sensor("phase_other_runtime_total"))) == 0
   ```
@@ -712,13 +712,13 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
   async def test_a_phases_totals_restore(ha: HomeAssistant) -> None:
       await restart(
           ha, DEVICES,
-          (State(sensor("phase_gelar_cycles_total"), "7"), {"native_value": 7, "native_unit_of_measurement": None}),
-          (State(sensor("phase_gelar_energy_total"), "1.2"), {"native_value": 1.2, "native_unit_of_measurement": "kWh"}),
-          (State(sensor("phase_gelar_runtime_total"), "3.5"), {"native_value": 3.5, "native_unit_of_measurement": "h"}),
+          (State(sensor("phase_resfriar_cycles_total"), "7"), {"native_value": 7, "native_unit_of_measurement": None}),
+          (State(sensor("phase_resfriar_energy_total"), "1.2"), {"native_value": 1.2, "native_unit_of_measurement": "kWh"}),
+          (State(sensor("phase_resfriar_runtime_total"), "3.5"), {"native_value": 3.5, "native_unit_of_measurement": "h"}),
       )
-      assert state(ha, sensor("phase_gelar_cycles_total")) == "7"
-      assert float(state(ha, sensor("phase_gelar_energy_total"))) == 1.2
-      assert float(state(ha, sensor("phase_gelar_runtime_total"))) == 3.5
+      assert state(ha, sensor("phase_resfriar_cycles_total")) == "7"
+      assert float(state(ha, sensor("phase_resfriar_energy_total"))) == 1.2
+      assert float(state(ha, sensor("phase_resfriar_runtime_total"))) == 3.5
 
 
   async def test_a_reload_while_a_phase_is_pending(
@@ -732,7 +732,7 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
       assert [r.getMessage() for r in caplog.records if r.levelname == "ERROR"] == []
       assert state(purifier, CURRENT) == "idle"
       await tick(purifier, freezer, 25)
-      assert state(purifier, CURRENT) == "gelar"
+      assert state(purifier, CURRENT) == "resfriar"
   ```
 
   D1's `test_nothing_of_the_phases_when_the_carrier_is_not_created` becomes `test_nothing_that_follows_the_carrier_when_it_is_not_created`, docstring "The carrier's ID belongs to another integration: no phase entity, nor the appliance's cycle entities, is created; its mirrors are.", and gains (from `test_phases.py`'s)
@@ -748,31 +748,31 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
   - `tests/test_cycle.py`: delete `MODE_KEY`, `MODE_APPLIANCE`, `MODES`, `MODE_DEVICES`, `CURRENT` and `test_a_cycle_is_sent_after_its_state_a_mode_ending_into_the_next` (D1's `test_a_phases_cycle_is_sent_after_its_state_its_end_last` and `test_a_handover_never_shows_idle`); the module docstring's sources become "(the detector's Carrier and PhaseRunning, Open, Runs)".
   - `tests/test_opening.py`: delete `test_the_openings_are_a_cycle_for_phases` (ruling 15; both params).
   - `tests/test_statistics.py`: delete the `# --- modes ---` section (`MODE_*`, `mode_sensor`, `test_modes_meters`), `MODES_MINIMAL`, `test_mode_energy_without_energy_is_refused` and `test_no_period_for_energy_without_energy_passes`. Task 3 brings each back for phases.
-  - `tests/test_init.py` (ruling 19): the module docstring ("Three made-up features stand in for real ones: `gauge` creates a sensor and a binary sensor, and can create a `spare` sensor it never builds; `tags` …; `watch` …"; its first line "the configuration, devices, references, taken IDs, reloads and the entry"); `ECHO`, `Echo`, the `echo` feature and `gauge`'s `roles=(roles.Provides(...),)` go; the fixture's docstring "Put `gauge`, `tags` and `watch` in FEATURES for the test."; delete `test_a_capability_reaches_the_feature_that_requires_it`, `test_what_follows_an_entity_not_created_is_not_created_either`, `test_a_renamed_capability_reaches_the_feature_that_requires_it` and `test_invalid_device_is_refused`'s two `echo` params; `test_reload_that_drops_a_feature_removes_its_entities` sets up `{**WIDGET, "watch": {"of": "gauge_level"}}` and asserts `SEEN` is gone.
+  - `tests/test_init.py` (ruling 19): the module docstring ("Three made-up features stand in for real ones: `gauge` creates a sensor and a binary sensor, and can create a `spare` sensor it never builds; `tags` …; `watch` …"; its first line "the configuration, devices, references, taken IDs, reloads and the entry"); `ECHO`, `Echo`, the `echo` feature and `gauge`'s `roles=(roles.Provides(...),)` go; the fixture's docstring "Put `gauge`, `tags` and `watch` in FEATURES for the test."; delete `test_a_capability_reaches_the_feature_that_requires_it`, `test_what_follows_an_entity_not_created_is_not_created_either`, `test_a_renamed_capability_reaches_the_feature_that_requires_it` and `test_invalid_device_is_refused`'s two `echo` params; `test_reload_that_drops_a_feature_removes_its_entities` sets up `{**GIZMO, "watch": {"of": "gauge_level"}}` and asserts `SEEN` is gone.
   - `tests/test_features.py`: `test_no_entity_key_repeats_its_namespace`'s docstring "An appliance's `appliance` would be sensor.pururu_<key>_appliance_appliance: a fixed key never repeats its namespace."; `test_a_device_key_neither_provides_requires_nor_acts` becomes `test_a_device_key_neither_acts_nor_derives` over `("Actions", "Derived")`; `test_the_aspects_each_builder_offers` and `test_a_counter_is_totalled` lose `modes`.
   - `tests/test_alerts.py`: `test_alerts_alone_are_not_a_feature` expects `"(appliance, door, window, lights, switches)"`.
   - `docs/develop/writing-a-feature.mdx`: its `features/__init__.py` example loses `from .phases import PHASES` and `"phases": PHASES,` (`test_the_develop_docs_examples_import_what_exists` resolves every relative import).
 
 - [ ] **Step 5: The fixture in the new syntax, and the snapshot.** In `tests/fixtures/house.yaml`:
-  - `laundry_washer`'s `phases:` block goes; its bands become `running_program`'s phases, `for` → `on_delay`, each named (the spec's washer):
+  - `clothes_washer`'s `phases:` block goes; its bands become `running_program`'s phases, `for` → `on_delay`, each named (the spec's washer):
     ```yaml
           running_program:
             above: 4
             on_delay: {minutes: 1}
             off_delay: {minutes: 2}
             phases:
-              heating: {name: Aquecendo, above: 1000}
-              spinning: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+              warming: {name: Aquecendo, above: 1000}
+              wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
     ```
     and its `stuck` alert's `when: phase_current` becomes `when: appliance_phase_current`;
-  - `water_filter`'s `modes:` block goes; its modes become `running_program`'s phases:
+  - `water_station`'s `modes:` block goes; its modes become `running_program`'s phases:
     ```yaml
           running_program:
             above: 2.9
             on_delay: {seconds: 1}
             off_delay: {minutes: 1}
             phases:
-              gelar: {name: Gelar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
+              resfriar: {name: Resfriar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
               quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
     ```
     (its `statistics:` comes back per phase in Task 3).
@@ -801,7 +801,7 @@ def _inputs(hass, key, config, name, index, owned) -> dict[str, str]   # no `req
   python3 <scratchpad>/iddiff_d2.py <scratchpad>/ids_before_t2.json tests/fixtures/house_ids.json
   ```
 
-  Expected: `entities gone 41 new 52`, `generated gone 0 new 0`. Gone, exactly: `sensor pururu_laundry_washer_phase_current`, `sensor pururu_water_filter_mode_current`, `…_mode_last`, and per mode (`gelar`, `quente`) `…_mode_<mode>_{last_cycle_start,last_cycle_end,last_cycle_duration,last_cycle_energy,cycles_total,runtime_total,energy_total}` and `…_mode_<mode>_{runtime,cycles,energy}_{today,week,month,year}`. New, exactly: for `laundry_washer` (`heating`, `spinning`, `other`) and `water_filter` (`gelar`, `quente`, `other`), `binary_sensor pururu_<device>_appliance_phase_<phase>` and `sensor pururu_<device>_appliance_phase_<phase>_{last_cycle_start,last_cycle_end,last_cycle_duration,last_cycle_energy,cycles_total,runtime_total,energy_total}`, plus `sensor pururu_<device>_appliance_phase_{current,last}` each. Nothing of `appliance_*` moves. Any other line fails the task: find the cause, don't accept it.
+  Expected: `entities gone 41 new 52`, `generated gone 0 new 0`. Gone, exactly: `sensor pururu_clothes_washer_phase_current`, `sensor pururu_water_station_mode_current`, `…_mode_last`, and per mode (`resfriar`, `quente`) `…_mode_<mode>_{last_cycle_start,last_cycle_end,last_cycle_duration,last_cycle_energy,cycles_total,runtime_total,energy_total}` and `…_mode_<mode>_{runtime,cycles,energy}_{today,week,month,year}`. New, exactly: for `clothes_washer` (`warming`, `wringing`, `other`) and `water_station` (`resfriar`, `quente`, `other`), `binary_sensor pururu_<device>_appliance_phase_<phase>` and `sensor pururu_<device>_appliance_phase_<phase>_{last_cycle_start,last_cycle_end,last_cycle_duration,last_cycle_energy,cycles_total,runtime_total,energy_total}`, plus `sensor pururu_<device>_appliance_phase_{current,last}` each. Nothing of `appliance_*` moves. Any other line fails the task: find the cause, don't accept it.
 
 - [ ] **Step 6: GREEN, and the whole suite.**
 
@@ -915,12 +915,12 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
   PROGRAM: dict[str, Any] = {
       "above": 4,
       "statistics": {"cycles": ["today"]},
-      "phases": {"gelar": {"name": "Gelar", "above": 40, "statistics": {"cycles": ["month"]}}},
+      "phases": {"resfriar": {"name": "Resfriar", "above": 40, "statistics": {"cycles": ["month"]}}},
       "other": {"statistics": {"runtime": ["week"]}},
   }
   APPLIANCE: dict[str, Any] = {
-      "power": "sensor.demo_plug_power",
-      "energy": "sensor.demo_plug_energy",
+      "power": "sensor.dummy_plug_power",
+      "energy": "sensor.dummy_plug_energy",
       "running_program": PROGRAM,
       "statistics": {"idle_energy": ["year"]},
   }
@@ -951,7 +951,7 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
       program = block["running_program"]
       assert block["statistics"] == {"idle_energy": ["year"]}
       assert program["statistics"] == {"runtime": [], "cycles": ["today"]}
-      assert program["phases"]["gelar"]["statistics"] == {"runtime": [], "cycles": ["month"], "energy": []}
+      assert program["phases"]["resfriar"]["statistics"] == {"runtime": [], "cycles": ["month"], "energy": []}
       assert program["other"]["statistics"] == {"runtime": ["week"], "cycles": [], "energy": []}
 
 
@@ -974,9 +974,9 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
   @pytest.mark.parametrize(("program", "path"), [
       pytest.param(5, ["running_program"], id="the program"),
       pytest.param({"above": 4, "phases": 5}, ["running_program", "phases"], id="its phases"),
-      pytest.param({"above": 4, "phases": {"gelar": 5}}, ["running_program", "phases", "gelar"],
+      pytest.param({"above": 4, "phases": {"resfriar": 5}}, ["running_program", "phases", "resfriar"],
                    id="a phase"),
-      pytest.param({"above": 4, "phases": {"gelar": {"name": "Gelar", "above": 40}}, "other": 5},
+      pytest.param({"above": 4, "phases": {"resfriar": {"name": "Resfriar", "above": 40}}, "other": 5},
                    ["running_program", "other"], id="other"),
   ])
   def test_a_place_that_isnt_a_map_is_refused_cleanly(
@@ -984,7 +984,7 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
       """vol.Invalid at its path, not a KeyError or TypeError from taking the aspect's key out."""
       schema = module("setup.schema").CONFIG_SCHEMA
       house = {"devices": {"washer": {"name": "Washer", "appliance": {
-          "power": "sensor.demo_plug_power", "running_program": program}}}}
+          "power": "sensor.dummy_plug_power", "running_program": program}}}}
       with pytest.raises(vol.Invalid) as refused:
           schema({DOMAIN: house})
       paths = ([error.path for error in refused.value.errors]
@@ -993,23 +993,23 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
 
 
   def test_a_refusal_at_a_place_says_where(ha: HomeAssistant) -> None:
-      program = {**PROGRAM, "phases": {"gelar": {"name": "Gelar", "above": 40,
+      program = {**PROGRAM, "phases": {"resfriar": {"name": "Resfriar", "above": 40,
                                                  "statistics": {"cycles": ["daily"]}}}}
       with pytest.raises(vol.MultipleInvalid) as refused:
           mount({**APPLIANCE, "running_program": program})
       assert [error.path for error in refused.value.errors] == [
-          ["running_program", "phases", "gelar", "statistics", "cycles", 0]]
+          ["running_program", "phases", "resfriar", "statistics", "cycles", 0]]
 
 
   def test_keys_lists_the_meters_at_every_place(ha: HomeAssistant) -> None:
-      """The appliance's own (runtime_today), each phase's as its item's (phase_gelar_*), other's (phase_other_*)."""
+      """The appliance's own (runtime_today), each phase's as its item's (phase_resfriar_*), other's (phase_other_*)."""
       catalogue = module("setup.catalogue")
       rows = {key: (by, item) for _, key, _, by, item in catalogue.keys({"appliance": mount(APPLIANCE)})}
       assert rows["runtime_today"] == ("statistics", None)
       assert rows["idle_energy_year"] == ("statistics", None)
-      assert rows["phase_gelar_energy_month"] == ("statistics", "phase_gelar")
+      assert rows["phase_resfriar_energy_month"] == ("statistics", "phase_resfriar")
       assert rows["phase_other_cycles_week"] == ("statistics", "phase_other")
-      assert rows["phase_gelar_cycles_total"] == (None, None)
+      assert rows["phase_resfriar_cycles_total"] == (None, None)
       assert "energy_today" not in rows  # the running program counts no energy
   ```
 
@@ -1025,30 +1025,30 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
     ```
   - a `# --- phases ---` section before `# --- door and window ---` (Task 2 removed the modes'):
     ```python
-    PHASE_KEY = "demo_filter"
-    PHASE_NAME = "Demo filter"
+    PHASE_KEY = "dummy_station"
+    PHASE_NAME = "Dummy station"
     PHASE_COUNTERS = ("runtime", "cycles", "energy")
     PHASE_STATISTICS = {counter: list(PERIODS) for counter in PHASE_COUNTERS}
     PHASE_ICONS = {
-        "gelar_runtime_today": "mdi:timer-sand",
-        "gelar_cycles_week": "mdi:counter",
-        "gelar_energy_month": "mdi:lightning-bolt",
+        "resfriar_runtime_today": "mdi:timer-sand",
+        "resfriar_cycles_week": "mdi:counter",
+        "resfriar_energy_month": "mdi:lightning-bolt",
         "other_runtime_today": "mdi:timer-sand",
         "other_energy_year": "mdi:lightning-bolt",
     }
     PHASE_NAMES = {
         "en": {
-            "gelar_runtime_today": "Gelar runtime today",
-            "gelar_cycles_week": "Gelar cycles this week",
-            "gelar_energy_month": "Gelar energy this month",
+            "resfriar_runtime_today": "Resfriar runtime today",
+            "resfriar_cycles_week": "Resfriar cycles this week",
+            "resfriar_energy_month": "Resfriar energy this month",
             "other_runtime_today": "Other phase runtime today",
             "other_cycles_week": "Other phase cycles this week",
             "other_energy_year": "Other phase energy this year",
         },
         "pt-BR": {
-            "gelar_runtime_today": "Tempo de Gelar hoje",
-            "gelar_cycles_week": "Ciclos de Gelar na semana",
-            "gelar_energy_month": "Energia de Gelar no mês",
+            "resfriar_runtime_today": "Tempo de Resfriar hoje",
+            "resfriar_cycles_week": "Ciclos de Resfriar na semana",
+            "resfriar_energy_month": "Energia de Resfriar no mês",
             "other_runtime_today": "Tempo de outra fase hoje",
             "other_cycles_week": "Ciclos de outra fase na semana",
             "other_energy_year": "Energia de outra fase no ano",
@@ -1061,12 +1061,12 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
 
 
     def phases(statistics: dict[str, Any], **appliance: Any) -> dict[str, Any]:
-        """The demo filter: phase gelar and other, each with `statistics`."""
+        """The dummy station: phase resfriar and other, each with `statistics`."""
         return {PHASE_KEY: {"name": PHASE_NAME, "appliance": {
-            "power": "sensor.demo_plug_power",
+            "power": "sensor.dummy_plug_power",
             "running_program": {
                 "above": 4,
-                "phases": {"gelar": {"name": "Gelar", "above": 40, "statistics": statistics}},
+                "phases": {"resfriar": {"name": "Resfriar", "above": 40, "statistics": statistics}},
                 "other": {"statistics": statistics},
             },
             **appliance,
@@ -1076,8 +1076,8 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
     @pytest.mark.parametrize("language", ["en", "pt-BR"])
     async def test_phases_meters(ha: HomeAssistant, language: str) -> None:
         ha.config.language = language
-        assert await setup(ha, phases(PHASE_STATISTICS, energy="sensor.demo_plug_energy"))
-        for phase in ("gelar", "other"):
+        assert await setup(ha, phases(PHASE_STATISTICS, energy="sensor.dummy_plug_energy"))
+        for phase in ("resfriar", "other"):
             for counter in PHASE_COUNTERS:
                 for period in PERIODS:
                     assert_meter(ha, phase_sensor(f"{phase}_{counter}_{period}"))
@@ -1095,17 +1095,17 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
             assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
 
 
-    @pytest.mark.parametrize("place", ["gelar", "other"])
+    @pytest.mark.parametrize("place", ["resfriar", "other"])
     async def test_a_phases_energy_needs_the_appliances_energy(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, place: str
     ) -> None:
         """The setting is the appliance's, looked up in its whole block: the phase has none of its own."""
         devices = phases({})
         program = devices[PHASE_KEY]["appliance"]["running_program"]
-        (program["phases"]["gelar"] if place == "gelar" else program["other"])["statistics"] = {
+        (program["phases"]["resfriar"] if place == "resfriar" else program["other"])["statistics"] = {
             "energy": ["today"]}
         assert not await setup(ha, devices)
-        where = "phases->gelar" if place == "gelar" else "other"
+        where = "phases->resfriar" if place == "resfriar" else "other"
         assert f"appliance->running_program->{where}" in caplog.text
         assert "statistics.energy needs energy" in caplog.text
 
@@ -1132,9 +1132,9 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
             assert entry is not None, key
             assert entry.unique_id == f"pururu_{KEY}_appliance_{key}"
             assert entry.translation_key == key
-            assert metered.states.get(sensor(key)).attributes["friendly_name"] == f"Demo washer {name}"
+            assert metered.states.get(sensor(key)).attributes["friendly_name"] == f"Dummy washer {name}"
         registry.async_update_entity(sensor("runtime_today"), name="Hoje")
-        await reload(metered, {KEY: {"name": "Demo washer", "appliance": STATISTICS}})
+        await reload(metered, {KEY: {"name": "Dummy washer", "appliance": STATISTICS}})
         assert registry.async_get(sensor("runtime_today")).name == "Hoje"
     ```
 
@@ -1146,10 +1146,10 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
       pytest.param(
           {"devices": {"washer": washer(appliance={**APPLIANCE, "running_program": {
               **APPLIANCE["running_program"],
-              "phases": {"gelar": {"name": "Gelar", "above": 40},
-                         "gelar_cycles_today": {"name": "Hoje", "above": 300}}}})}},
+              "phases": {"resfriar": {"name": "Resfriar", "above": 40},
+                         "resfriar_cycles_today": {"name": "Hoje", "above": 300}}}})}},
           ["devices", "washer"],
-          "device washer: pururu_washer_appliance_phase_gelar_cycles_today would be two entities",
+          "device washer: pururu_washer_appliance_phase_resfriar_cycles_today would be two entities",
           id="two entities of one device"),
   ```
 
@@ -1161,7 +1161,7 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
       periods = {"runtime": ["today"], "cycles": ["today", "month"], "energy": ["today"]}
       program = {**RUNNING_PROGRAM, "phases": {key: {**phase, "statistics": periods}
                                                for key, phase in RUNNING_PROGRAM["phases"].items()}}
-      assert await setup(ha, {KEY: {"name": "Demo filter", "appliance": {
+      assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": {
           "power": POWER, "energy": ENERGY, "running_program": program}}})
       await watts(ha, IDLE_W)
       await tick(ha, freezer, 125)
@@ -1172,14 +1172,14 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
           await watts(ha, IDLE_W)
           await tick(ha, freezer, 125)
       await tick(ha, freezer, 60)
-      assert float(state(ha, sensor("phase_gelar_cycles_today"))) == 2
-      assert float(state(ha, sensor("phase_gelar_cycles_month"))) == 2
-      assert float(state(ha, sensor("phase_gelar_energy_today"))) == pytest.approx(0.1)
-      assert float(state(ha, sensor("phase_gelar_runtime_today"))) == pytest.approx(
-          float(state(ha, sensor("phase_gelar_runtime_total"))), abs=0.01)
+      assert float(state(ha, sensor("phase_resfriar_cycles_today"))) == 2
+      assert float(state(ha, sensor("phase_resfriar_cycles_month"))) == 2
+      assert float(state(ha, sensor("phase_resfriar_energy_today"))) == pytest.approx(0.1)
+      assert float(state(ha, sensor("phase_resfriar_runtime_today"))) == pytest.approx(
+          float(state(ha, sensor("phase_resfriar_runtime_total"))), abs=0.01)
       assert float(state(ha, sensor("phase_quente_cycles_today"))) == 0
-      assert ha.states.get(sensor("phase_gelar_runtime_month")) is None
-      assert ha.states.get(sensor("phase_gelar_cycles_today")).attributes["unit_of_measurement"] == "cycles"
+      assert ha.states.get(sensor("phase_resfriar_runtime_month")) is None
+      assert ha.states.get(sensor("phase_resfriar_cycles_today")).attributes["unit_of_measurement"] == "cycles"
   ```
 
   ```sh
@@ -1450,7 +1450,7 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
                   )
   ```
 
-  A phase's meter's `item` in the index is its item's slug (`phase_gelar`), as a program's is: only the reactions' check reads `item`, for `builder == "reactions"`.
+  A phase's meter's `item` in the index is its item's slug (`phase_resfriar`), as a program's is: only the reactions' check reads `item`, for `builder == "reactions"`.
 
 - [ ] **Step 4: The aspects' places.**
 
@@ -1722,8 +1722,8 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
       """Refuse two entities of one device with one unique ID, whatever their platforms.
 
       The index keeps one entity per qualified key and would lose the other. A
-      phase keyed gelar_cycles_today has the binary sensor
-      phase_gelar_cycles_today, phase gelar's meter's key.
+      phase keyed resfriar_cycles_today has the binary sensor
+      phase_resfriar_cycles_today, phase resfriar's meter's key.
       """
       for key, device in house[CONF_DEVICES].items():
           seen: set[str] = set()
@@ -1740,7 +1740,7 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
               seen.add(unique_id)
   ```
 
-  It reads `catalogue.keys`, not the index, which already lost one of the two. It refuses a key the builder *can* create, as every check over the index does: the phase `gelar_cycles_today` is refused beside `gelar` even with no statistics asked.
+  It reads `catalogue.keys`, not the index, which already lost one of the two. It refuses a key the builder *can* create, as every check over the index does: the phase `resfriar_cycles_today` is refused beside `resfriar` even with no statistics asked.
 
 - [ ] **Step 7: The translations.** In `translations/en.json`, `translations/pt-BR.json` and `icons.json`, before `item_triggered_today`: the four `item_energy_{today,week,month,year}` Task 2 removed, unchanged (en "`{item} energy today`", "`… this week`", "`… this month`", "`… this year`"; pt-BR "`Energia de {item} hoje`", "`… na semana`", "`… no mês`", "`… no ano`"; icon `mdi:lightning-bolt`), and other's twelve meters, `phase_other_{runtime,cycles,energy}_{today,week,month,year}`:
   - en: "Other phase runtime today", "Other phase cycles this week", "Other phase energy this month"… (the counter as in `phase_other_<counter>_total`'s name, then the period as in `item_*`);
@@ -1808,7 +1808,7 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
   - `test_an_offered_aspect_validates_and_builds`: the example reaches every place (`assert list(walk(feature.example, place.path)), (name, place.path)`, ruling 11); `raw = with_examples(...)`; `bool(built) == bool(aspect_keys(...))`.
   - `test_a_builders_own_schema_refuses_an_aspects_key`: for each place, `feature.schema(put(valid, place.path, aspect.key, place.example))` raises (no more "one item" special case).
   - `test_mount_leaves_an_items_key_alone`: `in_items` is `any(place.path[:1] == (EACH,) …)` over the aspects' places.
-  - `test_an_absent_aspect_key`: the containers are `walk(block, place.path)`'s over every place; `given = with_value(...)`; the appliance's example mounts `{"idle_energy": []}` in the block, `{"runtime": [], "cycles": []}` in `running_program`, and `{"runtime": [], "cycles": [], "energy": []}` in `phases.heating` and `other`.
+  - `test_an_absent_aspect_key`: the containers are `walk(block, place.path)`'s over every place; `given = with_value(...)`; the appliance's example mounts `{"idle_energy": []}` in the block, `{"runtime": [], "cycles": []}` in `running_program`, and `{"runtime": [], "cycles": [], "energy": []}` in `phases.warming` and `other`.
   - `test_mount_skips_an_aspect_without_a_check` becomes `test_mount_skips_a_place_without_a_check`: `place = Place(schema=lambda value: value, keys={}, named=lambda key: key, example={})`, `Aspect(key="uninspected", offered=…, places=lambda builder, name: (place,), build=lambda hass, device, builder, block, texts: [])`.
   - `test_a_counter_is_totalled`: for each `Counted`, the mounted example reaches its place, and at each container the item's (or builder's) `<counter>_total` is one of the builder's own keys in `catalogue.keys` (`by is None`).
   - `test_a_counter_without_its_setting_is_refused`: over every `Counted` of every builder, `put(example, counted.at, "statistics", {counter: ["today"]})` is refused with `statistics.<counter> needs <setting>`, `{counter: []}` passes. It now reaches the appliance's block, each phase and other.
@@ -1816,8 +1816,8 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
 - [ ] **Step 9: The fixture, the snapshot and the docs examples.**
 
   `tests/fixtures/house.yaml`, every counter × period at every place (spec A1's rule):
-  - `laundry_washer`'s appliance: `runtime`/`cycles` move into `running_program: statistics:`; `heating`, `spinning` and a new `other:` each get `statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}`; the appliance's own `statistics:` keeps `idle_energy`;
-  - `water_filter`'s `gelar`, `quente` and a new `other:` get the same `statistics:` (what `modes: statistics:` asked before Task 2).
+  - `clothes_washer`'s appliance: `runtime`/`cycles` move into `running_program: statistics:`; `warming`, `wringing` and a new `other:` each get `statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}`; the appliance's own `statistics:` keeps `idle_energy`;
+  - `water_station`'s `resfriar`, `quente` and a new `other:` get the same `statistics:` (what `modes: statistics:` asked before Task 2).
 
   ```sh
   git show HEAD:tests/fixtures/house_ids.json > <scratchpad>/ids_before_t3.json
@@ -1825,7 +1825,7 @@ def keys_distinct(house, index, builders) -> Iterator[vol.Invalid]
   python3 <scratchpad>/iddiff_d2.py <scratchpad>/ids_before_t3.json tests/fixtures/house_ids.json
   ```
 
-  Expected: `entities gone 0 new 72`, `generated gone 0 new 0`; the 72 are exactly `sensor pururu_<device>_appliance_phase_<phase>_{runtime,cycles,energy}_{today,week,month,year}` for the six phases (`heating`, `spinning`, `other` of the washer; `gelar`, `quente`, `other` of the filter). The appliance's `runtime_*`/`cycles_*` meters don't move.
+  Expected: `entities gone 0 new 72`, `generated gone 0 new 0`; the 72 are exactly `sensor pururu_<device>_appliance_phase_<phase>_{runtime,cycles,energy}_{today,week,month,year}` for the six phases (`warming`, `wringing`, `other` of the washer; `resfriar`, `quente`, `other` of the station). The appliance's `runtime_*`/`cycles_*` meters don't move.
 
   The docs examples asking for the appliance's `runtime`/`cycles` move them into `running_program: statistics:` (a flow `running_program: {…}` written as a block), keeping `idle_energy` in the appliance's `statistics:`: `docs/index.mdx`, `docs/getting-started/first-device.mdx` (three), `docs/concepts/statistics.mdx`, `docs/reference/configuration.mdx`, `docs/features/appliance.mdx`. `git grep -n -B6 'runtime: \[\|cycles: \[' -- docs README.md` shows each; only `modes.mdx` keeps its old block (Task 4 deletes the page).
 
@@ -1878,13 +1878,13 @@ The user-facing pages say what D2 changed: the appliance's `running_program` and
   description: A program pururu tells from a reading, the appliance running at all, and the phases of each run, each a band of the plug's power.
   ---
 
-  A **detected program** is one pururu knows is running from a reading: a band of the plug's power, confirmed by delays. An appliance's `running_program` is one, the appliance running at all. Its **phases** are bands too: a washer heating, then spinning; a water purifier chilling or heating. The programs pururu runs itself are on [Programs](/concepts/programs).
+  A **detected program** is one pururu knows is running from a reading: a band of the plug's power, confirmed by delays. An appliance's `running_program` is one, the appliance running at all. Its **phases** are bands too: a washer warming, then wringing; a water purifier chilling or warming. The programs pururu runs itself are on [Programs](/concepts/programs).
   ```
 
-  then the washer of the spec's contract ("The whole contract, 0.2.0": `running_program` with `above`, both delays, `statistics`, the phases `heating` and `spinning`), and these sections:
+  then the washer of the spec's contract ("The whole contract, 0.2.0": `running_program` with `above`, both delays, `statistics`, the phases `warming` and `wringing`), and these sections:
   - **A band** (`<Property>` each): `above`, `below` (strict, as Home Assistant's `numeric_state`: with `above: 1000` a reading of exactly 1000 is outside; at least one of them; `above` lower than `below`); `on_delay` (how long the reading stays in the band before the run starts; absent, 0: at once; a [time period](/features/appliance#settings)); `off_delay` (how long it stays out before the run ends; absent, 0).
   - **The running program**: required in `appliance`; a band, then `statistics` (`runtime`, `cycles`: the appliance's own meters, see [Statistics](/concepts/statistics)), `phases`, `other`; no `name` (`running_program takes no name: it is the appliance running`). A cycle **starts** at the moment its `on_delay` passed and **ends** at the moment the reading left the band; `off_delay` only confirms the end. A reading without a value (`unknown`, `unavailable`, not a number) counts every delay again from the next reading; what runs stays, and an end keeps the moment its reading left. A restart or reload keeps the running cycle and its phases (the carrier's snapshot), and Home Assistant's downtime isn't runtime; a restore that can't be read (a hand-edited `.storage`) starts from nothing.
-  - **Phases** (`<Property>` each): `name` (required: it names the phase's entities), the band's four, `statistics` (`runtime`, `cycles`, `energy`; `energy` needs the appliance's `energy`). Their keys are slugs; `idle` and `other` are reserved, and a key whose entities would be another's is refused (`current`, `last`; `gelar` beside `gelar_cycles_total`; `gelar_cycles_today` beside `gelar`, whose meter it would be: `device <key>: <unique ID> would be two entities`). How they run:
+  - **Phases** (`<Property>` each): `name` (required: it names the phase's entities), the band's four, `statistics` (`runtime`, `cycles`, `energy`; `energy` needs the appliance's `energy`). Their keys are slugs; `idle` and `other` are reserved, and a key whose entities would be another's is refused (`current`, `last`; `resfriar` beside `resfriar_cycles_total`; `resfriar_cycles_today` beside `resfriar`, whose meter it would be: `device <key>: <unique ID> would be two entities`). How they run:
     - a phase runs while the program runs and its reading has held its band for its `on_delay`; it ends after its `off_delay` out of the band, dated when it left, or when the program ends;
     - **bands may overlap**: two that hold at once run at once, and none wins;
     - a **dip** straight from a running phase's band into another's makes the other wait, once its `on_delay` passed, for the first to end or for a reading back in both bands; it then starts from when its `on_delay` passed. A short visit to another band is nothing (a chill's tail dipping into a sip's band isn't a drink);
@@ -1904,9 +1904,9 @@ The user-facing pages say what D2 changed: the appliance's `running_program` and
     | `sensor.pururu_<key>_appliance_phase_<phase>_cycles_total`, `_runtime_total`, `_energy_total` | Its totals, `total_increasing` (`_energy_total` added exactly, *with `energy`*) |
     | `sensor.pururu_<key>_appliance_phase_<phase>_<counter>_<period>` | One per entry of the phase's (or `other`'s) `statistics` |
 
-    A phase's cycle entities are named after its `name` ("Gelar cycles", "Ciclos de Gelar"), `other`'s by their own ("Other phase cycles", "Ciclos de outra fase"). While `running` is disabled, every phase is off and `phase_current` is `idle`.
-  - **State names**: `phase_current` and `phase_last` show a phase's key, translated for `idle`, `washing`, `heating`, `spinning`, `rinsing`, `drying`, `cooling`, `dispensing` and `other` (the table from today's `phases.mdx`, with `phase_last`'s without `idle`); any other key is shown as written.
-  - **Referring to a phase**: an alert's or a reaction's `when` names `appliance_phase_current`, `appliance_phase_gelar` or `appliance_phase_gelar_cycles_total` as any entity key of the device; a phase not configured, or any phase key of an appliance without phases, is refused at the configuration (`alerts: appliance_phase_morno is not an entity key of another feature of this device`). Renaming a phase's entity in the UI is followed, as every pururu entity.
+    A phase's cycle entities are named after its `name` ("Resfriar cycles", "Ciclos de Resfriar"), `other`'s by their own ("Other phase cycles", "Ciclos de outra fase"). While `running` is disabled, every phase is off and `phase_current` is `idle`.
+  - **State names**: `phase_current` and `phase_last` show a phase's key, translated for `idle`, `soaking`, `warming`, `wringing`, `rinsing`, `drying`, `frosting`, `pouring` and `other` (the table from today's `phases.mdx`, with `phase_last`'s without `idle`); any other key is shown as written.
+  - **Referring to a phase**: an alert's or a reaction's `when` names `appliance_phase_current`, `appliance_phase_resfriar` or `appliance_phase_resfriar_cycles_total` as any entity key of the device; a phase not configured, or any phase key of an appliance without phases, is refused at the configuration (`alerts: appliance_phase_morno is not an entity key of another feature of this device`). Renaming a phase's entity in the UI is followed, as every pururu entity.
 
   `docs.json`: `{ "title": "Detected programs", "href": "/concepts/detected-programs" }` right before `Programs`; the Features group loses `phases` and `modes`.
 
@@ -1920,17 +1920,17 @@ The user-facing pages say what D2 changed: the appliance's `running_program` and
   - The ready-made alerts and notifications sections stay (`test_presets.py` reads "## Ready-made alerts").
 
 - [ ] **Step 3: Every other Guide page.**
-  - `docs/index.mdx`: the example's `phases:` block goes; its bands become `running_program`'s phases (named, `on_delay` for `for`); the table's `sensor.pururu_laundry_washer_phase_current` row becomes `sensor.pururu_laundry_washer_appliance_phase_current` (`idle`, `heating`, `spinning` or `other`); the features list names `appliance`, `door`, `window`, `switches`, `lights`, and says an appliance's phases are part of it.
-  - `docs/getting-started/first-device.mdx`: "Picking the numbers" says `above`, not "threshold"; Step 3, "the phase of the wash", writes the phases in `running_program` (`heating: {name: Aquecendo, above: 1000}`, `spinning: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}`), explains `on_delay` for `for`, overlap (both run), `idle` and `other` instead of the defaults, and shows `sensor.pururu_laundry_washer_appliance_phase_current` and a phase's binary sensor; its later full examples follow.
+  - `docs/index.mdx`: the example's `phases:` block goes; its bands become `running_program`'s phases (named, `on_delay` for `for`); the table's `sensor.pururu_clothes_washer_phase_current` row becomes `sensor.pururu_clothes_washer_appliance_phase_current` (`idle`, `warming`, `wringing` or `other`); the features list names `appliance`, `door`, `window`, `switches`, `lights`, and says an appliance's phases are part of it.
+  - `docs/getting-started/first-device.mdx`: "Picking the numbers" says `above`, not "threshold"; Step 3, "the phase of the wash", writes the phases in `running_program` (`warming: {name: Aquecendo, above: 1000}`, `wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}`), explains `on_delay` for `for`, overlap (both run), `idle` and `other` instead of the defaults, and shows `sensor.pururu_clothes_washer_appliance_phase_current` and a phase's binary sensor; its later full examples follow.
   - `docs/concepts/devices-and-features.mdx`: the example without `phases:`; the features table loses `phases` and `modes`; "Features that build on each other" (`cycle_from`, provides/requires) goes, replaced by one paragraph: a feature stands alone, and what used to be `phases`/`modes` is the appliance's own `running_program` (link); "a threshold" becomes "a band of its power".
-  - `docs/concepts/entity-ids.mdx`: the `phases` row goes; an `appliance` row example gains `sensor.pururu_laundry_washer_appliance_phase_heating_cycles_total`; "`phases` reads `running`" becomes "a phase's runtime reads its binary sensor".
-  - `docs/concepts/statistics.mdx`: its example moves `runtime`/`cycles` into `running_program`; "Where it sits": the appliance's block (`idle_energy`), its `running_program` (`runtime`, `cycles`), each phase and `other` (`runtime`, `cycles`, `energy`), each program or reaction; the counters table's `modes` rows become `running_program` phases' (`energy` needs the appliance's `energy`); the naming example uses a phase ("Máquina de lavar Aquecendo cycles today") and `other`'s own.
+  - `docs/concepts/entity-ids.mdx`: the `phases` row goes; an `appliance` row example gains `sensor.pururu_clothes_washer_appliance_phase_warming_cycles_total`; "`phases` reads `running`" becomes "a phase's runtime reads its binary sensor".
+  - `docs/concepts/statistics.mdx`: its example moves `runtime`/`cycles` into `running_program`; "Where it sits": the appliance's block (`idle_energy`), its `running_program` (`runtime`, `cycles`), each phase and `other` (`runtime`, `cycles`, `energy`), each program or reaction; the counters table's `modes` rows become `running_program` phases' (`energy` needs the appliance's `energy`); the naming example uses a phase ("Tanquinho Aquecendo cycles today") and `other`'s own.
   - `docs/concepts/alerts.mdx`: `phase_current` in `when`'s examples becomes `appliance_phase_current`.
-  - `docs/concepts/events.mdx`: `key`'s example `mode_heating_cycles_total` becomes `appliance_phase_heating_cycles_total` (ruling 17).
+  - `docs/concepts/events.mdx`: `key`'s example `mode_warming_cycles_total` becomes `appliance_phase_warming_cycles_total` (ruling 17).
   - `docs/concepts/programs.mdx`: one line at the top: these are programs pururu runs; the ones it tells from a reading are [Detected programs](/concepts/detected-programs) (D3 merges both pages).
   - `docs/features/door.mdx`: "Provides" loses `phases`/`modes`/`cycle_from`: each opening is a cycle, recorded in its last opening and totals; alerts and reactions can watch `door_open`.
   - `docs/reference/configuration.mdx`: the example as the appliance page's; "General rules"' `statistics` sentence lists the appliance's block, its `running_program`, each phase and `other`, and each program or reaction; the devices' feature list loses `phases` and `modes`.
-  - `docs/reference/troubleshooting.mdx`: "The reload changed nothing": `treshold:` for `threshold:` becomes `running:` for `running_program:` ("an old key is `extra keys not allowed`"); `cycle_from` and the `phases` band causes go; added: a `running_program` with a `name`, or with neither `above` nor `below`; a phase without `name`, keyed `idle`, `other`, `current` or `last`, or whose entities another phase's would be (`phase … would create …`); `other:` without `phases`; two entities of one device with one unique ID (`device <key>: … would be two entities`); `statistics.energy needs energy` at a phase. The `follows` example: `sensor.pururu_laundry_washer_appliance_phase_current follows binary_sensor.pururu_laundry_washer_appliance_running, which is not created; not creating it`. "The cycle ends too early, or never starts": `above`, not the threshold.
+  - `docs/reference/troubleshooting.mdx`: "The reload changed nothing": `treshold:` for `threshold:` becomes `running:` for `running_program:` ("an old key is `extra keys not allowed`"); `cycle_from` and the `phases` band causes go; added: a `running_program` with a `name`, or with neither `above` nor `below`; a phase without `name`, keyed `idle`, `other`, `current` or `last`, or whose entities another phase's would be (`phase … would create …`); `other:` without `phases`; two entities of one device with one unique ID (`device <key>: … would be two entities`); `statistics.energy needs energy` at a phase. The `follows` example: `sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it`. "The cycle ends too early, or never starts": `above`, not the threshold.
   - `README.md`: "which phase it's in" stays true; nothing else names a removed key.
 
   ```sh

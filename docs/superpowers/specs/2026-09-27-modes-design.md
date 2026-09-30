@@ -9,27 +9,27 @@ An appliance's cycles can be of **several kinds**. A washer's cycle goes through
 ```yaml
 pururu:
   devices:
-    water_filter:
+    water_station:
       name: Purificador
       appliance:
-        power: sensor.filter_plug_power
-        energy: sensor.filter_plug_energy
+        power: sensor.station_plug_power
+        energy: sensor.station_plug_energy
         running: {threshold: 2.9, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
       modes:
         cycle_from: appliance
-        sensor: sensor.filter_plug_power
-        energy: sensor.filter_plug_energy
+        sensor: sensor.station_plug_power
+        energy: sensor.station_plug_energy
         modes:
           bebendo: {name: Bebendo, above: 2.9, below: 4, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
-          gelar: {name: Gelar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
+          resfriar: {name: Resfriar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
           quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
         statistics:
           runtime: [today, month]
           cycles: [today, month]
           energy: [today, month]
-# → sensor.pururu_water_filter_mode_current          bebendo | gelar | quente | idle
-#   sensor.pururu_water_filter_mode_gelar_cycles_total "Purificador Ciclos de Gelar"
-#   sensor.pururu_water_filter_mode_quente_energy_month
+# → sensor.pururu_water_station_mode_current          bebendo | resfriar | quente | idle
+#   sensor.pururu_water_station_mode_resfriar_cycles_total "Purificador Ciclos de Resfriar"
+#   sensor.pururu_water_station_mode_quente_energy_month
 ```
 
 ## Decisions
@@ -38,7 +38,7 @@ pururu:
 |---|---|
 | Phase or mode | A phase changes **within** a cycle, in sequence; a mode is **the whole cycle's** kind. A cycle never has two modes: leaving a mode ends its cycle, entering another starts a new one. |
 | Where modes live | A feature of its own, `modes`, taking the cycle through `cycle_from: appliance`, as `phases`. Rejected: `modes:` inside `appliance` replacing `running:` (the user's choice: keep the appliance as it is); `appliance:` as a list (repeats `power` and `energy`, breaks every configuration, no namespace per item). |
-| What the appliance's cycle does | It is the **gate**: a mode cycle exists only while the appliance's `running` is on, and ends when it turns off. An appliance cycle can hold several mode cycles (heating, then cooling, the power never dropping). |
+| What the appliance's cycle does | It is the **gate**: a mode cycle exists only while the appliance's `running` is on, and ends when it turns off. An appliance cycle can hold several mode cycles (warming, then frosting, the power never dropping). |
 | Cycles of any mode | The appliance's `cycles_total`. `modes` adds no sum of its modes: a second total, different from the appliance's whenever the mode changes without the power dropping, would confuse. |
 | How a mode is detected | Its own band (`above`, `below`) and delays (`on_delay`, `off_delay`), as `running`'s threshold and delays: the user declares them. |
 | A mode armed while another runs | It **waits**: it starts when the running one ends (its `off_delay`, or the gate closing), at that instant, if still armed. Always one mode at a time. Chosen after replaying 10 days of the real purifier's power: a chilling cycle's tail dips to ~3 W, a sip's band, for a few seconds; ending the running mode when another is armed split ~20 chills a day and invented ~7 sips a day. Rejected: the new one ending the previous one at once (the first choice, before the data); overlapping. |
@@ -147,7 +147,7 @@ What `appliance` has about cycles moves to `features/cycle/`, used by both featu
 
 ## Translations and icons
 
-`en.json` and `pt-BR.json`: `mode_current` ("Mode" / "Modo") and `mode_last` ("Last mode" / "Último modo"), with the state names `phase_current` has plus `dispensing`; one entry per suffix with `{mode}` ("Cycles of `{mode}`" / "Ciclos de `{mode}`", "`{mode}` energy this month" / "Energia de `{mode}` este mês"...). An icon per fixed key and per suffix.
+`en.json` and `pt-BR.json`: `mode_current` ("Mode" / "Modo") and `mode_last` ("Last mode" / "Último modo"), with the state names `phase_current` has plus `pouring`; one entry per suffix with `{mode}` ("Cycles of `{mode}`" / "Ciclos de `{mode}`", "`{mode}` energy this month" / "Energia de `{mode}` este mês"...). An icon per fixed key and per suffix.
 
 ## Tests
 

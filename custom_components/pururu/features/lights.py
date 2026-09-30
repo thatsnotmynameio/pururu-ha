@@ -218,7 +218,7 @@ LIGHTS = Feature(
     schema=standing.schema(*KINDS),
     entity_keys={},
     build=build,
-    example={"ceiling": {"entity": "light.demo_ceiling", "name": "Ceiling"}},
+    example={"ceiling": {"entity": "light.dummy_ceiling", "name": "Ceiling"}},
     namespace="light",
     roles=(Configured(Platform.LIGHT), Actions(("turn_on", "turn_off", "toggle"))),
 )

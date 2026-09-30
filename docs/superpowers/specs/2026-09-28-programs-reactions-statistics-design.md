@@ -9,14 +9,14 @@ A program runs, and a reaction fires, and nothing counts it: HA's traces keep th
 ```yaml
 pururu:
   devices:
-    pool:
-      name: Piscina
+    greenhouse:
+      name: Estufa
       switches:
-        pump: {entity: switch.pool_pump, name: Bomba}
+        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
       programs:
         clean:
           name: Limpar
-          sequence: [{turn_on: switch_pump}, {delay: {hours: 2}}, {turn_off: switch_pump}]
+          sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
           statistics:
             runtime: [today, month]
             cycles: [month]
@@ -27,11 +27,11 @@ pururu:
           then: clean
           statistics:
             triggered: [month]
-# → sensor.pururu_pool_program_clean_cycles_total        "Piscina Ciclos de Limpar"
-#   sensor.pururu_pool_program_clean_runtime_today
-#   sensor.pururu_pool_program_clean_last_cycle_duration
-#   sensor.pururu_pool_reaction_morning_triggered_total   "Piscina Disparos de Manhã"
-#   sensor.pururu_pool_reaction_morning_triggered_month
+# → sensor.pururu_greenhouse_program_clean_cycles_total        "Estufa Ciclos de Limpar"
+#   sensor.pururu_greenhouse_program_clean_runtime_today
+#   sensor.pururu_greenhouse_program_clean_last_cycle_duration
+#   sensor.pururu_greenhouse_reaction_morning_triggered_total   "Estufa Disparos de Manhã"
+#   sensor.pururu_greenhouse_reaction_morning_triggered_month
 ```
 
 ## Decisions

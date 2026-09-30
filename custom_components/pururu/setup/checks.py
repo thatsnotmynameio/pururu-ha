@@ -96,8 +96,8 @@ def entity_ids_distinct(
 ) -> Iterator[vol.Invalid]:
     """Refuse two devices whose entities would share an ID.
 
-    Device `pool` with the switch `switch_pump` and device `pool_switch` with
-    the switch `pump` would both have pururu_pool_switch_switch_pump.
+    Device `greenhouse` with the switch `switch_sprinkler` and device `greenhouse_switch` with
+    the switch `sprinkler` would both have pururu_greenhouse_switch_switch_sprinkler.
     """
     owners: dict[str, str] = {}  # object ID -> the device that has it
     for key, targets in index.items():

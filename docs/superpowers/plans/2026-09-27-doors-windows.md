@@ -684,7 +684,7 @@ def _opening(namespace: str, device_class: BinarySensorDeviceClass) -> Feature:
         schema=SCHEMA,
         entity_keys=ENTITY_KEYS,
         build=_builder(device_class),
-        example={"contact": f"binary_sensor.demo_{namespace}_contact"},
+        example={"contact": f"binary_sensor.dummy_{namespace}_contact"},
         namespace=namespace,
         provides={"cycle": "open"},
     )
@@ -1849,7 +1849,7 @@ In the same file's second table (Provides/Needs), after the `appliance` row, add
 | `window` | `cycle`, carried by `binary_sensor.pururu_<key>_window_open` | nothing |
 ```
 
-In `docs/concepts/entity-ids.mdx`, in the table of features and namespaces (its `appliance` row is `| [\`appliance\`](/features/appliance) | \`appliance\` | \`binary_sensor.pururu_laundry_washer_appliance_running\` |`), add after that row:
+In `docs/concepts/entity-ids.mdx`, in the table of features and namespaces (its `appliance` row is `| [\`appliance\`](/features/appliance) | \`appliance\` | \`binary_sensor.pururu_clothes_washer_appliance_running\` |`), add after that row:
 
 ```markdown
 | [`door`](/features/door) | `door` | `binary_sensor.pururu_porta_cercado_frente_door_open` |

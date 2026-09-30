@@ -44,7 +44,7 @@ A typical test:
 ```python
 from helpers import fake, setup, tick
 
-WASHER = {"laundry_washer": {"name": "Washer", "appliance": {
+WASHER = {"clothes_washer": {"name": "Washer", "appliance": {
     "power": "sensor.plug_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }}}
@@ -55,9 +55,9 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
     assert await setup(ha, WASHER)
     await fake(ha, "sensor.plug_power", "500")
     await tick(ha, freezer, 59)
-    assert ha.states.get("binary_sensor.pururu_laundry_washer_appliance_running").state == "off"
+    assert ha.states.get("binary_sensor.pururu_clothes_washer_appliance_running").state == "off"
     await tick(ha, freezer, 1)
-    assert ha.states.get("binary_sensor.pururu_laundry_washer_appliance_running").state == "on"
+    assert ha.states.get("binary_sensor.pururu_clothes_washer_appliance_running").state == "on"
 ```
 
 ## Test files

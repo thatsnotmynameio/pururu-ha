@@ -12,7 +12,7 @@ APPLIANCE: dict[str, Any] = {
     "power": "sensor.washer_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-PUMP = {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}
+SPRINKLER = {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}
 
 
 def washer(**blocks: Any) -> dict[str, Any]:
@@ -45,23 +45,23 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "device washer: reactions: it: device dryer is not in devices",
         id="a reaction's device"),
     pytest.param(
-        {"devices": {"pool": {"name": "Pool", "switches": PUMP, "programs": {
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "programs": {
             "clean": {"name": "Clean", "sequence": [{"turn_on": "switch_nope"}]}}}}},
-        ["devices", "pool", "programs", "clean"],
+        ["devices", "greenhouse", "programs", "clean"],
         "programs: switch_nope is not an entity key of another feature of this device",
         id="a program's step"),
     pytest.param(
-        {"devices": {"pool": {"name": "Pool", "switches": PUMP, "lights": {
-            "pump": {"entity": "switch.pool_pump", "name": "Bomba"}}}}},
-        ["devices", "pool", "switches"],
-        "switches: switch.pool_pump is already in lights",
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "lights": {
+            "sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}}}},
+        ["devices", "greenhouse", "switches"],
+        "switches: switch.greenhouse_sprinkler is already in lights",
         id="a real entity twice"),
     pytest.param(
-        {"devices": {"pool": {"name": "Pool", "switches": {"switch_pump": PUMP["pump"]}},
-                     "pool_switch": {"name": "Pool", "switches": {"pump": {"entity": "switch.other",
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": {"switch_sprinkler": SPRINKLER["sprinkler"]}},
+                     "greenhouse_switch": {"name": "Greenhouse", "switches": {"sprinkler": {"entity": "switch.other",
                                                                           "name": "Other"}}}}},
-        ["devices", "pool_switch"],
-        "device pool_switch: pururu_pool_switch_switch_pump is already an entity of device pool",
+        ["devices", "greenhouse_switch"],
+        "device greenhouse_switch: pururu_greenhouse_switch_switch_sprinkler is already an entity of device greenhouse",
         id="two devices' IDs"),
     pytest.param(
         {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_running", "is": "on",
@@ -75,7 +75,7 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "device washer: appliance: alerts: offline: there is no default group in config.alerts.lights.groups",
         id="a ready-made alert's missing default group"),
     pytest.param(
-        {"devices": {"pool": {"name": "Pool", "switches": PUMP}},
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER}},
          "config": {"alerts": {"lights": {"groups": {"porch": {"garagem": ["x"]}}}}}},
         ["config", "alerts", "lights", "groups", "porch"],
         "config.alerts.lights.groups: porch: device garagem is not in devices",

@@ -16,7 +16,7 @@ from pytest_homeassistant_custom_component.common import async_mock_service
 from helpers import capture, fake, generated, module, reload, settle, setup, tick
 
 KEY = "washer"
-POWER = "sensor.demo_plug_power"
+POWER = "sensor.dummy_plug_power"
 PHONE = "notify.phone"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
@@ -173,7 +173,7 @@ async def automations(ha: HomeAssistant) -> AsyncIterator[None]:
 
 
 async def cycle(ha: HomeAssistant, freezer: Any) -> None:
-    """A washing cycle: running on after on_delay, off after off_delay."""
+    """A soaking cycle: running on after on_delay, off after off_delay."""
     await fake(ha, POWER, "100")
     await tick(ha, freezer, 60)
     assert ha.states.get(RUNNING).state == "on"

@@ -13,8 +13,8 @@ This is the first of two parts. The second, **alerts a feature offers ready-made
 ```yaml
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance: {power: sensor.washer_plug_power, running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}}
       alerts:
         long_cycle:
@@ -23,7 +23,7 @@ pururu:
           is: "on"
           for: {hours: 3}
           priority: medium
-          notify: {message: A máquina está rodando há mais de 3h!, done_message: A máquina terminou.}
+          notify: {message: A máquina passou de 3 horas ligada!, done_message: A máquina terminou.}
 
 alert2:
   defaults:
@@ -49,12 +49,12 @@ One condition alert per alert **with `notify`**, in device then alert order:
 
 ```yaml
 - domain: pururu
-  name: laundry_washer_alert_long_cycle
-  friendly_name: Máquina de lavar Ciclo longo
-  condition_on: "{{ is_state('binary_sensor.pururu_laundry_washer_alert_long_cycle', 'on') }}"
-  condition_off: "{{ is_state('binary_sensor.pururu_laundry_washer_alert_long_cycle', 'off') }}"
+  name: clothes_washer_alert_long_cycle
+  friendly_name: Tanquinho Ciclo longo
+  condition_on: "{{ is_state('binary_sensor.pururu_clothes_washer_alert_long_cycle', 'on') }}"
+  condition_off: "{{ is_state('binary_sensor.pururu_clothes_washer_alert_long_cycle', 'off') }}"
   priority: medium
-  message: A máquina está rodando há mais de 3h!
+  message: A máquina passou de 3 horas ligada!
   done_message: A máquina terminou.
 ```
 

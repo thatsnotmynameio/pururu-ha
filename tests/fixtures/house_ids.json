@@ -2,47 +2,47 @@
  "entities": [
   [
    "binary_sensor",
+   "pururu_clothes_washer_alert_overload"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_alert_stuck"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_appliance_alert_long_cycle"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_appliance_alert_no_cycle"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_appliance_alert_no_power"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_appliance_alert_offline"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_appliance_phase_other"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_appliance_phase_warming"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_appliance_phase_wringing"
+  ],
+  [
+   "binary_sensor",
+   "pururu_clothes_washer_appliance_running"
+  ],
+  [
+   "binary_sensor",
    "pururu_janela_quarto_window_open"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_alert_overload"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_alert_stuck"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_appliance_alert_long_cycle"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_appliance_alert_no_cycle"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_appliance_alert_no_power"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_appliance_alert_offline"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_appliance_phase_heating"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_appliance_phase_other"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_appliance_phase_spinning"
-  ],
-  [
-   "binary_sensor",
-   "pururu_laundry_washer_appliance_running"
   ],
   [
    "binary_sensor",
@@ -50,27 +50,283 @@
   ],
   [
    "binary_sensor",
-   "pururu_water_filter_appliance_phase_gelar"
+   "pururu_water_station_appliance_phase_other"
   ],
   [
    "binary_sensor",
-   "pururu_water_filter_appliance_phase_other"
+   "pururu_water_station_appliance_phase_quente"
   ],
   [
    "binary_sensor",
-   "pururu_water_filter_appliance_phase_quente"
+   "pururu_water_station_appliance_phase_resfriar"
   ],
   [
    "binary_sensor",
-   "pururu_water_filter_appliance_running"
+   "pururu_water_station_appliance_running"
   ],
   [
    "light",
-   "pururu_sala_light_abajur"
+   "pururu_biblioteca_light_abajur"
   ],
   [
    "light",
-   "pururu_sala_light_teto"
+   "pururu_biblioteca_light_teto"
+  ],
+  [
+   "sensor",
+   "pururu_biblioteca_reaction_night_triggered_total"
+  ],
+  [
+   "sensor",
+   "pururu_biblioteca_reaction_washer_done_triggered_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cycles_today"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cycles_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_idle_energy_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_idle_energy_today"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_idle_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_idle_energy_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_idle_energy_year"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_last_cycle_duration"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_last_cycle_end"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_last_cycle_energy"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_last_cycle_start"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_current"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_last"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_cycles_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_last_cycle_duration"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_last_cycle_end"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_last_cycle_energy"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_last_cycle_start"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_other_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_cycles_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_last_cycle_duration"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_last_cycle_end"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_last_cycle_energy"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_last_cycle_start"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_warming_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_cycles_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_energy_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_last_cycle_duration"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_last_cycle_end"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_last_cycle_energy"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_last_cycle_start"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_phase_wringing_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_power"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_runtime_today"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_clothes_washer_appliance_runtime_year"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_cycles_month"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_cycles_today"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_cycles_total"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_cycles_week"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_cycles_year"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_last_cycle_duration"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_last_cycle_end"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_last_cycle_start"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_runtime_month"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_runtime_today"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_runtime_total"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_runtime_week"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_program_clean_runtime_year"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_reaction_morning_triggered_month"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_reaction_morning_triggered_today"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_reaction_morning_triggered_total"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_reaction_morning_triggered_week"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_reaction_morning_triggered_year"
   ],
   [
    "sensor",
@@ -123,254 +379,6 @@
   [
    "sensor",
    "pururu_janela_quarto_window_openings_year"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_cycles_month"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_cycles_today"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_cycles_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_cycles_week"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_cycles_year"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_energy_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_idle_energy_month"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_idle_energy_today"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_idle_energy_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_idle_energy_week"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_idle_energy_year"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_last_cycle_duration"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_last_cycle_end"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_last_cycle_energy"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_last_cycle_start"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_current"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_heating_cycles_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_heating_energy_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_heating_last_cycle_duration"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_heating_last_cycle_end"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_heating_last_cycle_energy"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_heating_last_cycle_start"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_heating_runtime_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_last"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_other_cycles_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_other_energy_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_other_last_cycle_duration"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_other_last_cycle_end"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_other_last_cycle_energy"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_other_last_cycle_start"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_other_runtime_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_spinning_cycles_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_spinning_energy_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_spinning_last_cycle_duration"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_spinning_last_cycle_end"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_spinning_last_cycle_energy"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_spinning_last_cycle_start"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_phase_spinning_runtime_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_power"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_runtime_month"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_runtime_today"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_runtime_total"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_runtime_week"
-  ],
-  [
-   "sensor",
-   "pururu_laundry_washer_appliance_runtime_year"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_cycles_month"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_cycles_today"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_cycles_total"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_cycles_week"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_cycles_year"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_last_cycle_duration"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_last_cycle_end"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_last_cycle_start"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_runtime_month"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_runtime_today"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_runtime_total"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_runtime_week"
-  ],
-  [
-   "sensor",
-   "pururu_pool_program_clean_runtime_year"
-  ],
-  [
-   "sensor",
-   "pururu_pool_reaction_morning_triggered_month"
-  ],
-  [
-   "sensor",
-   "pururu_pool_reaction_morning_triggered_today"
-  ],
-  [
-   "sensor",
-   "pururu_pool_reaction_morning_triggered_total"
-  ],
-  [
-   "sensor",
-   "pururu_pool_reaction_morning_triggered_week"
-  ],
-  [
-   "sensor",
-   "pururu_pool_reaction_morning_triggered_year"
   ],
   [
    "sensor",
@@ -446,165 +454,157 @@
   ],
   [
    "sensor",
-   "pururu_sala_reaction_night_triggered_total"
+   "pururu_water_station_appliance_cycles_total"
   ],
   [
    "sensor",
-   "pururu_sala_reaction_washer_done_triggered_total"
+   "pururu_water_station_appliance_energy_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_cycles_total"
+   "pururu_water_station_appliance_idle_energy_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_energy_total"
+   "pururu_water_station_appliance_last_cycle_duration"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_idle_energy_total"
+   "pururu_water_station_appliance_last_cycle_end"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_last_cycle_duration"
+   "pururu_water_station_appliance_last_cycle_energy"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_last_cycle_end"
+   "pururu_water_station_appliance_last_cycle_start"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_last_cycle_energy"
+   "pururu_water_station_appliance_phase_current"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_last_cycle_start"
+   "pururu_water_station_appliance_phase_last"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_current"
+   "pururu_water_station_appliance_phase_other_cycles_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_gelar_cycles_total"
+   "pururu_water_station_appliance_phase_other_energy_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_gelar_energy_total"
+   "pururu_water_station_appliance_phase_other_last_cycle_duration"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_gelar_last_cycle_duration"
+   "pururu_water_station_appliance_phase_other_last_cycle_end"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_gelar_last_cycle_end"
+   "pururu_water_station_appliance_phase_other_last_cycle_energy"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_gelar_last_cycle_energy"
+   "pururu_water_station_appliance_phase_other_last_cycle_start"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_gelar_last_cycle_start"
+   "pururu_water_station_appliance_phase_other_runtime_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_gelar_runtime_total"
+   "pururu_water_station_appliance_phase_quente_cycles_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_last"
+   "pururu_water_station_appliance_phase_quente_energy_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_other_cycles_total"
+   "pururu_water_station_appliance_phase_quente_last_cycle_duration"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_other_energy_total"
+   "pururu_water_station_appliance_phase_quente_last_cycle_end"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_other_last_cycle_duration"
+   "pururu_water_station_appliance_phase_quente_last_cycle_energy"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_other_last_cycle_end"
+   "pururu_water_station_appliance_phase_quente_last_cycle_start"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_other_last_cycle_energy"
+   "pururu_water_station_appliance_phase_quente_runtime_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_other_last_cycle_start"
+   "pururu_water_station_appliance_phase_resfriar_cycles_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_other_runtime_total"
+   "pururu_water_station_appliance_phase_resfriar_energy_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_quente_cycles_total"
+   "pururu_water_station_appliance_phase_resfriar_last_cycle_duration"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_quente_energy_total"
+   "pururu_water_station_appliance_phase_resfriar_last_cycle_end"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_quente_last_cycle_duration"
+   "pururu_water_station_appliance_phase_resfriar_last_cycle_energy"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_quente_last_cycle_end"
+   "pururu_water_station_appliance_phase_resfriar_last_cycle_start"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_quente_last_cycle_energy"
+   "pururu_water_station_appliance_phase_resfriar_runtime_total"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_quente_last_cycle_start"
+   "pururu_water_station_appliance_power"
   ],
   [
    "sensor",
-   "pururu_water_filter_appliance_phase_quente_runtime_total"
-  ],
-  [
-   "sensor",
-   "pururu_water_filter_appliance_power"
-  ],
-  [
-   "sensor",
-   "pururu_water_filter_appliance_runtime_total"
+   "pururu_water_station_appliance_runtime_total"
   ],
   [
    "switch",
-   "pururu_pool_switch_pump"
+   "pururu_greenhouse_switch_sprinkler"
   ]
  ],
  "generated": [
   [
    "automations",
-   "pururu_laundry_washer_appliance_notification_finished"
+   "pururu_biblioteca_reaction_night"
   ],
   [
    "automations",
-   "pururu_pool_reaction_morning"
+   "pururu_biblioteca_reaction_washer_done"
   ],
   [
    "automations",
-   "pururu_sala_reaction_night"
+   "pururu_clothes_washer_appliance_notification_finished"
   ],
   [
    "automations",
-   "pururu_sala_reaction_washer_done"
+   "pururu_greenhouse_reaction_morning"
   ],
   [
    "scripts",
-   "pururu_pool_program_clean"
+   "pururu_greenhouse_program_clean"
   ]
  ]
 }

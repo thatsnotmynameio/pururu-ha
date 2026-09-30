@@ -53,8 +53,8 @@ def friendly_name(hass: HomeAssistant, entity_id: str) -> str:
 
 # --- appliance -----------------------------------------------------------------------
 
-APPLIANCE_KEY = "demo_washer"
-APPLIANCE_NAME = "Demo washer"
+APPLIANCE_KEY = "dummy_washer"
+APPLIANCE_NAME = "Dummy washer"
 APPLIANCE_COUNTERS = ("runtime", "cycles", "idle_energy")
 APPLIANCE_ICONS = {
     "runtime_today": "mdi:timer-sand",
@@ -83,8 +83,8 @@ def appliance_sensor(suffix: str) -> str:
 async def test_appliance_meters(ha: HomeAssistant, language: str) -> None:
     ha.config.language = language
     block = {
-        "power": "sensor.demo_plug_power",
-        "energy": "sensor.demo_plug_energy",
+        "power": "sensor.dummy_plug_power",
+        "energy": "sensor.dummy_plug_energy",
         "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
         "statistics": {counter: list(PERIODS) for counter in APPLIANCE_COUNTERS},
     }
@@ -140,8 +140,8 @@ async def test_opening_meters(ha: HomeAssistant, kind: str, language: str) -> No
 
 # --- programs --------------------------------------------------------------------------
 
-PROGRAM_KEY = "pool"
-PROGRAM_NAME = "Piscina"
+PROGRAM_KEY = "greenhouse"
+PROGRAM_NAME = "Estufa"
 PROGRAM_SLUG = "clean"
 PROGRAM_ITEM_NAME = "Limpar"
 PROGRAM_COUNTERS = ("runtime", "cycles")
@@ -179,11 +179,11 @@ async def test_programs_meters(scripts: HomeAssistant, language: str) -> None:
     devices: dict[str, Any] = {
         PROGRAM_KEY: {
             "name": PROGRAM_NAME,
-            "switches": {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}},
+            "switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}},
             "programs": {
                 PROGRAM_SLUG: {
                     "name": PROGRAM_ITEM_NAME,
-                    "sequence": [{"turn_on": "switch_pump"}],
+                    "sequence": [{"turn_on": "switch_sprinkler"}],
                     "statistics": {counter: list(PERIODS) for counter in PROGRAM_COUNTERS},
                 }
             },
@@ -228,11 +228,11 @@ async def test_reactions_meters(ha: HomeAssistant, language: str) -> None:
     devices: dict[str, Any] = {
         REACTION_KEY: {
             "name": REACTION_NAME,
-            "lights": {"teto": {"entity": "light.demo_teto", "name": "Teto"}},
+            "lights": {"teto": {"entity": "light.dummy_teto", "name": "Teto"}},
             "reactions": {
                 REACTION_SLUG: {
                     "name": REACTION_ITEM_NAME,
-                    "entity": "binary_sensor.demo_door",
+                    "entity": "binary_sensor.dummy_door",
                     "to": "on",
                     "statistics": {"triggered": list(PERIODS)},
                 }
@@ -250,7 +250,7 @@ async def test_reactions_meters(ha: HomeAssistant, language: str) -> None:
 # --- refusals ----------------------------------------------------------------------------
 
 APPLIANCE_MINIMAL = {
-    "power": "sensor.demo_plug_power",
+    "power": "sensor.dummy_plug_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 async def test_idle_energy_without_energy_is_refused(

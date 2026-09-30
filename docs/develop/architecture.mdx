@@ -15,15 +15,15 @@ flowchart TD
     F --> E
     R --> E
     RS["pururu.reload<br/>re-reads YAML"] --> S
-    E["async_setup_entry"] --> P1["1. places.async_sync<br/>floors and areas"]
-    P1 --> P2["2. build every device's entities<br/>(features)"]
-    P2 --> P3["3. entry.runtime_data → platforms<br/>sensor.py, binary_sensor.py,<br/>switch.py, light.py;<br/>events.async_setup"]
-    P3 --> P4["4. put each device in its area"]
-    P4 --> P5["5. remove stale entities and devices"]
-    P5 --> P6["6. core/generated.py<br/>programs' scripts, then automations<br/>(reactions, notifications)"]
-    P6 --> P7["7. alert2_alerts.async_sync<br/>Alert2's alerts"]
-    P7 --> P8["8. alert_lights.async_setup<br/>lights for the alerts"]
-    P8 --> P9["9. dashboard.async_setup"]
+    E["async_setup_entry"] --> Step1["1. places.async_sync<br/>floors and areas"]
+    Step1 --> Step2["2. build every device's entities<br/>(features)"]
+    Step2 --> Step3["3. entry.runtime_data → platforms<br/>sensor.py, binary_sensor.py,<br/>switch.py, light.py;<br/>events.async_setup"]
+    Step3 --> Step4["4. put each device in its area"]
+    Step4 --> Step5["5. remove stale entities and devices"]
+    Step5 --> Step6["6. core/generated.py<br/>programs' scripts, then automations<br/>(reactions, notifications)"]
+    Step6 --> Step7["7. alert2_alerts.async_sync<br/>Alert2's alerts"]
+    Step7 --> Step8["8. alert_lights.async_setup<br/>lights for the alerts"]
+    Step8 --> Step9["9. dashboard.async_setup"]
 ```
 
 ### `async_setup`
@@ -114,7 +114,7 @@ A ready-made alert takes what a hand-written one does, from one schema: `aspects
 
 **The checks.** The device schema (`_device` in `setup/schema.py`) is built from `FEATURES`: it requires at least one feature and checks that every `<capability>_from` names a feature of the same device that provides it. Everything that looks across blocks or devices is a check of `schema.CHECKS`, `check(house, index, builders)`, run once over the validated house and its index. Each yields its refusals, each a `vol.Invalid` with a path (`pururu->devices->washer->reactions->it`), and `_checked` raises them together, so every error in the house is told at once. Each lives in the module that owns the rule: `checks.py` for the generic ones (references, one real entity per device, distinct entity and generated IDs, areas exist, messages go somewhere), `reactions.check`, `programs.check`, `alerts.check` (an alert watching a ready-made alert, right after `checks.references`, which refuses what isn't another feature's entity key: one refusal per reference), `alert_lights.check` and `places.floors_exist`.
 
-It doesn't compare entity keys between features. Each feature has its own `namespace`, and the entity keys it creates are in it (`appliance_power`, `switch_power`), so they can't meet. The contract test checks that namespaces are distinct slugs and that none is another's followed by `_`. Between devices, `checks.entity_ids_distinct` still refuses two that would give an entity one ID: `pool` with the switch `switch_pump` and `pool_switch` with the switch `pump`.
+It doesn't compare entity keys between features. Each feature has its own `namespace`, and the entity keys it creates are in it (`appliance_power`, `switch_power`), so they can't meet. The contract test checks that namespaces are distinct slugs and that none is another's followed by `_`. Between devices, `checks.entity_ids_distinct` still refuses two that would give an entity one ID: `greenhouse` with the switch `switch_sprinkler` and `greenhouse_switch` with the switch `sprinkler`.
 
 When a feature requires a capability, `build.build` looks up the providing entity key's **current** entity ID with a `Device` in the providing feature's namespace (`Device.current_entity_id`, which follows renames), and passes it to `build()` in `inputs`. The provider's unique ID is also added to the entity's sources, so if the provider isn't created, neither is this entity.
 

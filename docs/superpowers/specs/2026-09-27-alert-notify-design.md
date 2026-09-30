@@ -9,7 +9,7 @@ An alert can say **what** to tell when it fires and when it's resolved, next to 
 ```yaml
 pururu:
   devices:
-    laundry_washer:
+    clothes_washer:
       alerts:
         long_cycle:
           name: Ciclo longo
@@ -18,7 +18,7 @@ pururu:
           for: {hours: 3}
           priority: medium
           notify:
-            message: A máquina está rodando há mais de 3h!
+            message: A máquina passou de 3 horas ligada!
             done_message: A máquina terminou.
 ```
 
@@ -72,7 +72,7 @@ An alert with `notify:` gains the attributes `message` and `done_message`. An al
 When Home Assistant has started (where the alert already begins to watch its entity), an alert with `notify:` checks `"alert2" in hass.config.components`. When it isn't:
 
 ```
-binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
+binary_sensor.pururu_clothes_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
 ```
 
 logged as an error, once per alert and setup. Detection goes on as without `notify:`.

@@ -3,18 +3,18 @@ config:
   alerts:
     lights:
       groups:
-        default: {sala: [teto]}
-        externas: {sala: [teto, abajur]}
+        default: {biblioteca: [teto]}
+        externas: {biblioteca: [teto, abajur]}
 events: [state_changed, reading]
 floors:
   terreo: {name: Térreo, level: 0}
 areas:
-  lavanderia: {name: Lavanderia, floor: terreo}
+  despensa: {name: Despensa, floor: terreo}
   entrada: {name: Entrada, floor: terreo}
 devices:
-  laundry_washer:
-    name: Máquina de lavar
-    area: lavanderia
+  clothes_washer:
+    name: Tanquinho
+    area: despensa
     appliance:
       power: sensor.washer_plug_power
       energy: sensor.washer_plug_energy
@@ -23,8 +23,8 @@ devices:
         on_delay: {minutes: 1}
         off_delay: {minutes: 2}
         phases:
-          heating: {name: Aquecendo, above: 1000}
-          spinning: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+          warming: {name: Aquecendo, above: 1000}
+          wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
       statistics:
         runtime: [today, week, month, year]
         cycles: [today, week, month, year]
@@ -40,23 +40,23 @@ devices:
       stuck:
         name: Travada
         when: appliance_phase_current
-        is: spinning
+        is: wringing
         for: {hours: 1}
         priority: medium
         lights: externas
         notify: {message: Travada!, done_message: Destravou.}
       overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
-  water_filter:
+  water_station:
     name: Purificador
     appliance:
-      power: sensor.filter_plug_power
-      energy: sensor.filter_plug_energy
+      power: sensor.station_plug_power
+      energy: sensor.station_plug_energy
       running_program:
         above: 2.9
         on_delay: {seconds: 1}
         off_delay: {minutes: 1}
         phases:
-          gelar: {name: Gelar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
+          resfriar: {name: Resfriar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
           quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
   porta_frente:
     name: Porta da frente
@@ -80,17 +80,17 @@ devices:
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
-  pool:
-    name: Piscina
+  greenhouse:
+    name: Estufa
     switches:
-      pump: {entity: switch.pool_pump, name: Bomba}
+      sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
     programs:
       clean:
         name: Limpar
         sequence:
-          - turn_on: switch_pump
+          - turn_on: switch_sprinkler
           - delay: {hours: 2}
-          - turn_off: switch_pump
+          - turn_off: switch_sprinkler
         statistics:
           runtime: [today, week, month, year]
           cycles: [today, week, month, year]
@@ -101,15 +101,15 @@ devices:
         then: clean
         retry: {times: 2, every: {hours: 1}}
         statistics: {triggered: [today, week, month, year]}
-  sala:
-    name: Sala
+  biblioteca:
+    name: Biblioteca
     lights:
-      teto: {entity: light.sala_teto, name: Teto}
+      teto: {entity: light.biblioteca_teto, name: Teto}
       abajur: {entity: switch.sonoff_abajur, name: Abajur}
     reactions:
       washer_done:
         name: Lavadora terminou
-        device: laundry_washer
+        device: clothes_washer
         when: appliance_running
         from: "on"
         to: "off"

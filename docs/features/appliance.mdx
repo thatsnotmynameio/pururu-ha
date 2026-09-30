@@ -8,8 +8,8 @@ description: An appliance on a power-measuring plug. It tells when the appliance
 ```yaml
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         energy: sensor.washer_plug_energy
@@ -163,7 +163,7 @@ appliance:
 - `offline:` alone, with nothing after it, enables it with every default.
 - `no_power` is for an appliance that always draws something, such as a fridge. A washer between cycles reads 0 W, so it would be on almost always.
 - `long_cycle` counts from the cycle's start, and `no_cycle` from the last cycle's end, so a restart in between starts nothing over. Until a first cycle ends, `no_cycle` counts from when you enabled it.
-- Each one is `binary_sensor.pururu_<key>_appliance_alert_<alert>`, device class `problem`, shown as **Máquina de lavar Sem conexão** and so on, with the attributes of any [alert](/concepts/alerts#entity). A [reaction](/concepts/reactions) can react to one (`when: appliance_alert_offline`); another alert can't watch it.
+- Each one is `binary_sensor.pururu_<key>_appliance_alert_<alert>`, device class `problem`, shown as **Tanquinho Sem conexão** and so on, with the attributes of any [alert](/concepts/alerts#entity). A [reaction](/concepts/reactions) can react to one (`when: appliance_alert_offline`); another alert can't watch it.
 - For anything else, such as a threshold of yours or another entity, write an [alert](/concepts/alerts) yourself.
 
 | Alert | Default message | Default done message |

@@ -24,7 +24,7 @@
     "appliance_alert_long_cycle_message": "O ciclo está demorando demais.",
     "appliance_alert_long_cycle_done_message": "O ciclo terminou.",
     "appliance_alert_no_cycle_message": "Não roda há um tempo.",
-    "appliance_alert_no_cycle_done_message": "Voltou a rodar.",
+    "appliance_alert_no_cycle_done_message": "Voltou a funcionar.",
     "appliance_notification_finished_name": "Terminou",
     "appliance_notification_finished_message": "O ciclo terminou."
   },
@@ -86,17 +86,13 @@
       "phase_current": {
         "name": "Fase",
         "state": {
-          "idle": "Parada", "washing": "Lavando", "heating": "Aquecendo",
-          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando",
-          "cooling": "Esfriando", "other": "Outra", "dispensing": "Dispensando"
+          "idle": "Parada", "rinsing": "Enxaguando", "drying": "Secando", "other": "Outra"
         }
       },
       "phase_last": {
         "name": "Última fase",
         "state": {
-          "washing": "Lavando", "heating": "Aquecendo",
-          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando",
-          "cooling": "Esfriando", "other": "Outra", "dispensing": "Dispensando"
+          "rinsing": "Enxaguando", "drying": "Secando", "other": "Outra"
         }
       },
       "phase_last_cycle_start": {"name": "Início do último ciclo de {item}"},

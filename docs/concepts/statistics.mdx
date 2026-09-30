@@ -8,8 +8,8 @@ Several counters keep a running total, all time: an appliance's cycles, a door's
 ```yaml
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
@@ -55,7 +55,7 @@ A counter under **Needs** takes no periods without that other setting: `applianc
 
 Each meter is `sensor.pururu_<key>_<namespace>_<counter>_<period>`, for a block's own counter, or `sensor.pururu_<key>_<namespace>_<item>_<counter>_<period>` for a mode's, a program's or a reaction's, `<item>` its slug (a mode) or its key (a program, a reaction).
 
-It's named after the device, the counter and the period: **Máquina de lavar Runtime today**. Per item, the item's own name goes between the device's name and the counter's, as in [`modes`](/features/modes#entities), [`programs`](/concepts/programs#statistics) and [`reactions`](/concepts/reactions#statistics): **Piscina Limpar runtime this month**.
+It's named after the device, the counter and the period: **Tanquinho Runtime today**. Per item, the item's own name goes between the device's name and the counter's, as in [`modes`](/features/modes#entities), [`programs`](/concepts/programs#statistics) and [`reactions`](/concepts/reactions#statistics): **Estufa Limpar runtime this month**.
 
 Every meter's unique ID is its entity ID without the platform, and it survives restarts and reloads: it's Home Assistant's `utility_meter`, seeded from the total's current value the first time it's added, so it doesn't sit at `unknown` until the total next changes.
 

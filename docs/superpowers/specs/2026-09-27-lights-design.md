@@ -9,19 +9,19 @@ A device can have several lights. Each one is keyed and named in YAML and stands
 ```yaml
 pururu:
   devices:
-    sala:
-      name: Sala
-      area: sala
+    biblioteca:
+      name: Biblioteca
+      area: biblioteca
       lights:
-        teto: {entity: light.sala_teto, name: Teto}          # a smart bulb
+        teto: {entity: light.biblioteca_teto, name: Teto}          # a smart bulb
         abajur: {entity: switch.sonoff_abajur, name: Abajur} # a relay
-# → light.pururu_sala_light_teto    "Sala Teto"    what the bulb offers: brightness, colour…
-# → light.pururu_sala_light_abajur  "Sala Abajur"  on and off
+# → light.pururu_biblioteca_light_teto    "Biblioteca Teto"    what the bulb offers: brightness, colour…
+# → light.pururu_biblioteca_light_abajur  "Biblioteca Abajur"  on and off
 ```
 
 ## Why an entity of its own
 
-The pururu light is a new entity. The real one stays as it is. pururu doesn't own the real entity, so it can't move it into its device, give it a `pururu_…` ID, name it, or remove it with the configuration. An entity of its own belongs to the pururu device and its area, has the name from the YAML, and keeps a stable ID. Replacing the bulb or the relay means changing `entity:` alone. `light.pururu_sala_light_teto` keeps its ID, name and area, and the automations and dashboards that use it go on working.
+The pururu light is a new entity. The real one stays as it is. pururu doesn't own the real entity, so it can't move it into its device, give it a `pururu_…` ID, name it, or remove it with the configuration. An entity of its own belongs to the pururu device and its area, has the name from the YAML, and keeps a stable ID. Replacing the bulb or the relay means changing `entity:` alone. `light.pururu_biblioteca_light_teto` keeps its ID, name and area, and the automations and dashboards that use it go on working.
 
 ## Decisions
 
@@ -32,7 +32,7 @@ The pururu light is a new entity. The real one stays as it is. pururu doesn't ow
 | What a light offers | What the real entity exposes, read at run time and not listed in pururu's code. A `light.*` gives its colour modes, brightness, colours, colour temperature and its range, effects and supported features. When they change (a firmware update), the pururu light follows. A `switch.*` exposes only on and off, so its light is `ColorMode.ONOFF`. |
 | One real entity or several | One, always: `entity:` is singular, in `lights` as in `switches`. Several bulbs as one light will be a group of pururu lights, a feature of its own (see "Later: `groups:`"), and not a list in `entity:`. |
 | Rejected: `entity:` taking a list later, or `entities:` in an item | A key that is a string or a list makes every rule handle both. Groups of pururu lights keep each bulb controllable on its own, as HA's groups do. |
-| The same real switch as a switch and as a light | Refused **within one device**: a real entity appears in one `configured` feature of a device at most. The rule is generic, so it covers future `fans:` and `covers:`, which may take `switch.*` too. Across devices it's allowed: a relay can be a light in `sala` and a switch in `piscina`. |
+| The same real switch as a switch and as a light | Refused **within one device**: a real entity appears in one `configured` feature of a device at most. The rule is generic, so it covers future `fans:` and `covers:`, which may take `switch.*` too. Across devices it's allowed: a relay can be a light in `biblioteca` and a switch in `estufa`. |
 | The same real entity twice in one feature | Allowed, as in `switches` today, in one device or across devices. |
 | An entity standing for a pururu entity | Refused. `light.pururu_…` would call itself forever, and `switch.pururu_…` already stands for a real switch. A pururu entity renamed in the UI gets past the prefix: `build()` checks the entity registry, logs the error and skips that light. A light (or switch) renamed in the UI to the entity its own `entity:` names is kept standing for nothing (a group with no member: `unavailable`, never passing a command on to itself, found in the PR review), with the log `<entity> is this light itself: name the real one`. Skipping it would delete its registry entry, and the next reload would bring it back, flip-flopping (found in the final review). |
 | Code shared with `switches` | A module of functions, `features/standing.py`, not a base class. The entity classes already inherit from HA's group classes. What `switches` and `lights` share is the configuration rules and the registry check, not entity behaviour. Each feature keeps its own `build()` loop, readable without opening another file. |
@@ -43,11 +43,11 @@ The pururu light is a new entity. The real one stays as it is. pururu doesn't ow
 
 `lights:` is a feature (a key of `FEATURES`) with `namespace="light"`, `configured=Platform.LIGHT` and `entity_keys={}`. A device can have `lights:` alone.
 
-- A key is a slug and becomes the entity key: `teto` → `light.pururu_sala_light_teto`. There's no exception: a key `light` gives `light.pururu_sala_light_light`.
+- A key is a slug and becomes the entity key: `teto` → `light.pururu_biblioteca_light_teto`. There's no exception: a key `light` gives `light.pururu_biblioteca_light_light`.
 - `entity` is required. It's a `light.*` or `switch.*` entity, and not `light.pururu_…` or `switch.pururu_…`.
 - `name` is required and not blank. It's shown after the device's name, in every language.
 - Unknown keys inside a light are refused, and so is an empty `lights: {}`.
-- `switches: pump` and `lights: pump` in one device are accepted: their IDs differ by namespace (`switch_pump` and `light_pump`).
+- `switches: sprinkler` and `lights: sprinkler` in one device are accepted: their IDs differ by namespace (`switch_sprinkler` and `light_sprinkler`).
 
 ### One configured feature per real entity, in a device
 
@@ -72,7 +72,7 @@ def is_pururu(hass: HomeAssistant, entity: str) -> bool:
     """The registry says `entity` is pururu's (catches a pururu_… renamed in the UI)."""
 ```
 
-- `switches.py` uses `standing.schema(Platform.SWITCH)` and `standing.is_pururu`. Its behaviour and log lines don't change, and `tests/test_switches.py` passes unedited. One configuration message changes: another domain reads `light.pool_light is not a switch` (a light: `sensor.x is not a light or switch`) instead of HA's `does not belong to domain`, which would print a list for two domains.
+- `switches.py` uses `standing.schema(Platform.SWITCH)` and `standing.is_pururu`. Its behaviour and log lines don't change, and `tests/test_switches.py` passes unedited. One configuration message changes: another domain reads `light.greenhouse_light is not a switch` (a light: `sensor.x is not a light or switch`) instead of HA's `does not belong to domain`, which would print a list for two domains.
 - Each feature logs its own message when `is_pururu` is true, so the predicate stays free of side effects.
 
 ## The entities (`features/lights.py`)
@@ -155,7 +155,7 @@ A light over a real switch, on HA's `GroupEntity` as `SwitchGroup` and `LightGro
   - the same real entity in `switches:` and `lights:` of one device, in either order in the YAML (the message names the features in `FEATURES` order).
 - **Accepted:**
   - the same real switch as a light in one device and a switch in another;
-  - `switches: pump` next to `lights: pump`;
+  - `switches: sprinkler` next to `lights: sprinkler`;
   - a device with only `lights:`.
 - **Lifecycle:**
   - an ID already taken;
@@ -197,18 +197,18 @@ The `features/standing.py` extraction is checked by `tests/test_switches.py` pas
 Not in this PR. It gets its own spec and PR. It's written down here so that nothing in `lights` gets in its way.
 
 ```yaml
-sala:
-  name: Sala
+biblioteca:
+  name: Biblioteca
   lights:
-    teto: {entity: light.sala_teto, name: Teto}
+    teto: {entity: light.biblioteca_teto, name: Teto}
     lustre_1: {entity: light.lustre_1, name: Lustre 1}
     lustre_2: {entity: light.lustre_2, name: Lustre 2}
   groups:
     lustre:
       name: Lustre
       lights: [lustre_1, lustre_2]
-# → light.pururu_sala_light_lustre_1, light.pururu_sala_light_lustre_2
-# → light.pururu_sala_group_lustre: a LightGroup of the two above
+# → light.pururu_biblioteca_light_lustre_1, light.pururu_biblioteca_light_lustre_2
+# → light.pururu_biblioteca_group_lustre: a LightGroup of the two above
 ```
 
 - A group gathers pururu entities of its own device by their keys, not real entity IDs. Each bulb stays a light of its own, and the group turns them together. A group has a type (light, switch…), which sets its platform and what it may gather. How the YAML states it is decided in its spec: the key inside the group (`lights:`) is one way.
@@ -219,4 +219,4 @@ sala:
 ## Risks
 
 - `LightGroup`, `SwitchGroup` and `GroupEntity` are classes of HA's `group` integration, with no promise of a stable API. The project already accepts this for `Mirror` and `Switch`. `group` is in `dependencies`, and the tests catch a break when HA is updated. Reimplementing state following and command forwarding would be much more code, and more bugs.
-- The pururu light and the real entity are two entities for one thing. Voice and area-wide actions reach both. Switching both is harmless, but "how many lights are on" counts two, and a real light and its pururu light in one area both answer "turn off the lights in Sala".
+- The pururu light and the real entity are two entities for one thing. Voice and area-wide actions reach both. Switching both is harmless, but "how many lights are on" counts two, and a real light and its pururu light in one area both answer "turn off the lights in Biblioteca".

@@ -46,7 +46,7 @@
 ```python
 # --- statistics --------------------------------------------------------------------
 
-STAT = "sensor.pururu_pool_program_clean_"
+STAT = "sensor.pururu_greenhouse_program_clean_"
 
 
 def value(hass: HomeAssistant, suffix: str) -> str:
@@ -55,23 +55,23 @@ def value(hass: HomeAssistant, suffix: str) -> str:
     return state.state
 
 
-async def test_a_run_is_a_cycle(pool: HomeAssistant, freezer: Any) -> None:
-    await start(pool)
+async def test_a_run_is_a_cycle(greenhouse: HomeAssistant, freezer: Any) -> None:
+    await start(greenhouse)
     started = dt_util.utcnow()
-    assert value(pool, "cycles_total") == "0"
-    await tick(pool, freezer, TWO_HOURS)
-    await pool.async_block_till_done()
-    assert value(pool, "cycles_total") == "1"
-    assert value(pool, "last_cycle_duration") == "120.0"
-    assert dt_util.parse_datetime(value(pool, "last_cycle_start")) == started
-    assert dt_util.parse_datetime(value(pool, "last_cycle_end")) == dt_util.utcnow()
-    assert float(value(pool, "runtime_total")) == pytest.approx(2, abs=0.01)
+    assert value(greenhouse, "cycles_total") == "0"
+    await tick(greenhouse, freezer, TWO_HOURS)
+    await greenhouse.async_block_till_done()
+    assert value(greenhouse, "cycles_total") == "1"
+    assert value(greenhouse, "last_cycle_duration") == "120.0"
+    assert dt_util.parse_datetime(value(greenhouse, "last_cycle_start")) == started
+    assert dt_util.parse_datetime(value(greenhouse, "last_cycle_end")) == dt_util.utcnow()
+    assert float(value(greenhouse, "runtime_total")) == pytest.approx(2, abs=0.01)
 
 
-async def test_its_statistics_are_named_by_the_program(pool: HomeAssistant) -> None:
-    state = pool.states.get(STAT + "cycles_total")
+async def test_its_statistics_are_named_by_the_program(greenhouse: HomeAssistant) -> None:
+    state = greenhouse.states.get(STAT + "cycles_total")
     assert state is not None
-    assert state.attributes["friendly_name"] == "Piscina Limpar cycles"
+    assert state.attributes["friendly_name"] == "Estufa Limpar cycles"
 
 
 async def test_meters_are_asked_for(scripts: HomeAssistant) -> None:
@@ -88,33 +88,33 @@ async def test_invalid_statistics_are_refused(ha: HomeAssistant, statistics: dic
     assert not await setup(ha, devices(clean={**CLEANING, "statistics": statistics}))
 
 
-async def test_a_reload_mid_run_counts_it_once_from_its_start(pool: HomeAssistant,
+async def test_a_reload_mid_run_counts_it_once_from_its_start(greenhouse: HomeAssistant,
                                                               freezer: Any) -> None:
-    await start(pool)
+    await start(greenhouse)
     started = dt_util.utcnow()
-    await tick(pool, freezer, 60)
-    await reload_while_running(pool, devices())
-    await tick(pool, freezer, TWO_HOURS - 60)
-    await pool.async_block_till_done()
-    assert value(pool, "cycles_total") == "1"
-    assert dt_util.parse_datetime(value(pool, "last_cycle_start")) == started
+    await tick(greenhouse, freezer, 60)
+    await reload_while_running(greenhouse, devices())
+    await tick(greenhouse, freezer, TWO_HOURS - 60)
+    await greenhouse.async_block_till_done()
+    assert value(greenhouse, "cycles_total") == "1"
+    assert dt_util.parse_datetime(value(greenhouse, "last_cycle_start")) == started
 
 
-async def test_a_held_program_keeps_its_statistics(pool: HomeAssistant, freezer: Any) -> None:
-    await start(pool)
-    await tick(pool, freezer, TWO_HOURS)
-    await pool.async_block_till_done()
-    await disable(pool, PUMP)
-    await tick(pool, freezer, 31)
-    await pool.async_block_till_done()
-    assert value(pool, "cycles_total") == "1"
+async def test_a_held_program_keeps_its_statistics(greenhouse: HomeAssistant, freezer: Any) -> None:
+    await start(greenhouse)
+    await tick(greenhouse, freezer, TWO_HOURS)
+    await greenhouse.async_block_till_done()
+    await disable(greenhouse, SPRINKLER)
+    await tick(greenhouse, freezer, 31)
+    await greenhouse.async_block_till_done()
+    assert value(greenhouse, "cycles_total") == "1"
 
 
-async def test_a_removed_program_takes_its_statistics(pool: HomeAssistant) -> None:
-    wash = {"name": "Lavar", "sequence": [{"turn_on": "switch_pump"}]}
-    await reload(pool, devices(wash=wash))
-    assert er.async_get(pool).async_get(STAT + "cycles_total") is None
-    assert er.async_get(pool).async_get("sensor.pururu_pool_program_wash_cycles_total") is not None
+async def test_a_removed_program_takes_its_statistics(greenhouse: HomeAssistant) -> None:
+    wash = {"name": "Lavar", "sequence": [{"turn_on": "switch_sprinkler"}]}
+    await reload(greenhouse, devices(wash=wash))
+    assert er.async_get(greenhouse).async_get(STAT + "cycles_total") is None
+    assert er.async_get(greenhouse).async_get("sensor.pururu_greenhouse_program_wash_cycles_total") is not None
 ```
 
 Add `from homeassistant.util import dt as dt_util` to its imports. Move these tests below `disable` (they use it).
@@ -349,7 +349,7 @@ git commit -m "programs: each run is a cycle, with its statistics"
 ```python
 # --- statistics --------------------------------------------------------------------
 
-TRIGGERED = "sensor.pururu_pool_reaction_clean_triggered_total"
+TRIGGERED = "sensor.pururu_greenhouse_reaction_clean_triggered_total"
 
 
 def count(ha: HomeAssistant, entity_id: str = TRIGGERED) -> str:
@@ -361,15 +361,15 @@ def count(ha: HomeAssistant, entity_id: str = TRIGGERED) -> str:
 async def test_every_trigger_counts_even_one_its_program_skips(ha: HomeAssistant,
                                                               both: None) -> None:
     await fake(ha, DOOR, "off")
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, pool())
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse())
     assert count(ha) == "0"
     await fake(ha, DOOR, "on")
     await fake(ha, DOOR, "off")
     await fake(ha, DOOR, "on")
     await settle()
     assert count(ha) == "2"
-    assert ha.states.get("sensor.pururu_pool_program_clean_cycles_total").state == "0"
+    assert ha.states.get("sensor.pururu_greenhouse_program_clean_cycles_total").state == "0"
 
 
 async def test_a_reaction_without_then_counts_too(ha: HomeAssistant, freezer: Any,
@@ -380,10 +380,10 @@ async def test_a_reaction_without_then_counts_too(ha: HomeAssistant, freezer: An
 
 
 async def test_its_meters_are_asked_for(ha: HomeAssistant) -> None:
-    assert await setup(ha, pool(clean={**DOOR_OPENS, "then": "clean",
+    assert await setup(ha, greenhouse(clean={**DOOR_OPENS, "then": "clean",
                                        "statistics": {"triggered": ["month"]}}))
-    assert ha.states.get("sensor.pururu_pool_reaction_clean_triggered_month") is not None
-    assert ha.states.get("sensor.pururu_pool_reaction_clean_triggered_today") is None
+    assert ha.states.get("sensor.pururu_greenhouse_reaction_clean_triggered_month") is not None
+    assert ha.states.get("sensor.pururu_greenhouse_reaction_clean_triggered_today") is None
 
 
 async def test_a_reaction_on_its_own_counter_is_refused(
@@ -395,9 +395,9 @@ async def test_a_reaction_on_its_own_counter_is_refused(
 
 async def test_a_reaction_on_a_programs_statistic(ha: HomeAssistant) -> None:
     done = {"name": "Limpou", "when": "program_clean_last_cycle_end", "to": "unknown"}
-    assert await setup(ha, pool(done=done))
+    assert await setup(ha, greenhouse(done=done))
     trigger = generated(ha)[0]["triggers"][0]
-    assert trigger["entity_id"] == "sensor.pururu_pool_program_clean_last_cycle_end"
+    assert trigger["entity_id"] == "sensor.pururu_greenhouse_program_clean_last_cycle_end"
 ```
 
 - [ ] **Step 2: Run, expect FAIL** — `uv run pytest tests/test_reactions.py -n 0 -q`
@@ -554,16 +554,16 @@ In `tests/test_reactions.py`, **replace** `test_renaming_a_script_no_reaction_st
 ```python
 async def test_renaming_a_script_no_reaction_starts_still_reloads(ha: HomeAssistant) -> None:
     """Its statistics watch it: they follow the new ID."""
-    assert await setup(ha, pool(night={"name": "Noite", "at": "22:00"}))
+    assert await setup(ha, greenhouse(night={"name": "Noite", "at": "22:00"}))
     with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
-        er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
+        er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_estufa")
         await ha.async_block_till_done()
     reloading.assert_called_once()
 
 
 async def test_renaming_ones_own_script_reloads_nothing(ha: HomeAssistant) -> None:
     er.async_get(ha).async_get_or_create("script", "script", "mine", suggested_object_id="mine")
-    assert await setup(ha, pool())
+    assert await setup(ha, greenhouse())
     with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
         er.async_get(ha).async_update_entity("script.mine", new_entity_id="script.minha")
         await ha.async_block_till_done()
@@ -572,9 +572,9 @@ async def test_renaming_ones_own_script_reloads_nothing(ha: HomeAssistant) -> No
 
 async def test_the_count_follows_its_automation_renamed(ha: HomeAssistant, both: None) -> None:
     await fake(ha, DOOR, "off")
-    await fake(ha, REAL_PUMP, "off")
-    assert await setup(ha, pool())
-    er.async_get(ha).async_update_entity("automation.pururu_pool_reaction_clean",
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse())
+    er.async_get(ha).async_update_entity("automation.pururu_greenhouse_reaction_clean",
                                          new_entity_id="automation.porta_limpa")
     await ha.async_block_till_done()
     await fake(ha, DOOR, "on")
@@ -585,13 +585,13 @@ async def test_the_count_follows_its_automation_renamed(ha: HomeAssistant, both:
 In `tests/test_programs.py`:
 
 ```python
-async def test_its_statistics_follow_the_script_renamed(pool: HomeAssistant, freezer: Any) -> None:
-    er.async_get(pool).async_update_entity(CLEAN, new_entity_id="script.limpar_piscina")
-    await pool.async_block_till_done()
-    await start(pool, "script.limpar_piscina")
-    await tick(pool, freezer, TWO_HOURS)
-    await pool.async_block_till_done()
-    assert value(pool, "cycles_total") == "1"
+async def test_its_statistics_follow_the_script_renamed(greenhouse: HomeAssistant, freezer: Any) -> None:
+    er.async_get(greenhouse).async_update_entity(CLEAN, new_entity_id="script.limpar_estufa")
+    await greenhouse.async_block_till_done()
+    await start(greenhouse, "script.limpar_estufa")
+    await tick(greenhouse, freezer, TWO_HOURS)
+    await greenhouse.async_block_till_done()
+    assert value(greenhouse, "cycles_total") == "1"
 ```
 
 - [ ] **Step 2: Run, expect FAIL** — `uv run pytest tests/test_reactions.py tests/test_programs.py -n 0 -q -k "renam"`

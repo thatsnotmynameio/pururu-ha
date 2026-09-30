@@ -54,7 +54,7 @@ Add after `test_a_when_of_no_entity_key_names_it`:
 
 ```python
 NOTIFY = {"message": "Overload!", "done_message": "Back to normal."}
-NOTIFY_PATH = "pururu->devices->demo_washer->alerts->overload->notify"
+NOTIFY_PATH = "pururu->devices->dummy_washer->alerts->overload->notify"
 
 
 @pytest.mark.parametrize(("notify", "reason"), [
@@ -277,7 +277,7 @@ pururu **detects** the problem and, with `notify`, says what to tell. [Alert2](h
           for: {hours: 3}
           priority: medium
           notify:
-            message: A máquina está rodando há mais de 3h!
+            message: A máquina passou de 3 horas ligada!
             done_message: A máquina terminou.
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
         plug_offline: {name: Tomada offline, when: appliance_power, is: unavailable, for: {minutes: 10}}
@@ -325,16 +325,16 @@ alert2:
 
 - **What each alert says** comes from its `notify`. **How** it's told is the same for every alert, in Alert2's `defaults` or in this block: who is told, reminders, acknowledging, a title. See Alert2's documentation.
 - It picks only the alerts with `notify` (they alone have a `message`).
-- Each Alert2 alert is named after the rest of the pururu alert's ID: `binary_sensor.pururu_laundry_washer_alert_long_cycle` becomes `alert2.pururu_laundry_washer_alert_long_cycle`, whatever the device and alert keys contain.
-- If an alert has `notify` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
+- Each Alert2 alert is named after the rest of the pururu alert's ID: `binary_sensor.pururu_clothes_washer_alert_long_cycle` becomes `alert2.pururu_clothes_washer_alert_long_cycle`, whatever the device and alert keys contain.
+- If an alert has `notify` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_clothes_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
 
 **Without `notify`**, the alert is yours to use: an automation triggered by it turning on, or Home Assistant's [`alert`](https://www.home-assistant.io/integrations/alert/):
 
 ```yaml
 alert:
   washer_long_cycle:
-    name: Máquina de lavar Ciclo longo
-    entity_id: binary_sensor.pururu_laundry_washer_alert_long_cycle
+    name: Tanquinho Ciclo longo
+    entity_id: binary_sensor.pururu_clothes_washer_alert_long_cycle
     repeat: 30
     notifiers: [mobile_app_phone]
 ```
@@ -351,7 +351,7 @@ The `long_cycle` line in the example becomes:
           is: "on"
           for: {hours: 3}
           priority: medium
-          notify: {message: A máquina está rodando há mais de 3h!, done_message: A máquina terminou.}
+          notify: {message: A máquina passou de 3 horas ligada!, done_message: A máquina terminou.}
 ```
 
 - [ ] **Step 3: `docs/reference/troubleshooting.mdx`**
@@ -368,7 +368,7 @@ After the section `### \`… watches …, which this device's settings don't cre
 ### `… has notify, but Alert2 isn't set up to deliver it`
 
 ```
-binary_sensor.pururu_laundry_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
+binary_sensor.pururu_clothes_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
 ```
 
 An alert with `notify` is delivered by [Alert2](/features/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told.

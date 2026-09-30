@@ -9,14 +9,14 @@ A device can have several switches, each one keyed and named in YAML, each one s
 ```yaml
 pururu:
   devices:
-    pool:
-      name: Piscina
-      area: piscina
+    greenhouse:
+      name: Estufa
+      area: estufa
       switches:
-        pump: {entity: switch.pool_pump, name: Bomba}
-        heater: {entity: switch.pool_heater, name: Aquecedor}
-# → switch.pururu_pool_pump    "Piscina Bomba"
-# → switch.pururu_pool_heater  "Piscina Aquecedor"
+        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+        heater: {entity: switch.greenhouse_heater, name: Aquecedor}
+# → switch.pururu_greenhouse_sprinkler    "Estufa Irrigador"
+# → switch.pururu_greenhouse_heater  "Estufa Aquecedor"
 ```
 
 ## Decisions
@@ -26,11 +26,11 @@ pururu:
 | One switch or several per device | Several, under `switches:`, each keyed by its entity key. |
 | Where a switch's name comes from | `name:`, required. Entity keys chosen in YAML have no translation. |
 | Which real entities | Only `switch.*`. One feature per domain, each built on HA's group entity of that domain with a single member (`SwitchGroup` here, as `Mirror` is a `SensorGroup`). A pururu entity has the real one's domain, so it keeps everything that domain offers. |
-| Rejected: any on/off entity as a switch | A light, fan or cover exposed as `switch.*` loses brightness, colour, speed or position, shows as a toggle, and Assist doesn't treat it as its domain ("dim the pool light", "turn off the lights in Piscina"). |
+| Rejected: any on/off entity as a switch | A light, fan or cover exposed as `switch.*` loses brightness, colour, speed or position, shows as a toggle, and Assist doesn't treat it as its domain ("dim the greenhouse light", "turn off the lights in Estufa"). |
 | Later, not in this PR | `lights:` (a `LightGroup` of one, with brightness and colour passed through), in its own PR (0.1.5). Then maybe `fans:`, `covers:`, `locks:`, `valves:`: HA has a group entity for each. Each is one more feature with `configured` set to its platform. |
 | How `Feature` declares entity keys that come from YAML | A new optional field, `configured: Platform \| None`. Rejected: `entity_keys` as a function of the configuration (rewrites every feature and the contract test for one case); `switches:` as a special device key like `area:` (a second path around `_creatable`, stale removal and renames). |
-| Two entity keys alike in one device | A configuration error, even across platforms: `switch.pururu_pool_power` and `sensor.pururu_pool_power` would share the unique ID `pururu_pool_power`, and `_creatable` and `_remove_stale` compare unique IDs only. |
-| Two devices giving an entity one ID | A configuration error (added after the final review): with keys chosen in YAML, device `pool` + `pump_heater` and device `pool_pump` + `heater` both give `pururu_pool_pump_heater`. |
+| Two entity keys alike in one device | A configuration error, even across platforms: `switch.pururu_greenhouse_power` and `sensor.pururu_greenhouse_power` would share the unique ID `pururu_greenhouse_power`, and `_creatable` and `_remove_stale` compare unique IDs only. |
+| Two devices giving an entity one ID | A configuration error (added after the final review): with keys chosen in YAML, device `greenhouse` + `sprinkler_heater` and device `greenhouse_sprinkler` + `heater` both give `pururu_greenhouse_sprinkler_heater`. |
 | A reload moving an entity key to another platform | The old entity is removed: stale removal compares platform and unique ID (added after the final review). |
 | "pururu controls nothing" in the docs | Rewritten: pururu never acts on its own. A switch passes on what a person, an automation or a voice assistant asks of it, and nothing else. |
 
@@ -48,8 +48,8 @@ SWITCH = vol.Schema(
 SCHEMA = vol.All(vol.Schema({cv.slug: SWITCH}), vol.Length(min=1))
 ```
 
-- A key is a slug and becomes the entity key: `pump` → `switch.pururu_pool_pump`.
-- `entity` must be of the `switch` domain; `light.pool_light` is refused. It must not be a pururu switch (`switch.pururu_…`): a switch standing for itself would call itself forever, and one standing for another pururu switch is pointless. A pururu switch renamed in the UI gets past that prefix: `build()` checks the entity registry (`platform == pururu`), logs `<entity> is a pururu switch: name the real one; not creating <switch>` and skips that switch (added after the PR review).
+- A key is a slug and becomes the entity key: `sprinkler` → `switch.pururu_greenhouse_sprinkler`.
+- `entity` must be of the `switch` domain; `light.greenhouse_light` is refused. It must not be a pururu switch (`switch.pururu_…`): a switch standing for itself would call itself forever, and one standing for another pururu switch is pointless. A pururu switch renamed in the UI gets past that prefix: `build()` checks the entity registry (`platform == pururu`), logs `<entity> is a pururu switch: name the real one; not creating <switch>` and skips that switch (added after the PR review).
 - `name` is required. It is shown after the device's name, in every language.
 - Unknown keys inside a switch are refused, and so is an empty `switches: {}`.
 
@@ -71,7 +71,7 @@ Checking against every fixed entity key, not only those the settings create, mea
 configured: Platform | None = None
 ```
 
-- `SWITCHES = Feature(schema=SCHEMA, entity_keys={}, configured=Platform.SWITCH, build=build, example={"pump": {"entity": "switch.demo_pump", "name": "Pump"}})`.
+- `SWITCHES = Feature(schema=SCHEMA, entity_keys={}, configured=Platform.SWITCH, build=build, example={"sprinkler": {"entity": "switch.dummy_sprinkler", "name": "Sprinkler"}})`.
 - `provides` points to fixed entity keys only; a `configured` feature provides nothing.
 - `_build` and `_creatable` don't change: `build()` returns entities that already carry their IDs.
 
@@ -90,7 +90,7 @@ configured: Platform | None = None
 - Turning it on or off calls `switch.turn_on` / `switch.turn_off` on the real switch, blocking, with the caller's context, so the logbook names who did it.
 - `assumed_state` follows the real switch's.
 - No restored state: it always shows the real switch.
-- The group's `entity_id: [switch.pool_pump]` attribute stays, as on `Mirror`: the more-info dialog shows the real switch.
+- The group's `entity_id: [switch.greenhouse_sprinkler]` attribute stays, as on `Mirror`: the more-info dialog shows the real switch.
 - The icon is HA's default for a switch.
 
 ### Renames and taken IDs

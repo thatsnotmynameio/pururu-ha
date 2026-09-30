@@ -129,7 +129,7 @@ def _opening(namespace: str, device_class: BinarySensorDeviceClass) -> Feature:
         schema=SCHEMA,
         entity_keys=ENTITY_KEYS,
         build=_builder(device_class),
-        example={"contact": f"binary_sensor.demo_{namespace}_contact"},
+        example={"contact": f"binary_sensor.dummy_{namespace}_contact"},
         namespace=namespace,
         roles=(COUNTERS,),
     )

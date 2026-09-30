@@ -11,18 +11,18 @@ import pytest
 
 from helpers import capture, fake, held, reload, settle, setup, tick
 
-KEY = "demo_washer"
-POWER = "sensor.demo_plug_power"
-ENERGY = "sensor.demo_plug_energy"
-RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
-MIRROR = "sensor.pururu_demo_washer_appliance_power"
-ENERGY_TOTAL = "sensor.pururu_demo_washer_appliance_energy_total"
+KEY = "dummy_washer"
+POWER = "sensor.dummy_plug_power"
+ENERGY = "sensor.dummy_plug_energy"
+RUNNING = "binary_sensor.pururu_dummy_washer_appliance_running"
+MIRROR = "sensor.pururu_dummy_washer_appliance_power"
+ENERGY_TOTAL = "sensor.pururu_dummy_washer_appliance_energy_total"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
     "energy": ENERGY,
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-DEVICES = {KEY: {"name": "Demo washer", "appliance": APPLIANCE}}
+DEVICES = {KEY: {"name": "Dummy washer", "appliance": APPLIANCE}}
 BOTH = ["state_changed", "reading"]
 TYPES = ("pururu_state_changed", "pururu_reading")
 ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
@@ -107,7 +107,7 @@ async def test_a_change(both: HomeAssistant, freezer: Any) -> None:
         "event_class": "state_changed",
         "entity_id": RUNNING,
         "device": KEY,
-        "device_name": "Demo washer",
+        "device_name": "Dummy washer",
         "key": "appliance_running",
         "old": "off",
         "new": "on",
@@ -116,7 +116,7 @@ async def test_a_change(both: HomeAssistant, freezer: Any) -> None:
         "attributes": {
             "cycle_start": state.attributes["cycle_start"].isoformat(),
             "device_class": "running",
-            "friendly_name": "Demo washer Running",
+            "friendly_name": "Dummy washer Running",
         },
     }
     assert set(states) == keys(both, KEY)
@@ -188,15 +188,15 @@ async def test_the_documented_recipe_posts_json(
     HA's attributes have enum keys, and running's cycle_start is a datetime:
     unless the data is JSON's own, the template renders it as Python's repr.
     """
-    url = "http://n8n.local/webhook/pururu"
+    url = "http://collector.local/webhook/pururu"
     aioclient_mock.post(url, text="ok")
-    assert await async_setup_component(both, "rest_command", {"rest_command": {"n8n_pururu": {
+    assert await async_setup_component(both, "rest_command", {"rest_command": {"webhook_pururu": {
         "url": url, "method": "post", "content_type": "application/json",
         "payload": "{{ event | tojson }}"}}})
     assert await async_setup_component(both, "automation", {"automation": [{
-        "alias": "pururu → n8n", "mode": "queued", "max": 1000,
+        "alias": "pururu → webhook", "mode": "queued", "max": 1000,
         "triggers": [{"trigger": "event", "event_type": list(TYPES)}],
-        "actions": [{"action": "rest_command.n8n_pururu",
+        "actions": [{"action": "rest_command.webhook_pururu",
                      "data": {"event": "{{ trigger.event.data }}"}}],
     }]})
     captured = capture(both, *TYPES)
@@ -270,10 +270,10 @@ async def start_cycle_renamed(hass: HomeAssistant, freezer: Any) -> None:
 
 
 async def test_devices_sharing_a_prefix(ha: HomeAssistant) -> None:
-    """`pool` and `pool_pump`: each entity's key comes from the device that built it."""
+    """`greenhouse` and `greenhouse_sprinkler`: each entity's key comes from the device that built it."""
     devices = {
-        "pool": {"name": "Pool", "switches": {"pump": {"entity": "switch.a", "name": "A"}}},
-        "pool_pump": {"name": "Pool pump", "switches": {"main": {"entity": "switch.b", "name": "B"}}},
+        "greenhouse": {"name": "Greenhouse", "switches": {"sprinkler": {"entity": "switch.a", "name": "A"}}},
+        "greenhouse_sprinkler": {"name": "Greenhouse sprinkler", "switches": {"main": {"entity": "switch.b", "name": "B"}}},
     }
     ha.states.async_set("switch.a", "off")
     ha.states.async_set("switch.b", "off")
@@ -281,8 +281,8 @@ async def test_devices_sharing_a_prefix(ha: HomeAssistant) -> None:
     captured = capture(ha, *TYPES)
     await fake(ha, "switch.b", "on")
     [event] = [event for event in captured if event.data["entity_id"].startswith("switch.pururu_")]
-    assert (event.data["device"], event.data["key"]) == ("pool_pump", "switch_main")
-    assert event.data["event_name"] == "pool_pump.switch_main"
+    assert (event.data["device"], event.data["key"]) == ("greenhouse_sprinkler", "switch_main")
+    assert event.data["event_name"] == "greenhouse_sprinkler.switch_main"
 
 
 async def test_a_reload_turns_classes_on_and_off(ha: HomeAssistant, freezer: Any) -> None:

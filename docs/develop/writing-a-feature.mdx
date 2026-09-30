@@ -95,7 +95,7 @@ OPENINGS = Feature(
     schema=SCHEMA,
     entity_keys={"total": Platform.SENSOR},
     build=build,
-    example={"sensor": "binary_sensor.demo_contact"},
+    example={"sensor": "binary_sensor.dummy_contact"},
     namespace="openings",
 )
 ```
@@ -177,7 +177,7 @@ For a feature that stands for real entities of one domain, build each entity on 
 
 **Entity keys repeated per item.** Some features create the same set of entities for every item of their block: [`modes`](/features/modes) gives each mode its own last cycle, totals and meters. Add `Items(keys, of)`: `keys` the suffixes (suffix → platform), `of` a function that returns, from the validated block, its items as `Item(slug, name)` (`core/feature.py`). `Configured` and `Items` never go together:
 
-- An item's entity key is `<slug>_<suffix>` (`gelar_cycles_total`), so `sensor.pururu_<key>_mode_gelar_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
+- An item's entity key is `<slug>_<suffix>` (`resfriar_cycles_total`), so `sensor.pururu_<key>_mode_resfriar_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
 - Each is named by its suffix's translation, `<namespace>_<suffix>` (`mode_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{mode} cycles"`, `"Ciclos de {mode}"`.
 - Each entity calls `self._identify(device, platform, suffix, item=item)`.
 

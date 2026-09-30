@@ -1,6 +1,6 @@
 ---
 title: phases
-description: The phase of a cycle, such as heating, spinning or drying, from bands of a sensor's value.
+description: The phase of a cycle, such as warming, wringing or drying, from bands of a sensor's value.
 ---
 
 `phases` names what the appliance is doing during a cycle. It watches a sensor, usually the plug's power, and compares its value with **bands** you define. The phase is the first band that holds.
@@ -8,8 +8,8 @@ description: The phase of a cycle, such as heating, spinning or drying, from ban
 ```yaml
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
@@ -18,13 +18,13 @@ pururu:
         sensor: sensor.washer_plug_power
         defaults:
           stopped: idle
-          running: washing
+          running: soaking
         bands:
-          heating: {above: 1000}
-          spinning: {above: 50, below: 1000, for: {minutes: 3}}
+          warming: {above: 1000}
+          wringing: {above: 50, below: 1000, for: {minutes: 3}}
 ```
 
-**Phase or mode?** A phase changes **within** a cycle, in sequence: washing, then spinning. When each cycle is of one kind instead, such as a purifier that cools or heats, use [`modes`](/features/modes).
+**Phase or mode?** A phase changes **within** a cycle, in sequence: soaking, then wringing. When each cycle is of one kind instead, such as a purifier that cools or heats, use [`modes`](/features/modes).
 
 ## Settings
 
@@ -74,7 +74,7 @@ Phase names (the two defaults and every band) are slugs, `lowercase_with_undersc
 - While the cycle's entity is `unknown` or `unavailable`, the phase keeps its value.
 - After a **restart**, the phase keeps its restored value until the sensor's first reading.
 
-The comparisons are strict. With `heating: {above: 1000}` and `spinning: {above: 50, below: 1000}`, a reading of exactly 1000 W is in neither band.
+The comparisons are strict. With `warming: {above: 1000}` and `wringing: {above: 50, below: 1000}`, a reading of exactly 1000 W is in neither band.
 
 ## Entity
 
@@ -82,7 +82,7 @@ The comparisons are strict. With `heating: {above: 1000}` and `spinning: {above:
 |---|---|
 | `sensor.pururu_<key>_phase_current` | The current phase: one of your names. Device class `enum`, so its possible states are known to Home Assistant. |
 
-Its attribute **`seen`** lists the bands that held during the current cycle, in the order you listed them. When the cycle ends, `seen` keeps the last cycle's bands until the next cycle starts. Use it to check afterwards whether a wash went through `spinning`.
+Its attribute **`seen`** lists the bands that held during the current cycle, in the order you listed them. When the cycle ends, `seen` keeps the last cycle's bands until the next cycle starts. Use it to check afterwards whether a wash went through `wringing`.
 
 ### State names
 
@@ -91,18 +91,13 @@ These names are translated in the UI (English and Portuguese):
 | Name | English | Portuguese |
 |---|---|---|
 | `idle` | Idle | Parada |
-| `washing` | Washing | Lavando |
-| `heating` | Heating | Aquecendo |
-| `spinning` | Spinning | Centrifugando |
 | `rinsing` | Rinsing | Enxaguando |
 | `drying` | Drying | Secando |
-| `cooling` | Cooling | Esfriando |
-| `dispensing` | Dispensing | Dispensando |
 | `other` | Other | Outra |
 
 Any other name, such as `soaking` or `pre_wash`, is shown as written.
 
-`dispensing` and `other` are translated since 0.2.1: before, they were shown as written. Only what the UI shows changed; the state itself, which automations and templates read, is still the name you gave.
+`other` is translated since 0.2.1: before, it was shown as written. Only what the UI shows changed; the state itself, which automations and templates read, is still the name you gave.
 
 ## Needs
 

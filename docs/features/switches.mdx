@@ -3,24 +3,24 @@ title: switches
 description: Real switches inside a device. Each one shows its switch's state and passes on what is asked of it.
 ---
 
-`switches` puts real switches in a device, such as a pool's pump and heater on two smart relays. Each one becomes a switch of the device: it shows the real switch's state, and turning it on or off turns the real one.
+`switches` puts real switches in a device, such as a greenhouse's sprinkler and heater on two smart relays. Each one becomes a switch of the device: it shows the real switch's state, and turning it on or off turns the real one.
 
 ```yaml
 pururu:
   devices:
-    pool:
-      name: Piscina
-      area: piscina
+    greenhouse:
+      name: Estufa
+      area: estufa
       switches:
-        pump: {entity: switch.pool_pump, name: Bomba}
-        heater: {entity: switch.pool_heater, name: Aquecedor}
+        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+        heater: {entity: switch.greenhouse_heater, name: Aquecedor}
 ```
 
-This creates `switch.pururu_pool_switch_pump`, shown as **Piscina Bomba**, and `switch.pururu_pool_switch_heater`, shown as **Piscina Aquecedor**.
+This creates `switch.pururu_greenhouse_switch_sprinkler`, shown as **Estufa Irrigador**, and `switch.pururu_greenhouse_switch_heater`, shown as **Estufa Aquecedor**.
 
 ## Settings
 
-`switches` is a map of **entity key → switch**, with at least one switch. The key is a slug, and it ends the entity ID, after the namespace `switch`: `pump` → `switch.pururu_pool_switch_pump`.
+`switches` is a map of **entity key → switch**, with at least one switch. The key is a slug, and it ends the entity ID, after the namespace `switch`: `sprinkler` → `switch.pururu_greenhouse_switch_sprinkler`.
 
 <Property name="entity" type="entity ID" required>
   The real switch. It must be a `switch.*` entity, and not one of pururu's own switches, even one you renamed in the UI. A renamed one is caught when pururu builds the device: that switch isn't created, and the log says so.
@@ -32,7 +32,7 @@ This creates `switch.pururu_pool_switch_pump`, shown as **Piscina Bomba**, and `
   The name shown after the device's name. It can't be empty. It's the same in every language: unlike other features' entities, a switch's name isn't translated.
 </Property>
 
-A switch's key can be one another feature uses, such as `power` next to `appliance`: each feature has its own [namespace](/concepts/entity-ids#the-pattern), so `switch.pururu_pool_switch_power` and `sensor.pururu_pool_appliance_power` are two entities.
+A switch's key can be one another feature uses, such as `power` next to `appliance`: each feature has its own [namespace](/concepts/entity-ids#the-pattern), so `switch.pururu_greenhouse_switch_power` and `sensor.pururu_greenhouse_appliance_power` are two entities.
 
 ## Entity
 

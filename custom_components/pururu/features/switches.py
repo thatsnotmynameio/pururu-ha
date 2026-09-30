@@ -68,7 +68,7 @@ SWITCHES = Feature(
     schema=standing.schema(Platform.SWITCH),
     entity_keys={},
     build=build,
-    example={"pump": {"entity": "switch.demo_pump", "name": "Pump"}},
+    example={"sprinkler": {"entity": "switch.dummy_sprinkler", "name": "Sprinkler"}},
     namespace="switch",
     roles=(Configured(Platform.SWITCH), Actions(("turn_on", "turn_off", "toggle"))),
 )

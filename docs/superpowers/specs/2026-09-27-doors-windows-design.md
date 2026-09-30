@@ -52,7 +52,7 @@ So an event is matched to an opening by time, in both directions. An opening wit
 
 | Question | Decision |
 |---|---|
-| What a door is | A feature, like `appliance`: pururu's abstraction, with the real entities inside its block. Not a device `type:` (the device keeps no type) and not a `configured` feature of a room device (`doors: {frente: …}` in `sala`), which would make a lock and a contact of one door hard to keep together. |
+| What a door is | A feature, like `appliance`: pururu's abstraction, with the real entities inside its block. Not a device `type:` (the device keeps no type) and not a `configured` feature of a room device (`doors: {frente: …}` in `biblioteca`), which would make a lock and a contact of one door hard to keep together. |
 | Door and window | Two features, `door` and `window`, with one schema and one code. They differ only in namespace, `device_class` and texts. A window rarely has events, but nothing refuses them (a glass-break or vibration event would fit). |
 | Rejected: one feature `opening` with `kind: door\|window` | The door is the abstraction; a `kind` makes it a detail. |
 | Shared code | A package `features/opening/` with a function that builds a `Feature` for a namespace and a device class. `lights` refused a `Feature` factory because each domain had its own details; door and window have none by definition. |

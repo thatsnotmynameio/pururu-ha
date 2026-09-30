@@ -181,7 +181,7 @@ import pytest
 
 from helpers import DOMAIN, module, setup
 
-SWITCH = {"name": "Piscina", "switches": {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}}
+SWITCH = {"name": "Estufa", "switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}}
 
 
 async def test_the_steps_run_in_order(ha: HomeAssistant) -> None:
@@ -233,10 +233,10 @@ async def test_a_step_that_raises_leaves_the_entry_loaded(
 ) -> None:
     """The dashboard raising doesn't fail the setup: logged, the entry loaded, a reload loads it again."""
     with patch.object(module("dashboard"), "async_setup", side_effect=RuntimeError("boom")):
-        assert await setup(ha, {"pool": SWITCH})
+        assert await setup(ha, {"greenhouse": SWITCH})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.state is ConfigEntryState.LOADED
-    assert ha.states.get("switch.pururu_pool_switch_pump") is not None
+    assert ha.states.get("switch.pururu_greenhouse_switch_sprinkler") is not None
     assert "Step dashboard failed" in caplog.text
     await ha.config_entries.async_reload(entry.entry_id)
     await ha.async_block_till_done()
@@ -342,10 +342,10 @@ In `tests/test_entity.py`:
 ```python
 async def test_an_entity_knows_its_reference(ha: HomeAssistant) -> None:
     """`<device>.<entity key>`: the event_name events fire, the reference form C adds to the YAML."""
-    assert await setup(ha, {"pool": {"name": "Piscina", "switches": {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}}})
+    assert await setup(ha, {"greenhouse": {"name": "Estufa", "switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}}})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     [switch] = entry.runtime_data[Platform.SWITCH]
-    assert (switch.key, switch.reference) == ("switch_pump", "pool.switch_pump")
+    assert (switch.key, switch.reference) == ("switch_sprinkler", "greenhouse.switch_sprinkler")
 ```
 
 Run: FAIL (`no attribute 'key'`).

@@ -13,7 +13,7 @@ import pytest
 
 from helpers import DOMAIN, module, reload, setup
 
-SWITCH = {"name": "Piscina", "switches": {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}}
+SWITCH = {"name": "Estufa", "switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}}
 LIGHT = {"name": "Luzes", "lights": {"teto": {"entity": "light.teto", "name": "Teto"}}}
 
 
@@ -32,10 +32,10 @@ async def test_the_steps_read_the_builders_and_one_index(ha: HomeAssistant) -> N
 
     lifecycle = module("setup.lifecycle")
     with patch.object(lifecycle, "STEPS", (("spy", step),)):
-        assert await setup(ha, {"pool": SWITCH, "lights": LIGHT})
+        assert await setup(ha, {"greenhouse": SWITCH, "lights": LIGHT})
     [built] = seen
-    assert set(built.index) == {"pool", "lights"}
-    assert built.index["pool"]["switch_pump"].builder == "switches"
+    assert set(built.index) == {"greenhouse", "lights"}
+    assert built.index["greenhouse"]["switch_sprinkler"].builder == "switches"
     assert built.builders == module("setup.catalogue").builders()
 
 
@@ -44,10 +44,10 @@ async def test_a_step_that_raises_leaves_the_entry_loaded(
 ) -> None:
     """The dashboard raising doesn't fail the setup: logged, the entry loaded, a reload loads it again."""
     with patch.object(module("outputs.dashboard"), "async_setup", side_effect=RuntimeError("boom")):
-        assert await setup(ha, {"pool": SWITCH})
+        assert await setup(ha, {"greenhouse": SWITCH})
         [entry] = ha.config_entries.async_entries(DOMAIN)
         assert entry.state is ConfigEntryState.LOADED
-        assert ha.states.get("switch.pururu_pool_switch_pump") is not None
+        assert ha.states.get("switch.pururu_greenhouse_switch_sprinkler") is not None
         assert "Step dashboard failed" in caplog.text
         await ha.config_entries.async_reload(entry.entry_id)
         await ha.async_block_till_done()
@@ -59,17 +59,17 @@ async def test_a_failing_first_step_leaves_the_others_and_the_listener(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The events failing first: the generated scripts, the dashboard and the rename rule still come."""
-    clean = {"name": "Limpar", "sequence": [{"turn_on": "switch_pump"}]}
+    clean = {"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}]}
     with patch.object(module("outputs.events"), "async_setup", side_effect=RuntimeError("boom")):
-        assert await setup(ha, {"pool": {**SWITCH, "programs": {"clean": clean}}})
+        assert await setup(ha, {"greenhouse": {**SWITCH, "programs": {"clean": clean}}})
     assert "Step events failed" in caplog.text
     caplog.clear()  # expected: the autouse fixture would fail on it
     [entry] = ha.config_entries.async_entries(DOMAIN)
-    assert entry.data["scripts"] == ["pururu_pool_program_clean"]
+    assert entry.data["scripts"] == ["pururu_greenhouse_program_clean"]
     assert "pururu" in ha.data[LOVELACE_DATA].dashboards
     with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
         er.async_get(ha).async_update_entity(
-            "script.pururu_pool_program_clean", new_entity_id="script.limpar"
+            "script.pururu_greenhouse_program_clean", new_entity_id="script.limpar"
         )
         await ha.async_block_till_done()
     reloading.assert_called_once()
@@ -80,10 +80,10 @@ async def test_a_failing_listener_leaves_the_entry_loaded(
 ) -> None:
     """The rename listener raising doesn't fail the setup: logged, the entry loaded with its entities."""
     with patch.object(module("setup.listener"), "async_listen", side_effect=RuntimeError("boom")):
-        assert await setup(ha, {"pool": SWITCH})
+        assert await setup(ha, {"greenhouse": SWITCH})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.state is ConfigEntryState.LOADED
-    assert ha.states.get("switch.pururu_pool_switch_pump") is not None
+    assert ha.states.get("switch.pururu_greenhouse_switch_sprinkler") is not None
     assert "Listener failed" in caplog.text
     caplog.clear()  # expected: the autouse fixture would fail on it
 
@@ -92,19 +92,19 @@ async def test_a_setup_failing_after_its_platforms_recovers_on_reload(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Built raising once the platforms are set up: they're unloaded, so a reload, the cause fixed, applies the configuration."""
-    pump = "switch.pururu_pool_switch_pump"
+    sprinkler = "switch.pururu_greenhouse_switch_sprinkler"
     with patch.object(module("setup.lifecycle"), "Built", side_effect=RuntimeError("boom")):
-        assert await setup(ha, {"pool": SWITCH})
+        assert await setup(ha, {"greenhouse": SWITCH})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.state is ConfigEntryState.SETUP_ERROR
     assert "Error setting up entry Pururu for pururu" in caplog.text
-    removed = ha.states.get(pump)
+    removed = ha.states.get(sprinkler)
     assert removed is not None
     assert removed.attributes["restored"]  # HA's placeholder: the entity is gone
-    switches = {**SWITCH["switches"], "filter": {"entity": "switch.pool_filter", "name": "Filtro"}}
-    await reload(ha, {"pool": {**SWITCH, "switches": switches}})
+    switches = {**SWITCH["switches"], "vent": {"entity": "switch.greenhouse_vent", "name": "Ventilação"}}
+    await reload(ha, {"greenhouse": {**SWITCH, "switches": switches}})
     assert entry.state is ConfigEntryState.LOADED
-    for entity_id in (pump, "switch.pururu_pool_switch_filter"):
+    for entity_id in (sprinkler, "switch.pururu_greenhouse_switch_vent"):
         added = ha.states.get(entity_id)
         assert added is not None, entity_id
         assert not added.attributes.get("restored"), entity_id
@@ -124,7 +124,7 @@ async def _reload_cancelled(ha: HomeAssistant) -> None:
 
     with patch.object(ha.config_entries, "async_forward_entry_setups",
                       side_effect=forward_then_cancel):
-        cancelled = asyncio.create_task(reload(ha, {"pool": SWITCH}))
+        cancelled = asyncio.create_task(reload(ha, {"greenhouse": SWITCH}))
         with pytest.raises(asyncio.CancelledError):
             await cancelled
 
@@ -132,7 +132,7 @@ async def _reload_cancelled(ha: HomeAssistant) -> None:
 async def _reload_raising_cancelled(ha: HomeAssistant) -> None:
     """A reload raising CancelledError once the platforms are set up, its task not cancelled."""
     with patch.object(module("setup.lifecycle"), "Built", side_effect=asyncio.CancelledError):
-        await reload(ha, {"pool": SWITCH})
+        await reload(ha, {"greenhouse": SWITCH})
 
 
 async def _reload_cancelled_in_a_step(ha: HomeAssistant) -> None:
@@ -143,7 +143,7 @@ async def _reload_cancelled_in_a_step(ha: HomeAssistant) -> None:
         raise asyncio.CancelledError
 
     with patch.object(lifecycle, "STEPS", (("cancelled", cancelled), *lifecycle.STEPS)):
-        await reload(ha, {"pool": SWITCH})
+        await reload(ha, {"greenhouse": SWITCH})
 
 
 @pytest.mark.parametrize("fail", [
@@ -156,20 +156,20 @@ async def test_a_setup_cancelled_after_its_platforms_recovers_on_reload(
     fail: Callable[[HomeAssistant], Awaitable[None]],
 ) -> None:
     """Cancelled once the platforms are set up: they're unloaded all the same, so the next reload applies the configuration."""
-    pump = "switch.pururu_pool_switch_pump"
-    assert await setup(ha, {"pool": SWITCH})
+    sprinkler = "switch.pururu_greenhouse_switch_sprinkler"
+    assert await setup(ha, {"greenhouse": SWITCH})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     await fail(ha)
     await ha.async_block_till_done()
     assert entry.state is ConfigEntryState.SETUP_ERROR
-    removed = ha.states.get(pump)
+    removed = ha.states.get(sprinkler)
     assert removed is not None
     assert removed.attributes["restored"]  # HA's placeholder: the entity is gone
     assert "failed setup" not in caplog.text
-    switches = {**SWITCH["switches"], "filter": {"entity": "switch.pool_filter", "name": "Filtro"}}
-    await reload(ha, {"pool": {**SWITCH, "switches": switches}})
+    switches = {**SWITCH["switches"], "vent": {"entity": "switch.greenhouse_vent", "name": "Ventilação"}}
+    await reload(ha, {"greenhouse": {**SWITCH, "switches": switches}})
     assert entry.state is ConfigEntryState.LOADED
-    for entity_id in (pump, "switch.pururu_pool_switch_filter"):
+    for entity_id in (sprinkler, "switch.pururu_greenhouse_switch_vent"):
         added = ha.states.get(entity_id)
         assert added is not None, entity_id
         assert not added.attributes.get("restored"), entity_id
@@ -180,12 +180,12 @@ async def test_a_forward_failing_before_its_platforms_says_a_reload_recovers(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """No platform got the entry: HA logs each as never loaded, pururu says a reload will do, and it does."""
-    pump = "switch.pururu_pool_switch_pump"
-    assert await setup(ha, {"pool": SWITCH})
+    sprinkler = "switch.pururu_greenhouse_switch_sprinkler"
+    assert await setup(ha, {"greenhouse": SWITCH})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     with patch.object(ha.config_entries, "async_forward_entry_setups",
                       side_effect=ImportError("boom")):
-        await reload(ha, {"pool": SWITCH})
+        await reload(ha, {"greenhouse": SWITCH})
     assert entry.state is ConfigEntryState.SETUP_ERROR
     assert "Config entry was never loaded!" in caplog.text
     [unloading] = [r for r in caplog.records if r.name.endswith(".lifecycle")]
@@ -195,9 +195,9 @@ async def test_a_forward_failing_before_its_platforms_says_a_reload_recovers(
         "reload sets the entry up; if a reload logs 'has already been setup', restart "
         "Home Assistant")
     caplog.clear()  # the message names what a stuck reload would log
-    await reload(ha, {"pool": SWITCH})
+    await reload(ha, {"greenhouse": SWITCH})
     assert entry.state is ConfigEntryState.LOADED
-    added = ha.states.get(pump)
+    added = ha.states.get(sprinkler)
     assert added is not None
     assert not added.attributes.get("restored")
     assert "has already been setup" not in caplog.text
@@ -212,7 +212,7 @@ async def test_a_failing_unload_of_a_failed_setup_keeps_its_error(
         patch.object(lifecycle, "Built", side_effect=RuntimeError("boom")),
         patch.object(ha.config_entries, "async_unload_platforms", side_effect=ValueError("stuck")),
     ):
-        assert await setup(ha, {"pool": SWITCH})
+        assert await setup(ha, {"greenhouse": SWITCH})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.state is ConfigEntryState.SETUP_ERROR
     [unloading] = [r for r in caplog.records if r.name.endswith(".lifecycle")]

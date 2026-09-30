@@ -13,7 +13,7 @@ The README stays as a short entry point that links to the site.
 | Question | Decision |
 |---|---|
 | Scope | User guide and developer docs, in two tabs: `Guide` (`/`) and `Develop` (`/develop`). |
-| Language | English, like the code, the README and HACS. Examples keep Portuguese names (Cozinha, Máquina de lavar), as today. No locales. |
+| Language | English, like the code, the README and HACS. Examples keep Portuguese names (Ateliê, Tanquinho), as today. No locales. |
 | Structure | Split by what the reader is doing: getting started (install, then a tutorial), concepts (why each rule exists), a reference page per feature, a full configuration reference, and troubleshooting. |
 | README | Shrunk to what pururu is, install, the smallest example and a link to the site. The site is the single user-facing reference. |
 | `manifest.json` | `documentation` points to the site. The version is not bumped, so this is not a release. |
@@ -69,7 +69,7 @@ docs.page components used:
 ### Guide
 
 - **What is pururu** (`index.mdx`):
-  - The problem, in a user's words: a smart plug measures the washer's power, and pururu turns that into a *Máquina de lavar* device. That device shows whether the washer is running, its last cycle, its current phase and its runtime this month.
+  - The problem, in a user's words: a smart plug measures the washer's power, and pururu turns that into a *Tanquinho* device. That device shows whether the washer is running, its last cycle, its current phase and its runtime this month.
   - Before and after: the raw plug entities, then the pururu device.
   - What pururu creates: floors, areas, devices, entities and a dashboard.
   - What it does not do: it controls nothing, it is `calculated`, and it only reads real entities.

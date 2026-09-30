@@ -70,9 +70,9 @@ from helpers import setup
 
 WASHER = "washer"
 LIGHTS = "lights"
-POWER = "sensor.demo_plug_power"
-DOOR = "binary_sensor.demo_door"
-TETO = "light.demo_teto"
+POWER = "sensor.dummy_plug_power"
+DOOR = "binary_sensor.dummy_door"
+TETO = "light.dummy_teto"
 MIRROR = "sensor.pururu_washer_appliance_power"
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
@@ -1091,7 +1091,7 @@ In `custom_components/pururu/manifest.json`:
 In `tests/test_places.py`, line 242 becomes:
 
 ```python
-    assert entry.data == {"floors": ["terreo"], "areas": ["cozinha"], "automations": []}
+    assert entry.data == {"floors": ["terreo"], "areas": ["atelie"], "automations": []}
 ```
 
 and line 265:
@@ -1436,26 +1436,26 @@ A device **reacts** to what happens around it: one of its own entities changing,
 ```yaml title="configuration.yaml"
 pururu:
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
     laundry_lights:
-      name: Luzes da lavanderia
+      name: Luzes da despensa
       lights:
-        teto: {entity: light.lavanderia_teto, name: Teto}
+        teto: {entity: light.despensa_teto, name: Teto}
       reactions:
         teto_on:     {name: Teto acendeu, when: light_teto, to: "on"}
-        washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off"}
-        door:        {name: Porta abriu, entity: binary_sensor.porta_lavanderia, to: "on", for: {minutes: 5}}
+        washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off"}
+        door:        {name: Porta abriu, entity: binary_sensor.porta_despensa, to: "on", for: {minutes: 5}}
         night:       {name: Noite, at: "22:00"}
         dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
 
 automation pururu: !include pururu/automations.yaml
 ```
 
-This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da lavanderia Lavadora terminou**, and one automation for each other reaction.
+This creates `automation.pururu_laundry_lights_reaction_washer_done`, shown as **Luzes da despensa Lavadora terminou**, and one automation for each other reaction.
 
 ## The include
 
@@ -1492,13 +1492,13 @@ A reaction listens to **exactly one** of these sources.
 ### An entity of another device
 
 <Property name="device" type="device key">
-  The key of another device under `devices:`, with `when` naming one of **its** entities: `device: laundry_washer`, `when: appliance_running`.
+  The key of another device under `devices:`, with `when` naming one of **its** entities: `device: clothes_washer`, `when: appliance_running`.
 </Property>
 
 ### Any entity
 
 <Property name="entity" type="entity ID">
-  Any entity in Home Assistant: `binary_sensor.porta_lavanderia`.
+  Any entity in Home Assistant: `binary_sensor.porta_despensa`.
 </Property>
 
 ### What an entity must do
@@ -1506,7 +1506,7 @@ A reaction listens to **exactly one** of these sources.
 For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 
 <Property name="to" type="state" optional>
-  The state it changes to: `"on"`, `"off"`, `spinning`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: 1` matches a state of `1`, not `1.0`.
+  The state it changes to: `"on"`, `"off"`, `wringing`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: 1` matches a state of `1`, not `1.0`.
 </Property>
 
 ---
@@ -1591,11 +1591,11 @@ In `docs/getting-started/install.mdx`, after the `<Info>` block that ends sectio
 
 - [ ] **Step 4: The configuration reference**
 
-In `docs/reference/configuration.mdx`, in the example at the top, add a `reactions:` block to `sala` (after its `lights:`), and the include at the end of the example:
+In `docs/reference/configuration.mdx`, in the example at the top, add a `reactions:` block to `biblioteca` (after its `lights:`), and the include at the end of the example:
 
 ```yaml
       reactions:
-        washer_done: {name: Lavadora terminou, device: laundry_washer, when: appliance_running, from: "on", to: "off"}
+        washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off"}
         night: {name: Noite, at: "22:00"}
 
 automation pururu: !include pururu/automations.yaml
@@ -1617,7 +1617,7 @@ In `docs/reference/troubleshooting.mdx`, under `## The reload changed nothing`, 
 
 ```mdx
 - A reaction with no source or two (`a reaction needs one source: when, entity, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `device` without `when`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`.
-- A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device laundry_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
+- A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device clothes_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
 ```
 
 Add a section before `## Still stuck?`:
@@ -1638,7 +1638,7 @@ The automations of pururu's reactions are not loaded: add "automation pururu: !i
 ### `automation.… follows …, which is not created; not generating it`
 
 ```
-automation.pururu_laundry_lights_reaction_month follows sensor.pururu_laundry_washer_appliance_runtime_month, which is not created; not generating it
+automation.pururu_laundry_lights_reaction_month follows sensor.pururu_clothes_washer_appliance_runtime_month, which is not created; not generating it
 ```
 
 The reaction's `when` names a pururu entity that isn't created: its ID is taken, or the device's settings don't create it. Fix that entity, or point `when` at another one, then reload pururu.

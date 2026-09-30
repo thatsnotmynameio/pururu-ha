@@ -9,20 +9,20 @@ A reaction listens; a program is what its device knows how to do. Both exist, an
 ```yaml
 pururu:
   devices:
-    pool:
-      name: Piscina
+    greenhouse:
+      name: Estufa
       switches:
-        pump: {entity: switch.pool_pump, name: Bomba}
+        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
       programs:
         clean:
           name: Limpar
           sequence:
-            - turn_on: switch_pump
+            - turn_on: switch_sprinkler
             - delay: {hours: 2}
-            - turn_off: switch_pump
+            - turn_off: switch_sprinkler
       reactions:
         morning: {name: Manhã, at: "08:00", then: clean}
-# → automation.pururu_pool_reaction_morning starts script.pururu_pool_program_clean
+# → automation.pururu_greenhouse_reaction_morning starts script.pururu_greenhouse_program_clean
 ```
 
 ## Decisions
@@ -30,7 +30,7 @@ pururu:
 | Question | Decision |
 |---|---|
 | What `then` is | The key of **one program of the reaction's own device**. Rejected: a program's steps written inline in the reaction (two places for what a device does, and no script with its traces, state and `script.turn_off`); HA's own actions (`notify`, any `action:`), which break the device boundary both specs kept, and alerts' `notify` already covers notifying. An inline program can come later without changing any YAML written for this. |
-| Whose program | The reaction's device's, always. A reaction on another device (`device: laundry_washer`) runs its **own** program: it lives in the device that reacts, as reactions' spec set, and acts on that device only. |
+| Whose program | The reaction's device's, always. A reaction on another device (`device: clothes_washer`) runs its **own** program: it lives in the device that reacts, as reactions' spec set, and acts on that device only. |
 | How many | One. A reaction wanting two things runs a program doing both. |
 | Is `then` required | No. Without it a reaction fires and does nothing, as today: every configuration written for 0.1.16 stays valid and generates the same automation. |
 | How the automation starts it | `script.turn_on` on the script, inside an `if` that the script is `off`. The run ends at once; a program already running is left alone, and the trace shows the `if` taken or not. Rejected: calling the script as an action (`action: script.pururu_…`), which waits for it to end, so the automation runs for hours and a trigger meanwhile is logged as `Already running`; the check as the automation's `conditions`, which would hide the trigger itself: HA counts an automation as triggered (`automation_triggered`, `last_triggered`) only once its conditions pass, and the programs' statistics (0.1.18) count a reaction's triggers apart from its program's runs. |
@@ -51,23 +51,23 @@ Refused, with the device's other checks (`_reactions_on_this_device`): `then` na
 ## The generated automation
 
 ```yaml
-- id: pururu_pool_reaction_morning
-  alias: Piscina Manhã
-  description: "pururu: pool, morning"
+- id: pururu_greenhouse_reaction_morning
+  alias: Estufa Manhã
+  description: "pururu: greenhouse, morning"
   triggers:
     - trigger: time
       at: "08:00:00"
   actions:
     - if:
         - condition: state
-          entity_id: script.pururu_pool_program_clean
+          entity_id: script.pururu_greenhouse_program_clean
           state: "off"
       then:
         - action: script.turn_on
-          target: {entity_id: script.pururu_pool_program_clean}
+          target: {entity_id: script.pururu_greenhouse_program_clean}
 ```
 
-- The script's **current** entity ID, read from the registry by its unique ID (`script`, `script`, `pururu_pool_program_clean`): renamed in the UI, the reaction follows it at once, as `when` follows a pururu entity. The registry listener reloads the entry on the rename of a script some reaction starts: with the old ID, the `if` would never be true and the program would never start.
+- The script's **current** entity ID, read from the registry by its unique ID (`script`, `script`, `pururu_greenhouse_program_clean`): renamed in the UI, the reaction follows it at once, as `when` follows a pururu entity. The registry listener reloads the entry on the rename of a script some reaction starts: with the old ID, the `if` would never be true and the program would never start.
 - Without `then`, `actions: []`, as today.
 
 ## Behaviour
@@ -110,7 +110,7 @@ The new log message: `automation.<id> runs script.<id>, which is not generated; 
 - `tests/test_reactions.py`:
   - Schema: `then` accepted; refused when it names no program of the device, another device's program, an entity ID, a list.
   - The automation: with `then`, the `if` on the script's entity ID, and HA's automation schema accepts it; without, `actions: []` as before.
-  - End to end: the `at` fires, the script runs, the pump turns on; a second trigger during the `delay` changes nothing, and the program's `delay` goes on.
+  - End to end: the `at` fires, the script runs, the sprinkler turns on; a second trigger during the `delay` changes nothing, and the program's `delay` goes on.
   - The program dropped (its target not created): the reaction isn't generated, logged.
   - The program held (its target disabled): the reaction held, its registry entry kept; the target enabled again, both back.
   - The script's ID taken by another integration: the reaction isn't generated, logged.

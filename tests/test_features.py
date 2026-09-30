@@ -17,7 +17,7 @@ from helpers import DOMAIN, module
 
 # A configured feature's block, valid on its own: for devices that need a feature besides
 # the one under test (a non-map programs/appliance block still needs at least one feature)
-SWITCHES = {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}
+SWITCHES = {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}
 
 INTEGRATION = Path(__file__).resolve().parents[1] / "custom_components/pururu"
 
@@ -191,7 +191,7 @@ def test_what_a_last_cycle_follows_is_a_cycle_source(
                 assert isinstance(built[device.qualified(source)], cycle_source), (name, entity.key)
                 following.setdefault(name, set()).add(source)
     assert set(following) == {"appliance", "door", "window", "programs"}
-    assert following["appliance"] == {"running", "phase_heating", "phase_other"}
+    assert following["appliance"] == {"running", "phase_warming", "phase_other"}
 
 
 def test_a_derived_key_is_in_the_index(ha: HomeAssistant, features: dict[str, Any]) -> None:
@@ -486,12 +486,12 @@ def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
         ["devices", "washer", "appliance"],
         id="a block-placed aspect's block isn't a map"),
     pytest.param(
-        {"devices": {"pool": {"name": "Pool", "switches": SWITCHES, "programs": 5}}},
-        ["devices", "pool", "programs"],
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SWITCHES, "programs": 5}}},
+        ["devices", "greenhouse", "programs"],
         id="an item-placed aspect's block isn't a map"),
     pytest.param(
-        {"devices": {"pool": {"name": "Pool", "switches": SWITCHES, "programs": {"clean": 5}}}},
-        ["devices", "pool", "programs", "clean"],
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SWITCHES, "programs": {"clean": 5}}}},
+        ["devices", "greenhouse", "programs", "clean"],
         id="an item isn't a map"),
 ])
 def test_mount_refuses_a_block_or_item_that_isnt_a_map(

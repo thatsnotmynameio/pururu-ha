@@ -18,27 +18,27 @@ import pytest
 
 from helpers import capture, fake, generated, held, module, reload, restart, setup, snapshot, tick
 
-KEY = "demo_filter"
-POWER = "sensor.demo_plug_power"
-ENERGY = "sensor.demo_plug_energy"
+KEY = "dummy_station"
+POWER = "sensor.dummy_plug_power"
+ENERGY = "sensor.dummy_plug_energy"
 IDLE_W = 1.0
 PREFIX = f"pururu_{KEY}_appliance"
 RUNNING = f"binary_sensor.{PREFIX}_running"
 CURRENT = f"sensor.{PREFIX}_phase_current"
 LAST = f"sensor.{PREFIX}_phase_last"
-GELAR = f"binary_sensor.{PREFIX}_phase_gelar"
+RESFRIAR = f"binary_sensor.{PREFIX}_phase_resfriar"
 QUENTE = f"binary_sensor.{PREFIX}_phase_quente"
 OTHER = f"binary_sensor.{PREFIX}_phase_other"
 RUNNING_PROGRAM: dict[str, Any] = {
     "above": 4, "on_delay": {"seconds": 20}, "off_delay": {"minutes": 2},
     "phases": {
-        "gelar": {"name": "Gelar", "above": 40, "below": 300,
+        "resfriar": {"name": "Resfriar", "above": 40, "below": 300,
                   "on_delay": {"seconds": 30}, "off_delay": {"seconds": 30}},
         "quente": {"name": "Água quente", "above": 300,
                    "on_delay": {"seconds": 10}, "off_delay": {"seconds": 30}},
     },
 }
-DEVICES = {KEY: {"name": "Demo filter",
+DEVICES = {KEY: {"name": "Dummy station",
                  "appliance": {"power": POWER, "energy": ENERGY,
                                "running_program": RUNNING_PROGRAM}}}
 LAST_CYCLE = ("last_cycle_start", "last_cycle_end", "last_cycle_duration", "last_cycle_energy")
@@ -79,11 +79,11 @@ async def kwh(hass: HomeAssistant, value: float | str) -> None:
 
 
 async def cool(hass: HomeAssistant, freezer: Any) -> None:
-    """The program runs at 20 s, gelar at 30 s."""
+    """The program runs at 20 s, resfriar at 30 s."""
     await watts(hass, 120)
     await tick(hass, freezer, 35)
     assert state(hass, RUNNING) == "on"
-    assert state(hass, CURRENT) == "gelar"
+    assert state(hass, CURRENT) == "resfriar"
 
 
 # --- what it creates ----------------------------------------------------------------
@@ -92,29 +92,29 @@ async def cool(hass: HomeAssistant, freezer: Any) -> None:
 async def test_its_entities_and_their_ids(ha: HomeAssistant) -> None:
     """The carrier under the builder's key, the current and last phase, and per phase (other too) its binary sensor and cycle entities."""
     assert await setup(ha, DEVICES)
-    phases = ("gelar", "quente", "other")
+    phases = ("resfriar", "quente", "other")
     assert held(ha, KEY) == {
         *OWN, CURRENT, LAST,
         *(f"binary_sensor.{PREFIX}_phase_{phase}" for phase in phases),
         *(sensor(f"phase_{phase}_{suffix}") for phase in phases for suffix in SUFFIXES),
     }
     registry = er.async_get(ha)
-    assert registry.async_get(GELAR).unique_id == f"{PREFIX}_phase_gelar"
+    assert registry.async_get(RESFRIAR).unique_id == f"{PREFIX}_phase_resfriar"
     assert registry.async_get(sensor("phase_other_cycles_total")).unique_id == (
         f"{PREFIX}_phase_other_cycles_total")
 
 
 async def test_without_energy_no_energy_per_phase(ha: HomeAssistant) -> None:
     appliance = {"power": POWER, "running_program": RUNNING_PROGRAM}
-    assert await setup(ha, {KEY: {"name": "Demo filter", "appliance": appliance}})
-    assert ha.states.get(sensor("phase_gelar_energy_total")) is None
-    assert ha.states.get(sensor("phase_gelar_last_cycle_energy")) is None
-    assert ha.states.get(sensor("phase_gelar_cycles_total")) is not None
+    assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": appliance}})
+    assert ha.states.get(sensor("phase_resfriar_energy_total")) is None
+    assert ha.states.get(sensor("phase_resfriar_last_cycle_energy")) is None
+    assert ha.states.get(sensor("phase_resfriar_cycles_total")) is not None
 
 
 async def test_without_phases_no_phase_entity(ha: HomeAssistant) -> None:
     appliance = {"power": POWER, "running_program": {"above": 4}}
-    assert await setup(ha, {KEY: {"name": "Demo filter", "appliance": appliance}})
+    assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": appliance}})
     assert held(ha, KEY) == {RUNNING, *(sensor(key) for key in (
         "power", *LAST_CYCLE[:3], "cycles_total", "runtime_total"))}
 
@@ -126,12 +126,12 @@ async def test_nothing_that_follows_the_carrier_when_it_is_not_created(
         "binary_sensor", "template", "someone_else", suggested_object_id=f"{PREFIX}_running")
     assert await setup(ha, DEVICES)
     assert ha.states.get(CURRENT) is None
-    assert ha.states.get(GELAR) is None
-    assert ha.states.get(sensor("phase_gelar_cycles_total")) is None
+    assert ha.states.get(RESFRIAR) is None
+    assert ha.states.get(sensor("phase_resfriar_cycles_total")) is None
     assert ha.states.get(sensor("runtime_total")) is None
     assert ha.states.get(sensor("power")) is not None
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-    assert any(GELAR in message and RUNNING in message for message in errors), errors
+    assert any(RESFRIAR in message and RUNNING in message for message in errors), errors
     assert any(sensor("runtime_total") in message and RUNNING in message for message in errors), errors
 
 
@@ -140,37 +140,37 @@ async def test_nothing_that_follows_the_carrier_when_it_is_not_created(
 
 async def test_idle_until_a_phase_starts(purifier: HomeAssistant) -> None:
     assert state(purifier, CURRENT) == "idle"
-    assert purifier.states.get(CURRENT).attributes["options"] == ["idle", "gelar", "quente", "other"]
+    assert purifier.states.get(CURRENT).attributes["options"] == ["idle", "resfriar", "quente", "other"]
     assert purifier.states.get(CURRENT).attributes["running"] == []
     assert state(purifier, LAST) == "unknown"
-    assert purifier.states.get(LAST).attributes["options"] == ["gelar", "quente", "other"]
-    assert state(purifier, GELAR) == "off"
+    assert purifier.states.get(LAST).attributes["options"] == ["resfriar", "quente", "other"]
+    assert state(purifier, RESFRIAR) == "off"
 
 
 async def test_a_phase_runs_and_ends(purifier: HomeAssistant, freezer: Any) -> None:
     await kwh(purifier, 100.0)
     await cool(purifier, freezer)
     started = dt_util.utcnow() - timedelta(seconds=5)
-    assert state(purifier, GELAR) == "on"
-    assert purifier.states.get(GELAR).attributes["cycle_start"] == started
-    assert purifier.states.get(CURRENT).attributes["running"] == ["gelar"]
-    assert purifier.states.get(CURRENT).attributes["seen"] == ["gelar"]
+    assert state(purifier, RESFRIAR) == "on"
+    assert purifier.states.get(RESFRIAR).attributes["cycle_start"] == started
+    assert purifier.states.get(CURRENT).attributes["running"] == ["resfriar"]
+    assert purifier.states.get(CURRENT).attributes["seen"] == ["resfriar"]
     await tick(purifier, freezer, 600)
     await kwh(purifier, 100.05)
     left = dt_util.utcnow()
     await watts(purifier, IDLE_W)
-    assert purifier.states.get(GELAR).attributes["cycle_end"] == left
+    assert purifier.states.get(RESFRIAR).attributes["cycle_end"] == left
     await tick(purifier, freezer, 35)
-    assert state(purifier, GELAR) == "off"
+    assert state(purifier, RESFRIAR) == "off"
     assert state(purifier, CURRENT) == "idle"
-    assert state(purifier, LAST) == "gelar"
-    assert dt_util.parse_datetime(state(purifier, sensor("phase_gelar_last_cycle_start"))) == started
-    assert dt_util.parse_datetime(state(purifier, sensor("phase_gelar_last_cycle_end"))) == left
-    assert float(state(purifier, sensor("phase_gelar_last_cycle_duration"))) == pytest.approx(10.1, abs=0.1)
-    assert float(state(purifier, sensor("phase_gelar_last_cycle_energy"))) == pytest.approx(0.05)
-    assert state(purifier, sensor("phase_gelar_cycles_total")) == "1"
-    assert float(state(purifier, sensor("phase_gelar_energy_total"))) == pytest.approx(0.05)
-    assert float(state(purifier, sensor("phase_gelar_runtime_total"))) == pytest.approx(
+    assert state(purifier, LAST) == "resfriar"
+    assert dt_util.parse_datetime(state(purifier, sensor("phase_resfriar_last_cycle_start"))) == started
+    assert dt_util.parse_datetime(state(purifier, sensor("phase_resfriar_last_cycle_end"))) == left
+    assert float(state(purifier, sensor("phase_resfriar_last_cycle_duration"))) == pytest.approx(10.1, abs=0.1)
+    assert float(state(purifier, sensor("phase_resfriar_last_cycle_energy"))) == pytest.approx(0.05)
+    assert state(purifier, sensor("phase_resfriar_cycles_total")) == "1"
+    assert float(state(purifier, sensor("phase_resfriar_energy_total"))) == pytest.approx(0.05)
+    assert float(state(purifier, sensor("phase_resfriar_runtime_total"))) == pytest.approx(
         605 / 3600, abs=0.0005)
     assert state(purifier, sensor("phase_quente_cycles_total")) == "0"
 
@@ -180,28 +180,28 @@ async def test_a_phases_cycle_is_sent_after_its_state_its_end_last(
     """CycleSource's order: the binary sensor is off when each signal fires, the cycle's signal first; last_cycle_end written last."""
     cycle = module("features.cycle")
     feature = module("core.feature")
-    device = feature.Device(key=KEY, name="Demo filter", namespace="appliance")
-    item = feature.Item(slug="phase_gelar", name="Gelar")
+    device = feature.Device(key=KEY, name="Dummy station", namespace="appliance")
+    item = feature.Item(slug="phase_resfriar", name="Resfriar")
     await cool(purifier, freezer)
     seen: list[tuple[str, str]] = []
     for name, signal in (("cycle", cycle.cycle_signal(device, item)),
                          ("end", cycle.end_signal(device, item))):
         async_dispatcher_connect(
             purifier, signal,
-            callback(lambda _cycle, name=name: seen.append((name, state(purifier, GELAR)))))
+            callback(lambda _cycle, name=name: seen.append((name, state(purifier, RESFRIAR)))))
     changes = capture(purifier, "state_changed")
     await watts(purifier, IDLE_W)
     await tick(purifier, freezer, 35)
     assert seen == [("cycle", "off"), ("end", "off")]
-    watched = {LAST, *(sensor(f"phase_gelar_{key}") for key in LAST_CYCLE)}
+    watched = {LAST, *(sensor(f"phase_resfriar_{key}") for key in LAST_CYCLE)}
     order = [event.data["entity_id"] for event in changes if event.data["entity_id"] in watched]
-    assert order[-1] == sensor("phase_gelar_last_cycle_end"), order
+    assert order[-1] == sensor("phase_resfriar_last_cycle_end"), order
 
 
 async def test_the_programs_cycle_is_sent_on_the_carriers_signals(
         purifier: HomeAssistant, freezer: Any) -> None:
     cycle = module("features.cycle")
-    device = module("core.feature").Device(key=KEY, name="Demo filter", namespace="appliance")
+    device = module("core.feature").Device(key=KEY, name="Dummy station", namespace="appliance")
     cycles: list[Any] = []
     async_dispatcher_connect(purifier, cycle.cycle_signal(device),
                              callback(lambda each: cycles.append(each)))
@@ -223,26 +223,26 @@ def shown(changes: list[Any], entity_id: str) -> list[str]:
 async def test_a_late_timer_ends_the_phases_before_the_next_cycle(ha: HomeAssistant, freezer: Any) -> None:
     """on_delay 0: a reading back above after the program's off_delay passed, before its timer ran, ends the program and its phase, then starts both again; each shows its end."""
     quick = {"above": 4, "off_delay": {"minutes": 2},
-             "phases": {"gelar": {"name": "Gelar", "above": 40, "off_delay": {"minutes": 5}}}}
-    assert await setup(ha, {KEY: {"name": "Demo filter",
+             "phases": {"resfriar": {"name": "Resfriar", "above": 40, "off_delay": {"minutes": 5}}}}
+    assert await setup(ha, {KEY: {"name": "Dummy station",
                                   "appliance": {"power": POWER, "running_program": quick}}})
     await watts(ha, IDLE_W)
     await watts(ha, 120)
-    assert (state(ha, RUNNING), state(ha, GELAR), state(ha, CURRENT)) == ("on", "on", "gelar")
+    assert (state(ha, RUNNING), state(ha, RESFRIAR), state(ha, CURRENT)) == ("on", "on", "resfriar")
     changes = capture(ha, "state_changed")
     await watts(ha, IDLE_W)
     freezer.tick(timedelta(seconds=130))  # the program's off_delay passed at 120 s; its timer hasn't run
     ha.states.async_set(POWER, "120")  # handled at once, before the timer
     await ha.async_block_till_done()
     assert shown(changes, RUNNING) == ["off", "on"]
-    assert shown(changes, GELAR) == ["off", "on"]
-    assert shown(changes, CURRENT) == ["idle", "gelar"]
+    assert shown(changes, RESFRIAR) == ["off", "on"]
+    assert shown(changes, CURRENT) == ["idle", "resfriar"]
     assert state(ha, sensor("cycles_total")) == "1"
-    assert state(ha, sensor("phase_gelar_cycles_total")) == "1"
+    assert state(ha, sensor("phase_resfriar_cycles_total")) == "1"
 
 
 async def test_a_handover_never_shows_idle(purifier: HomeAssistant, freezer: Any) -> None:
-    """gelar to quente after a dip: phase_current goes straight from gelar to quente."""
+    """resfriar to quente after a dip: phase_current goes straight from resfriar to quente."""
     await cool(purifier, freezer)
     changes = capture(purifier, "state_changed")
     await watts(purifier, 1000)
@@ -251,12 +251,12 @@ async def test_a_handover_never_shows_idle(purifier: HomeAssistant, freezer: Any
               if event.data["entity_id"] == CURRENT
               and event.data["new_state"].state != event.data["old_state"].state]
     assert states == ["quente"], states
-    assert state(purifier, LAST) == "gelar"
-    assert (state(purifier, GELAR), state(purifier, QUENTE)) == ("off", "on")
+    assert state(purifier, LAST) == "resfriar"
+    assert (state(purifier, RESFRIAR), state(purifier, QUENTE)) == ("off", "on")
 
 
 async def test_other_is_a_phase_with_its_entities(purifier: HomeAssistant, freezer: Any) -> None:
-    """300 W is neither gelar's (below 300) nor quente's (above 300): other, after 30 s."""
+    """300 W is neither resfriar's (below 300) nor quente's (above 300): other, after 30 s."""
     await watts(purifier, 300)
     await tick(purifier, freezer, 25)
     assert state(purifier, RUNNING) == "on"
@@ -278,12 +278,12 @@ async def test_a_reading_without_a_value_holds_the_phase(
     await cool(purifier, freezer)
     await watts(purifier, "unavailable")
     await tick(purifier, freezer, 600)
-    assert (state(purifier, RUNNING), state(purifier, GELAR)) == ("on", "on")
-    assert state(purifier, CURRENT) == "gelar"
+    assert (state(purifier, RUNNING), state(purifier, RESFRIAR)) == ("on", "on")
+    assert state(purifier, CURRENT) == "resfriar"
     await watts(purifier, IDLE_W)
     await tick(purifier, freezer, 125)
-    assert (state(purifier, RUNNING), state(purifier, GELAR)) == ("off", "off")
-    assert state(purifier, sensor("phase_gelar_cycles_total")) == "1"
+    assert (state(purifier, RUNNING), state(purifier, RESFRIAR)) == ("off", "off")
+    assert state(purifier, sensor("phase_resfriar_cycles_total")) == "1"
 
 
 async def test_an_energy_entity_without_a_state(purifier: HomeAssistant, freezer: Any) -> None:
@@ -291,9 +291,9 @@ async def test_an_energy_entity_without_a_state(purifier: HomeAssistant, freezer
     await cool(purifier, freezer)
     await watts(purifier, IDLE_W)
     await tick(purifier, freezer, 35)
-    assert state(purifier, sensor("phase_gelar_cycles_total")) == "1"
-    assert state(purifier, sensor("phase_gelar_last_cycle_energy")) == "unknown"
-    assert float(state(purifier, sensor("phase_gelar_energy_total"))) == 0.0
+    assert state(purifier, sensor("phase_resfriar_cycles_total")) == "1"
+    assert state(purifier, sensor("phase_resfriar_last_cycle_energy")) == "unknown"
+    assert float(state(purifier, sensor("phase_resfriar_energy_total"))) == 0.0
 
 
 async def test_a_phases_energy_adds_its_cycles_and_skips_the_unknown(
@@ -305,8 +305,8 @@ async def test_a_phases_energy_adds_its_cycles_and_skips_the_unknown(
         await kwh(purifier, end)
         await watts(purifier, IDLE_W)
         await tick(purifier, freezer, 125)
-    assert state(purifier, sensor("phase_gelar_cycles_total")) == "3"
-    assert float(state(purifier, sensor("phase_gelar_energy_total"))) == pytest.approx(0.08)
+    assert state(purifier, sensor("phase_resfriar_cycles_total")) == "3"
+    assert float(state(purifier, sensor("phase_resfriar_energy_total"))) == pytest.approx(0.08)
 
 
 async def test_short_phases_add_up_their_energy(purifier: HomeAssistant, freezer: Any) -> None:
@@ -317,12 +317,12 @@ async def test_short_phases_add_up_their_energy(purifier: HomeAssistant, freezer
         await kwh(purifier, end)
         await watts(purifier, IDLE_W)
         await tick(purifier, freezer, 125)
-    assert float(state(purifier, sensor("phase_gelar_energy_total"))) == pytest.approx(0.0008, abs=1e-6)
-    assert state(purifier, sensor("phase_gelar_last_cycle_energy")) == "0.0"
+    assert float(state(purifier, sensor("phase_resfriar_energy_total"))) == pytest.approx(0.0008, abs=1e-6)
+    assert state(purifier, sensor("phase_resfriar_last_cycle_energy")) == "0.0"
 
 
 async def test_each_phases_runtime_counts_from_its_start(purifier: HomeAssistant, freezer: Any) -> None:
-    """gelar from 30 s to 635 s; quente, armed at 645 s after the dip, starts when gelar ends (665 s), dated 645 s, until 965 s."""
+    """resfriar from 30 s to 635 s; quente, armed at 645 s after the dip, starts when resfriar ends (665 s), dated 645 s, until 965 s."""
     await cool(purifier, freezer)
     await tick(purifier, freezer, 600)
     await watts(purifier, 1000)
@@ -332,7 +332,7 @@ async def test_each_phases_runtime_counts_from_its_start(purifier: HomeAssistant
     await watts(purifier, IDLE_W)
     await tick(purifier, freezer, 30)
     await tick(purifier, freezer, 95)
-    assert float(state(purifier, sensor("phase_gelar_runtime_total"))) == pytest.approx(605 / 3600, abs=0.0005)
+    assert float(state(purifier, sensor("phase_resfriar_runtime_total"))) == pytest.approx(605 / 3600, abs=0.0005)
     assert float(state(purifier, sensor("phase_quente_runtime_total"))) == pytest.approx(320 / 3600, abs=0.0005)
     assert float(state(purifier, sensor("phase_other_runtime_total"))) == 0
 
@@ -346,14 +346,14 @@ async def test_a_restart_keeps_the_running_phase(ha: HomeAssistant, freezer: Any
     changes = capture(ha, "state_changed")
     await restart(
         ha, DEVICES,
-        (State(RUNNING, "on"), snapshot(since, gelar={"since": since})),
-        (State(GELAR, "on"), {}),
-        (State(CURRENT, "gelar"), {}),
+        (State(RUNNING, "on"), snapshot(since, resfriar={"since": since})),
+        (State(RESFRIAR, "on"), {}),
+        (State(CURRENT, "resfriar"), {}),
     )
-    assert state(ha, GELAR) == "on"
-    assert state(ha, CURRENT) == "gelar"
+    assert state(ha, RESFRIAR) == "on"
+    assert state(ha, CURRENT) == "resfriar"
     shown = [event.data["new_state"].state for event in changes
-             if event.data["entity_id"] in (GELAR, CURRENT)]
+             if event.data["entity_id"] in (RESFRIAR, CURRENT)]
     assert "off" not in shown, shown
     assert "idle" not in shown, shown
     await watts(ha, 120)
@@ -361,18 +361,18 @@ async def test_a_restart_keeps_the_running_phase(ha: HomeAssistant, freezer: Any
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 35)
     assert state(ha, CURRENT) == "idle"
-    assert float(state(ha, sensor("phase_gelar_last_cycle_duration"))) == pytest.approx(
+    assert float(state(ha, sensor("phase_resfriar_last_cycle_duration"))) == pytest.approx(
         30, abs=0.2)
-    assert state(ha, sensor("phase_gelar_cycles_total")) == "1"
-    assert float(state(ha, sensor("phase_gelar_runtime_total"))) == pytest.approx(
+    assert state(ha, sensor("phase_resfriar_cycles_total")) == "1"
+    assert float(state(ha, sensor("phase_resfriar_runtime_total"))) == pytest.approx(
         600 / 3600, abs=0.0005)
 
 
 @pytest.mark.parametrize(("attributes", "running", "seen"), [
-    pytest.param({"running": ["gelar"], "seen": ["quente", "gelar"]},
-                 ["gelar"], ["gelar", "quente"], id="its attributes"),
-    pytest.param({}, ["gelar"], ["gelar"], id="none saved: its phase"),
-    pytest.param({"running": ["nope", 3], "seen": "gelar"}, ["gelar"], ["gelar"],
+    pytest.param({"running": ["resfriar"], "seen": ["quente", "resfriar"]},
+                 ["resfriar"], ["resfriar", "quente"], id="its attributes"),
+    pytest.param({}, ["resfriar"], ["resfriar"], id="none saved: its phase"),
+    pytest.param({"running": ["nope", 3], "seen": "resfriar"}, ["resfriar"], ["resfriar"],
                  id="unusable: its phase"),
 ])
 async def test_the_current_phase_restored_before_the_carrier(
@@ -398,37 +398,37 @@ async def test_the_current_phase_restored_before_the_carrier(
     changes = capture(ha, "state_changed")
     await restart(
         ha, DEVICES,
-        (State(RUNNING, "on"), snapshot(since, gelar={"since": since})),
-        (State(CURRENT, "gelar", attributes), {}),
+        (State(RUNNING, "on"), snapshot(since, resfriar={"since": since})),
+        (State(CURRENT, "resfriar", attributes), {}),
     )
     shown = [(event.data["entity_id"], event.data["new_state"].state) for event in changes
              if event.data["entity_id"] in (RUNNING, CURRENT)]
-    assert shown[0] == (CURRENT, "gelar"), shown  # written before the carrier restored
+    assert shown[0] == (CURRENT, "resfriar"), shown  # written before the carrier restored
     first = next(event.data["new_state"] for event in changes
                  if event.data["entity_id"] == CURRENT)
     assert (first.attributes["running"], first.attributes["seen"]) == (running, seen)
     assert (CURRENT, "idle") not in shown, shown
-    assert state(ha, CURRENT) == "gelar"
+    assert state(ha, CURRENT) == "resfriar"
     assert state(ha, RUNNING) == "on"
 
 
 # Every delay at its default, 0: a reading ends or starts a phase at once
 AT_ONCE: dict[str, Any] = {
     "above": 4,
-    "phases": {"gelar": {"name": "Gelar", "above": 40, "below": 300},
+    "phases": {"resfriar": {"name": "Resfriar", "above": 40, "below": 300},
                "quente": {"name": "Água quente", "above": 300}},
 }
 
 
 @pytest.mark.parametrize(("restored", "watts_now", "ended", "now_running"), [
-    pytest.param("other", 120, "other", GELAR, id="gelar starts, other ends"),
-    pytest.param("gelar", 1000, "gelar", QUENTE, id="gelar leaves, quente starts"),
+    pytest.param("other", 120, "other", RESFRIAR, id="resfriar starts, other ends"),
+    pytest.param("resfriar", 1000, "resfriar", QUENTE, id="resfriar leaves, quente starts"),
 ])
 async def test_a_restart_ending_a_phase_at_once_counts_its_cycle(
         ha: HomeAssistant, restored: str, watts_now: float, ended: str,
         now_running: str) -> None:
     """The reading already ends the restored phase: its cycle reaches its entities, as every view listens before the carrier's first step."""
-    devices = {KEY: {"name": "Demo filter",
+    devices = {KEY: {"name": "Dummy station",
                      "appliance": {"power": POWER, "running_program": AT_ONCE}}}
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     phase_since = dt_util.utcnow() - timedelta(minutes=10)
@@ -453,28 +453,28 @@ async def test_the_program_ends_after_its_phases(ha: HomeAssistant, freezer: Any
     """Both end in the program's step: the phases' ends are written first, the program's off and its end signal last."""
     program = {**RUNNING_PROGRAM, "off_delay": {"seconds": 30},
                "phases": {**RUNNING_PROGRAM["phases"],
-                          "gelar": {**RUNNING_PROGRAM["phases"]["gelar"],
+                          "resfriar": {**RUNNING_PROGRAM["phases"]["resfriar"],
                                     "off_delay": {"minutes": 1}}}}
-    assert await setup(ha, {KEY: {"name": "Demo filter", "appliance": {
+    assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": {
         "power": POWER, "running_program": program}}})
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 35)
     await cool(ha, freezer)
-    device = module("core.feature").Device(key=KEY, name="Demo filter", namespace="appliance")
+    device = module("core.feature").Device(key=KEY, name="Dummy station", namespace="appliance")
     seen: list[tuple[str, ...]] = []
     async_dispatcher_connect(
         ha, module("features.cycle").end_signal(device),
         callback(lambda _cycle: seen.append(tuple(state(ha, each)
-                                                  for each in (RUNNING, GELAR, CURRENT, LAST)))))
+                                                  for each in (RUNNING, RESFRIAR, CURRENT, LAST)))))
     changes = capture(ha, "state_changed")
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 35)
-    assert seen == [("off", "off", "idle", "gelar")]
+    assert seen == [("off", "off", "idle", "resfriar")]
     order = [event.data["entity_id"] for event in changes
-             if event.data["entity_id"] in (RUNNING, GELAR, CURRENT, LAST)
+             if event.data["entity_id"] in (RUNNING, RESFRIAR, CURRENT, LAST)
              and event.data["new_state"].state != event.data["old_state"].state]
     assert order[-1] == RUNNING, order
-    assert set(order) == {RUNNING, GELAR, CURRENT, LAST}, order
+    assert set(order) == {RUNNING, RESFRIAR, CURRENT, LAST}, order
 
 
 @pytest.mark.parametrize("extra", [
@@ -484,13 +484,13 @@ async def test_the_program_ends_after_its_phases(ha: HomeAssistant, freezer: Any
 async def test_a_snapshot_the_detector_cannot_use_is_ignored(
         ha: HomeAssistant, freezer: Any, extra: Any) -> None:
     """A hand-edited .storage: the carrier starts from nothing, and the phases follow the readings."""
-    await restart(ha, DEVICES, (State(RUNNING, "on"), extra), (State(CURRENT, "gelar"), {}))
+    await restart(ha, DEVICES, (State(RUNNING, "on"), extra), (State(CURRENT, "resfriar"), {}))
     assert state(ha, RUNNING) == "off"
     assert state(ha, CURRENT) == "idle"
     await watts(ha, 120)
     await tick(ha, freezer, 35)
     assert state(ha, RUNNING) == "on"
-    assert state(ha, CURRENT) == "gelar"
+    assert state(ha, CURRENT) == "resfriar"
 
 
 async def test_a_phases_impossible_date_is_no_start(
@@ -498,16 +498,16 @@ async def test_a_phases_impossible_date_is_no_start(
     """A hand-edited .storage: the program and its phase run on, the phase without a start, and end with the readings."""
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     await restart(ha, DEVICES,
-                  (State(RUNNING, "on"), snapshot(since, gelar={"since": "2020-02-30T10:00:00+00:00"})),
-                  (State(CURRENT, "gelar"), {}))
+                  (State(RUNNING, "on"), snapshot(since, resfriar={"since": "2020-02-30T10:00:00+00:00"})),
+                  (State(CURRENT, "resfriar"), {}))
     assert state(ha, RUNNING) == "on"
-    assert state(ha, CURRENT) == "gelar"
+    assert state(ha, CURRENT) == "resfriar"
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     assert state(ha, RUNNING) == "off"
     assert state(ha, CURRENT) == "idle"
-    assert state(ha, sensor("phase_gelar_cycles_total")) == "1"
-    assert state(ha, sensor("phase_gelar_last_cycle_start")) == "unknown"
+    assert state(ha, sensor("phase_resfriar_cycles_total")) == "1"
+    assert state(ha, sensor("phase_resfriar_last_cycle_start")) == "unknown"
 
 
 async def test_a_disabled_carrier_leaves_the_phases_idle(ha: HomeAssistant) -> None:
@@ -516,9 +516,9 @@ async def test_a_disabled_carrier_leaves_the_phases_idle(ha: HomeAssistant) -> N
         "binary_sensor", "pururu", f"{PREFIX}_running",
         suggested_object_id=f"{PREFIX}_running",
         disabled_by=er.RegistryEntryDisabler.USER)
-    await restart(ha, DEVICES, (State(CURRENT, "gelar", {"running": ["gelar"]}), {}))
+    await restart(ha, DEVICES, (State(CURRENT, "resfriar", {"running": ["resfriar"]}), {}))
     assert ha.states.get(RUNNING) is None
-    assert state(ha, GELAR) == "off"
+    assert state(ha, RESFRIAR) == "off"
     assert state(ha, CURRENT) == "idle"
     assert ha.states.get(CURRENT).attributes["running"] == []
 
@@ -587,39 +587,39 @@ async def test_a_reload_mid_phase_counts_one_cycle(purifier: HomeAssistant, free
     started = dt_util.utcnow() - timedelta(seconds=5)
     await tick(purifier, freezer, 600)
     await reload(purifier, DEVICES)
-    assert state(purifier, CURRENT) == "gelar"
+    assert state(purifier, CURRENT) == "resfriar"
     await tick(purifier, freezer, 600)
     await watts(purifier, IDLE_W)
     await tick(purifier, freezer, 35)
-    assert state(purifier, sensor("phase_gelar_cycles_total")) == "1"
-    assert dt_util.parse_datetime(state(purifier, sensor("phase_gelar_last_cycle_start"))) == started
+    assert state(purifier, sensor("phase_resfriar_cycles_total")) == "1"
+    assert dt_util.parse_datetime(state(purifier, sensor("phase_resfriar_last_cycle_start"))) == started
 
 
 async def test_a_carrier_renamed_mid_phase_follows_the_reading(
         purifier: HomeAssistant, freezer: Any) -> None:
     """Renamed in the UI: HA adds it again to the loaded entry, then the entry reloads; the phase's cycle counts once."""
     await cool(purifier, freezer)
-    renamed = "binary_sensor.demo_filter_program"
+    renamed = "binary_sensor.dummy_station_program"
     er.async_get(purifier).async_update_entity(RUNNING, new_entity_id=renamed)
     await purifier.async_block_till_done()
     assert state(purifier, renamed) == "on"
-    assert state(purifier, GELAR) == "on"
+    assert state(purifier, RESFRIAR) == "on"
     await watts(purifier, IDLE_W)
     await tick(purifier, freezer, 125)
     assert state(purifier, renamed) == "off"
-    assert state(purifier, sensor("phase_gelar_cycles_total")) == "1"
+    assert state(purifier, sensor("phase_resfriar_cycles_total")) == "1"
 
 
 async def test_a_phases_totals_restore(ha: HomeAssistant) -> None:
     await restart(
         ha, DEVICES,
-        (State(sensor("phase_gelar_cycles_total"), "7"), {"native_value": 7, "native_unit_of_measurement": None}),
-        (State(sensor("phase_gelar_energy_total"), "1.2"), {"native_value": 1.2, "native_unit_of_measurement": "kWh"}),
-        (State(sensor("phase_gelar_runtime_total"), "3.5"), {"native_value": 3.5, "native_unit_of_measurement": "h"}),
+        (State(sensor("phase_resfriar_cycles_total"), "7"), {"native_value": 7, "native_unit_of_measurement": None}),
+        (State(sensor("phase_resfriar_energy_total"), "1.2"), {"native_value": 1.2, "native_unit_of_measurement": "kWh"}),
+        (State(sensor("phase_resfriar_runtime_total"), "3.5"), {"native_value": 3.5, "native_unit_of_measurement": "h"}),
     )
-    assert state(ha, sensor("phase_gelar_cycles_total")) == "7"
-    assert float(state(ha, sensor("phase_gelar_energy_total"))) == 1.2
-    assert float(state(ha, sensor("phase_gelar_runtime_total"))) == 3.5
+    assert state(ha, sensor("phase_resfriar_cycles_total")) == "7"
+    assert float(state(ha, sensor("phase_resfriar_energy_total"))) == 1.2
+    assert float(state(ha, sensor("phase_resfriar_runtime_total"))) == 3.5
 
 
 async def test_a_reload_while_a_phase_is_pending(
@@ -633,7 +633,7 @@ async def test_a_reload_while_a_phase_is_pending(
     assert [r.getMessage() for r in caplog.records if r.levelname == "ERROR"] == []
     assert state(purifier, CURRENT) == "idle"
     await tick(purifier, freezer, 25)
-    assert state(purifier, CURRENT) == "gelar"
+    assert state(purifier, CURRENT) == "resfriar"
 
 
 async def test_last_restores(ha: HomeAssistant) -> None:
@@ -645,16 +645,16 @@ async def test_last_restores(ha: HomeAssistant) -> None:
 # --- names ------------------------------------------------------------------------------
 
 NAMES = {
-    "en": {GELAR: "Demo filter Gelar", OTHER: "Demo filter Other phase",
-           CURRENT: "Demo filter Phase", LAST: "Demo filter Last phase",
-           sensor("phase_quente_cycles_total"): "Demo filter Água quente cycles",
-           sensor("phase_gelar_last_cycle_start"): "Demo filter Gelar last cycle start",
-           sensor("phase_other_runtime_total"): "Demo filter Other phase runtime"},
-    "pt-BR": {GELAR: "Demo filter Gelar", OTHER: "Demo filter Outra fase",
-              CURRENT: "Demo filter Fase", LAST: "Demo filter Última fase",
-              sensor("phase_quente_cycles_total"): "Demo filter Ciclos de Água quente",
-              sensor("phase_gelar_last_cycle_start"): "Demo filter Início do último ciclo de Gelar",
-              sensor("phase_other_runtime_total"): "Demo filter Tempo de outra fase"},
+    "en": {RESFRIAR: "Dummy station Resfriar", OTHER: "Dummy station Other phase",
+           CURRENT: "Dummy station Phase", LAST: "Dummy station Last phase",
+           sensor("phase_quente_cycles_total"): "Dummy station Água quente cycles",
+           sensor("phase_resfriar_last_cycle_start"): "Dummy station Resfriar last cycle start",
+           sensor("phase_other_runtime_total"): "Dummy station Other phase runtime"},
+    "pt-BR": {RESFRIAR: "Dummy station Resfriar", OTHER: "Dummy station Outra fase",
+              CURRENT: "Dummy station Fase", LAST: "Dummy station Última fase",
+              sensor("phase_quente_cycles_total"): "Dummy station Ciclos de Água quente",
+              sensor("phase_resfriar_last_cycle_start"): "Dummy station Início do último ciclo de Resfriar",
+              sensor("phase_other_runtime_total"): "Dummy station Tempo de outra fase"},
 }
 
 
@@ -666,13 +666,13 @@ async def test_names(ha: HomeAssistant, language: str) -> None:
     for entity_id, name in NAMES[language].items():
         assert ha.states.get(entity_id).attributes["friendly_name"] == name, entity_id
     if language == "en":
-        assert ha.states.get(sensor("phase_gelar_cycles_total")).attributes[
+        assert ha.states.get(sensor("phase_resfriar_cycles_total")).attributes[
             "unit_of_measurement"] == "cycles"
 
 
 # --- what refers to a phase ------------------------------------------------------------
 
-HOT = "binary_sensor.pururu_demo_filter_alert_hot"
+HOT = "binary_sensor.pururu_dummy_station_alert_hot"
 
 
 def with_alert(**alert: Any) -> dict[str, Any]:
@@ -714,7 +714,7 @@ async def test_a_reference_to_a_phase_not_configured_is_refused(
 async def test_no_phase_keys_without_phases(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """Without phases the appliance creates no phase entity, so none can be named."""
-    devices = {KEY: {"name": "Demo filter",
+    devices = {KEY: {"name": "Dummy station",
                      "appliance": {"power": POWER, "running_program": {"above": 4}},
                      "alerts": {"hot": {"name": "Esquentando", "when": "appliance_phase_current",
                                         "is": "quente"}}}}
@@ -725,13 +725,13 @@ async def test_no_phase_keys_without_phases(
 
 async def test_a_renamed_phase_is_followed(purifier: HomeAssistant, freezer: Any) -> None:
     """Renamed in the UI: the entry reloads, and the phase's runtime follows the new ID."""
-    renamed = "binary_sensor.demo_filter_gelar"
-    er.async_get(purifier).async_update_entity(GELAR, new_entity_id=renamed)
+    renamed = "binary_sensor.dummy_station_resfriar"
+    er.async_get(purifier).async_update_entity(RESFRIAR, new_entity_id=renamed)
     await purifier.async_block_till_done()
     await cool(purifier, freezer)
     assert state(purifier, renamed) == "on"
     await tick(purifier, freezer, 600)
     await watts(purifier, IDLE_W)
     await tick(purifier, freezer, 35)
-    assert float(state(purifier, sensor("phase_gelar_runtime_total"))) == pytest.approx(
+    assert float(state(purifier, sensor("phase_resfriar_runtime_total"))) == pytest.approx(
         605 / 3600, abs=0.0005)

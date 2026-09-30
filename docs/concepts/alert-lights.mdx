@@ -3,7 +3,7 @@ title: Alert lights
 description: Lights that show pururu's alerts while they are on, in the colour of the most serious one, and are handed back when they end.
 ---
 
-While an [alert](/concepts/alerts) is on, some lights can show it: the pool's LED breathing orange for a washer running too long, red for a leak. When the last alert that uses a light ends, the light turns green for a while, then off, and pururu says it's free so whoever used it before can take it back.
+While an [alert](/concepts/alerts) is on, some lights can show it: the greenhouse's lantern breathing orange for a washer running too long, red for a leak. When the last alert that uses a light ends, the light turns green for a while, then off, and pururu says it's free so whoever used it before can take it back.
 
 An alert opts in with `lights`. The lights come in **groups**, under `config:`:
 
@@ -13,19 +13,19 @@ pururu:
     alerts:
       lights:
         groups:
-          default: {pool: [led]}
-          externas: {pool: [led], varanda: [teto]}
+          default: {greenhouse: [lantern]}
+          externas: {greenhouse: [lantern], varanda: [teto]}
   devices:
-    pool:
-      name: Piscina
+    greenhouse:
+      name: Estufa
       lights:
-        led: {entity: light.pool_led, name: LED}
+        lantern: {entity: light.greenhouse_lantern, name: Lanterna}
     varanda:
       name: Varanda
       lights:
         teto: {entity: light.varanda_teto, name: Teto}
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance:
         power: sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
@@ -35,7 +35,7 @@ pururu:
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, priority: high, lights: externas}
 ```
 
-`long_cycle` (medium) borrows the `default` group: `light.pururu_pool_light_led` breathes orange. `overload` (high) borrows `externas`: both lights breathe red. The LED is in both groups, so while both alerts are on it shows red, the higher of the two.
+`long_cycle` (medium) borrows the `default` group: `light.pururu_greenhouse_light_lantern` breathes orange. `overload` (high) borrows `externas`: both lights breathe red. The lantern is in both groups, so while both alerts are on it shows red, the higher of the two.
 
 ## Settings
 
@@ -50,7 +50,7 @@ pururu:
 Every key is optional.
 
 <Property name="groups" type="map" optional>
-  A map of **group name → device key → list of that device's `lights`**, such as `externas: {pool: [led], varanda: [teto]}`. A group holds at least one light, a light may be in several groups, and a group may hold lights of several devices. Relays (`switch.*` in `lights`) are welcome: they only turn on and off.
+  A map of **group name → device key → list of that device's `lights`**, such as `externas: {greenhouse: [lantern], varanda: [teto]}`. A group holds at least one light, a light may be in several groups, and a group may hold lights of several devices. Relays (`switch.*` in `lights`) are welcome: they only turn on and off.
 </Property>
 
 ---
@@ -97,7 +97,7 @@ pururu only calls the light's `turn_on` and `turn_off`. The light takes what it 
 | One of its alerts turns on during `resolved` | taken again: that priority's `turn_on` |
 | `resolved`'s `for` ends | `turn_off`, then the event `pururu_alert_lights_released` |
 
-- **Only its own alerts hold it.** An alert that doesn't use a light never keeps it: the LED is handed back once its alerts are off, whatever else is on.
+- **Only its own alerts hold it.** An alert that doesn't use a light never keeps it: the lantern is handed back once its alerts are off, whatever else is on.
 - **Its attributes say what it's doing:** `alert` (`high`, `medium`, `low` or `resolved`) and `alerts`, the entity IDs of its alerts that are on. Both are gone once it's free.
 - **An alert that is briefly `unavailable`**, as during a pururu reload, changes nothing.
 
@@ -115,18 +115,18 @@ pururu doesn't know what the light did before the alert: whoever used it does. L
 
 ```yaml
 automation:
-  - alias: Pool LED back to blue
+  - alias: Greenhouse lantern back to blue
     triggers:
       - trigger: event
         event_type: pururu_alert_lights_released
-        event_data: {entity_id: light.pururu_pool_light_led}
+        event_data: {entity_id: light.pururu_greenhouse_light_lantern}
     conditions:
       - condition: state
-        entity_id: switch.pururu_pool_switch_filter
+        entity_id: switch.pururu_greenhouse_switch_vent
         state: "on"
     actions:
       - action: light.turn_on
-        target: {entity_id: light.pururu_pool_light_led}
+        target: {entity_id: light.pururu_greenhouse_light_lantern}
         data: {color_name: blue}
 ```
 
@@ -141,4 +141,4 @@ automation:
 - A light of a group that isn't created, because its ID is taken, is left out of the group, and the log says so. A light you disabled is left out quietly, even while an alert has it.
 - Disabling an alert that holds a light counts as the alert ending: the light goes through `resolved` and is handed back.
 - A call that fails, such as Zigbee2MQTT refusing it, is a warning in the log. The next `repeat` or change tries again.
-- Alert2's **Ignorar** stops the reminders on the phones. It doesn't reach the lights: they show the alert until it ends.
+- Acknowledging an alert in Alert2 stops the reminders on the phones. It doesn't reach the lights: they show the alert until it ends.

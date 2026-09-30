@@ -104,13 +104,13 @@ APPLIANCE = Feature(
     entity_keys=ENTITY_KEYS,
     build=build,
     example={
-        "power": "sensor.demo_plug_power",
+        "power": "sensor.dummy_plug_power",
         # One phase and other: the contract test reaches every derived key
         RUNNING_PROGRAM: {
             "above": 4,
             "on_delay": {"minutes": 1},
             "off_delay": {"minutes": 2},
-            "phases": {"heating": {"name": "Heating", "above": 1000}},
+            "phases": {"warming": {"name": "Warming", "above": 1000}},
             "other": {},
         },
     },

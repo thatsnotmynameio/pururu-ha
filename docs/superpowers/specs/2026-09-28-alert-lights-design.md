@@ -14,14 +14,14 @@ pururu:
     alerts:
       lights:
         groups:
-          default: {pool: [led]}
+          default: {greenhouse: [lantern]}
   devices:
-    laundry_washer:
-      name: Máquina de lavar
+    clothes_washer:
+      name: Tanquinho
       appliance: {power: sensor.washer_plug_power, running: {threshold: 4}}
       alerts:
         long_cycle: {for: {hours: 3}, lights: true}
-# long_cycle on → light.pururu_pool_light_led breathes orange (medium) every 15 s
+# long_cycle on → light.pururu_greenhouse_light_lantern breathes orange (medium) every 15 s
 # long_cycle off → green 50 % for 120 s → off → event pururu_alert_lights_released
 ```
 
@@ -78,14 +78,14 @@ It is also the alert's attribute `lights` (the group's name), next to `priority`
 
 Checked with the device's other checks (`CONFIG_SCHEMA`), each a `vol.Invalid` naming where:
 
-- `lights: true` without a `default` group: `device laundry_washer: alerts: long_cycle: there is no default group in config.alerts.lights.groups` (a ready-made alert: `device laundry_washer: appliance: alerts: offline: …`).
-- `lights: <group>` naming no group: `device laundry_washer: alerts: long_cycle: outside is not a group of config.alerts.lights.groups`.
-- In a group, a device that isn't under `devices:`: `config.alerts.lights.groups: outside: device pool is not in devices`; a key that isn't in that device's `lights:`: `config.alerts.lights.groups: outside: device pool has no light led`.
+- `lights: true` without a `default` group: `device clothes_washer: alerts: long_cycle: there is no default group in config.alerts.lights.groups` (a ready-made alert: `device clothes_washer: appliance: alerts: offline: …`).
+- `lights: <group>` naming no group: `device clothes_washer: alerts: long_cycle: outside is not a group of config.alerts.lights.groups`.
+- In a group, a device that isn't under `devices:`: `config.alerts.lights.groups: outside: device greenhouse is not in devices`; a key that isn't in that device's `lights:`: `config.alerts.lights.groups: outside: device greenhouse has no light lantern`.
 - A `color_name` HA doesn't know: `reed is not a colour name Home Assistant knows` (every call would fail).
 
 ### Resolved at setup
 
-- A light of a group that isn't created (its ID is taken), or that the user disabled, is left out of the group; one not created is a warning: `light.pururu_pool_light_led is not created: the alert lights group outside goes without it`. The rest of the group goes on.
+- A light of a group that isn't created (its ID is taken), or that the user disabled, is left out of the group; one not created is a warning: `light.pururu_greenhouse_light_lantern is not created: the alert lights group outside goes without it`. The rest of the group goes on.
 - An alert that isn't created (what it watches isn't) drives nothing.
 - Lights and alerts are followed by their current entity IDs (`Device.current_entity_id`); a rename reloads the entry, as for any pururu entity.
 
@@ -149,7 +149,7 @@ The manager sets them and writes the light's state. `alert` is restored (below),
 
 - `light.turn_on` / `light.turn_off` on the pururu light, `blocking=True`, with the manager's new `Context`, so the logbook names pururu's alert lights.
 - The pururu `Light` drops an `effect` its `effect_list` doesn't have before forwarding (HA's service only drops `effect` for a light without the effect feature).
-- A call that fails (`HomeAssistantError`: the light unavailable, Zigbee2MQTT refusing) is a warning, `The alert lights couldn't call light.turn_on on light.pururu_pool_light_led: <error>`; the manager goes on, and the next `repeat` or change tries again. Never raised, never a failed setup.
+- A call that fails (`HomeAssistantError`: the light unavailable, Zigbee2MQTT refusing) is a warning, `The alert lights couldn't call light.turn_on on light.pururu_greenhouse_light_lantern: <error>`; the manager goes on, and the next `repeat` or change tries again. Never raised, never a failed setup.
 
 ## Start, reload and removal
 

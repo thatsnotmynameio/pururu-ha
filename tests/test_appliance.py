@@ -10,17 +10,17 @@ import pytest
 
 from helpers import capture, fake, held, reload, restart, setup, snapshot, tick
 
-KEY = "demo_washer"
-POWER = "sensor.demo_plug_power"
-ENERGY = "sensor.demo_plug_energy"
-RUNNING = "binary_sensor.pururu_demo_washer_appliance_running"
+KEY = "dummy_washer"
+POWER = "sensor.dummy_plug_power"
+ENERGY = "sensor.dummy_plug_energy"
+RUNNING = "binary_sensor.pururu_dummy_washer_appliance_running"
 IDLE_W = 1.4
 APPLIANCE: dict[str, Any] = {
     "power": POWER,
     "energy": ENERGY,
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-DEVICES = {KEY: {"name": "Demo washer", "appliance": APPLIANCE}}
+DEVICES = {KEY: {"name": "Dummy washer", "appliance": APPLIANCE}}
 
 
 def sensor(entity_key: str) -> str:
@@ -41,7 +41,7 @@ async def kwh(hass: HomeAssistant, value: float | str) -> None:
 
 @pytest.fixture
 async def washer(ha: HomeAssistant, freezer: Any) -> HomeAssistant:
-    """The demo washer, idle long enough to count as not running."""
+    """The dummy washer, idle long enough to count as not running."""
     assert await setup(ha, DEVICES)
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
@@ -84,7 +84,7 @@ async def end_cycle(hass: HomeAssistant, freezer: Any) -> None:
                  id="running_program takes no name"),
 ])
 async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]) -> None:
-    assert not await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
+    assert not await setup(ha, {KEY: {"name": "Dummy washer", "appliance": block}})
 
 
 @pytest.mark.parametrize(("block", "reasons"), [
@@ -101,7 +101,7 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
 async def test_the_old_block_and_a_name_are_refused_by_their_text(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, block: dict[str, Any],
         reasons: list[str]) -> None:
-    assert not await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
+    assert not await setup(ha, {KEY: {"name": "Dummy washer", "appliance": block}})
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     for reason in reasons:
         assert any(reason in message for message in errors), (reason, errors)
@@ -229,20 +229,20 @@ async def test_device_holds_the_appliance(washer: HomeAssistant) -> None:
 
 async def test_without_energy_there_is_no_energy_total(ha: HomeAssistant) -> None:
     block = {key: value for key, value in APPLIANCE.items() if key != "energy"}
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": block}})
     assert ha.states.get(sensor("energy_total")) is None
     assert ha.states.get(RUNNING) is not None
 
 
 async def test_names_come_from_the_translations(washer: HomeAssistant) -> None:
-    assert washer.states.get(RUNNING).attributes["friendly_name"] == "Demo washer Running"
+    assert washer.states.get(RUNNING).attributes["friendly_name"] == "Dummy washer Running"
 
 
 async def test_names_in_portuguese(ha: HomeAssistant) -> None:
     ha.config.language = "pt-BR"
     assert await setup(ha, DEVICES)
-    assert ha.states.get(RUNNING).attributes["friendly_name"] == "Demo washer Em funcionamento"
-    assert ha.states.get(sensor("power")).attributes["friendly_name"] == "Demo washer Potência"
+    assert ha.states.get(RUNNING).attributes["friendly_name"] == "Dummy washer Em funcionamento"
+    assert ha.states.get(sensor("power")).attributes["friendly_name"] == "Dummy washer Potência"
 
 
 # --- the last cycle and the count ------------------------------------------------
@@ -406,7 +406,7 @@ async def test_energy_unknown_at_the_start_gives_no_energy(washer: HomeAssistant
 
 async def test_without_energy_there_is_no_cycle_energy(ha: HomeAssistant) -> None:
     block = {key: value for key, value in APPLIANCE.items() if key != "energy"}
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": block}})
     assert ha.states.get(sensor("last_cycle_energy")) is None
     assert ha.states.get(sensor("last_cycle_duration")) is not None
 
@@ -459,16 +459,16 @@ async def test_last_cycle_restores(ha: HomeAssistant) -> None:
 
 async def test_devices_do_not_cross(ha: HomeAssistant, freezer: Any) -> None:
     """Two washers: a cycle on one counts only there."""
-    other = {**APPLIANCE, "power": "sensor.demo_other_power", "energy": "sensor.demo_other_energy"}
-    assert await setup(ha, {**DEVICES, "demo_other": {"name": "Other", "appliance": other}})
+    other = {**APPLIANCE, "power": "sensor.dummy_other_power", "energy": "sensor.dummy_other_energy"}
+    assert await setup(ha, {**DEVICES, "dummy_other": {"name": "Other", "appliance": other}})
     await watts(ha, IDLE_W)
-    await fake(ha, "sensor.demo_other_power", str(IDLE_W))
+    await fake(ha, "sensor.dummy_other_power", str(IDLE_W))
     await tick(ha, freezer, 125)
     await start_cycle(ha, freezer)
     await end_cycle(ha, freezer)
     assert value(ha, "cycles_total") == "1"
-    assert ha.states.get("sensor.pururu_demo_other_appliance_cycles_total").state == "0"
-    assert ha.states.get("sensor.pururu_demo_other_appliance_last_cycle_end").state == "unknown"
+    assert ha.states.get("sensor.pururu_dummy_other_appliance_cycles_total").state == "0"
+    assert ha.states.get("sensor.pururu_dummy_other_appliance_last_cycle_end").state == "unknown"
 
 
 # --- runtime and statistics --------------------------------------------------------
@@ -479,8 +479,8 @@ STATISTICS = {**APPLIANCE, "statistics": {"runtime": ["today", "week"],
 
 @pytest.fixture
 async def metered(ha: HomeAssistant, freezer: Any) -> HomeAssistant:
-    """The demo washer with statistics, idle."""
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS}})
+    """The dummy washer with statistics, idle."""
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": STATISTICS}})
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     return ha
@@ -540,7 +540,7 @@ async def test_today_resets_at_local_midnight(ha: HomeAssistant, freezer: Any) -
     """At local 16:00 (UTC midnight is 17:00 in HA's test zone): UTC midnight resets nothing."""
     zone = dt_util.get_time_zone(ha.config.time_zone)
     freezer.move_to(datetime(2026, 9, 16, 16, 0, tzinfo=zone))
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS}})
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": STATISTICS}})
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     await wash(ha, freezer, 30)
@@ -573,7 +573,7 @@ async def test_runtime_counts_from_now_after_an_impossible_start(
 
 
 async def test_runtime_restores(ha: HomeAssistant) -> None:
-    await restart(ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS}},
+    await restart(ha, {KEY: {"name": "Dummy washer", "appliance": STATISTICS}},
                   (State(sensor("runtime_total"), "1.5"),
                    {"native_value": 1.5, "native_unit_of_measurement": "h"}))
     assert float(value(ha, "runtime_total")) == 1.5
@@ -583,7 +583,7 @@ async def test_a_restored_meter_is_not_seeded_again(ha: HomeAssistant, freezer: 
     """Restore wins over seeding from the total: 3 today stays 3, and the next cycle makes 4."""
     midnight = dt_util.start_of_local_day()
     await restart(
-        ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS}},
+        ha, {KEY: {"name": "Dummy washer", "appliance": STATISTICS}},
         (State(sensor("cycles_total"), "10"),
          {"native_value": 10, "native_unit_of_measurement": None}),
         # utility_meter's own extra data (UtilitySensorExtraStoredData.as_dict)
@@ -628,8 +628,8 @@ async def test_a_meter_is_not_created_without_its_total(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """The statistics aspect's meter follows its builder's total: a total not created takes it along."""
     er.async_get(ha).async_get_or_create(
-        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_washer_appliance_cycles_total")
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS}})
+        "sensor", "template", "someone_else", suggested_object_id="pururu_dummy_washer_appliance_cycles_total")
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": STATISTICS}})
     assert ha.states.get(sensor("cycles_today")) is None
     assert ha.states.get(sensor("runtime_today")) is not None
     assert (f"{sensor('cycles_today')} follows {sensor('cycles_total')}, which is not created; "
@@ -637,16 +637,16 @@ async def test_a_meter_is_not_created_without_its_total(
 
 
 async def test_two_devices_have_their_own_meters(ha: HomeAssistant, freezer: Any) -> None:
-    other = {**STATISTICS, "power": "sensor.demo_other_power", "energy": "sensor.demo_other_energy"}
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS},
-                            "demo_other": {"name": "Other", "appliance": other}})
+    other = {**STATISTICS, "power": "sensor.dummy_other_power", "energy": "sensor.dummy_other_energy"}
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": STATISTICS},
+                            "dummy_other": {"name": "Other", "appliance": other}})
     await watts(ha, IDLE_W)
-    await fake(ha, "sensor.demo_other_power", str(IDLE_W))
+    await fake(ha, "sensor.dummy_other_power", str(IDLE_W))
     await tick(ha, freezer, 125)
     await wash(ha, freezer, 5)
     await tick(ha, freezer, 60)
     assert float(value(ha, "cycles_today")) == 1
-    assert float(ha.states.get("sensor.pururu_demo_other_appliance_cycles_today").state) == 0
+    assert float(ha.states.get("sensor.pururu_dummy_other_appliance_cycles_today").state) == 0
 
 
 # --- cycle_start -------------------------------------------------------------
@@ -701,8 +701,8 @@ IDLE = {**APPLIANCE, "statistics": {"idle_energy": ["today", "month"]}}
 
 @pytest.fixture
 async def idle(ha: HomeAssistant, freezer: Any) -> HomeAssistant:
-    """The demo washer counting its idle energy, idle, its counter at 100 kWh."""
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": IDLE}})
+    """The dummy washer counting its idle energy, idle, its counter at 100 kWh."""
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": IDLE}})
     await kwh(ha, 100.0)
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
@@ -758,7 +758,7 @@ async def test_idle_energy_carries_over_a_counter_without_value(idle: HomeAssist
 async def test_idle_energy_starts_from_the_first_reading(ha: HomeAssistant,
                                                          freezer: Any) -> None:
     """Idle before the counter has a value: counting starts from its first reading."""
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": IDLE}})
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": IDLE}})
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     await kwh(ha, 100.0)
@@ -787,7 +787,7 @@ async def test_idle_energy_unknown_when_a_cycle_starts_is_lost(idle: HomeAssista
 async def test_idle_energy_restores_without_the_time_ha_was_down(ha: HomeAssistant) -> None:
     """The counter's reading at the start may be from before the restart: count from the next."""
     await kwh(ha, 100.4)
-    await restart(ha, {KEY: {"name": "Demo washer", "appliance": IDLE}},
+    await restart(ha, {KEY: {"name": "Dummy washer", "appliance": IDLE}},
                   (State(RUNNING, "off"), snapshot(None)),
                   (State(sensor("idle_energy_total"), "1.5"),
                    {"native_value": 1.5, "native_unit_of_measurement": "kWh"}))
@@ -801,7 +801,7 @@ async def test_idle_energy_restores_without_the_time_ha_was_down(ha: HomeAssista
 async def test_idle_energy_after_a_reload_counts_from_the_next_reading(
         idle: HomeAssistant) -> None:
     await kwh(idle, 100.01)
-    await reload(idle, {KEY: {"name": "Demo washer", "appliance": IDLE}})
+    await reload(idle, {KEY: {"name": "Dummy washer", "appliance": IDLE}})
     await kwh(idle, 100.02)
     assert idle_kwh(idle) == pytest.approx(0.01)
     await kwh(idle, 100.03)
@@ -818,12 +818,12 @@ async def test_idle_energy_meters(idle: HomeAssistant, freezer: Any) -> None:
 
 async def test_idle_energy_names(idle: HomeAssistant) -> None:
     assert (idle.states.get(sensor("idle_energy_total")).attributes["friendly_name"]
-            == "Demo washer Idle energy")
+            == "Dummy washer Idle energy")
     assert (idle.states.get(sensor("idle_energy_today")).attributes["friendly_name"]
-            == "Demo washer Idle energy today")
+            == "Dummy washer Idle energy today")
 
 
 async def test_without_energy_there_is_no_idle_energy(ha: HomeAssistant) -> None:
     block = {key: value for key, value in APPLIANCE.items() if key != "energy"}
-    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": block}})
     assert ha.states.get(sensor("idle_energy_total")) is None
