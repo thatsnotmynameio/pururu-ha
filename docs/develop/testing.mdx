@@ -74,7 +74,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_statistics.py` | Today's meters, pinned: every entity ID a `Counters` builder can create, a few names and icons in both languages, and the schema's refusal texts, so consolidating them into one aspect can't change any unnoticed |
 | `test_cycle.py` | `CycleSource`'s order: the state is written, then the cycle signal, then the end signal; that a cycle entity takes an optional `translation` |
 | `test_program.py` | `features/cycle/program`'s pure `Detector`: the schema's refusals, today's modes and phases scenarios replayed with the same readings, overlapping bands, the idle gap, `other`, ordering at one instant, restores, and the purifier day's replay (`fixtures/purifier_day.csv`) |
-| `test_program_entities.py` | The detector's entities (`build`), through a test-only builder swapped in for `FEATURES["appliance"]`: entity IDs, states, the handover, restarts, reloads, names |
+| `test_program_entities.py` | The detector's entities (`build`), through the appliance's `running_program`: entity IDs, states, the handover, restarts, reloads, names |
 | `test_appliance.py` | `running`, cycles, energy, runtime, meters, restores |
 | `test_phases.py` | Bands, `for`, `seen`, restores, translations |
 | `test_switches.py` | Following the real switch, passing commands on, refused blocks, taken IDs, renames, reloads |
