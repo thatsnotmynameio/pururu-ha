@@ -42,7 +42,16 @@ from ..energy import kwh_now
 from ..last import LAST_CYCLE, LastCycleValue
 from ..totals import CyclesTotal, EnergyTotal, RuntimeTotal
 from .detector import Change, Detector, Ended
-from .schema import DETECTED, IDLE, OTHER, PHASE, Phase, Program, program_of
+from .schema import (
+    DETECTED,
+    IDLE,
+    OTHER,
+    PHASE,
+    Phase,
+    Program,
+    detected_item,
+    program_of,
+)
 
 type View = Callable[[list[Change]], None]
 
@@ -551,7 +560,7 @@ def build_detected(
     Its carrier is `key`, named by the program's name; its last cycle and
     totals are its item's (<key>_<suffix>), named detected_<suffix> with {item}.
     """
-    of = Item(slug=key, name=config["name"])
+    of = detected_item(key, config)
     entities = build(
         hass,
         device,

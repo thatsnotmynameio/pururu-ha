@@ -111,9 +111,14 @@ def counted(where: Path) -> tuple[Counted, ...]:
     )
 
 
+def detected_item(key: str, config: Mapping[str, Any]) -> Item:
+    """A detected program's item: its key, named by its name."""
+    return Item(slug=key, name=config["name"])
+
+
 def _detected_item(block: Any, path: Path) -> Item:
-    """The detected program at `path` of the builder's block: its key, named by its name."""
-    return Item(slug=path[-1], name=at(block, path)["name"])
+    """The detected program at `path` of the builder's block."""
+    return detected_item(path[-1], at(block, path))
 
 
 def _detected_phase_item(block: Any, path: Path) -> Item:

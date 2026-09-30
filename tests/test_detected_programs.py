@@ -193,6 +193,15 @@ async def test_an_executable_program_takes_no_band(ha: HomeAssistant, caplog: py
     assert "'above' is an invalid option" in caplog.text
 
 
+async def test_an_executable_program_takes_no_phases(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Phases are a detected program's: an executable program's are refused until needed (the Guide quotes it)."""
+    clean = {"name": "Limpar", "sequence": [{"delay": 1}], "phases": {"a": {"name": "A", "above": 1}}}
+    config = devices()
+    config[KEY]["programs"] = {"executable": {"clean": clean}}
+    assert not await setup(ha, config)
+    assert "'phases' is an invalid option" in caplog.text
+
+
 async def test_its_energy_needs_the_appliances(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     cotton = {**DETECTED["cotton"], "statistics": {"energy": ["today"]}}
     block = {key: value for key, value in appliance(programs={"detected": {"cotton": cotton}}).items()
