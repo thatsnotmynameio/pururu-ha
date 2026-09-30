@@ -633,8 +633,8 @@ pool:
 
 - **`features/cycle/program/`** (L1, shared machinery, a package): the detected `Program` schema, the detector (today's band logic of `phases.py` and the one-at-a-time arbitration and delays of `modes/current.py`, merged), and its entities (on `CycleSource`). The appliance builds its `running_program` with it.
 - **`aspects/programs.py`** (L2): mounts `programs:` in the block of a builder with the `Programs` role, and is the device key `programs` (today's top-level `programs.py`, moved: the scripts, `plan()`, `Runs`). It imports `features/cycle`, as the L2 row allows.
-- **A new role, `Programs(reading: str, energy: str | None = None)`:** the settings a detected program in this builder reads (the appliance: `power`, `energy`). It replaces `Provides`/`Requires`.
-- **Statistics:** each program and phase is an item with `Counters` (`runtime`, `cycles`, and `energy` when the builder has an energy setting); the statistics aspect of B meters them, as it meters today's modes.
+- **A new role, `Programs(reading: str, energy: str | None = None)`:** the settings a detected program in this builder reads (the appliance: `power`, `energy`), for `programs: detected:` (D3). In D2, where the appliance's `running_program` is the only detected program, a generic `Derived(of)` role lists the entity keys its validated block adds (the phases'), and `Provides`/`Requires` go (D2's plan, ruling 6).
+- **Statistics:** each program and phase is a place with `Counters` (`runtime`, `cycles`, and, for a phase and `other`, `energy` when the builder has an energy setting); the statistics aspect of B meters them, as it meters today's modes. `running_program` itself counts `runtime` and `cycles` only: the appliance's energy total mirrors its plug and isn't a program total (D2's plan, ruling 9).
 - `FEATURES` becomes `appliance`, `door`, `window`, `switches`, `lights`; `DEVICE_KEYS` stays `alerts`, `programs`, `reactions`.
 
 ### Decided when D starts
@@ -842,7 +842,7 @@ pururu has one user, its author. So:
 
 - No aliases, no deprecation Repairs issue, no migration code, no "From 0.1.x" sections; the existing "From 0.1.14 and before" section goes in PR C.
 - An old key is voluptuous' `extra keys not allowed`, with HA's file and line.
-- One manual step, in PR B (below), carried into PR C's "Updating to 0.2.1" guide.
+- Two manual steps, B4's and D2's (the owner's YAML from `running`/`threshold`, `modes` and `phases` to `running_program`), each in its PR's text and carried into PR C's "Updating to 0.2.1" guide.
 - No entity ID or unique ID changes in A1–C; D changes those of today's `modes` and `phases` (D20). Everything else keeps its history, statistics and dashboards.
 - A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under 0.2.0. That is accepted: C sets 0.2.1, the release carrying them all.
 
@@ -901,7 +901,7 @@ The manual step, in the PR's text: before updating, remove every `notifications:
 
 **D, programs.** Part 4 whole: `features/cycle/program/` (a package), `aspects/programs.py`, the `Programs` role, `running_program`, `programs: {detected, executable}`, phases as programs; `modes`, `phases`, `cycle_from`, `Provides`, `Requires` go; the two choices of "Decided when D starts". Docs: `docs/features/modes.mdx` and `phases.mdx` go, a programs concept page replaces `concepts/programs.mdx`, `appliance.mdx`, `docs.json`, `configuration.mdx`.
 
-**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.1" guide (from 0.1.23), carrying B4's manual step, whose first step comes *before* updating:
+**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.1" guide (from 0.1.23), carrying D2's manual step (the YAML to `running_program`) and B4's, whose first step comes *before* updating:
 
 1. Before updating, remove every `notifications:` block and reload pururu.
 2. Download the update (in HACS); don't restart yet.
