@@ -164,7 +164,8 @@ def happenings_of(feature: Feature) -> Mapping[str, Happening]:
 class Happening:
     """A ready-made notification of a feature: what happens, as a reaction's trigger.
 
-    Off until the device's `notifications` enables it; it creates no entity.
+    Off until its feature's block's `notifications` enables it (the
+    notifications aspect); it creates no entity.
     """
 
     # The entity key, in the feature's namespace, it watches

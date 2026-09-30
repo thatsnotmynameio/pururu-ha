@@ -836,7 +836,7 @@ pururu has one user, its author. So:
 
 - No aliases, no deprecation Repairs issue, no migration code, no "From 0.1.x" sections; the existing "From 0.1.14 and before" section goes in PR C.
 - An old key is voluptuous' `extra keys not allowed`, with HA's file and line.
-- One manual step, in PR B (below).
+- One manual step, in PR B (below), carried into PR C's "Updating to 0.2.0" guide.
 - No entity ID or unique ID changes in A1–C; D changes those of today's `modes` and `phases` (D20). Everything else keeps its history, statistics and dashboards.
 - A1 sets the version to 0.2.0: the Release workflow tags v0.2.0 with A1 alone, and A2a–C land on `main` under the same version. That is accepted: 0.2.0 is the sum of the seven PRs.
 
@@ -893,7 +893,14 @@ The manual step, in the PR's text: before updating, remove every `notifications:
 
 **D, programs.** Part 4 whole: `features/cycle/program.py`, `aspects/programs.py`, the `Programs` role, `running_program`, `programs: {detected, executable}`, phases as programs; `modes`, `phases`, `cycle_from`, `Provides`, `Requires` go; the two choices of "Decided when D starts". Docs: `docs/features/modes.mdx` and `phases.mdx` go, a programs concept page replaces `concepts/programs.mdx`, `appliance.mdx`, `docs.json`, `configuration.mdx`.
 
-**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten.
+**C, the vocabulary.** Part 2 whole: references with `device.key` and `local_key`; `vocabulary` as marked above; `is` → `state`; `notify` and flat texts; `lasts` and time periods; the small ones, `places`' names included; the "From 0.1.14 and before" section of `docs/concepts/programs.mdx` goes. Tests' helpers, every feature page, `configuration.mdx`, `troubleshooting.mdx`, the fixture rewritten. The "Updating to 0.2.0" guide, carrying B4's manual step, whose first step comes *before* updating:
+
+1. Before updating, remove every `notifications:` block and reload pururu.
+2. Download the update (in HACS); don't restart yet.
+3. Delete `pururu/automations/reactions.yaml` and `pururu/automations/notifications.yaml`.
+4. Restart.
+5. Put the `notifications:` blocks back and reload.
+6. If step 1 was skipped: in **Settings → Entities**, delete each orphaned `automation.pururu_…_notification_…` (no longer provided), then reload pururu; nothing in pururu removes them otherwise.
 
 ## Tests
 

@@ -56,7 +56,7 @@
 
 ### Task 1: The notifications aspect, and `_feature_block` goes
 
-**Files:** `device_keys/notifications.py` → `aspects/notifications.py` (git mv, then the aspect around today's code); `aspects/__init__.py` (`ASPECTS` gains it); `setup/catalogue.py` (`_feature_block` goes; `mount` handles every aspect); `setup/checks.py` (`_generated_ids` walks the offered aspects' `generates` instead of `notifications.enabled`); `setup/generate.py` and `setup/lifecycle.py` (imports); tests that name `device_keys.notifications`.
+**Files:** `device_keys/notifications.py` → `aspects/notifications.py` (git mv, then the aspect around today's code); `aspects/__init__.py` (`ASPECTS` gains it); `setup/catalogue.py` (`_feature_block` goes; `mount` handles every aspect); `setup/checks.py` keeps `notifications.enabled` (ruling); `setup/generate.py` and `setup/lifecycle.py` (imports); tests that name `device_keys.notifications`.
 
 - [ ] **Step 1 (tests first):**
   - `test_features.py`: the aspect contract (B2/B3's generic rules) now covers the notifications aspect: `offered` ⇔ at least one `Happening`; its `keys` empty; absent `notifications` mounts nothing (`mount_absent=False`); `notifications: {}`/`null` still refused as today. RED: there's no aspect yet.
@@ -90,7 +90,7 @@
 | `device_keys/` | `core/`, `const`, `features/cycle`, a sibling. `device_keys/__init__` also `aspects/alerts` |
 | `outputs/` | `core/`, `const`, `aspects/problem`, `features/lights` |
 | `setup/` | everything |
-| root | the platforms `core.runtime` only; `__init__` `setup/` and `const`; `config_flow` `const` |
+| root | the platforms `core.runtime` only; `__init__` `setup/` and `const`, and `core.runtime`, for hassfest's typed entry; `config_flow` `const` |
 
 Only `aspects/statistics.py` imports `homeassistant.components.utility_meter`.
 

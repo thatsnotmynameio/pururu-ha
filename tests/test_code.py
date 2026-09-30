@@ -72,16 +72,35 @@ def imports_of(path: Path) -> set[str]:
     Each name imported counts: a module (`from ..core import generated`: core.generated),
     or else the module it's taken from (`from ..features import FEATURES`: features,
     the package's `__init__`).
+
+    An absolute self-import (`from custom_components.pururu.outputs import dashboard`,
+    `import custom_components.pururu.const`) counts the same, the prefix stripped.
     """
     package = path.relative_to(PROJECT / CODE).with_suffix("").parts[:-1]
     found: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text())):
-        if not isinstance(node, ast.ImportFrom) or not node.level:
+        if isinstance(node, ast.Import):
+            found.update(module_of(name) for alias in node.names
+                         if (name := own(alias.name)) is not None)
+        if not isinstance(node, ast.ImportFrom):
             continue
-        base = package[:len(package) - (node.level - 1)]
-        source = [*base, *node.module.split(".")] if node.module else list(base)
+        if node.level:
+            base = package[:len(package) - (node.level - 1)]
+            source = [*base, *node.module.split(".")] if node.module else list(base)
+        elif (name := own(node.module or "")) is not None:
+            source = name.split(".") if name else []
+        else:
+            continue
         found.update(module_of(".".join([*source, alias.name])) for alias in node.names)
     return found
+
+
+def own(module: str) -> str | None:
+    """An absolute module name of the integration without its package prefix, else None."""
+    prefix = CODE.replace("/", ".")
+    if module == prefix:
+        return ""
+    return module.removeprefix(f"{prefix}.") if module.startswith(f"{prefix}.") else None
 
 
 def module_of(name: str) -> str:
@@ -105,9 +124,7 @@ ALLOWED: dict[str, tuple[str, ...]] = {
     # Alert2's file and the alert lights read ProblemAlert; the alert lights lend Borrowable lights
     "outputs": ("core.", "const", "aspects.problem", "features.lights"),
     "setup": ("const", "core", "features", "aspects", "device_keys", "outputs", "setup"),
-    # HA's entry points take the typed entry: hassfest's strict-typing check wants
-    # it named *ConfigEntry, and PururuConfigEntry is core/runtime.py's, as for the platforms
-    "__init__": ("setup.", "const", "core.runtime"),
+    "__init__": ("setup.", "const"),
     "config_flow": ("const",),
     "const": (),
     **{platform: ("core.runtime",) for platform in PLATFORMS},
@@ -116,6 +133,9 @@ ALLOWED: dict[str, tuple[str, ...]] = {
 ALSO: dict[str, tuple[str, ...]] = {
     "features/__init__": ("features.",),  # it lists FEATURES: every feature
     "device_keys/__init__": ("aspects.alerts",),  # the hand-written alerts' device key
+    # HA's entry points take the typed entry: hassfest's strict-typing check wants
+    # it named *ConfigEntry, and PururuConfigEntry is core/runtime.py's, as for the platforms
+    "__init__": ("core.runtime",),
 }
 
 

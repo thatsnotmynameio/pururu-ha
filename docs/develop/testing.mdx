@@ -95,7 +95,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 
 ## The layer table
 
-`tests/test_code.py` maps every module to a layer and fails on any import the table doesn't allow (`test_each_module_imports_only_what_its_row_allows`). It's the spec's ["Layers"](/develop/architecture#layers) as code: each folder, and each module at the root, gets a row of what it may import of the integration (`homeassistant` and the stdlib aside). A prefix ending in `.` is a module *inside* that package, never the package itself: only `setup/` reads a folder's `__init__` (`FEATURES`, `ASPECTS`, `DEVICE_KEYS`).
+`tests/test_code.py` maps every module to a layer and fails on any import the table doesn't allow (`test_each_module_imports_only_what_its_row_allows`). It's the spec's ["Layers"](/develop/architecture#layers) as code: each folder, and each module at the root, gets a row of what it may import of the integration (`homeassistant` and the stdlib aside). A prefix ending in `.` is a module *inside* that package, never the package itself: only `setup/` reads a folder's `__init__` (`FEATURES`, `ASPECTS`, `DEVICE_KEYS`). An absolute self-import (`from custom_components.pururu.outputs import dashboard`) is checked like the relative one.
 
 | Folder (or root module) | May import |
 |---|---|
@@ -105,17 +105,16 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `device_keys/` | `core.`, `const`, `features.cycle`, another `device_keys.` module |
 | `outputs/` | `core.`, `const`, `aspects.problem` (Alert2's file and the alert lights read `ProblemAlert`), `features.lights` (the alert lights lend `Borrowable` lights) |
 | `setup/` | `const`, `core`, `features`, `aspects`, `device_keys`, `outputs`, `setup` |
-| `__init__.py` | `setup.`, `const`, `core.runtime` |
+| `__init__.py` | `setup.`, `const` |
 | `config_flow.py` | `const` |
 | `const.py` | nothing of pururu |
 | `sensor.py`, `binary_sensor.py`, `switch.py`, `light.py` | `core.runtime` |
 
-Two named allowances, for one module each, not their whole folder:
+Three named allowances, for one module each, not their whole folder (`ALSO` in `tests/test_code.py`):
 
-- `features/__init__` may import every `features.` package: it lists `FEATURES`.
-- `device_keys/__init__` may import `aspects.alerts`: the hand-written alerts' device key.
-
-`__init__.py` imports `core.runtime` directly, not through `setup.`: Home Assistant's entry points and the platforms take the typed entry, and hassfest's strict-typing check wants it named `*ConfigEntry` — `PururuConfigEntry`, in `core/runtime.py`.
+- `features/__init__` → every `features.` package: it lists `FEATURES`.
+- `device_keys/__init__` → `aspects.alerts`: the hand-written alerts' device key.
+- `__init__` → `core.runtime`, directly, not through `setup.`: Home Assistant's entry points and the platforms take the typed entry, and hassfest's strict-typing check wants it named `*ConfigEntry` — `PururuConfigEntry`, in `core/runtime.py`.
 
 Only `aspects/statistics.py` imports Home Assistant's `utility_meter` (`test_only_the_statistics_aspect_imports_utility_meter`): the meters are written once.
 

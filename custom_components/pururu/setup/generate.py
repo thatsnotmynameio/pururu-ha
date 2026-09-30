@@ -55,7 +55,9 @@ async def async_step(
     The scripts come first: a reaction starts one. Adds the entity IDs the
     generated scripts act on to `targets`: disabling one rebuilds the entry.
     The automations are synced once (one file, one reload, one Repairs issue),
-    the reactions' held ones held: a notification is never held.
+    the reactions' held ones held: a notification is never held. Both plans
+    must succeed before that one sync: if either raises, no automation is
+    written.
     """
     devices = built.house.get(CONF_DEVICES, {})
     index = built.index

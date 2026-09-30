@@ -73,8 +73,8 @@ def enabled(
 ) -> Iterator[tuple[str, Feature, str, Mapping[str, Any]]]:
     """(feature key, feature, name, settings) of each ready-made notification the device's blocks enable.
 
-    Only a feature offering them has them: a configured feature (alerts,
-    switches) may have an item keyed `notifications`.
+    Only a feature offering them has them: a configured builder (switches,
+    lights, the `alerts` device key) may have an item keyed `notifications`.
     """
     for key, feature in builders.items():
         if not happenings_of(feature) or key not in device:
