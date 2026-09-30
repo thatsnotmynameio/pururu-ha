@@ -183,7 +183,9 @@ For a feature that stands for real entities of one domain, build each entity on 
 - Each is named by its suffix's translation, `<namespace>_<suffix>` (`mode_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{mode} cycles"`, `"Ciclos de {mode}"`.
 - Each entity calls `self._identify(device, platform, suffix, item=item)`.
 
-The cycle code `appliance`, `modes`, `door`, `window` and the programs' statistics share (the last cycle's sensors, the totals, the meters, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
+The cycle code `appliance`, `modes`, `door`, `window` and the programs' statistics share (the last cycle's sensors, the totals, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
+
+**Offering statistics.** A feature whose totals (`<counter>_total`, built with `CyclesTotal`, `RuntimeTotal` and the like) should have a per-period meter adds `Counters(needs, mount)` (`core/roles.py`): `needs` maps each counter to the setting it needs before it can be metered (`None` for none, `"energy"` for `appliance`'s `idle_energy` and `modes`' `energy`), and `mount` says where `statistics:` sits in the block, `"block"` (the default) or `"item"` for an `Items` feature whose meters repeat per item, as the programs' and reactions' do. The feature builds only its totals; the statistics aspect (`aspects/statistics.py`) builds the meters from them, one `Meter` (a `UtilityMeterSensor`) per counter and period asked for, and owns their translation keys, `<counter>_<period>` for the block's own, `item_<counter>_<period>` (with the `{item}` placeholder) for a per-item one. See [Statistics](/concepts/statistics).
 
 A feature whose entity carries a cycle (`Provides`) builds it as a `CycleSource` (`features/cycle/__init__.py`): call `_cycle_signals(device, item)` once to set up its signals, and `_send(cycle)` when the cycle ends, which writes the state, then sends the cycle on its own signal, then on the end signal. `Running`, `Open` and `Runs` are the example; `modes`' `Current` calls `_cycle_signals` again for each item it sends. The contract test checks the entity a builder `Provides` is a `CycleSource`.
 
@@ -195,7 +197,7 @@ A feature whose entity carries a cycle (`Provides`) builds it as a `CycleSource`
 
 Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity key `alert_<name>`, so ID collisions, names and icons are checked as for any entity key. Add its name and icon under `<namespace>_alert_<name>`, and its default texts under `<namespace>_alert_<name>_message` and `_done_message` in the translations' `common` block. `features/presets.py` validates the settings and builds the enabled alerts; nothing else is needed.
 
-**Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Add `Happenings(<name → Happening>)` (`Happening` in `core/feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py`'s `HAPPENINGS` does. It creates no entity: `device_keys/notifications.py` validates that key of the block (`schema._feature_block` takes it out before the feature's schema) and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
+**Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Add `Happenings(<name → Happening>)` (`Happening` in `core/feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py`'s `HAPPENINGS` does. It creates no entity: `device_keys/notifications.py` validates that key of the block (`catalogue._feature_block` takes it out before the feature's schema) and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
 
 ## 6. What the contract test checks
 
@@ -225,8 +227,15 @@ Put `preset_keys(PRESETS)` in `entity_keys`: each enabled alert is the entity ke
 | `test_a_generating_builder_generates_from_its_example` | What `Generates` writes carries its device's pururu pattern |
 | `test_a_capability_is_carried_by_a_cycle_source` | What a builder `Provides` is a `CycleSource` |
 | `test_the_other_cycle_sources_are_pinned_too` | `modes`' `Current` and the programs' `Runs` are `CycleSource` too, though no `Provides` names them |
+| `test_an_aspects_keys_are_named_once` | Every key an offered aspect adds has a name and icon in both languages, outside the builder's namespace (`item_<key>` with `{item}` for an `Items` builder) |
+| `test_an_offered_aspect_validates_and_builds` | The builder's example with the aspect's own example goes through `mount`, and the aspect builds only the entity keys it lists |
+| `test_a_builders_own_schema_refuses_an_aspects_key` | The builder's own schema, without `mount`, refuses the aspect's key where it sits: only `mount` may take it out first |
+| `test_a_configured_builder_offers_no_block_aspect` | A `Configured` feature's block is its entity keys, so it offers no aspect |
+| `test_mount_leaves_an_items_key_alone` | In a block of items (`Configured`, or an aspect placed `"item"`), a key alike an aspect's is an item, not the aspect's |
+| `test_a_counter_is_totalled` | Each of a `Counters` feature's needed counters has a `<counter>_total` entity key (per item, with `Items`) for the statistics aspect to meter |
+| `test_a_counter_without_its_setting_is_refused` | A counter needing a setting takes no periods without it (`statistics.idle_energy needs energy`); asking for none passes regardless |
 
-The name, icon, platform and namespace checks above cover `Items`' suffixes too.
+The name, icon, platform and namespace checks above cover `Items`' suffixes and an aspect's keys too.
 
 The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_phases.py` do.
 

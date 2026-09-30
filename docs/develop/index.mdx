@@ -55,11 +55,13 @@ custom_components/pururu/     the integration
     files.py                  the generated files' writer
     generated.py              a Kind per generated domain: sync, include check, removal
   features/                   one module or package per feature, and FEATURES
-    appliance/                running, cycles, runtime, mirrors, statistics
+    appliance/                running, cycles, runtime, mirrors, alerts
     lights.py
     phases.py
     standing.py               what switches and lights share: their schema, is_pururu
     switches.py
+  aspects/                    ASPECTS: concerns written once, mounted where a builder offers them
+    statistics.py             a total's growth per period, on HA's utility_meter
   device_keys/                DEVICE_KEYS: the device keys that aren't features
     programs.py, reactions.py, notifications.py
   outputs/                    what the entry does once its entities exist: each a step

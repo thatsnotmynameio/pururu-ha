@@ -65,7 +65,7 @@ These numbers come from a real purifier: sips at 3–3.5 W, a chilling cycle tha
 ---
 
 <Property name="statistics.runtime" type="list of periods" optional>
-  For each period, a sensor per mode with the hours in that mode in the current period. The periods are `today`, `week`, `month` and `year`, each listed at most once.
+  For each period, a sensor per mode with the hours in that mode in the current period. It sits in the `modes` block, once, and applies to every mode. See [Statistics](/concepts/statistics) for the periods and how they reset.
 </Property>
 
 ---
@@ -116,7 +116,7 @@ Per mode, named after the mode's `name` ("Gelar cycles" in English, "Ciclos de G
 | `sensor.pururu_<key>_mode_<mode>_<counter>_<period>` | | `runtime`, `cycles` or `energy` this period, one per entry of `statistics` |
 
 - The `last_cycle_*` sensors behave as [`appliance`'s](/features/appliance#last-cycle): they change only when a cycle of their mode ends and keep their values across restarts. `last_cycle_end` is written after the others and after `mode_last`, so an automation triggered on it reads a complete cycle.
-- The totals are `total_increasing`, so Home Assistant keeps long-term statistics for them. The per-period sensors reset as `appliance`'s do.
+- The totals are `total_increasing`, so Home Assistant keeps long-term statistics for them. The per-period sensors are [statistics](/concepts/statistics), one set per mode.
 
 ### State names
 

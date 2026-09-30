@@ -71,6 +71,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices, configured entity keys |
 | `test_ids.py` | Every entity and generated ID of a whole house (`fixtures/house.yaml`), pinned: a refactor can't lose or rename one |
 | `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every feature in `FEATURES`, including that every `CycleSource` (`Provides`, `modes`' `Current`, the programs' `Runs`) is pinned |
+| `test_statistics.py` | Today's meters, pinned: every entity ID a `Counters` builder can create, a few names and icons in both languages, and the schema's refusal texts, so consolidating them into one aspect can't change any unnoticed |
 | `test_cycle.py` | `CycleSource`'s order: the state is written, then the cycle signal, then the end signal |
 | `test_appliance.py` | `running`, cycles, energy, runtime, meters, restores |
 | `test_phases.py` | Bands, `for`, `seen`, restores, translations |
@@ -80,7 +81,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_dashboard.py` | The dashboard's content, refreshes, and what keeps it from being created |
 | `test_events.py` | The two classes of events, their data, what isn't fired, renames and reloads |
 | `test_entity.py` | `reading()` |
-| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale; the root holds only what HA looks up; the core and the platforms import only what their layer allows, and no folder imports a later layer; no module named after a platform HA preloads; the Develop pages' examples import modules that exist |
+| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale; the root holds only what HA looks up; the core and the platforms import only what their layer allows, and no folder imports a later layer (`features` then `aspects` then `device_keys` and `outputs`, neither of those two importing the other, then `setup`); only the statistics aspect imports HA's `utility_meter`; no module named after a platform HA preloads; the Develop pages' examples import modules that exist |
 | `test_release.py`, `test_fetch_hassfest.py` | The release and hassfest scripts |
 
 ## `test_code.py`: core's checks
