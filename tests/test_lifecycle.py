@@ -135,9 +135,21 @@ async def _reload_raising_cancelled(ha: HomeAssistant) -> None:
         await reload(ha, {"pool": SWITCH})
 
 
+async def _reload_cancelled_in_a_step(ha: HomeAssistant) -> None:
+    """A reload cancelled while a step runs (its file written through the executor, say): the steps guard Exception only."""
+    lifecycle = module("setup.lifecycle")
+
+    async def cancelled(*_: Any) -> None:
+        raise asyncio.CancelledError
+
+    with patch.object(lifecycle, "STEPS", (("cancelled", cancelled), *lifecycle.STEPS)):
+        await reload(ha, {"pool": SWITCH})
+
+
 @pytest.mark.parametrize("fail", [
     pytest.param(_reload_cancelled, id="its task cancelled"),
     pytest.param(_reload_raising_cancelled, id="a CancelledError alone"),
+    pytest.param(_reload_cancelled_in_a_step, id="cancelled in a step"),
 ])
 async def test_a_setup_cancelled_after_its_platforms_recovers_on_reload(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture,

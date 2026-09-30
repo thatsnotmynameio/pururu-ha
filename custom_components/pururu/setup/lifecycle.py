@@ -157,27 +157,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
                 str(entity.unique_id) for each in entities.values() for entity in each
             ),
         )
+        targets: set[str] = set()
+        for name, step in STEPS:
+            try:
+                await step(hass, entry, built, targets)
+            except Exception:
+                # Guarded, not raised: the entry stays loaded with its entities
+                _LOGGER.exception("Step %s failed", name)
+        try:
+            listener.async_listen(
+                hass, entry, (generated.SCRIPTS, generated.AUTOMATIONS), targets
+            )
+        except Exception:
+            # Guarded as a step
+            _LOGGER.exception("Listener failed")
     except BaseException:
         # HA unloads a non-loaded entry without async_unload_entry: platforms
-        # left set up would refuse the entry at every reload. A cancellation
-        # too (a reload called by an automation that stops): the delivered
-        # cancel is used up, so the unload runs; the original is re-raised
+        # left set up would refuse the entry at every reload. What reaches here
+        # after the forward: Built failing, or a cancellation, in a step too (a
+        # reload called by an automation that stops; the steps guard Exception
+        # only). The delivered cancel is used up, so the unload runs; the
+        # original is re-raised
         await _async_unload_platforms(hass, entry)
         raise
-    targets: set[str] = set()
-    for name, step in STEPS:
-        try:
-            await step(hass, entry, built, targets)
-        except Exception:
-            # Guarded, not raised: the entry stays loaded with its entities
-            _LOGGER.exception("Step %s failed", name)
-    try:
-        listener.async_listen(
-            hass, entry, (generated.SCRIPTS, generated.AUTOMATIONS), targets
-        )
-    except Exception:
-        # Guarded as a step
-        _LOGGER.exception("Listener failed")
     return True
 
 
