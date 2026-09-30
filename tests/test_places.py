@@ -239,7 +239,7 @@ async def test_floors_and_areas_alone_create_the_entry(ha: HomeAssistant) -> Non
     assert await setup(ha, {}, floors={"terreo": TERREO}, areas={"cozinha": COZINHA})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.state is ConfigEntryState.LOADED
-    assert entry.data == {"floors": ["terreo"], "areas": ["cozinha"], "automations": [], "notifications": [], "scripts": []}
+    assert entry.data == {"floors": ["terreo"], "areas": ["cozinha"], "automations": [], "scripts": []}
     kitchen = area(ha, "cozinha")
     assert kitchen is not None
     assert kitchen.floor_id == "terreo"
@@ -262,7 +262,7 @@ async def test_a_reload_that_drops_a_floor_deletes_it(ha: HomeAssistant) -> None
     assert area(ha, "cozinha") is None
     assert floor(ha, "terreo") is not None
     [entry] = ha.config_entries.async_entries(DOMAIN)
-    assert entry.data == {"floors": ["terreo"], "areas": [], "automations": [], "notifications": [], "scripts": []}
+    assert entry.data == {"floors": ["terreo"], "areas": [], "automations": [], "scripts": []}
 
 
 async def test_a_reload_without_anything_deletes_them_all(ha: HomeAssistant) -> None:

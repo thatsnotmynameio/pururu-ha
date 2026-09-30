@@ -1,4 +1,4 @@
-"""generated.py over both kinds: the reactions' automations and the programs' scripts."""
+"""generated.py over both kinds: the reactions' and notifications' automations, and the programs' scripts."""
 
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -38,6 +38,8 @@ class Case:
     one: str
     plural: str
     source: str
+    # Its name in core/generated.py
+    kind: str
     empty: Any
     device: str
     namespace: str
@@ -73,9 +75,10 @@ class Case:
 
 
 AUTOMATION = Case(
-    domain="automation", folder="pururu/automations", file="pururu/automations/reactions.yaml",
+    domain="automation", folder="pururu/automations", file="pururu/automations/automations.yaml",
     merge="list", issue="automations_not_included", data_key="automations",
-    one="an automation", plural="automations", source="reactions", empty=[],
+    one="an automation", plural="automations", source="reactions and notifications",
+    kind="AUTOMATIONS", empty=[],
     device="lights", namespace="reaction", block="reactions",
     feature={"lights": {"teto": {"entity": "light.demo_teto", "name": "Teto"}}},
     item={"name": "Noite", "at": "22:00"},
@@ -84,7 +87,7 @@ AUTOMATION = Case(
 SCRIPT = Case(
     domain="script", folder="pururu/scripts", file="pururu/scripts/programs.yaml",
     merge="named", issue="scripts_not_included", data_key="scripts",
-    one="a script", plural="scripts", source="programs", empty={},
+    one="a script", plural="scripts", source="programs", kind="SCRIPTS", empty={},
     device="pool", namespace="program", block="programs",
     feature={"switches": {"pump": {"entity": "switch.pool_pump", "name": "Bomba"}}},
     item={"name": "Limpar", "sequence": [{"turn_on": "switch_pump"}]},
@@ -191,7 +194,7 @@ async def test_sync_returns_the_ids_it_generated(ha: HomeAssistant, case: Case) 
     entry.add_to_hass(ha)
     items = [generated.Item(unique_id=case.unique_id(key), config={"alias": key})
              for key in ("free", "taken")]
-    kind = module(f"device_keys.{case.source}").KIND
+    kind = getattr(generated, case.kind)
     assert await generated.async_sync(ha, entry, kind, items) == [case.unique_id("free")]
 
 
@@ -540,7 +543,7 @@ async def test_after_a_failed_write_a_file_it_cannot_read_holds_nothing(
     entry.add_to_hass(ha)
     items = [generated.Item(unique_id=case.unique_id("door"), config={"alias": "door"})]
     with failing_write():
-        assert await generated.async_sync(ha, entry, module(f"device_keys.{case.source}").KIND, items) == []
+        assert await generated.async_sync(ha, entry, getattr(generated, case.kind), items) == []
 
 
 async def test_a_failed_removal_keeps_the_items_ids(ha: HomeAssistant, case: Case,

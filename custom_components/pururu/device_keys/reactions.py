@@ -2,7 +2,7 @@
 
 A reaction is one source (an entity of a device, a real entity, a time of day,
 the sun) and, for an entity, a condition. Each becomes an automation in
-pururu/automations/reactions.yaml, whose folder configuration.yaml includes
+pururu/automations/automations.yaml, whose folder configuration.yaml includes
 (generated.py). It starts one of its device's programs (then), tells its
 message (message, notify), or does nothing: it fires, and its trace shows when
 and why. An at or sun reaction can retry: its automation triggers again, each
@@ -24,7 +24,6 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
 from ..const import (
-    CONF_AUTOMATIONS,
     CONF_DEVICES,
     CONF_MESSAGE,
     CONF_NOTIFY,
@@ -43,7 +42,7 @@ from ..core.feature import (
     qualified,
     state_text,
 )
-from ..core.generated import Kind, Planned
+from ..core.generated import AUTOMATIONS, SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Counters, Generates, Items
 from . import programs
@@ -95,17 +94,6 @@ RETRY = vol.Schema(
             _whole_seconds,
         ),
     }
-)
-KIND = Kind(
-    domain="automation",
-    folder="pururu/automations",
-    file="pururu/automations/reactions.yaml",
-    merge="list",
-    issue="automations_not_included",
-    data_key=CONF_AUTOMATIONS,
-    one="an automation",
-    plural="automations",
-    source="reactions",
 )
 
 
@@ -402,7 +390,9 @@ STATISTICS = Feature(
         COUNTERS,
         Generates(
             "reaction",
-            lambda key, config: ((KIND.domain, automation_id(key, r)) for r in config),
+            lambda key, config: (
+                (AUTOMATIONS.domain, automation_id(key, r)) for r in config
+            ),
         ),
     ),
 )
@@ -573,6 +563,4 @@ def _started(
         )
         return False, None
     # Registered by the scripts' sync
-    return True, registry.async_get_entity_id(
-        programs.KIND.domain, programs.KIND.domain, script
-    )
+    return True, registry.async_get_entity_id(SCRIPTS.domain, SCRIPTS.domain, script)

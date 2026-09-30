@@ -25,11 +25,11 @@ from homeassistant.core import (
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 
-from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, CONF_SCRIPTS, ENTITY_PREFIX
+from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, ENTITY_PREFIX
 from ..core import generated, vocabulary
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature, Item, qualified
-from ..core.generated import Kind, Planned
+from ..core.generated import SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Counters, Generates, Items
 from ..features.cycle import Cycle, CycleSource
@@ -43,17 +43,6 @@ NAMESPACE = "program"
 DELAY = "delay"
 # What a step can do to an entity; the device schema checks its feature takes it
 ACTIONS = ("turn_on", "turn_off", "toggle")
-KIND = Kind(
-    domain="script",
-    folder="pururu/scripts",
-    file="pururu/scripts/programs.yaml",
-    merge="named",
-    issue="scripts_not_included",
-    data_key=CONF_SCRIPTS,
-    one="a script",
-    plural="scripts",
-    source="programs",
-)
 
 STEP = vol.Schema(
     {
@@ -219,7 +208,7 @@ STATISTICS = Feature(
         COUNTERS,
         Generates(
             "program",
-            lambda key, config: ((KIND.domain, script_id(key, p)) for p in config),
+            lambda key, config: ((SCRIPTS.domain, script_id(key, p)) for p in config),
         ),
     ),
 )

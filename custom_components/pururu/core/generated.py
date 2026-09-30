@@ -1,4 +1,4 @@
-"""What pururu writes for Home Assistant to run: automations and scripts, a file per kind.
+"""What pururu writes for Home Assistant to run: automations and scripts, a file per kind (SCRIPTS, AUTOMATIONS).
 
 Each kind is a file in a folder that configuration.yaml includes once, under
 HA's own domain: HA loads it, runs it and shows it (traces, on/off, its list).
@@ -34,7 +34,7 @@ from homeassistant.helpers import (
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.start import async_at_started
 
-from ..const import DOMAIN
+from ..const import CONF_AUTOMATIONS, CONF_SCRIPTS, DOMAIN
 from . import files
 from .entity import other_holder
 
@@ -74,6 +74,32 @@ class Kind:
         include of a missing file stops HA from loading its configuration.
         """
         return f"{self.domain} pururu: !include_dir_merge_{self.merge} {self.folder}"
+
+
+# The programs' scripts
+SCRIPTS = Kind(
+    domain="script",
+    folder="pururu/scripts",
+    file="pururu/scripts/programs.yaml",
+    merge="named",
+    issue="scripts_not_included",
+    data_key=CONF_SCRIPTS,
+    one="a script",
+    plural="scripts",
+    source="programs",
+)
+# The reactions' automations, then the ready-made notifications': one file, one sync
+AUTOMATIONS = Kind(
+    domain="automation",
+    folder="pururu/automations",
+    file="pururu/automations/automations.yaml",
+    merge="list",
+    issue="automations_not_included",
+    data_key=CONF_AUTOMATIONS,
+    one="an automation",
+    plural="automations",
+    source="reactions and notifications",
+)
 
 
 @dataclass(frozen=True, kw_only=True)

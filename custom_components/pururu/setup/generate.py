@@ -23,7 +23,7 @@ def owned(
     items = watched_items(devices)
     return {
         unique_id: entity_id
-        for kind in (programs.KIND, reactions.KIND)
+        for kind in (generated.SCRIPTS, generated.AUTOMATIONS)
         for unique_id, entity_id in generated.owned(
             hass,
             entry,
@@ -50,21 +50,23 @@ def watched_items(devices: dict[str, dict[str, Any]]) -> set[tuple[str, str]]:
 async def async_step(
     hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
 ) -> None:
-    """The programs' scripts, then the reactions' and the ready-made notifications' automations.
+    """The programs' scripts, then one automations file: the reactions', then the ready-made notifications'.
 
     The scripts come first: a reaction starts one. Adds the entity IDs the
     generated scripts act on to `targets`: disabling one rebuilds the entry.
+    The automations are synced once (one file, one reload, one Repairs issue),
+    the reactions' held ones held: a notification is never held.
     """
     devices = built.house.get(CONF_DEVICES, {})
     index = built.index
     scripts = programs.plan(hass, devices, index, built.created)
     targets.update(scripts.targets)
     generated_scripts = await generated.async_sync(
-        hass, entry, programs.KIND, scripts.items, scripts.held
+        hass, entry, generated.SCRIPTS, scripts.items, scripts.held
     )
     # Where a message goes without a notify of its own
     notify = built.house.get(CONF_CONFIG, {}).get(CONF_NOTIFY, [])
-    automations = reactions.plan(
+    reacting = reactions.plan(
         hass,
         devices,
         index,
@@ -73,10 +75,13 @@ async def async_step(
         scripts.held,
         notify,
     )
-    await generated.async_sync(
-        hass, entry, reactions.KIND, automations.items, automations.held
-    )
     notified = notifications.plan(
         hass, built.builders, devices, built.created, built.texts, notify
     )
-    await generated.async_sync(hass, entry, notifications.KIND, notified.items)
+    await generated.async_sync(
+        hass,
+        entry,
+        generated.AUTOMATIONS,
+        [*reacting.items, *notified.items],
+        reacting.held,
+    )

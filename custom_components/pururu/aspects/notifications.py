@@ -3,9 +3,9 @@
 A feature offers them (roles.Happenings); `ASPECT` mounts its block's
 `notifications`, which enables them by name: each is a Happening of the
 feature, told once through HA's notify actions (messages.py). It builds no
-entity: each becomes an automation in pururu/automations/notifications.yaml,
-next to the reactions' in the folder configuration.yaml includes
-(generated.py).
+entity: each becomes an automation in pururu/automations/automations.yaml,
+after the reactions', in the folder configuration.yaml includes
+(generated.AUTOMATIONS).
 """
 
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
@@ -35,17 +35,6 @@ _LOGGER = logging.getLogger(__name__)
 
 # The namespace of a notification's automation ID, inside its feature's
 NAMESPACE = "notification"
-KIND = generated.Kind(
-    domain="automation",
-    folder="pururu/automations",
-    file="pururu/automations/notifications.yaml",
-    merge="list",
-    issue="notifications_not_included",
-    data_key=CONF_NOTIFICATIONS,
-    one="an automation",
-    plural="automations",
-    source="notifications",
-)
 # What one takes: its text, where it goes; a schema of its own, so unknown keys are refused
 SETTINGS = vol.Schema(
     {vol.Optional(CONF_MESSAGE): TEXT, vol.Optional(CONF_NOTIFY): messages.TARGETS}

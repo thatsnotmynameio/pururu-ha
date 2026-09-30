@@ -11,7 +11,6 @@ from homeassistant.helpers.reload import async_integration_yaml_config
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
-from ..aspects import notifications
 from ..const import (
     CONF_AREAS,
     CONF_DEVICES,
@@ -23,7 +22,6 @@ from ..const import (
 from ..core import generated
 from ..core.runtime import Built, PururuConfigEntry, Step
 from ..core.texts import async_texts
-from ..device_keys import programs, reactions
 from ..outputs import (
     alert2_alerts,
     alert_lights,
@@ -151,7 +149,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
             # restart: HA unloads a non-loaded entry without async_unload_entry
             _LOGGER.exception("Step %s failed", name)
     listener.async_listen(
-        hass, entry, (programs.KIND, reactions.KIND, notifications.KIND), targets
+        hass, entry, (generated.SCRIPTS, generated.AUTOMATIONS), targets
     )
     return True
 
@@ -164,7 +162,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> b
 async def async_remove_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> None:
     """Delete the floors and areas the entry managed, its reactions' and notifications' automations, programs' scripts and Alert2 alerts."""
     places.async_remove(hass, entry.data)
-    await generated.async_remove(hass, entry, reactions.KIND)
-    await generated.async_remove(hass, entry, notifications.KIND)
-    await generated.async_remove(hass, entry, programs.KIND)
+    for kind in (generated.AUTOMATIONS, generated.SCRIPTS):
+        await generated.async_remove(hass, entry, kind)
     await alert2_alerts.async_remove(hass)
