@@ -18,6 +18,14 @@ dependencies = [
 
 [tool.uv]
 package = false
+# Dependabot alerts 1-4 (cryptography < 50, PyJWT < 2.14), in this dev/test environment only:
+# homeassistant==2026.9.3 pins cryptography==48.0.1, PyJWT==2.13.0 and pyOpenSSL==26.2.0
+# (which caps cryptography < 49). Remove once the pinned Home Assistant allows the fixed versions.
+override-dependencies = [
+    "cryptography>=50.0.0",
+    "pyjwt>=2.14.0",
+    "pyopenssl>=26.4.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
