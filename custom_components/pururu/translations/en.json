@@ -50,7 +50,8 @@
       "appliance_alert_long_cycle": {"name": "Long cycle"},
       "appliance_alert_no_cycle": {"name": "No cycle"},
       "door_open": {"name": "Open"},
-      "window_open": {"name": "Open"}
+      "window_open": {"name": "Open"},
+      "phase_other": {"name": "Other phase"}
     },
     "sensor": {
       "appliance_power": {"name": "Power"},
@@ -86,9 +87,32 @@
         "name": "Phase",
         "state": {
           "idle": "Idle", "washing": "Washing", "heating": "Heating", "spinning": "Spinning",
-          "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling"
+          "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling", "other": "Other",
+          "dispensing": "Dispensing"
         }
       },
+      "phase_last": {
+        "name": "Last phase",
+        "state": {
+          "washing": "Washing", "heating": "Heating", "spinning": "Spinning",
+          "rinsing": "Rinsing", "drying": "Drying", "cooling": "Cooling", "other": "Other",
+          "dispensing": "Dispensing"
+        }
+      },
+      "phase_last_cycle_start": {"name": "{item} last cycle start"},
+      "phase_last_cycle_end": {"name": "{item} last cycle end"},
+      "phase_last_cycle_duration": {"name": "{item} last cycle duration"},
+      "phase_last_cycle_energy": {"name": "{item} last cycle energy"},
+      "phase_cycles_total": {"name": "{item} cycles", "unit_of_measurement": "cycles"},
+      "phase_runtime_total": {"name": "{item} runtime"},
+      "phase_energy_total": {"name": "{item} energy"},
+      "phase_other_last_cycle_start": {"name": "Other phase last cycle start"},
+      "phase_other_last_cycle_end": {"name": "Other phase last cycle end"},
+      "phase_other_last_cycle_duration": {"name": "Other phase last cycle duration"},
+      "phase_other_last_cycle_energy": {"name": "Other phase last cycle energy"},
+      "phase_other_cycles_total": {"name": "Other phase cycles", "unit_of_measurement": "cycles"},
+      "phase_other_runtime_total": {"name": "Other phase runtime"},
+      "phase_other_energy_total": {"name": "Other phase energy"},
       "mode_current": {
         "name": "Mode",
         "state": {

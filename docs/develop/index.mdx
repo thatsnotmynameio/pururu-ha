@@ -48,7 +48,7 @@ custom_components/pururu/     the integration
   core/                       the contracts and shared helpers; imports only core/ and const
     runtime.py                PururuConfigEntry, Built, Step: what the entry carries
     feature.py                Device and Feature: the contract every feature fulfils
-    entity.py                 PururuEntity (the base of every entity) and reading()
+    entity.py                 PururuEntity (the base of every entity), reading() and as_time()
     vocabulary.py             Condition, trigger, period: what makes a watched state hold, and its trigger; a period as HA reads it.
     texts.py                  the translations' common texts
     messages.py               a message's notify actions
@@ -56,6 +56,8 @@ custom_components/pururu/     the integration
     generated.py              a Kind per generated domain: sync, include check, removal
   features/                   one module or package per feature, and FEATURES
     appliance/                running, mirrors, alerts, notifications
+    cycle/                    the cycle machinery: CycleSource, last cycle, totals, energy
+      program/                the detector of detected programs: schema, detector, entities
     lights.py
     phases.py
     standing.py               what switches and lights share: their schema, is_pururu

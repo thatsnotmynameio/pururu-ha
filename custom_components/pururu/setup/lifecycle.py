@@ -34,6 +34,19 @@ from . import build, catalogue, generate, listener
 
 _LOGGER = logging.getLogger(__name__)
 
+# What to do when a failed setup's platforms weren't all taken back: HA's
+# errors say whether anything was left
+UNLOAD_RAISED = (
+    "Unloading the platforms of a failed setup raised; if a reload then logs "
+    "'has already been setup', restart Home Assistant"
+)
+NOT_UNLOADED = (
+    "Unloading the platforms of a failed setup left some (see Home Assistant's "
+    "errors above): after 'Config entry was never loaded!' nothing was left, and a "
+    "reload sets the entry up; if a reload logs 'has already been setup', restart "
+    "Home Assistant"
+)
+
 # The outputs after the platforms, in order: the events once the entities have their
 # IDs; the devices placed and what is stale removed; the scripts before the
 # automations that start them; Alert2 and the alert lights once their alerts and
@@ -102,7 +115,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     before the reactions' automations: a reaction starts one. The alert lights start
     after them: their alerts and lights are created. The dashboard comes last:
     it shows them all. The events are set up once the entities are added: they
-    fire their changes.
+    fire their changes. The registry listener comes after the steps, guarded
+    as one. Before the steps, a failure from the platforms on unloads them,
+    then raises: the entry is SETUP_ERROR without them, and a reload sets it
+    up again.
     """
     configured = hass.data.get(DATA_CONFIG, {})
     managed = places.async_sync(
@@ -127,31 +143,63 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
             entities[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
             created_by[key].append(entity)
     entry.runtime_data = entities
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # Once added, each entity has its current ID, renamed in the UI or not
-    built = Built(
-        house=configured,
-        builders=catalogue.builders(),
-        index=index,
-        texts=texts,
-        entities={platform: tuple(each) for platform, each in entities.items()},
-        by_device={key: tuple(each) for key, each in created_by.items()},
-        created=frozenset(
-            str(entity.unique_id) for each in entities.values() for entity in each
-        ),
-    )
-    targets: set[str] = set()
-    for name, step in STEPS:
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Once added, each entity has its current ID, renamed in the UI or not
+        built = Built(
+            house=configured,
+            builders=catalogue.builders(),
+            index=index,
+            texts=texts,
+            entities={platform: tuple(each) for platform, each in entities.items()},
+            by_device={key: tuple(each) for key, each in created_by.items()},
+            created=frozenset(
+                str(entity.unique_id) for each in entities.values() for entity in each
+            ),
+        )
+        targets: set[str] = set()
+        for name, step in STEPS:
+            try:
+                await step(hass, entry, built, targets)
+            except Exception:
+                # Guarded, not raised: the entry stays loaded with its entities
+                _LOGGER.exception("Step %s failed", name)
         try:
-            await step(hass, entry, built, targets)
+            listener.async_listen(
+                hass, entry, (generated.SCRIPTS, generated.AUTOMATIONS), targets
+            )
         except Exception:
-            # Failing after the platforms would leave the entry stuck until a
-            # restart: HA unloads a non-loaded entry without async_unload_entry
-            _LOGGER.exception("Step %s failed", name)
-    listener.async_listen(
-        hass, entry, (generated.SCRIPTS, generated.AUTOMATIONS), targets
-    )
+            # Guarded as a step
+            _LOGGER.exception("Listener failed")
+    except BaseException:
+        # HA unloads a non-loaded entry without async_unload_entry: platforms
+        # left set up would refuse the entry at every reload. What reaches here
+        # after the forward: Built failing, or a cancellation, in a step too (a
+        # reload called by an automation that stops; the steps guard Exception
+        # only). The delivered cancel is used up, so the unload runs; the
+        # original is re-raised
+        await _async_unload_platforms(hass, entry)
+        raise
     return True
+
+
+async def _async_unload_platforms(
+    hass: HomeAssistant, entry: PururuConfigEntry
+) -> None:
+    """Take back the platforms of a setup that failed after forwarding them; never raises.
+
+    HA unloads each platform on its own, so a partial forward (a cancelled
+    one) is fine: a platform HA never loaded counts as unloaded; one loaded
+    but never given the entry is logged by HA (`Config entry was never
+    loaded!`) and counts as not unloaded, though nothing of it is left.
+    """
+    try:
+        unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    except Exception:
+        _LOGGER.exception(UNLOAD_RAISED)
+        return
+    if not unloaded:
+        _LOGGER.error(NOT_UNLOADED)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bool:

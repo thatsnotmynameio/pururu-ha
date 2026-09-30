@@ -326,6 +326,25 @@ async def test_restart_keeps_the_running_mode(ha: HomeAssistant, freezer: Any) -
     assert last(ha) == "gelar"
 
 
+async def test_restart_with_an_impossible_start_keeps_the_mode(ha: HomeAssistant,
+                                                               freezer: Any) -> None:
+    """A hand-edited .storage: a well-formed but impossible date is no start, and the mode goes on."""
+    since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
+    await restart(
+        ha, DEVICES,
+        (State(RUNNING, "on"), {"since": since, "since_energy": None}),
+        (State(CURRENT, "gelar"), {"since": "2026-02-30T10:00:00+00:00", "since_energy": None}),
+    )
+    assert mode(ha) == "gelar"
+    await watts(ha, 120)
+    await tick(ha, freezer, 60)
+    await watts(ha, IDLE_W)
+    await tick(ha, freezer, 35)
+    assert mode(ha) == "idle"
+    assert value(ha, "gelar_cycles_total") == "1"
+    assert value(ha, "gelar_last_cycle_start") == "unknown"
+
+
 async def test_last_restores(ha: HomeAssistant) -> None:
     await restart(ha, DEVICES, (State(LAST, "quente"), {"native_value": "quente",
                                                         "native_unit_of_measurement": None}))

@@ -18,6 +18,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.util import dt as dt_util
 
+from ..core.entity import as_time
 from ..core.feature import Device, Elapsed
 from ..core.vocabulary import NO_READING
 from .problem import ProblemAlert
@@ -36,18 +37,8 @@ class Created(ExtraStoredData):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
-        """Read back what as_dict saved."""
-        at = data.get("at")
-        return cls(at=dt_util.parse_datetime(at) if isinstance(at, str) else None)
-
-
-def _datetime(value: Any) -> datetime | None:
-    """A milestone read from a state or an attribute."""
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        return dt_util.parse_datetime(value)
-    return None
+        """Read back what as_dict saved; an impossible date too (a hand-edited .storage) is none."""
+        return cls(at=as_time(data.get("at")))
 
 
 class ElapsedAlert(ProblemAlert):
@@ -134,14 +125,12 @@ class ElapsedAlert(ProblemAlert):
         ended, counts from the alert's creation.
         """
         if self._milestone is None:
-            said = _datetime(
-                watched.attributes.get(self._elapsed.since_attribute or "")
-            )
+            said = as_time(watched.attributes.get(self._elapsed.since_attribute or ""))
         else:
             state = self.hass.states.get(self._milestone)
             if state is None or state.attributes.get(ATTR_RESTORED):
                 return None
-            said = _datetime(state.state)
+            said = as_time(state.state)
             if said is None and state.state == STATE_UNKNOWN:
                 said = self._created.at if self._elapsed.or_since_created else None
             elif said is None:

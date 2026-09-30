@@ -24,7 +24,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from ...core.entity import PururuEntity
+from ...core.entity import PururuEntity, as_time
 from ...core.feature import Device, Item
 from . import Cycle, cycle_signal
 from .energy import kwh_now, kwh_used
@@ -45,10 +45,13 @@ class CyclesTotal(PururuEntity, RestoreSensor):
         source: str,
         item: Item | None = None,
         entity_key: str = "cycles_total",
+        translation: str | None = None,
     ) -> None:
         """Count the cycles (of `item`) that `source` sends, as `entity_key` (a door's openings)."""
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, entity_key, item=item)
+        self._identify(
+            device, Platform.SENSOR, entity_key, item=item, translation=translation
+        )
         self._signal = cycle_signal(device, item)  # only _watch reads it
         self._cycles = 0
 
@@ -88,11 +91,18 @@ class EnergyTotal(PururuEntity, RestoreSensor):
     _attr_suggested_display_precision = 3
 
     def __init__(
-        self, device: Device, *, source: str, item: Item | None = None
+        self,
+        device: Device,
+        *,
+        source: str,
+        item: Item | None = None,
+        translation: str | None = None,
     ) -> None:
         """Add up the energy of the cycles (of `item`) that `source` sends."""
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, "energy_total", item=item)
+        self._identify(
+            device, Platform.SENSOR, "energy_total", item=item, translation=translation
+        )
         self._signal = cycle_signal(device, item)
         self._kwh = 0.0
 
@@ -144,10 +154,13 @@ class RuntimeTotal(PururuEntity, RestoreSensor):
         source: str,
         item: Item | None = None,
         entity_key: str = "runtime_total",
+        translation: str | None = None,
     ) -> None:
         """Add up the time `watched`, the entity of `source`, is in `state`, as `entity_key`."""
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, entity_key, item=item)
+        self._identify(
+            device, Platform.SENSOR, entity_key, item=item, translation=translation
+        )
         self._watched = watched
         self._state = state
         self._hours = 0.0
@@ -221,10 +234,7 @@ class RuntimeTotal(PururuEntity, RestoreSensor):
 
 def _attribute_time(state: State, attribute: str) -> datetime | None:
     """A datetime attribute of `state` (a restored state has strings), or None."""
-    value = state.attributes.get(attribute)
-    if isinstance(value, str):
-        value = dt_util.parse_datetime(value)
-    return value if isinstance(value, datetime) else None
+    return as_time(state.attributes.get(attribute))
 
 
 class IdleEnergyTotal(PururuEntity, RestoreSensor):

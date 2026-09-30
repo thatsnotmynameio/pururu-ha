@@ -68,11 +68,14 @@ class LastCycleValue(PururuEntity, RestoreSensor):
         *,
         source: str,
         item: Item | None = None,
+        translation: str | None = None,
     ) -> None:
-        """Take `description`'s value from every cycle (of `item`) that `source` sends."""
+        """Take `description`'s value from every cycle (of `item`) that `source` sends; named `translation` if given."""
         self.entity_description = description
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, description.key, item=item)
+        self._identify(
+            device, Platform.SENSOR, description.key, item=item, translation=translation
+        )
         self._signal = (
             end_signal(device, item)
             if description.written_last

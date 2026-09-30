@@ -124,9 +124,33 @@ def test_every_translated_entity_key_is_created(features: dict[str, Any]) -> Non
                for entity_key, platform in named_keys(feature).items()}
     created |= {(str(platform), group) for aspect, _, feature in offered(features)
                 for group, platform in aspect_groups(aspect, feature).items()}
+    # The detector's (features/cycle/program): named once for every builder using it
+    created |= {(str(platform), key)
+                for key, platform in module("features.cycle.program").NAMED.items()}
     for name in ("translations/en.json", "icons.json"):
         listed = {(platform, key) for platform, keys in load(name)["entity"].items() for key in keys}
         assert listed <= created, f"{name}: {sorted(listed - created)}"
+
+
+def test_the_detectors_keys_are_named(ha: HomeAssistant) -> None:
+    """Each key the detector names, in both languages and with an icon: a phase's own with {item}, other's and its own two without.
+
+    The states it shows by itself are named too: idle (the current phase only) and other.
+    """
+    program = module("features.cycle.program")
+    en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
+    per_phase = {f"{program.PHASE}_{suffix}" for suffix in program.SUFFIXES}
+    for key, platform in program.NAMED.items():
+        for translations in (en, pt):
+            text = translations["entity"][platform][key]["name"]
+            assert text, key
+            assert ("{item}" in text) == (key in per_phase), key
+        assert icons["entity"][platform][key]["default"].startswith("mdi:"), key
+    for translations in (en, pt):
+        sensors = translations["entity"]["sensor"]
+        assert {program.IDLE, program.OTHER} <= set(sensors["phase_current"]["state"])
+        assert program.OTHER in sensors["phase_last"]["state"]
+        assert program.IDLE not in sensors["phase_last"]["state"]
 
 
 def test_example_is_valid_and_unknown_keys_are_refused(features: dict[str, Any]) -> None:

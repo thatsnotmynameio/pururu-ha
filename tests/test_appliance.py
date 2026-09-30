@@ -158,6 +158,16 @@ async def test_restart_restores_running(ha: HomeAssistant, freezer: Any) -> None
     await end_cycle(ha, freezer)
 
 
+async def test_restart_with_an_impossible_start_restores_running(
+        ha: HomeAssistant, freezer: Any) -> None:
+    """A hand-edited .storage: a well-formed but impossible date is no start, and the cycle goes on."""
+    await restart(ha, DEVICES, (State(RUNNING, "on"),
+                                {"since": "2020-02-30T10:00:00+00:00", "since_energy": 100.0}))
+    assert running(ha) == "on"
+    await end_cycle(ha, freezer)
+    assert ha.states.get(sensor("cycles_total")).state == "1"
+
+
 # --- mirrors, entities, names --------------------------------------------------
 
 
@@ -512,6 +522,15 @@ async def test_cycles_unit_comes_from_the_translations(metered: HomeAssistant,
     await tick(metered, freezer, 60)
     assert metered.states.get(sensor("cycles_total")).attributes["unit_of_measurement"] == "cycles"
     assert metered.states.get(sensor("cycles_today")).attributes["unit_of_measurement"] == "cycles"
+
+
+async def test_runtime_counts_from_now_after_an_impossible_start(
+        metered: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """Running entered with a well-formed but impossible cycle_start (a restored state's string): no start, counted from now, nothing raised."""
+    await fake(metered, RUNNING, "on", {"cycle_start": "2026-02-30T10:00:00+00:00"})
+    await tick(metered, freezer, 10 * 60)
+    assert float(value(metered, "runtime_total")) == pytest.approx(10 / 60, abs=0.001)
+    assert [r.getMessage() for r in caplog.records if r.levelname == "ERROR"] == []
 
 
 async def test_runtime_restores(ha: HomeAssistant) -> None:

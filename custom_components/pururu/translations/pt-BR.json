@@ -50,7 +50,8 @@
       "appliance_alert_long_cycle": {"name": "Ciclo longo"},
       "appliance_alert_no_cycle": {"name": "Sem ciclo"},
       "door_open": {"name": "Aberta"},
-      "window_open": {"name": "Aberta"}
+      "window_open": {"name": "Aberta"},
+      "phase_other": {"name": "Outra fase"}
     },
     "sensor": {
       "appliance_power": {"name": "Potência"},
@@ -87,9 +88,31 @@
         "state": {
           "idle": "Parada", "washing": "Lavando", "heating": "Aquecendo",
           "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando",
-          "cooling": "Esfriando"
+          "cooling": "Esfriando", "other": "Outra", "dispensing": "Dispensando"
         }
       },
+      "phase_last": {
+        "name": "Última fase",
+        "state": {
+          "washing": "Lavando", "heating": "Aquecendo",
+          "spinning": "Centrifugando", "rinsing": "Enxaguando", "drying": "Secando",
+          "cooling": "Esfriando", "other": "Outra", "dispensing": "Dispensando"
+        }
+      },
+      "phase_last_cycle_start": {"name": "Início do último ciclo de {item}"},
+      "phase_last_cycle_end": {"name": "Fim do último ciclo de {item}"},
+      "phase_last_cycle_duration": {"name": "Duração do último ciclo de {item}"},
+      "phase_last_cycle_energy": {"name": "Energia do último ciclo de {item}"},
+      "phase_cycles_total": {"name": "Ciclos de {item}", "unit_of_measurement": "ciclos"},
+      "phase_runtime_total": {"name": "Tempo de {item}"},
+      "phase_energy_total": {"name": "Energia de {item}"},
+      "phase_other_last_cycle_start": {"name": "Início do último ciclo de outra fase"},
+      "phase_other_last_cycle_end": {"name": "Fim do último ciclo de outra fase"},
+      "phase_other_last_cycle_duration": {"name": "Duração do último ciclo de outra fase"},
+      "phase_other_last_cycle_energy": {"name": "Energia do último ciclo de outra fase"},
+      "phase_other_cycles_total": {"name": "Ciclos de outra fase", "unit_of_measurement": "ciclos"},
+      "phase_other_runtime_total": {"name": "Tempo de outra fase"},
+      "phase_other_energy_total": {"name": "Energia de outra fase"},
       "mode_current": {
         "name": "Modo",
         "state": {

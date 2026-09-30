@@ -149,3 +149,28 @@ async def test_a_cycle_is_sent_after_its_state_a_mode_ending_into_the_next(
     await tick(ha, freezer, 30)
     assert ha_state(ha, CURRENT) == "quente"
     assert seen == [("cycle", "quente"), ("end", "quente")]
+
+
+def test_a_cycle_entity_takes_a_translation(ha: HomeAssistant) -> None:
+    """The detector names a phase's cycle entities with its own keys ({item}); without one, the builder's namespace as today."""
+    feature = module("core.feature")
+    last, totals = module("features.cycle.last"), module("features.cycle.totals")
+    device = feature.Device(key="dev", name="Dev", namespace="appliance")
+    item = feature.Item(slug="phase_gelar", name="Gelar")
+    named = [
+        last.LastCycleValue(device, last.LAST_CYCLE[0], source="phase_gelar", item=item,
+                            translation="phase_last_cycle_start"),
+        totals.CyclesTotal(device, source="phase_gelar", item=item,
+                           translation="phase_cycles_total"),
+        totals.RuntimeTotal(device, None, "on", source="phase_gelar", item=item,
+                            translation="phase_runtime_total"),
+        totals.EnergyTotal(device, source="phase_gelar", item=item,
+                           translation="phase_energy_total"),
+    ]
+    assert [(e.entity_id, e.translation_key, e.translation_placeholders) for e in named] == [
+        (f"sensor.pururu_dev_appliance_phase_gelar_{suffix}", f"phase_{suffix}", {"item": "Gelar"})
+        for suffix in ("last_cycle_start", "cycles_total", "runtime_total", "energy_total")
+    ]
+    plain = totals.CyclesTotal(device, source="running")
+    assert (plain.entity_id, plain.translation_key) == (
+        "sensor.pururu_dev_appliance_cycles_total", "appliance_cycles_total")

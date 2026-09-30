@@ -260,6 +260,20 @@ async def test_restart_before_the_contact_has_a_state_holds(ha: HomeAssistant, k
     assert float(value(ha, kind, "last_open_duration")) == 35
 
 
+async def test_restart_with_an_impossible_start_keeps_the_opening(ha: HomeAssistant,
+                                                                  kind: str) -> None:
+    """A hand-edited .storage: a well-formed but impossible date is no start, and the opening goes on."""
+    ha.states.async_set(CONTACT, "on")
+    await restart(ha, devices(kind), (State(entity(kind, "open", "binary_sensor"), "on"),
+                                      {"since": "2026-02-30T10:00:00+00:00",
+                                       "since_energy": None}))
+    assert opened(ha, kind) == "on"
+    await contact(ha, "off")
+    assert opened(ha, kind) == "off"
+    assert value(ha, kind, "openings_total") == "1"
+    assert value(ha, kind, "last_open_duration") == "unknown"
+
+
 async def test_reload_mid_opening_counts_one(door: HomeAssistant, kind: str,
                                              freezer: Any) -> None:
     await contact(door, "on")

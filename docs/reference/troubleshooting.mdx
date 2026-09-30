@@ -3,7 +3,7 @@ title: Troubleshooting
 description: What each error pururu logs means, and what to do about it.
 ---
 
-pururu reports problems in **Settings → System → Logs**, under the **Pururu** integration. Only an invalid configuration stops it. Anything else is logged, and the rest of the configuration is still applied.
+pururu reports problems in **Settings → System → Logs**, under the **Pururu** integration. Only an invalid configuration, or a failure before its steps (while it builds and hands over the entities), stops it. Anything else is logged, and the rest of the configuration is still applied.
 
 ## The reload changed nothing
 
@@ -57,7 +57,28 @@ Once the entities are created, pururu does the rest in steps: `events`, `devices
 - `alert lights`: lights lent to the alerts.
 - `dashboard`: the `/pururu` dashboard.
 
-**Fix:** this is a bug in pururu. [Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the traceback and the configuration of the device it names, if any. A reload tries the step again.
+`Listener failed`, logged the same way after the steps, is the listener that follows renames in the UI: until the next reload, renaming one of pururu's entities, scripts or automations, or disabling an entity a program or an alert's lights follow, doesn't rebuild the entry.
+
+**Fix:** this is a bug in pururu. [Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the traceback and the configuration of the device it names, if any. A reload tries the step, or the listener, again.
+
+## `Error setting up entry Pururu for pururu`
+
+```
+Error setting up entry Pururu for pururu
+Traceback (most recent call last):
+  …
+```
+
+Home Assistant logs this when pururu fails before its steps: while it syncs the floors and areas, builds the devices' entities, or hands them to Home Assistant. The integration shows **Failed to set up**, and none of the steps runs. If the entities were already handed over, pururu takes them back: they show as unavailable until the entry sets up again.
+
+**Fix:** this is a bug in pururu, or in something it relies on. [Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the traceback. Once the cause is fixed, run `pururu.reload` (**Developer tools → Actions**) or restart Home Assistant: the entry sets up again from scratch.
+
+Home Assistant logs `Setup of config entry 'Pururu' for pururu integration cancelled` instead when the setup was cancelled, for example a `pururu.reload` called by a script or automation that was stopped or restarted meanwhile. pururu takes the entities back all the same: run `pururu.reload` again.
+
+If `Unloading the platforms of a failed setup …` follows it, taking some entities back didn't work:
+
+- `… left some`, after Home Assistant's `Config entry was never loaded!` errors: those platforms never got the entities, so nothing was left behind. A reload sets the entry up.
+- Otherwise, run `pururu.reload`. If it logs `has already been setup`, the entities stayed: restart Home Assistant.
 
 ## Entities
 

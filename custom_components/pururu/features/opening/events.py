@@ -20,10 +20,9 @@ from homeassistant.core import Event, EventStateChangedData, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.util import dt as dt_util
 from homeassistant.util.signal_type import SignalType
 
-from ...core.entity import PururuEntity
+from ...core.entity import PururuEntity, as_time
 from ...core.feature import TEXT, Device
 
 OPENING = "opening"
@@ -68,10 +67,7 @@ def _time(state: str) -> datetime | None:
     A time without a zone can't be compared with an opening's, and a string
     shaped as a time can still be out of range.
     """
-    try:
-        time = dt_util.parse_datetime(state)
-    except ValueError:
-        return None
+    time = as_time(state)
     return None if time is None or time.tzinfo is None else time
 
 
