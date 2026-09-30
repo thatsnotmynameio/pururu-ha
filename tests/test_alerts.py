@@ -85,6 +85,15 @@ async def test_an_empty_block_is_refused(ha: HomeAssistant) -> None:
     assert not await setup(ha, devices())
 
 
+async def test_alerts_alone_are_not_a_feature(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """`alerts` is a device key, like `programs`: neither counts as a device's feature."""
+    program = {"name": "X", "sequence": [{"turn_on": "switch_pump"}]}
+    assert not await setup(ha, {KEY: {"name": "Demo washer", "programs": {"it": program},
+                                      "alerts": {"overload": OVERLOAD}}})
+    assert "a device needs at least one feature" in caplog.text
+
+
 async def test_a_when_of_no_entity_key_names_it(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     assert not await setup(ha, devices(overload={**OVERLOAD, "when": "appliance_nothing"}))

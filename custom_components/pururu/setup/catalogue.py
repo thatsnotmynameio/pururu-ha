@@ -7,7 +7,7 @@ import voluptuous as vol
 
 from homeassistant.const import CONF_NAME, Platform
 
-from ..aspects import ASPECTS
+from ..aspects import ASPECTS, alerts as presets
 from ..const import CONF_NOTIFICATIONS
 from ..core.feature import (
     ALERTS_KEY,
@@ -22,7 +22,7 @@ from ..core.feature import (
 from ..core.resolve import Index, Target
 from ..core.roles import Actions, Configured, Items
 from ..device_keys import DEVICE_KEYS, notifications
-from ..features import FEATURES, presets
+from ..features import FEATURES
 
 
 def builders() -> dict[str, Feature]:

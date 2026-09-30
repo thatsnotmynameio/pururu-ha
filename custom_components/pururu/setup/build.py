@@ -9,13 +9,14 @@ from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 
+from ..aspects import alerts as presets
 from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
 from ..core.feature import Device, presets_of
 from ..core.resolve import Index, find
 from ..core.roles import Generates, Provides, Refers, Requires
 from ..core.texts import Texts
-from ..features import FEATURES, presets
+from ..features import FEATURES
 from . import catalogue
 
 _LOGGER = logging.getLogger(__name__)

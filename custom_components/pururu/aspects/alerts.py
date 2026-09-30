@@ -1,7 +1,9 @@
-"""Ready-made alerts: the settings that enable them, and the alerts they build.
+"""`alerts`: the device key for hand-written alerts, and ready-made alerts' settings and build.
 
-A feature offers them (roles.Presets); its block's `alerts` enables each one
-with one key, its defaults and texts ready.
+The device key `ALERTS` builds one alert per key of a device's `alerts:`
+block, watching the entity its `when` names. A feature offers ready-made
+alerts (roles.Presets); its block's `alerts` enables each one with one key,
+its defaults and texts ready. Both build on aspects.problem's ProblemAlert.
 """
 
 from collections.abc import Callable, Mapping
@@ -10,6 +12,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
@@ -23,10 +26,55 @@ from ..core.feature import (
     happenings_of,
     presets_of,
 )
+from ..core.resolve import Ref
+from ..core.roles import Configured, Refers
 from ..core.texts import Texts
 from ..core.vocabulary import Condition
-from .alerts import NOTIFY, Alert, lights_group
 from .elapsed import ElapsedAlert
+from .problem import NOTIFY, SCHEMA, Alert, lights_group
+
+
+def _build(
+    hass: HomeAssistant,
+    device: Device,
+    config: dict[str, Any],
+    inputs: Mapping[str, str],
+) -> list[PururuEntity]:
+    """An alert per key of the block, watching the entity its `when` names."""
+    return [
+        Alert(
+            device,
+            entity_key,
+            name=alert["name"],
+            watched=inputs[alert["when"]],
+            condition=Condition(
+                state=alert.get("is"),
+                above=alert.get("above"),
+                below=alert.get("below"),
+            ),
+            hold=alert["for"],
+            priority=alert["priority"],
+            notify=alert.get("notify"),
+            lights=alert.get("lights"),
+            follows=(alert["when"],),
+        )
+        for entity_key, alert in config.items()
+    ]
+
+
+def _refers(config: dict[str, Any]) -> set[Ref]:
+    """The entity keys the alerts watch, on this device."""
+    return {Ref(None, alert["when"]) for alert in config.values()}
+
+
+ALERTS = Feature(
+    schema=SCHEMA,
+    entity_keys={},
+    build=_build,
+    example={"too_long": {"name": "Too long", "when": "appliance_running", "is": "on"}},
+    namespace="alert",
+    roles=(Configured(Platform.BINARY_SENSOR), Refers(_refers)),
+)
 
 
 def _settings(preset: Preset) -> vol.Schema:

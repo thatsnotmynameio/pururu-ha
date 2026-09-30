@@ -32,9 +32,7 @@ from homeassistant.helpers.start import async_at_started
 
 from ..const import ALERT2, DEFAULT_ALERT_LIGHTS
 from ..core.entity import PururuEntity
-from ..core.feature import PRIORITIES, TEXT, Device, Feature, finite_float, state_text
-from ..core.resolve import Ref
-from ..core.roles import Configured, Refers
+from ..core.feature import PRIORITIES, TEXT, Device, finite_float, state_text
 from ..core.vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
@@ -231,46 +229,3 @@ class Alert(ProblemAlert):
     def _turn_on(self, _now: datetime) -> None:
         self._pending = None
         self._set(on=True)
-
-
-def build(
-    hass: HomeAssistant,
-    device: Device,
-    config: dict[str, Any],
-    inputs: Mapping[str, str],
-) -> list[PururuEntity]:
-    """An alert per key of the block, watching the entity its `when` names."""
-    return [
-        Alert(
-            device,
-            entity_key,
-            name=alert["name"],
-            watched=inputs[alert["when"]],
-            condition=Condition(
-                state=alert.get("is"),
-                above=alert.get("above"),
-                below=alert.get("below"),
-            ),
-            hold=alert["for"],
-            priority=alert["priority"],
-            notify=alert.get("notify"),
-            lights=alert.get("lights"),
-            follows=(alert["when"],),
-        )
-        for entity_key, alert in config.items()
-    ]
-
-
-def _refers(config: dict[str, Any]) -> set[Ref]:
-    """The entity keys the alerts watch, on this device."""
-    return {Ref(None, alert["when"]) for alert in config.values()}
-
-
-ALERTS = Feature(
-    schema=SCHEMA,
-    entity_keys={},
-    build=build,
-    example={"too_long": {"name": "Too long", "when": "appliance_running", "is": "on"}},
-    namespace="alert",
-    roles=(Configured(Platform.BINARY_SENSOR), Refers(_refers)),
-)

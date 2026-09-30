@@ -20,7 +20,7 @@ from homeassistant.util import dt as dt_util
 
 from ..core.feature import Device, Elapsed
 from ..core.vocabulary import NO_READING
-from .alerts import ProblemAlert
+from .problem import ProblemAlert
 
 
 @dataclass
