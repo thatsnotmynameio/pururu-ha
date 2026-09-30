@@ -80,12 +80,12 @@ def mount(builder: Feature, name: str, value: Any) -> Any:
 
     Each aspect's key is taken out of the block, or out of each item, where the
     aspect says it sits (Aspect.placed), and validated by the aspect: absent,
-    as `{}`, or left out (Aspect.mount_absent). The rest goes to _validated. This is the first stage: the
-    builder's own schema refusal and each aspect's schema refusal are raised
-    together, before either runs a check. Once every value is validated and
-    back where it sat, the second stage runs: each aspect checks each
-    container it sits in (Aspect.check), and those refusals are raised
-    together too, separately from the first stage's.
+    as `{}`, or left out (Aspect.mount_absent). The rest goes to _validated.
+    This is the first stage: the builder's own schema refusal and each
+    aspect's schema refusal are raised together, before either runs a check.
+    Once every value is validated and back where it sat, the second stage
+    runs: each aspect checks each container it sits in (Aspect.check), and
+    those refusals are raised together too, separately from the first stage's.
     """
     if not (aspects := aspects_of(builder)):
         return _validated(builder, name, value)

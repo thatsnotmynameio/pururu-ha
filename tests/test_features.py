@@ -46,7 +46,7 @@ def per_item(feature: Any) -> dict[str, Any]:
 def named_keys(feature: Any) -> dict[str, Any]:
     """Every key a feature's translations name in its namespace: its entity keys and its per-item suffixes.
 
-    An aspect's keys (the meters) are named once, outside every namespace (aspect_groups).
+    Not an aspect's keys: each aspect names its own (Aspect.named, aspect_groups).
     """
     return {**feature.entity_keys, **per_item(feature)}
 
@@ -337,12 +337,12 @@ def test_an_aspects_keys_are_named_once(features: dict[str, Any]) -> None:
     """Every key an aspect can add is named and has an icon: each aspect's own naming (Aspect.named), whatever it is.
 
     Generic over how an aspect names its keys (statistics' own, outside every
-    namespace; a later aspect's may be under the builder's own, as B3's
-    ready-made alerts will), by reading Aspect.named itself rather than a
-    naming rule hard-coded here. Exhaustive over aspect.keys(feature), not just
-    an example: a settings-gated counter's meters (idle_energy, a mode's
-    energy) and every period (week, month, year) are checked too, not only
-    what the builder's minimal example asks for.
+    namespace; or under the builder's own, as the ready-made alerts' are),
+    by reading Aspect.named itself rather than a naming rule hard-coded here.
+    Exhaustive over aspect.keys(feature), not just an example: a
+    settings-gated counter's meters (idle_energy, a mode's energy) and every
+    period (week, month, year) are checked too, not only what the builder's
+    minimal example asks for.
     """
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
     pairs = offered(features)
