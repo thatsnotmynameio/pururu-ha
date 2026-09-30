@@ -1,5 +1,7 @@
 """The entry's life: the steps after the platforms, their guard, the listener."""
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import patch
 
@@ -109,6 +111,85 @@ async def test_a_setup_failing_after_its_platforms_recovers_on_reload(
     assert "has already been setup" not in caplog.text
 
 
+async def _reload_cancelled(ha: HomeAssistant) -> None:
+    """A reload whose task is cancelled once the platforms are set up: an automation calling it, stopped."""
+    forward = ha.config_entries.async_forward_entry_setups
+
+    async def forward_then_cancel(*args: Any) -> None:
+        await forward(*args)
+        task = asyncio.current_task()
+        assert task is not None
+        task.cancel()
+        await asyncio.sleep(0)
+
+    with patch.object(ha.config_entries, "async_forward_entry_setups",
+                      side_effect=forward_then_cancel):
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.create_task(reload(ha, {"pool": SWITCH}))
+
+
+async def _reload_raising_cancelled(ha: HomeAssistant) -> None:
+    """A reload raising CancelledError once the platforms are set up, its task not cancelled."""
+    with patch.object(module("setup.lifecycle"), "Built", side_effect=asyncio.CancelledError):
+        await reload(ha, {"pool": SWITCH})
+
+
+@pytest.mark.parametrize("fail", [
+    pytest.param(_reload_cancelled, id="its task cancelled"),
+    pytest.param(_reload_raising_cancelled, id="a CancelledError alone"),
+])
+async def test_a_setup_cancelled_after_its_platforms_recovers_on_reload(
+    ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+    fail: Callable[[HomeAssistant], Awaitable[None]],
+) -> None:
+    """Cancelled once the platforms are set up: they're unloaded all the same, so the next reload applies the configuration."""
+    pump = "switch.pururu_pool_switch_pump"
+    assert await setup(ha, {"pool": SWITCH})
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    await fail(ha)
+    await ha.async_block_till_done()
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    removed = ha.states.get(pump)
+    assert removed is not None
+    assert removed.attributes["restored"]  # HA's placeholder: the entity is gone
+    assert "failed setup" not in caplog.text
+    switches = {**SWITCH["switches"], "filter": {"entity": "switch.pool_filter", "name": "Filtro"}}
+    await reload(ha, {"pool": {**SWITCH, "switches": switches}})
+    assert entry.state is ConfigEntryState.LOADED
+    for entity_id in (pump, "switch.pururu_pool_switch_filter"):
+        added = ha.states.get(entity_id)
+        assert added is not None, entity_id
+        assert not added.attributes.get("restored"), entity_id
+    assert "has already been setup" not in caplog.text
+
+
+async def test_a_forward_failing_before_its_platforms_says_a_reload_recovers(
+    ha: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No platform got the entry: HA logs each as never loaded, pururu says a reload will do, and it does."""
+    pump = "switch.pururu_pool_switch_pump"
+    assert await setup(ha, {"pool": SWITCH})
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    with patch.object(ha.config_entries, "async_forward_entry_setups",
+                      side_effect=ImportError("boom")):
+        await reload(ha, {"pool": SWITCH})
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert "Config entry was never loaded!" in caplog.text
+    [unloading] = [r for r in caplog.records if r.name.endswith(".lifecycle")]
+    assert unloading.getMessage() == (
+        "Unloading the platforms of a failed setup left some (see Home Assistant's "
+        "errors above): after 'Config entry was never loaded!' nothing was left, and a "
+        "reload sets the entry up; if a reload logs 'has already been setup', restart "
+        "Home Assistant")
+    caplog.clear()  # the message names what a stuck reload would log
+    await reload(ha, {"pool": SWITCH})
+    assert entry.state is ConfigEntryState.LOADED
+    added = ha.states.get(pump)
+    assert added is not None
+    assert not added.attributes.get("restored")
+    assert "has already been setup" not in caplog.text
+
+
 async def test_a_failing_unload_of_a_failed_setup_keeps_its_error(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -122,7 +203,9 @@ async def test_a_failing_unload_of_a_failed_setup_keeps_its_error(
     [entry] = ha.config_entries.async_entries(DOMAIN)
     assert entry.state is ConfigEntryState.SETUP_ERROR
     [unloading] = [r for r in caplog.records if r.name.endswith(".lifecycle")]
-    assert unloading.getMessage() == "Unloading the platforms of a failed setup failed"
+    assert unloading.getMessage() == (
+        "Unloading the platforms of a failed setup raised; if a reload then logs "
+        "'has already been setup', restart Home Assistant")
     assert unloading.exc_info is not None
     assert isinstance(unloading.exc_info[1], ValueError)
     [failed] = [r for r in caplog.records if r.getMessage().startswith("Error setting up entry")]

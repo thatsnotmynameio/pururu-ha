@@ -24,7 +24,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from ...core.entity import PururuEntity
+from ...core.entity import PururuEntity, as_time
 from ...core.feature import Device, Item
 from . import Cycle, cycle_signal
 from .energy import kwh_now, kwh_used
@@ -234,10 +234,7 @@ class RuntimeTotal(PururuEntity, RestoreSensor):
 
 def _attribute_time(state: State, attribute: str) -> datetime | None:
     """A datetime attribute of `state` (a restored state has strings), or None."""
-    value = state.attributes.get(attribute)
-    if isinstance(value, str):
-        value = dt_util.parse_datetime(value)
-    return value if isinstance(value, datetime) else None
+    return as_time(state.attributes.get(attribute))
 
 
 class IdleEnergyTotal(PururuEntity, RestoreSensor):

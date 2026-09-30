@@ -1,7 +1,8 @@
-"""reading(): a sensor's number, or None while it has none; an entity's key and reference."""
+"""reading(): a sensor's number, or None while it has none; as_time(): a time read back; an entity's key and reference."""
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, State
+from homeassistant.util import dt as dt_util
 
 from helpers import DOMAIN, module, setup
 
@@ -33,6 +34,19 @@ def test_non_finite_numbers_have_no_reading(ha: HomeAssistant) -> None:
     assert value("nan") is None
     assert value("inf") is None
     assert value("-inf") is None
+
+
+
+def test_a_time_is_read_back(ha: HomeAssistant) -> None:
+    """A datetime as it is, a time's string parsed; an impossible date and anything else, none."""
+    as_time = module("core.entity").as_time
+    moment = dt_util.utcnow()
+    assert as_time(moment) is moment
+    assert as_time(moment.isoformat()) == moment
+    assert as_time("2026-02-30T10:00:00+00:00") is None
+    assert as_time("not a time") is None
+    assert as_time(None) is None
+    assert as_time(5) is None
 
 
 async def test_an_entity_knows_its_key_and_reference(ha: HomeAssistant) -> None:

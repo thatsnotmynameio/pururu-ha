@@ -1,6 +1,7 @@
 """What features recording cycles share: a finished cycle, where it's sent, its start kept across restarts.
 
-`appliance` has one kind of cycle; `modes` one per mode, an Item of its block.
+`appliance` has one kind of cycle; `modes` one per mode, an Item of its block;
+the detector (`program/`) one for its program and one per phase.
 """
 
 from dataclasses import dataclass
@@ -9,10 +10,9 @@ from typing import Any, Self, override
 
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.restore_state import ExtraStoredData
-from homeassistant.util import dt as dt_util
 from homeassistant.util.signal_type import SignalType
 
-from ...core.entity import PururuEntity
+from ...core.entity import PururuEntity, as_time
 from ...core.feature import Device, Item, item_key
 
 
@@ -45,7 +45,8 @@ def end_signal(device: Device, item: Item | None = None) -> SignalType[Cycle]:
 class CycleSource(PururuEntity):
     """An entity whose finished cycles are sent on its cycle and end signals, state written first.
 
-    `Running`, `Open` and `Runs` set the signals up once, in `__init__`; `Current`
+    `Running`, `Open`, `Runs`, and the detector's `Carrier` and `PhaseRunning`
+    set the signals up once, in `__init__`; `Current`
     (modes) has one running mode at a time, so it sets them up again for each
     item it sends.
     """
@@ -80,20 +81,10 @@ class CycleStart(ExtraStoredData):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
-        """Read back what as_dict saved; anything else means no running cycle."""
+        """Read back what as_dict saved; anything else, an impossible date too (a hand-edited .storage), means no running cycle."""
         energy = data.get("since_energy")
         return cls(
-            since=_datetime(data.get("since")),
+            since=as_time(data.get("since")),
             since_energy=float(energy) if isinstance(energy, int | float) else None,
-            until=_datetime(data.get("until")),
+            until=as_time(data.get("until")),
         )
-
-
-def _datetime(value: Any) -> datetime | None:
-    """A time as_dict saved; anything else, an impossible date too (a hand-edited .storage), is none."""
-    if not isinstance(value, str):
-        return None
-    try:
-        return dt_util.parse_datetime(value)
-    except ValueError:  # well-formed, but no such day or month
-        return None

@@ -524,6 +524,15 @@ async def test_cycles_unit_comes_from_the_translations(metered: HomeAssistant,
     assert metered.states.get(sensor("cycles_today")).attributes["unit_of_measurement"] == "cycles"
 
 
+async def test_runtime_counts_from_now_after_an_impossible_start(
+        metered: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """Running entered with a well-formed but impossible cycle_start (a restored state's string): no start, counted from now, nothing raised."""
+    await fake(metered, RUNNING, "on", {"cycle_start": "2026-02-30T10:00:00+00:00"})
+    await tick(metered, freezer, 10 * 60)
+    assert float(value(metered, "runtime_total")) == pytest.approx(10 / 60, abs=0.001)
+    assert [r.getMessage() for r in caplog.records if r.levelname == "ERROR"] == []
+
+
 async def test_runtime_restores(ha: HomeAssistant) -> None:
     await restart(ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS}},
                   (State(sensor("runtime_total"), "1.5"),

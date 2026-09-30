@@ -1,11 +1,14 @@
-"""The base of every entity a device's features create, and reading a real sensor."""
+"""The base of every entity a device's features create, and reading a real sensor or a time."""
 
+from datetime import datetime
 import math
+from typing import Any
 
 from homeassistant.const import ATTR_RESTORED, Platform
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
+from homeassistant.util import dt as dt_util
 
 from .feature import Device, Item, item_key
 
@@ -19,6 +22,22 @@ def reading(state: State | None) -> float | None:
     except ValueError:
         return None
     return value if math.isfinite(value) else None
+
+
+def as_time(value: Any) -> datetime | None:
+    """A time read back (a state, an attribute, .storage); None for anything else.
+
+    A string shaped as a time can still name no such day or month (a
+    hand-edited .storage, a broken sensor): it is none too, never an error.
+    """
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return dt_util.parse_datetime(value)
+    except ValueError:  # well-formed, but no such day or month
+        return None
 
 
 def other_holder(

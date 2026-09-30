@@ -278,6 +278,31 @@ async def test_no_cycle_counts_across_a_restart(ha: HomeAssistant, freezer: Any)
     assert state(ha, alert("no_cycle")) == "on"
 
 
+async def test_no_cycle_counts_from_now_after_an_impossible_creation(
+        ha: HomeAssistant, freezer: Any) -> None:
+    """A hand-edited .storage: a well-formed but impossible creation date is none, and the alert is created now."""
+    await restart(ha, devices({"no_cycle": {"for": {"hours": 1}}}),
+                  (State(RUNNING, "off"), {"since": None, "since_energy": None}),
+                  (State(alert("no_cycle"), "off"), {"at": "2026-02-30T10:00:00+00:00"}))
+    await fake(ha, POWER, "1")
+    await tick(ha, freezer, 3599)
+    assert state(ha, alert("no_cycle")) == "off"
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("no_cycle")) == "on"
+
+
+async def test_an_impossible_milestone_keeps_the_state(
+        ha: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """The milestone's state well-formed but impossible (a broken sensor): no milestone, the state kept, nothing raised."""
+    await idle(ha, freezer, {"no_cycle": {"for": {"hours": 1}}})
+    await tick(ha, freezer, 3600)
+    assert state(ha, alert("no_cycle")) == "on"
+    await fake(ha, LAST_END, "2026-02-30T10:00:00+00:00")
+    await tick(ha, freezer, 1)
+    assert state(ha, alert("no_cycle")) == "on"
+    assert [r.getMessage() for r in caplog.records if r.levelname == "ERROR"] == []
+
+
 async def test_time_alerts_watch_running_and_are_alert2_alerts(ha: HomeAssistant) -> None:
     assert await setup(ha, devices({"no_cycle": {"for": {"days": 2}}}))
     found = ha.states.get(alert("no_cycle"))

@@ -65,9 +65,9 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
     It follows the reading and waits for the detector's next delay, from once
     its entry's setup is over, whatever it gave: every view listens by then
     (`subscribe`, and the phases' cycle entities on their signals), so no
-    step's cycle is lost; a setup failing after the platforms leaves the
-    entities, so the carrier runs them all the same. It
-    wraps its phases: a step writes its own state, then calls each view with
+    step's cycle is lost; a setup failing after the platforms unloads them,
+    and the removed carrier never starts; if that unload fails too, HA keeps
+    the entities and the carrier runs them. It wraps its phases: a step writes its own state, then calls each view with
     the step's changes; a step that ends the program calls the views first,
     then writes its state and sends the program's cycle.
     """

@@ -209,7 +209,8 @@ async def test_a_phases_cycle_is_sent_after_its_state_its_end_last(
     for name, signal in (("cycle", cycle.cycle_signal(device, item)),
                          ("end", cycle.end_signal(device, item))):
         async_dispatcher_connect(
-            purifier, signal, lambda _cycle, name=name: seen.append((name, state(purifier, GELAR))))
+            purifier, signal,
+            callback(lambda _cycle, name=name: seen.append((name, state(purifier, GELAR)))))
     changes = capture(purifier, "state_changed")
     await watts(purifier, IDLE_W)
     await tick(purifier, freezer, 35)
@@ -224,7 +225,8 @@ async def test_the_programs_cycle_is_sent_on_the_carriers_signals(
     cycle = module("features.cycle")
     device = module("core.feature").Device(key=KEY, name="Demo filter", namespace="appliance")
     cycles: list[Any] = []
-    async_dispatcher_connect(purifier, cycle.cycle_signal(device), cycles.append)
+    async_dispatcher_connect(purifier, cycle.cycle_signal(device),
+                             callback(lambda each: cycles.append(each)))
     await cool(purifier, freezer)
     left = dt_util.utcnow()
     await watts(purifier, IDLE_W)
@@ -422,8 +424,8 @@ async def test_the_program_ends_after_its_phases(detecting: HomeAssistant, freez
     seen: list[tuple[str, ...]] = []
     async_dispatcher_connect(
         detecting, module("features.cycle").end_signal(device),
-        lambda _cycle: seen.append(tuple(state(detecting, each)
-                                         for each in (RUNNING, GELAR, CURRENT, LAST))))
+        callback(lambda _cycle: seen.append(tuple(state(detecting, each)
+                                                  for each in (RUNNING, GELAR, CURRENT, LAST)))))
     changes = capture(detecting, "state_changed")
     await watts(detecting, IDLE_W)
     await tick(detecting, freezer, 35)
@@ -535,7 +537,7 @@ async def test_an_entry_failing_after_its_platforms_kept_still_runs_the_carrier(
     assert await setup(detecting, DEVICES)
     [entry] = detecting.config_entries.async_entries("pururu")
     assert entry.state is ConfigEntryState.SETUP_ERROR
-    assert "Unloading the platforms of a failed setup failed" in caplog.text
+    assert "Unloading the platforms of a failed setup left some" in caplog.text
     assert state(detecting, RUNNING) == "off"
     await cool(detecting, freezer)
 
