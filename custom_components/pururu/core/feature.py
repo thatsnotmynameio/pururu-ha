@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import voluptuous as vol
 
@@ -15,6 +15,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..const import DOMAIN, ENTITY_PREFIX
 from .roles import Happenings, Presets, Role
+from .texts import Texts
 from .vocabulary import Condition
 
 # entity.py imports Device from here
@@ -203,3 +204,39 @@ class Feature:
     def role[R: Role](self, kind: type[R]) -> R | None:
         """Its role of that type, if it has one."""
         return next((each for each in self.roles if isinstance(each, kind)), None)
+
+
+# hass, the device in the builder's namespace, the builder, its validated block
+# (the aspect's value in it, or in each item), the common texts
+type AspectBuild = Callable[
+    [HomeAssistant, Device, Feature, Any, Texts], list[PururuEntity]
+]
+
+
+@dataclass(frozen=True, kw_only=True)
+class Aspect:
+    """A concern written once, mounted in the block (or each item) of every builder offering it."""
+
+    # The block key it mounts: "statistics"
+    key: str
+    # Whether this builder offers it: it has the role the aspect needs
+    offered: Callable[[Feature], bool]
+    # Validates the aspect's value, for this builder and its key in the device
+    # (a ready-made alert's messages, a notification's, need it)
+    schema: Callable[[Feature, str], Callable[[Any], Any]]
+    # The local entity keys it adds: suffixes for an Items builder
+    keys: Callable[[Feature], Mapping[str, Platform]]
+    # The translation key one of its local keys is named under, for this
+    # builder: statistics' own at the block level, or under the builder's
+    # namespace, as a later aspect's may be (B3's ready-made alerts)
+    named: Callable[[Feature, str], str]
+    # A valid value, for the contract test
+    example: Callable[[Feature], Any]
+    # Where its key sits for this builder: in the block, or in each item
+    placed: Callable[[Feature], Literal["block", "item"]]
+    # Its entities, from the builder's validated block
+    build: AspectBuild
+    # Refuses (vol.Invalid) what it can't be once validated, given the builder,
+    # its key in the device, and each container (the block, or an item) with
+    # its value put back
+    check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None

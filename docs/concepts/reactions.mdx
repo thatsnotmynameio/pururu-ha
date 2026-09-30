@@ -157,7 +157,7 @@ With `then` and `message`, the program starts first, then the message is told.
 ---
 
 <Property name="statistics.triggered" type="list of periods" optional>
-  For each period, a sensor with the reaction's triggers in the current period: `today`, `week`, `month`, `year`, each once. See [Statistics](#statistics).
+  For each period, a sensor with the reaction's triggers in the current period. It sits inside the reaction, next to `then`. See [Statistics](/concepts/statistics) for the periods and how they reset, and [below](#statistics) for this reaction's own sensor.
 </Property>
 
 ## Starting a program
@@ -253,7 +253,7 @@ The automation follows Home Assistant's own triggers, so it behaves exactly like
 
 ## Statistics
 
-Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reaction_<reaction>_triggered_total`, named **Luzes da lavanderia Lavadora terminou triggers**. It survives restarts and is `total_increasing`. With `statistics.triggered`, one sensor per period: `…_triggered_month`.
+Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reaction_<reaction>_triggered_total`, named **Luzes da lavanderia Lavadora terminou triggers**. It survives restarts and is `total_increasing`. With `statistics.triggered`, one [statistics](/concepts/statistics) sensor per period: `…_triggered_month`.
 
 - **Every trigger counts**, including one whose program was already running and so didn't start.
 - **A try skipped** because the reaction already ran isn't a trigger: its condition failed. A try that runs counts.

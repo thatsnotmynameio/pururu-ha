@@ -663,6 +663,20 @@ async def test_meters_are_asked_for(scripts: HomeAssistant) -> None:
     assert scripts.states.get(STAT + "runtime_week") is None
 
 
+def test_a_whole_number_key_keeps_its_statistics(ha: HomeAssistant) -> None:
+    """YAML reads a program keyed 1 (a reaction keyed 2) as an int; cv.slug makes it "1": its statistics follow."""
+    statistics = {"cycles": ["today"]}
+    house = {"devices": {KEY: {
+        "name": "Piscina",
+        "programs": {1: {"name": "Limpar", "sequence": [{"delay": 1}], "statistics": statistics}},
+        "reactions": {2: {"name": "Noite", "at": "22:00", "statistics": {"triggered": ["week"]}}},
+        "switches": {"pump": {"entity": REAL_PUMP, "name": "Bomba"}},
+    }}}
+    device = module("setup.schema").CONFIG_SCHEMA({DOMAIN: house})[DOMAIN]["devices"][KEY]
+    assert device["programs"]["1"]["statistics"] == {"runtime": [], "cycles": ["today"]}
+    assert device["reactions"]["2"]["statistics"] == {"triggered": ["week"]}
+
+
 @pytest.mark.parametrize("statistics", [
     {"runtime": ["today", "today"]}, {"runs": ["today"]}, {"cycles": ["daily"]}])
 async def test_invalid_statistics_are_refused(ha: HomeAssistant, statistics: dict[str, Any]) -> None:

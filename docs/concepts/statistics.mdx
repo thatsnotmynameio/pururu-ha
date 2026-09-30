@@ -1,0 +1,64 @@
+---
+title: Statistics
+description: How much a total grew in the current period. A meter per period, reset by Home Assistant's own utility meter.
+---
+
+Several counters keep a running total, all time: an appliance's cycles, a door's openings, a program's runs. `statistics:` asks for the same total **per period**: how much it grew today, this week, this month, this year. Each is a sensor of its own, built on Home Assistant's `utility_meter`, and it resets itself when the period turns over.
+
+```yaml
+pururu:
+  devices:
+    laundry_washer:
+      name: Máquina de lavar
+      appliance:
+        power: sensor.washer_plug_power
+        running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+        statistics:
+          runtime: [today, week, month, year]
+          cycles: [today, week, month, year]
+```
+
+## Periods
+
+<Property name="today, week, month, year" type="list of periods">
+  Each listed at most once. They reset in Home Assistant's time zone: `today` at midnight, `week` on Monday, `month` on the 1st and `year` on 1 January.
+</Property>
+
+An empty list, or leaving the counter out, asks for none: the total, when the builder has it, still exists, just not a per-period meter for it.
+
+## Where it sits
+
+`statistics:` is a key of the block that has the counter, one map of **counter → periods**:
+
+- A feature's own block: [`appliance`](/features/appliance#settings), [`door`](/features/door#settings), [`window`](/features/window).
+- A [`modes`](/features/modes#settings) block, once: the same periods apply to **every mode**, each with its own meters.
+- Each [program](/concepts/programs#settings), inside it, next to its `sequence`.
+- Each [reaction](/concepts/reactions#settings), inside it, next to its `then`.
+
+Only a counter the builder actually has takes settings; anything else is an unknown key, a configuration error.
+
+## The counters
+
+| Builder | Counter | Needs | Per |
+|---|---|---|---|
+| [`appliance`](/features/appliance#settings) | `runtime`, `cycles` | | the device |
+| [`appliance`](/features/appliance#settings) | `idle_energy` | `energy` | the device |
+| [`door`](/features/door#settings), [`window`](/features/window) | `openings`, `open_time` | | the device |
+| [`modes`](/features/modes#settings) | `runtime`, `cycles` | | mode |
+| [`modes`](/features/modes#settings) | `energy` | `energy` | mode |
+| [`programs`](/concepts/programs#statistics) | `runtime`, `cycles` | | program |
+| [`reactions`](/concepts/reactions#statistics) | `triggered` | | reaction |
+
+A counter under **Needs** takes no periods without that other setting: `appliance`'s `idle_energy` needs `energy`, so does `modes`' `energy`. Asking for it without the setting is a configuration error, `statistics.idle_energy needs energy`; asking for none (`idle_energy: []`) is fine either way.
+
+## Entities
+
+Each meter is `sensor.pururu_<key>_<namespace>_<counter>_<period>`, for a block's own counter, or `sensor.pururu_<key>_<namespace>_<item>_<counter>_<period>` for a mode's, a program's or a reaction's, `<item>` its slug (a mode) or its key (a program, a reaction).
+
+It's named after the device, the counter and the period: **Máquina de lavar Runtime today**. Per item, the item's own name goes between the device's name and the counter's, as in [`modes`](/features/modes#entities), [`programs`](/concepts/programs#statistics) and [`reactions`](/concepts/reactions#statistics): **Piscina Limpar runtime this month**.
+
+Every meter's unique ID is its entity ID without the platform, and it survives restarts and reloads: it's Home Assistant's `utility_meter`, seeded from the total's current value the first time it's added, so it doesn't sit at `unknown` until the total next changes.
+
+## Removing it
+
+Dropping a period, a counter, or `statistics:` itself from the YAML removes that meter, as any entity a setting stops creating. The total it metered keeps counting; only the per-period sensor goes.

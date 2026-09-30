@@ -50,7 +50,7 @@ Until it's there, **Settings → Repairs** says so. pururu rewrites the file on 
 ---
 
 <Property name="statistics.runtime, statistics.cycles" type="list of periods" optional>
-  For each period, a sensor with the hours the program ran, or the runs it finished, in the current period: `today`, `week`, `month`, `year`, each once. See [Statistics](#statistics).
+  For each period, a sensor with the hours the program ran, or the runs it finished, in the current period. It sits inside the program, next to `sequence`. See [Statistics](/concepts/statistics) for the periods and how they reset, and [below](#statistics) for this program's own sensors.
 </Property>
 
 ## Steps
@@ -103,7 +103,7 @@ Each run of a program is a **cycle**, as an [appliance](/features/appliance)'s: 
 | `sensor.pururu_<key>_program_<program>_last_cycle_duration` | min | How long it ran |
 | `sensor.pururu_<key>_program_<program>_cycles_total` | cycles | Runs finished, all time |
 | `sensor.pururu_<key>_program_<program>_runtime_total` | h | Hours running, all time |
-| `sensor.pururu_<key>_program_<program>_runtime_<period>`, `…_cycles_<period>` | h, cycles | This period's, one per `statistics` entry |
+| `sensor.pururu_<key>_program_<program>_runtime_<period>`, `…_cycles_<period>` | h, cycles | This period's [statistics](/concepts/statistics), one per `statistics` entry |
 
 They're named after the program: **Piscina Limpar cycles**.
 

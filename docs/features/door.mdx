@@ -37,7 +37,7 @@ This creates `binary_sensor.pururu_porta_clausura_frente_door_open`, shown as **
 ---
 
 <Property name="statistics.openings" type="list of periods" optional>
-  For each period, a sensor with the openings in the current period. The periods are `today`, `week`, `month` and `year`, each listed at most once.
+  For each period, a sensor with the openings in the current period. See [Statistics](/concepts/statistics) for the periods and how they reset.
 </Property>
 
 ---
@@ -103,7 +103,7 @@ With `events`, only what they give:
 | `sensor.pururu_<key>_door_last_denied` | a `denied` type | When the last denied attempt was, with attributes `who`, `how` and `direction` (those mapped) |
 | `sensor.pururu_<key>_door_last_ring` | a `ring` type | When the door last rang |
 
-- Every entity keeps its value across restarts. The totals are `total_increasing`, and the per-period sensors reset as [`appliance`'s](/features/appliance#per-period) do.
+- Every entity keeps its value across restarts. The totals are `total_increasing`, and the per-period sensors are [statistics](/concepts/statistics).
 - `last_denied` and `last_ring` only move forward: an older event, replayed after a restart, doesn't replace them.
 
 ## Provides

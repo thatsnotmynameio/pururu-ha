@@ -31,10 +31,9 @@ from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature, Item, qualified
 from ..core.generated import Kind, Planned
 from ..core.resolve import Index, Ref, Target, find
-from ..core.roles import Generates, Items
+from ..core.roles import Counters, Generates, Items
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
-from ..features.cycle.statistics import PERIOD_LIST, PERIODS, Meter
 from ..features.cycle.totals import CyclesTotal, RuntimeTotal
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,15 +73,11 @@ def _step(value: Any) -> dict[str, Any]:
 
 # What a run records: the last cycle's values (a script uses no energy), and totals
 LAST_RUN = tuple(d for d in LAST_CYCLE if d.key != "last_cycle_energy")
-COUNTERS = ("runtime", "cycles")
+# The statistics aspect meters them, `statistics:` in each program
+COUNTERS = Counters({"runtime": None, "cycles": None}, mount="item")
 PER_PROGRAM: dict[str, Platform] = {
     **{description.key: Platform.SENSOR for description in LAST_RUN},
-    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS},
-    **{
-        f"{counter}_{period}": Platform.SENSOR
-        for counter in COUNTERS
-        for period in PERIODS
-    },
+    **{f"{counter}_total": Platform.SENSOR for counter in COUNTERS.needs},
 }
 
 PROGRAM = vol.Schema(
@@ -90,9 +85,6 @@ PROGRAM = vol.Schema(
         # A blank name would show the program as its device's name alone
         vol.Required(CONF_NAME): vol.All(cv.string, vol.Strip, vol.Length(min=1)),
         vol.Required("sequence"): vol.All([_step], vol.Length(min=1)),
-        vol.Optional("statistics", default={}): vol.Schema(
-            {vol.Optional(counter, default=[]): PERIOD_LIST for counter in COUNTERS}
-        ),
     }
 )
 # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
@@ -195,7 +187,7 @@ def build(
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """Each program's runs as cycles: its last run, totals, the meters asked for.
+    """Each program's runs as cycles: its last run and totals.
 
     `inputs` are the entity IDs of the scripts the entry generates, by ID: a
     program whose script ID someone else holds counts nothing.
@@ -212,13 +204,6 @@ def build(
         entities.append(
             RuntimeTotal(device, script, STATE_ON, source=counted, item=item)
         )
-        for counter in COUNTERS:
-            total = f"{counter}_total"
-            source = device.current_entity_id(hass, Platform.SENSOR, item.key(total))
-            entities.extend(
-                Meter(device, f"{counter}_{period}", total, source, period, item=item)
-                for period in config[item.slug]["statistics"][counter]
-            )
     return entities
 
 
@@ -231,6 +216,7 @@ STATISTICS = Feature(
     namespace=NAMESPACE,
     roles=(
         Items(PER_PROGRAM, _items),
+        COUNTERS,
         Generates(
             "program",
             lambda key, config: ((KIND.domain, script_id(key, p)) for p in config),

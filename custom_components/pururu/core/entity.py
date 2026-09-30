@@ -60,6 +60,7 @@ class PururuEntity(Entity):
         name: str | None = None,
         *,
         item: Item | None = None,
+        translation: str | None = None,
     ) -> None:
         """Take `device`'s entity ID, unique ID and device for `entity_key`, and a name.
 
@@ -68,7 +69,9 @@ class PururuEntity(Entity):
         "light"), else the translation of the key in its namespace. With `item`,
         `entity_key` is a suffix (roles.Items): the entity key is the
         item's, and its name the suffix's translation, the item's name as the
-        placeholder named after the namespace ({mode}).
+        placeholder named after the namespace ({mode}). With `translation` (an
+        aspect's key, named once for every builder), the name is that
+        translation key's, the item's name as the placeholder {item}.
         """
         key = item_key(entity_key, item)
         self.key = device.qualified(key)
@@ -76,7 +79,11 @@ class PururuEntity(Entity):
         self.entity_id = device.entity_id(platform, key)
         self._attr_unique_id = device.object_id(key)
         self._attr_device_info = device.info
-        if name is None:
+        if translation is not None:
+            self._attr_translation_key = translation
+            if item is not None:
+                self._attr_translation_placeholders = {"item": item.name}
+        elif name is None:
             self._attr_translation_key = device.qualified(entity_key)
             if item is not None:
                 self._attr_translation_placeholders = {device.namespace: item.name}

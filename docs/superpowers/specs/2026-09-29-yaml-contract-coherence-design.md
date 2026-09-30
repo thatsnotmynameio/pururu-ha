@@ -426,15 +426,20 @@ class Aspect:                                   # 3 instances; deletes the 5 cop
     offered: Callable[[Feature], bool]          # f.role(Counters) is not None, …
     schema: Callable[[Feature, str], Callable[[Any], Any]]   # (builder, its key in the device, for messages)
     keys: Callable[[Feature], Mapping[str, Platform]]        # local entity keys it can add to the builder
+    named: Callable[[Feature, str], str]        # a local key's translation key: statistics' own, or under
+                                                 # the builder's namespace, as a later aspect's may be
     example: Callable[[Feature], Any]           # a valid value, for the contract test
-    build: AspectBuild | None = None
+    placed: Callable[[Feature], Literal["block", "item"]]    # where its key sits: the block, or each item
+    build: AspectBuild
+    check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None  # (builder, its key, container)
     generates: Callable[[str, Feature, Any], Iterable[tuple[str, str]]] | None = None
 
 type AspectBuild = Callable[
     [HomeAssistant, Device, Feature, Any, Mapping[str, str], Mapping[str, str]], list[PururuEntity]
-]   # hass, the device in the builder's namespace, the builder, the aspect's validated value,
-    # inputs (reference text -> current entity ID), texts (the translations' common texts:
-    # ready-made alerts' default message and done_message)
+]   # hass, the device in the builder's namespace, the builder, its whole validated
+    # block (the aspect's value in it, or in each item), inputs (reference text ->
+    # current entity ID), texts (the translations' common texts: ready-made
+    # alerts' default message and done_message)
 
 # resolve.py: deletes reference resolution spread over __init__.py (_references_resolved,
 # _reaction_resolved, _alert_light_group_resolved, _referable, _watched, _acted_on; _entity_keys becomes catalogue.keys())
@@ -636,10 +641,12 @@ pool:
 
 Small choices that don't change the model:
 
-1. **Overlapping phases.** Today phases pick the first listed band that holds; modes refuse overlapping bands and keep the running one until its `off_delay`. One rule for all phases.
-2. **Entity IDs and names of phases** (today `mode_<key>_*`, `mode_current`, `mode_last`, `phase_current`), and the current phase's state when none holds (today `defaults.stopped`/`running` for phases, `idle` for modes). The appliance's own entities (`appliance_running`, its totals and meters) keep their IDs.
+1. **Overlapping phases** — decided (the owner, 2026-09-29): bands may overlap. Two bands that hold at once are two cycles running at the same time; the configuration doesn't refuse it and no band wins. Today phases pick the first listed band that holds and modes refuse overlapping bands; both go.
+2. **Entity IDs and names of phases** (today `mode_<key>_*`, `mode_current`, `mode_last`, `phase_current`), and the current phase's state when none holds (today `defaults.stopped`/`running` for phases, `idle` for modes). The owner accepts changing these IDs in 0.2.0 when the new ones are the right shape (2026-09-29); the names themselves are chosen when D starts. The appliance's own entities (`appliance_running`, its totals and meters) keep their IDs.
 
 ### Not in 0.2.0
+
+Deferred to 0.2.1 (the owner, 2026-09-29):
 
 - `phases` on an executable program (its steps could be its phases): refused until needed.
 - A detected program from another source than a band of a reading (a smart washer's program sensor).
@@ -898,6 +905,8 @@ The manual step, in the PR's text: before updating, remove every `notifications:
 6. **Programs (D):** the appliance without `running_program` is refused; `phases` inside a phase is refused; an item of `detected` with `sequence`, or of `executable` with reading fields, is refused; a feature's program referencing another feature is refused; `then:` naming a detected program is refused; a device's program may act on its features; today's purifier and washer behaviours (the modes' one-at-a-time arbitration and delays, the phases' `seen`) hold under the new names.
 
 ## Open decisions
+
+No deadline; each stays as it is today until a need comes up (the owner, 2026-09-29):
 
 - **The `STEPS` guard** trades failing loudly for availability; the autouse fixture keeps bugs visible in tests. Keep unless it hides a real failure.
 - A reaction with several triggers (`when:` as a list).

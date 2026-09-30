@@ -1,0 +1,226 @@
+"""The statistics aspect: a total's growth per period, HA's utility meter inside the device.
+
+Every builder with Counters builds its totals (<counter>_total); `statistics:`,
+in its block or in each item (Counters.mount), asks for their meters by period.
+"""
+
+from collections.abc import Iterator, Mapping
+from datetime import timedelta
+from typing import Any, Literal, override
+
+import voluptuous as vol
+
+from homeassistant.components.utility_meter.const import (
+    DAILY,
+    DATA_TARIFF_SENSORS,
+    DATA_UTILITY,
+    MONTHLY,
+    WEEKLY,
+    YEARLY,
+)
+from homeassistant.components.utility_meter.sensor import UtilityMeterSensor
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
+
+from ..const import DOMAIN
+from ..core.entity import PururuEntity
+from ..core.feature import Aspect, Device, Feature, Item, item_key
+from ..core.roles import Counters, Items
+
+# The block key, in the block or in each item
+KEY = "statistics"
+
+# A period's name in the configuration and in entity IDs -> utility_meter's cycle
+PERIODS: dict[str, str] = {
+    "today": DAILY,
+    "week": WEEKLY,
+    "month": MONTHLY,
+    "year": YEARLY,
+}
+
+
+def _distinct(periods: list[str]) -> list[str]:
+    if len(set(periods)) != len(periods):
+        raise vol.Invalid(f"a period is repeated: {periods}")
+    return periods
+
+
+# A list of periods in a feature's statistics, each at most once
+PERIOD_LIST = vol.All(cv.ensure_list, [vol.In(PERIODS)], _distinct)
+
+
+class Meter(PururuEntity, UtilityMeterSensor):
+    """How much a total grew in the current period; utility_meter resets it."""
+
+    def __init__(
+        self,
+        device: Device,
+        entity_key: str,
+        total: str,
+        source: str,
+        period: str,
+        translation: str,
+        *,
+        item: Item | None = None,
+    ) -> None:
+        """Meter `source`, the entity of `total`, over `period` as `entity_key` (of `item`), named `translation`."""
+        self.sources = (item_key(total, item),)
+        # Where utility_meter looks itself up; ':' keeps it apart from YAML meter names
+        self._meter = f"{DOMAIN}:{device.object_id(item_key(entity_key, item))}"
+        UtilityMeterSensor.__init__(  # type: ignore[no-untyped-call]  # core leaves it unannotated
+            self,
+            cron_pattern=None,
+            delta_values=False,
+            meter_offset=timedelta(0),
+            meter_type=PERIODS[period],
+            name=entity_key,
+            net_consumption=False,
+            parent_meter=self._meter,
+            periodically_resetting=False,
+            source_entity=source,
+            tariff_entity=None,
+            tariff=None,
+            unique_id=None,
+            sensor_always_available=False,
+        )
+        del self._attr_name  # the name comes from the entity key's translation
+        self._identify(
+            device, Platform.SENSOR, entity_key, item=item, translation=translation
+        )
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Register where utility_meter looks for its meters, then meter.
+
+        Core's utility_meter only starts a fresh meter from the source's *next* state
+        change (`async_track_state_change_event`, not the value already there): a source
+        that stays put after the meter is added (our finite counters, most of the time)
+        would leave it `unknown` forever. Seed it from the source's current reading when
+        one is already there and nothing was restored.
+        """
+        self.hass.data[DATA_UTILITY][self._meter] = {DATA_TARIFF_SENSORS: [self]}
+        await super().async_added_to_hass()
+        if (
+            self.native_value is None
+            and (state := self.hass.states.get(self._sensor_source_id)) is not None
+            and self._validate_state(state) is not None
+        ):
+            self.start(state.attributes)
+
+    @override
+    async def async_will_remove_from_hass(self) -> None:
+        """Stop metering and leave utility_meter's list."""
+        await super().async_will_remove_from_hass()
+        self.hass.data[DATA_UTILITY].pop(self._meter, None)
+
+
+def _counters(builder: Feature) -> Counters:
+    """The builder's counters: it offers statistics only with them."""
+    counters = builder.role(Counters)
+    assert counters is not None  # ASPECT.offered checked it
+    return counters
+
+
+def _schema(builder: Feature, _name: str) -> vol.Schema:
+    """`statistics:`: counter -> its periods; a schema of its own, so an unknown counter is refused.
+
+    Statistics doesn't need the builder's key in the device (`_name`): it names
+    nothing to a person, unlike a ready-made alert's or notification's messages.
+    """
+    return vol.Schema(
+        {
+            vol.Optional(counter, default=[]): PERIOD_LIST
+            for counter in _counters(builder).needs
+        }
+    )
+
+
+def _keys(builder: Feature) -> dict[str, Platform]:
+    """Every meter it can add: <counter>_<period> (a suffix for an Items builder)."""
+    return {
+        f"{counter}_{period}": Platform.SENSOR
+        for counter in _counters(builder).needs
+        for period in PERIODS
+    }
+
+
+def _example(builder: Feature) -> dict[str, list[str]]:
+    """A period for each counter needing no setting: a builder's example has only what it requires."""
+    return {
+        counter: [next(iter(PERIODS))]
+        for counter, setting in _counters(builder).needs.items()
+        if setting is None
+    }
+
+
+def _named(builder: Feature, key: str) -> str:
+    """The translation key `key` (`<counter>_<period>`) is named under: once for every builder.
+
+    `key` itself at the block level, `item_<key>` (with the `{item}` placeholder) for an Items builder.
+    """
+    return key if builder.role(Items) is None else f"item_{key}"
+
+
+def _meters(
+    hass: HomeAssistant,
+    device: Device,
+    builder: Feature,
+    asked: Mapping[str, list[str]],
+    item: Item | None,
+) -> Iterator[Meter]:
+    """The meters `asked` names (counter -> periods), each metering its total's current entity ID."""
+    for counter, periods in asked.items():
+        total = f"{counter}_total"
+        source = device.current_entity_id(hass, Platform.SENSOR, item_key(total, item))
+        for period in periods:
+            key = f"{counter}_{period}"
+            yield Meter(
+                device, key, total, source, period, _named(builder, key), item=item
+            )
+
+
+def _placed(builder: Feature) -> Literal["block", "item"]:
+    """Where `statistics:` sits for this builder: its Counters say."""
+    return _counters(builder).mount
+
+
+def _build(
+    hass: HomeAssistant, device: Device, builder: Feature, block: Any, *_: Any
+) -> list[PururuEntity]:
+    """The meters asked for; per item for an Items builder, from the item's or the block's statistics.
+
+    Statistics is the only aspect today, so AspectBuild's `texts` (the common
+    texts a ready-made alert's or notification's messages need) has nothing to
+    build from here; `*_` takes it without naming it.
+    """
+    if (items := builder.role(Items)) is None:
+        return list(_meters(hass, device, builder, block[KEY], None))
+    in_items = _placed(builder) == "item"
+    return [
+        meter
+        for item in items.of(block)
+        for meter in _meters(
+            hass, device, builder, (block[item.slug] if in_items else block)[KEY], item
+        )
+    ]
+
+
+def _check(builder: Feature, _name: str, container: Mapping[str, Any]) -> None:
+    """Refuse a counter with periods whose setting (Counters.needs) isn't in its block (or item)."""
+    for counter, setting in _counters(builder).needs.items():
+        if setting is not None and container[KEY][counter] and setting not in container:
+            raise vol.Invalid(f"{KEY}.{counter} needs {setting}")
+
+
+ASPECT = Aspect(
+    key=KEY,
+    offered=lambda builder: builder.role(Counters) is not None,
+    schema=_schema,
+    keys=_keys,
+    named=_named,
+    example=_example,
+    placed=_placed,
+    build=_build,
+    check=_check,
+)

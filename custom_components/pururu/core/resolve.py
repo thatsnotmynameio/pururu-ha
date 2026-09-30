@@ -34,7 +34,8 @@ class Target:
     platform: Platform
     # The builder's key in the device: appliance, switches, programs
     builder: str
-    # "alerts" for a ready-made alert's key; None for the builder's own
+    # "alerts" for a ready-made alert's key, an aspect's key (e.g. "statistics")
+    # for one it adds; None for the builder's own
     by: str | None
     # The item that owns the key (a mode, a program, a reaction); None: none
     item: str | None

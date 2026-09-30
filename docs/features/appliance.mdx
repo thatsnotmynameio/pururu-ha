@@ -56,19 +56,19 @@ pururu:
 ---
 
 <Property name="statistics.runtime" type="list of periods" optional>
-  For each period, a sensor with the hours run in the current period. The periods are `today`, `week`, `month` and `year`, each listed at most once.
+  For each period, a sensor with the hours run in the current period. See [Statistics](/concepts/statistics) for the periods and how they reset.
 </Property>
 
 ---
 
 <Property name="statistics.cycles" type="list of periods" optional>
-  For each period, a sensor with the cycles finished in the current period. The periods are the same as for `runtime`.
+  For each period, a sensor with the cycles finished in the current period.
 </Property>
 
 ---
 
 <Property name="statistics.idle_energy" type="list of periods" optional>
-  For each period, a sensor with the kWh used while idle in the current period. The periods are the same as for `runtime`. It needs `energy`.
+  For each period, a sensor with the kWh used while idle in the current period. It needs `energy`.
 </Property>
 
 A **time period** can be written as `{minutes: 1}` (with any of `days`, `hours`, `minutes`, `seconds`), as `"00:01:30"`, or as a number of seconds (`90`). Picking the threshold and delays for your appliance is covered in [Your first device](/getting-started/first-device#picking-the-numbers).
@@ -136,8 +136,7 @@ stateDiagram-v2
 
 ### Per period
 
-- `runtime_<period>`, `cycles_<period>` and `idle_energy_<period>` measure how much their total grew in the current period. They use Home Assistant's own `utility_meter`, and they live inside the device.
-- They reset in Home Assistant's time zone: `today` at midnight, `week` on Monday, `month` on the 1st and `year` on 1 January.
+`runtime_<period>`, `cycles_<period>` and `idle_energy_<period>` measure how much their total grew in the current period. See [Statistics](/concepts/statistics) for the periods, how they reset, and the entity IDs.
 
 ## Ready-made alerts
 

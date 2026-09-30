@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from homeassistant.const import Platform
 
@@ -56,6 +56,19 @@ class Items:
 
 
 @dataclass(frozen=True)
+class Counters:
+    """Totals it builds as <counter>_total; the statistics aspect meters them per period.
+
+    `needs`: counter -> the setting of its block it needs (None: none).
+    `mount`: where `statistics:` sits, the block or each item; with Items, the
+    meters repeat per item either way.
+    """
+
+    needs: Mapping[str, str | None]
+    mount: Literal["block", "item"] = "block"
+
+
+@dataclass(frozen=True)
 class Refers:
     """Entity keys of other features its validated block names.
 
@@ -100,6 +113,7 @@ type Role = (
     | Configured
     | Actions
     | Items
+    | Counters
     | Refers
     | Presets
     | Happenings

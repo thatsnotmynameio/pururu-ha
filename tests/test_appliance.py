@@ -566,6 +566,18 @@ async def test_a_meter_follows_its_renamed_total(metered: HomeAssistant, freezer
     assert float(value(metered, "cycles_today")) == 1
 
 
+async def test_a_meter_is_not_created_without_its_total(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The statistics aspect's meter follows its builder's total: a total not created takes it along."""
+    er.async_get(ha).async_get_or_create(
+        "sensor", "template", "someone_else", suggested_object_id="pururu_demo_washer_appliance_cycles_total")
+    assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS}})
+    assert ha.states.get(sensor("cycles_today")) is None
+    assert ha.states.get(sensor("runtime_today")) is not None
+    assert (f"{sensor('cycles_today')} follows {sensor('cycles_total')}, which is not created; "
+            "not creating it") in caplog.text
+
+
 async def test_two_devices_have_their_own_meters(ha: HomeAssistant, freezer: Any) -> None:
     other = {**STATISTICS, "power": "sensor.demo_other_power", "energy": "sensor.demo_other_energy"}
     assert await setup(ha, {KEY: {"name": "Demo washer", "appliance": STATISTICS},

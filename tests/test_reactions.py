@@ -833,6 +833,14 @@ async def test_a_reaction_on_its_own_counter_is_refused(
     assert "reactions: it: reaction_it_triggered_total is its own statistic" in caplog.text
 
 
+async def test_a_reaction_on_its_own_meter_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """A meter the statistics aspect adds is the reaction's own too."""
+    it = {"name": "Eu", "when": "reaction_it_triggered_today", "above": 3}
+    assert not await setup(ha, devices(it=it))
+    assert "reactions: it: reaction_it_triggered_today is its own statistic" in caplog.text
+
+
 async def test_a_reaction_on_a_programs_statistic(ha: HomeAssistant) -> None:
     done = {"name": "Limpou", "when": "program_clean_last_cycle_end", "to": "unknown"}
     assert await setup(ha, pool(done=done))

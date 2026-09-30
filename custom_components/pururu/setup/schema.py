@@ -17,17 +17,14 @@ from ..const import (
     CONF_DEVICES,
     CONF_FLOORS,
     CONF_LIGHTS,
-    CONF_NOTIFICATIONS,
     CONF_NOTIFY,
-    CONF_PROGRAMS,
-    CONF_REACTIONS,
     DOMAIN,
 )
 from ..core import messages
-from ..core.feature import Feature, happenings_of
+from ..core.feature import Feature
 from ..core.resolve import Index
-from ..device_keys import notifications, programs, reactions
-from ..features import FEATURES, presets
+from ..device_keys import programs, reactions
+from ..features import FEATURES
 from ..outputs import alert_lights, events, places
 from . import catalogue, checks
 
@@ -36,16 +33,15 @@ def _device(value: Any) -> dict[str, Any]:
     """A device: a name, maybe an area, at least one feature.
 
     Every <capability>_from names a feature of this device that provides it.
-    What its blocks refer to is checked over the whole house (CHECKS).
+    Each builder's block goes through catalogue.mount, with the aspects it
+    offers. What its blocks refer to is checked over the whole house (CHECKS).
     """
     schema: dict[Any, Any] = {
         vol.Required(CONF_NAME): cv.string,
         vol.Optional(CONF_AREA): cv.slug,
-        vol.Optional(CONF_REACTIONS): reactions.SCHEMA,
-        vol.Optional(CONF_PROGRAMS): programs.SCHEMA,
         **{
-            vol.Optional(name): partial(_feature_block, feature, name)
-            for name, feature in FEATURES.items()
+            vol.Optional(name): partial(catalogue.mount, builder, name)
+            for name, builder in catalogue.builders().items()
         },
     }
     device: dict[str, Any] = vol.Schema(schema)(value)
@@ -56,25 +52,6 @@ def _device(value: Any) -> dict[str, Any]:
         )
     checks.capabilities_provided(device, names)
     return device
-
-
-def _feature_block(feature: Feature, key: str, value: Any) -> Any:
-    """A feature's block, `key` in the device: its ready-made notifications (notifications.py), the rest as presets.validate says.
-
-    Only a feature offering them has them: a configured feature (alerts,
-    switches) may have an item keyed `notifications`.
-    """
-    if (
-        not (happenings := happenings_of(feature))
-        or not isinstance(value, dict)
-        or CONF_NOTIFICATIONS not in value
-    ):
-        return presets.validate(feature, value, key)
-    rest = {each: block for each, block in value.items() if each != CONF_NOTIFICATIONS}
-    enabled = vol.Schema({CONF_NOTIFICATIONS: notifications.schema(key, happenings)})(
-        {CONF_NOTIFICATIONS: value[CONF_NOTIFICATIONS]}
-    )
-    return {**presets.validate(feature, rest, key), **enabled}
 
 
 # The rules over the whole house, each in its owner's module: each gets the
