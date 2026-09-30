@@ -649,6 +649,7 @@ Small choices that don't change the model:
    - no phase starts while the program's reading is out, where today's modes record a zero-length cycle; only a phase band reaching below the program's can hold then, and none of today's configurations has one;
    - a reading at the very instant a delay passes comes before it: a band held for exactly its `on_delay` isn't held (no zero-length cycle), and a reading back in its band as its `off_delay` passes keeps the cycle.
 6. **Three PRs, D1–D3** — decided (2026-09-30): the detector alone first, then `running_program` replacing `modes`/`phases`, then `programs: {detected, executable}` (see PRs).
+7. **D3's IDs** — decided (the owner, 2026-09-30): executable programs get new IDs, `…_program_executable_<key>…` (their YAML moves under `programs: executable:`; the manual step covers the renamed script and entities); a detected program in the appliance's block gets the short `appliance_<key>…` (its phases `appliance_<key>_phase_<p>…`), and the schema refuses a key whose IDs would collide with the appliance's own or its running program's.
 
 ### Not in 0.2.0
 
