@@ -67,16 +67,18 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 |---|---|
 | `test_lifecycle.py` | The steps' order, a failing step logged with the entry loaded, the one rename rule |
 | `test_resolve.py` | The index of what a device can create and `find`: a feature's key, a ready-made alert's (`by`), an item's, another device's, a rename, what isn't there |
-| `test_catalogue.py` | `mount` and `keys` at places: `walk`, each place mounted, a phase keyed `statistics`, a place that isn't a map, a refusal's path, the keys at each place |
+| `test_catalogue.py` | `mount` and `keys` at places: `walk`, each place mounted, a phase keyed `statistics`, a place that isn't a map, a refusal's path, the keys at each place, an aspect inside another (taken first, put back last, its refusal's path, its check's container), a place's derived keys (a key derived twice listed twice) |
 | `test_checks.py` | Each rule of `schema.CHECKS` refuses with today's words and says where (its path) |
 | `test_vocabulary.py` | `trigger`'s state and numeric_state form case by case, `period`'s `HH:MM:SS` |
 | `test_init.py` | Set-up, the import flow, reload, taken IDs, renames, stale removal, placing devices, configured entity keys |
 | `test_ids.py` | Every entity and generated ID of a whole house (`fixtures/house.yaml`), pinned: a refactor can't lose or rename one |
-| `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every builder in `FEATURES` and `DEVICE_KEYS`, including that every last cycle follows a `CycleSource`, and derived keys in the index; that the detector's own keys (`features.cycle.program.NAMED`) are counted among the created entity keys and each is named, in both languages, with an icon |
-| `test_statistics.py` | Today's meters, pinned: every entity ID a `Counters` builder can create — the appliance's four places among them — a few names and icons in both languages, and the schema's refusal texts, so consolidating them into one aspect can't change any unnoticed |
+| `test_features.py` | The [contract](/develop/writing-a-feature#6-what-the-contract-test-checks) over every builder in `FEATURES` and `DEVICE_KEYS`, including that every last cycle follows a `CycleSource`, and derived keys in the index; that the detector's own keys (`features.cycle.program.NAMED`) are counted among the created entity keys and each is named, in both languages, with an icon, and a detected program's (`DETECTED_NAMED`) with `{item}` |
+| `test_statistics.py` | Today's meters, pinned: every entity ID a `Counters` builder can create — the appliance's block, its running program, each phase and `other` among them (a detected program's places are `test_detected_programs.py`'s) — a few names and icons in both languages, and the schema's refusal texts, so consolidating them into one aspect can't change any unnoticed |
 | `test_cycle.py` | `CycleSource`'s order: the state is written, then the cycle signal, then the end signal; that a cycle entity takes an optional `translation` |
 | `test_program.py` | `features/cycle/program`'s pure `Detector`: the schema's refusals, 0.1's `modes` and `phases` scenarios replayed with the same readings, overlapping bands, the idle gap, `other`, ordering at one instant, restores, and the purifier day's replay (`fixtures/purifier_day.csv`) |
+| `test_detected_programs.py` | A feature's detected programs (`programs: detected:`, the programs aspect): IDs, counting apart from the running program, restarts, names in both languages, statistics, where programs sit (`executable:` at the device, `detected:` in the feature), collisions computed from `catalogue.keys`, phases |
 | `test_program_entities.py` | The detector's entities (`build`), through the appliance's `running_program`: IDs, states, the current phase's `name`, the handover, late timers, restarts, reloads, names, what refers to a phase, the phases' meters |
+| `test_programs.py` | Executable programs (`programs: executable:`, `script.pururu_<device>_program_executable_<key>`): the block and its refusals, the scripts file, running, stopping, held and dropped targets, reloads, renames, taken IDs, runs as cycles and their statistics |
 | `test_appliance.py` | `running_program`, cycles, energy, runtime, meters, restores |
 | `test_switches.py` | Following the real switch, passing commands on, refused blocks, taken IDs, renames, reloads |
 | `test_lights.py` | Following the real light or switch, what it offers, passing commands on, refused blocks, one feature per real entity, taken IDs, renames, reloads |
@@ -113,10 +115,11 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `const.py` | nothing of pururu |
 | `sensor.py`, `binary_sensor.py`, `switch.py`, `light.py` | `core.runtime` |
 
-Three named allowances, for one module each, not their whole folder (`ALSO` in `tests/test_code.py`):
+Four named allowances, for one module each, not their whole folder (`ALSO` in `tests/test_code.py`):
 
 - `features/__init__` → every `features.` package: it lists `FEATURES`.
-- `device_keys/__init__` → `aspects.alerts`: the hand-written alerts' device key.
+- `device_keys/__init__` → `aspects.alerts` and `aspects.programs`: the hand-written alerts' and the executable programs' device keys.
+- `device_keys/reactions` → `aspects.programs`: a reaction's `then` names an executable program (`programs.executable`) and starts its script (`programs.script_id`).
 - `__init__` → `core.runtime`, directly, not through `setup.`: Home Assistant's entry points and the platforms take the typed entry, and hassfest's strict-typing check wants it named `*ConfigEntry` — `PururuConfigEntry`, in `core/runtime.py`.
 
 Only `aspects/statistics.py` imports Home Assistant's `utility_meter` (`test_only_the_statistics_aspect_imports_utility_meter`): the meters are written once.
