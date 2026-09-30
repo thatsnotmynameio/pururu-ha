@@ -58,7 +58,12 @@ from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Counted, Counters, Generates, Items, Programs
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
-from ..features.cycle.program import DETECTED_SCHEMA, build_detected, detected_keys
+from ..features.cycle.program import (
+    DETECTED_SCHEMA,
+    build_detected,
+    detected_keys,
+    unreserved,
+)
 from ..features.cycle.totals import CyclesTotal, RuntimeTotal
 
 _LOGGER = logging.getLogger(__name__)
@@ -437,8 +442,9 @@ DETECTED_BLOCK = vol.All(
     _detected_only,
     vol.Schema(
         {
+            # A key a phase could take is refused now (unreserved)
             vol.Required(CONF_DETECTED): vol.All(
-                vol.Schema({cv.slug: DETECTED_SCHEMA}), vol.Length(min=1)
+                vol.Schema({cv.slug: DETECTED_SCHEMA}), vol.Length(min=1), unreserved
             )
         }
     ),

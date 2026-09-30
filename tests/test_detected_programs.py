@@ -6,6 +6,7 @@ washer whose cotton wash draws over 1500 W. Its entity IDs are
 …_<key>_phase_<phase>[_<suffix>] and …_<key>_phase_current/_last.
 """
 
+import re
 from typing import Any
 
 from homeassistant.const import Platform
@@ -266,15 +267,35 @@ def test_the_reserved_keys(ha: HomeAssistant) -> None:
     assert "cotton" not in keys
 
 
+# The refusal of a detected program keyed as the running program's phases' keys start, or cotton's
+RUNNING_ONLY = "is reserved for the running program's phases (phase, phase_…): name the program otherwise"
+COTTONS = "is reserved for detected program cotton's phases (cotton_phase, cotton_phase_…): name the program otherwise"
+
+
+def refusal(key: str) -> tuple[str, list[Any]]:
+    """What refuses a detected program keyed `key` beside cotton, and where.
+
+    A phase's form (phase[_…], cotton_phase[_…]) at the program, by its
+    block's schema; any other key at the device, as two entities
+    (checks.keys_distinct).
+    """
+    for form, message in (("phase", RUNNING_ONLY), ("cotton_phase", COTTONS)):
+        if key == form or key.startswith(f"{form}_"):
+            return f"^{re.escape(f'{key} {message}')}", [
+                DOMAIN, "devices", KEY, "appliance", "programs", "detected", key]
+    return "would be two entities", [DOMAIN, "devices", KEY]
+
+
 async def test_a_detected_program_may_not_take_a_key_of_the_appliance(ha: HomeAssistant) -> None:
-    """Each reserved key, as a detected program's, is refused at the configuration (checks.keys_distinct); cotton passes."""
+    """Each reserved key, as a detected program's, is refused at the configuration; cotton passes."""
     schema = module("setup.schema").CONFIG_SCHEMA
     for key in sorted(reserved(FULL)):
         detected = {key: {"name": "X", "above": 1500}}
         house = {"devices": {KEY: {"name": "Tanquinho", "appliance": {**FULL, "programs": {"detected": detected}}}}}
-        with pytest.raises(vol.Invalid, match="would be two entities") as refused:
+        match, path = refusal(key)
+        with pytest.raises(vol.Invalid, match=match) as refused:
             schema({DOMAIN: house})
-        assert [DOMAIN, "devices", KEY] in paths(refused.value), key
+        assert path in paths(refused.value), key
     house = {"devices": {KEY: {"name": "Tanquinho", "appliance": {**FULL, "programs": {"detected": DETECTED}}}}}
     schema({DOMAIN: house})
 
@@ -304,8 +325,10 @@ async def test_detected_programs_may_not_take_each_others_keys(ha: HomeAssistant
     for key in sorted((derived | meters) - {"cotton"}):
         detected = {"cotton": cotton, key: {"name": "X", "above": 1500}}
         house = {"devices": {KEY: {"name": "Tanquinho", "appliance": appliance(programs={"detected": detected})}}}
-        with pytest.raises(vol.Invalid, match="would be two entities"):
+        match, path = refusal(key)
+        with pytest.raises(vol.Invalid, match=match) as refused:
             schema({DOMAIN: house})
+        assert path in paths(refused.value), key
 
 
 def test_its_keys_are_in_the_index(ha: HomeAssistant) -> None:
@@ -317,6 +340,80 @@ def test_its_keys_are_in_the_index(ha: HomeAssistant) -> None:
     assert rows["cotton"] == (Platform.BINARY_SENSOR, "programs")
     assert rows["cotton_cycles_total"] == (Platform.SENSOR, "programs")
     assert rows["cotton_cycles_today"] == (Platform.SENSOR, "statistics")
+
+
+# --- keys a later setting would create ----------------------------------------------
+
+
+# A plain detected program, and one heating over 1800 W without other:
+PLAIN: dict[str, Any] = {"name": "X", "above": 1500}
+PHASED_ONLY: dict[str, Any] = {**PLAIN, "phases": {"warming": WARMING}}
+PHASES = {"phases": {"warming": {"name": "Aquecendo", "above": 1000}}}
+
+
+def house(running: dict[str, Any], detected: dict[str, Any]) -> dict[str, Any]:
+    """The washer's configuration: its running program's settings over RUNNING_PROGRAM, and its detected programs."""
+    block = {"power": POWER, "running_program": {**RUNNING_PROGRAM, **running}, "programs": {"detected": detected}}
+    return {DOMAIN: {"devices": {KEY: {"name": "Tanquinho", "appliance": block}}}}
+
+
+@pytest.mark.parametrize(("key", "now", "later", "message"), [
+    # The running program's: its fixed keys, a phase's, other's and other's meters, once it has phases
+    pytest.param("phase_current", ({}, {}), (PHASES, {}), RUNNING_ONLY, id="the running program's current phase"),
+    pytest.param("phase_warming", ({}, {}), (PHASES, {}), RUNNING_ONLY, id="the running program's phase"),
+    pytest.param("phase", ({}, {}), ({"phases": {"cycles_total": WARMING}}, {}), RUNNING_ONLY,
+                 id="phase, beside a phase's cycles_total"),
+    pytest.param("phase_idle", ({}, {}), ({"phases": {"idle_cycles_total": WARMING}}, {}), RUNNING_ONLY,
+                 id="phase_idle, though idle is no phase"),
+    pytest.param("phase_other", ({}, {}), (PHASES, {}), RUNNING_ONLY, id="the running program's other"),
+    pytest.param("phase_other_runtime_today", (PHASES, {}), ({**PHASES, "other": {}}, {}), RUNNING_ONLY,
+                 id="other's meter, once other is set"),
+    # Another detected program's, once it has phases
+    pytest.param("cotton_phase_current", ({}, {"cotton": PLAIN}), ({}, {"cotton": PHASED_ONLY}), COTTONS,
+                 id="cotton's current phase"),
+    pytest.param("cotton_phase_warming", ({}, {"cotton": PLAIN}), ({}, {"cotton": PHASED_ONLY}), COTTONS,
+                 id="cotton's phase"),
+    pytest.param("cotton_phase", ({}, {"cotton": PLAIN}), ({}, {"cotton": {**PLAIN, "phases": {"cycles_total": WARMING}}}),
+                 COTTONS, id="cotton_phase, beside a phase's cycles_total"),
+    pytest.param("cotton_phase_other_cycles_today", ({}, {"cotton": PHASED_ONLY}),
+                 ({}, {"cotton": {**PHASED_ONLY, "other": {}}}), COTTONS, id="cotton's other's meter, once other is set"),
+])
+def test_a_key_a_later_setting_would_create_is_refused_now(
+        ha: HomeAssistant, key: str, now: tuple[dict[str, Any], dict[str, Any]],
+        later: tuple[dict[str, Any], dict[str, Any]], message: str) -> None:
+    """A detected program keyed as a phase's keys start is refused before the setting that makes the phase.
+
+    Else adding phases (or other) to the running program, or to another
+    detected program, would refuse the configuration then.
+    """
+    schema = module("setup.schema").CONFIG_SCHEMA
+    match, path = refusal(key)
+    assert match == f"^{re.escape(f'{key} {message}')}"
+    for running, detected in (now, later):
+        with pytest.raises(vol.Invalid, match=match) as refused:
+            schema(house(running, {**detected, key: PLAIN}))
+        assert path in paths(refused.value)
+
+
+@pytest.mark.parametrize("key", [
+    # The appliance's energy, without energy
+    "energy_total", "last_cycle_energy", "idle_energy_today",
+    # Meters, without statistics: the appliance's, its running program's, another detected program's
+    "runtime_week", "cycles_year", "cotton_energy_month",
+    # A ready-made alert, not enabled
+    "alert_offline",
+])
+def test_a_key_a_later_setting_creates_is_listed_already(ha: HomeAssistant, key: str) -> None:
+    """Every other key a setting adds is listed whatever the settings (catalogue.keys): refused already, as two entities."""
+    schema = module("setup.schema").CONFIG_SCHEMA
+    with pytest.raises(vol.Invalid, match="would be two entities"):
+        schema(house({}, {"cotton": PLAIN, key: PLAIN}))
+
+
+@pytest.mark.parametrize("key", ["phases", "phaser", "cotton_phases", "rinse_phase", "rinse_phase_warming"])
+def test_a_key_no_phase_can_take_passes(ha: HomeAssistant, key: str) -> None:
+    """Only phase[_…] and a present program's <program>_phase[_…] are reserved; rinse is no program here."""
+    module("setup.schema").CONFIG_SCHEMA(house(PHASES, {"cotton": PHASED_ONLY, key: PLAIN}))
 
 
 # --- its phases ---------------------------------------------------------------------

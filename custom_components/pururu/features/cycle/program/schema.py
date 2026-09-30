@@ -270,6 +270,32 @@ SCHEMA = vol.All(
 DETECTED_SCHEMA = vol.All(_named, SCHEMA)
 
 
+def unreserved(programs: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a detected program keyed as phases' keys begin: phase[_…], the running program's; <of>_phase[_…], detected program `of`'s.
+
+    A phase comes with a setting (`phases`, `other`, their `statistics`) and
+    can take any key of that form: were only today's phases' keys refused,
+    adding a phase would refuse the configuration then. Every other key a
+    setting adds is listed whatever the settings (catalogue.keys), so
+    checks.keys_distinct refuses it already.
+    """
+    for key in programs:
+        for of in (None, *programs):
+            form = _of(PHASE, of)
+            if key == form or key.startswith(f"{form}_"):
+                whose = (
+                    "the running program's"
+                    if of is None
+                    else f"detected program {of}'s"
+                )
+                raise vol.Invalid(
+                    f"{key} is reserved for {whose} phases ({form}, {form}_…): "
+                    "name the program otherwise",
+                    path=[key],
+                )
+    return programs
+
+
 @dataclass(frozen=True, kw_only=True)
 class Band:
     """A band of the reading, its cycles confirmed by on_delay and off_delay."""
