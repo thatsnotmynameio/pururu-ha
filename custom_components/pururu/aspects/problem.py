@@ -32,9 +32,7 @@ from homeassistant.helpers.start import async_at_started
 
 from ..const import ALERT2, DEFAULT_ALERT_LIGHTS
 from ..core.entity import PururuEntity
-from ..core.feature import PRIORITIES, TEXT, Device, Feature, finite_float, state_text
-from ..core.resolve import Ref
-from ..core.roles import Configured, Refers
+from ..core.feature import PRIORITIES, TEXT, Device, finite_float, state_text
 from ..core.vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,6 +67,19 @@ def lights_group(value: Any) -> str | None:
     return str(cv.slug(value))
 
 
+def shared(priority: str) -> dict[Any, Any]:
+    """What every alert takes, hand-written or ready-made: priority, notify, lights.
+
+    Only the default priority differs: low for a hand-written alert, the
+    ready-made alert's own for one.
+    """
+    return {
+        vol.Optional("priority", default=priority): vol.In(PRIORITIES),
+        vol.Optional("notify"): NOTIFY,
+        vol.Optional("lights"): lights_group,
+    }
+
+
 ALERT = vol.All(
     vol.Schema(
         {
@@ -79,9 +90,7 @@ ALERT = vol.All(
             vol.Optional("above"): finite_float,
             vol.Optional("below"): finite_float,
             vol.Optional("for", default=timedelta(0)): cv.positive_time_period,
-            vol.Optional("priority", default="low"): vol.In(PRIORITIES),
-            vol.Optional("notify"): NOTIFY,
-            vol.Optional("lights"): lights_group,
+            **shared("low"),
         }
     ),
     _one_condition,
@@ -231,46 +240,3 @@ class Alert(ProblemAlert):
     def _turn_on(self, _now: datetime) -> None:
         self._pending = None
         self._set(on=True)
-
-
-def build(
-    hass: HomeAssistant,
-    device: Device,
-    config: dict[str, Any],
-    inputs: Mapping[str, str],
-) -> list[PururuEntity]:
-    """An alert per key of the block, watching the entity its `when` names."""
-    return [
-        Alert(
-            device,
-            entity_key,
-            name=alert["name"],
-            watched=inputs[alert["when"]],
-            condition=Condition(
-                state=alert.get("is"),
-                above=alert.get("above"),
-                below=alert.get("below"),
-            ),
-            hold=alert["for"],
-            priority=alert["priority"],
-            notify=alert.get("notify"),
-            lights=alert.get("lights"),
-            follows=(alert["when"],),
-        )
-        for entity_key, alert in config.items()
-    ]
-
-
-def _refers(config: dict[str, Any]) -> set[Ref]:
-    """The entity keys the alerts watch, on this device."""
-    return {Ref(None, alert["when"]) for alert in config.values()}
-
-
-ALERTS = Feature(
-    schema=SCHEMA,
-    entity_keys={},
-    build=build,
-    example={"too_long": {"name": "Too long", "when": "appliance_running", "is": "on"}},
-    namespace="alert",
-    roles=(Configured(Platform.BINARY_SENSOR), Refers(_refers)),
-)

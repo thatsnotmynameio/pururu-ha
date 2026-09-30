@@ -11,11 +11,11 @@ from homeassistant.helpers.entity import Entity
 
 from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
-from ..core.feature import Device, presets_of
+from ..core.feature import Device
 from ..core.resolve import Index, find
 from ..core.roles import Generates, Provides, Refers, Requires
 from ..core.texts import Texts
-from ..features import FEATURES, presets
+from ..features import FEATURES
 from . import catalogue
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,8 +31,8 @@ def build(
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
-    A builder's own entities, then its ready-made alerts', then those of the
-    aspects it offers (the meters of its totals), all in its namespace.
+    A builder's own entities, then those of the aspects it offers (its
+    ready-made alerts, the meters of its totals), all in its namespace.
     Each feature sees the device in its own namespace; what it takes through
     <capability>_from, or refers to, is in the owning feature's. Also the
     entity ID of each entity some entity watches (`follows`), by unique ID: the
@@ -48,23 +48,12 @@ def build(
             continue
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
         inputs, required = _inputs(hass, key, config, name, index, owned)
-        # Only a feature offering ready-made alerts has them: a program or a
-        # reaction may be keyed `alerts`
-        ready_made = (
-            presets.build(hass, device, feature, config[name], texts)
-            if presets_of(feature)
-            else []
-        )
         aspects = (
             entity
             for aspect in catalogue.aspects_of(feature)
             for entity in aspect.build(hass, device, feature, config[name], texts)
         )
-        for entity in (
-            *feature.build(hass, device, config[name], inputs),
-            *ready_made,
-            *aspects,
-        ):
+        for entity in (*feature.build(hass, device, config[name], inputs), *aspects):
             follows = set()
             for reference in entity.follows:
                 target = found[reference]

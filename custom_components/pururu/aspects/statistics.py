@@ -126,7 +126,7 @@ def _schema(builder: Feature, _name: str) -> vol.Schema:
     """`statistics:`: counter -> its periods; a schema of its own, so an unknown counter is refused.
 
     Statistics doesn't need the builder's key in the device (`_name`): it names
-    nothing to a person, unlike a ready-made alert's or notification's messages.
+    nothing to a person, unlike B4's ready-made notifications' messages.
     """
     return vol.Schema(
         {
@@ -190,9 +190,8 @@ def _build(
 ) -> list[PururuEntity]:
     """The meters asked for; per item for an Items builder, from the item's or the block's statistics.
 
-    Statistics is the only aspect today, so AspectBuild's `texts` (the common
-    texts a ready-made alert's or notification's messages need) has nothing to
-    build from here; `*_` takes it without naming it.
+    AspectBuild's `texts` (the common texts a ready-made alert's messages
+    need) has nothing to build meters from; `*_` takes it without naming it.
     """
     if (items := builder.role(Items)) is None:
         return list(_meters(hass, device, builder, block[KEY], None))

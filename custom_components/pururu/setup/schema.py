@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_NAME
 from homeassistant.helpers import config_validation as cv
 
+from ..aspects import alerts
 from ..const import (
     CONF_ALERTS,
     CONF_AREA,
@@ -62,6 +63,7 @@ type Check = Callable[
 ]
 CHECKS: tuple[Check, ...] = (
     checks.references,
+    alerts.check,
     checks.real_entities_distinct,
     reactions.check,
     programs.check,

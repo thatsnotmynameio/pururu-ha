@@ -160,11 +160,6 @@ def happenings_of(feature: Feature) -> Mapping[str, Happening]:
     return role.offered if (role := feature.role(Happenings)) else {}
 
 
-def preset_keys(presets: Mapping[str, Preset]) -> dict[str, Platform]:
-    """The entity keys of a feature's ready-made alerts: alert_<name>, binary sensors."""
-    return {f"alert_{name}": Platform.BINARY_SENSOR for name in presets}
-
-
 @dataclass(frozen=True, kw_only=True)
 class Happening:
     """A ready-made notification of a feature: what happens, as a reaction's trigger.
@@ -217,18 +212,20 @@ type AspectBuild = Callable[
 class Aspect:
     """A concern written once, mounted in the block (or each item) of every builder offering it."""
 
-    # The block key it mounts: "statistics"
+    # The block key it mounts: "statistics", "alerts"
     key: str
-    # Whether this builder offers it: it has the role the aspect needs
+    # Whether this builder offers it: it has what the aspect needs (Counters;
+    # at least one ready-made alert)
     offered: Callable[[Feature], bool]
-    # Validates the aspect's value, for this builder and its key in the device
-    # (a ready-made alert's messages, a notification's, need it)
+    # Validates the aspect's value, for this builder and its key in the device,
+    # for an aspect whose messages name the builder (B4's ready-made
+    # notifications); the alerts aspect doesn't need it
     schema: Callable[[Feature, str], Callable[[Any], Any]]
     # The local entity keys it adds: suffixes for an Items builder
     keys: Callable[[Feature], Mapping[str, Platform]]
     # The translation key one of its local keys is named under, for this
     # builder: statistics' own at the block level, or under the builder's
-    # namespace, as a later aspect's may be (B3's ready-made alerts)
+    # namespace (the ready-made alerts')
     named: Callable[[Feature, str], str]
     # A valid value, for the contract test
     example: Callable[[Feature], Any]
@@ -240,3 +237,7 @@ class Aspect:
     # its key in the device, and each container (the block, or an item) with
     # its value put back
     check: Callable[[Feature, str, Mapping[str, Any]], None] | None = None
+    # Its key absent (or its container not a map): validated as `{}` and
+    # mounted (statistics: no counter asks a period), or left out, as nothing
+    # asked (ready-made alerts: none enabled; an explicit `{}` is still refused)
+    mount_absent: bool = True

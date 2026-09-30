@@ -83,7 +83,8 @@ class Refers:
 class Presets:
     """Ready-made alerts, by name: each enabled one is the entity key alert_<name>.
 
-    Enabled in its block's `alerts` (presets.validate); preset_keys goes in its entity_keys.
+    Enabled in its block's `alerts`: the alerts aspect (aspects/alerts.py)
+    validates them and adds their keys.
     """
 
     offered: Mapping[str, Preset]

@@ -1,13 +1,15 @@
 ---
-title: alerts
+title: Alerts
 description: Problems on a device's own entities, each a binary sensor that is on while the problem lasts.
 ---
 
 `alerts` says when something is wrong with a device, such as a washer running for too long or a plug gone offline. Each alert watches **one** entity of the same device and becomes a binary sensor: **Problem** while its condition holds, **OK** otherwise.
 
+`alerts` is a device key, like [`reactions`](/concepts/reactions) and [`programs`](/concepts/programs): it isn't a feature, and it doesn't count towards "[a device needs at least one feature](/concepts/devices-and-features#a-feature)".
+
 An alert is for what you find **critical**, and it lasts until it's resolved. For simple news told once, such as the washer finishing, use a [notification](/concepts/notifications).
 
-For the common cases, a feature may offer **ready-made alerts** you enable with one key: see the [appliance's](/features/appliance#ready-made-alerts).
+For the common cases, a feature may offer **ready-made alerts** you enable with one key: see [Ready-made alerts](#ready-made-alerts).
 
 pururu **detects** the problem and, with `notify`, says what to tell. [Alert2](https://github.com/redstone99/hass-alert2) does the telling (phones, reminders, acknowledging): see [Getting notified](#getting-notified).
 
@@ -46,7 +48,7 @@ This creates `binary_sensor.pururu_laundry_washer_alert_long_cycle`, shown as **
 ---
 
 <Property name="when" type="entity key" required>
-  The entity of **this device** the alert watches, written as its entity ID ends after the device key: `appliance_running`, `appliance_power`, `phase_current`, `switch_pump`. It must be an entity of another feature of the device, not an alert. See [Entity IDs](/concepts/entity-ids#the-pattern).
+  The entity of **this device** the alert watches, written as its entity ID ends after the device key: `appliance_running`, `appliance_power`, `phase_current`, `switch_pump`. It must be an entity of another feature of the device, or a program's or reaction's statistic; not an alert. See [Entity IDs](/concepts/entity-ids#the-pattern).
 </Property>
 
 ---
@@ -98,13 +100,33 @@ An alert needs **either** `is` **or** `above`/`below`, not both.
 - **An alert about the reading itself**, `is: unavailable` or `is: unknown`, holds while the entity has no reading: `unavailable`, `unknown`, or gone. The two mean the same, because a plug reconnecting shows `unknown` for a moment between `unavailable` and its first value, and that mustn't restart the count. So it turns on for a plug gone offline.
 - **After a restart or reload,** the alert comes back as it was, and follows the watched entity again once Home Assistant has started: entities pass through `unavailable` while it starts, and that raises no alert. A condition that holds starts its `for` over.
 
+## Ready-made alerts
+
+A feature may offer alerts for what usually goes wrong, such as the appliance's `offline` or `long_cycle`. They're **off** until you enable them in **that feature's own block**, under its `alerts`, one key each:
+
+```yaml
+appliance:
+  power: sensor.washer_plug_power
+  running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+  alerts:
+    offline:                                          # every default
+    long_cycle: {for: {hours: 3}, priority: high}
+```
+
+- Each one takes `for`, `priority`, `notify` and `lights`, as a written alert does, and nothing else. What it watches and when it's on are the ready-made alert's own.
+- Its defaults are its own too: its `for` (some need one), its `priority`, and texts of its own in Home Assistant's language, which `notify` replaces.
+- Each one is `binary_sensor.pururu_<key>_<namespace>_alert_<name>`, in the feature's namespace: `binary_sensor.pururu_laundry_washer_appliance_alert_offline`.
+- A [reaction](/concepts/reactions) may watch one (`when: appliance_alert_offline`). An alert can't: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
+- Which ones a feature offers, what each watches and its defaults: the [appliance's table](/features/appliance#ready-made-alerts).
+
 ## Entity
 
 | Entity | What it is |
 |---|---|
-| `binary_sensor.pururu_<key>_alert_<alert key>` | On while the problem lasts. Device class `problem`. |
+| `binary_sensor.pururu_<key>_alert_<alert key>` | An alert you wrote. On while the problem lasts. Device class `problem`. |
+| `binary_sensor.pururu_<key>_<namespace>_alert_<name>` | A [ready-made alert](#ready-made-alerts) you enabled in a feature's block. The same, in that feature's namespace. |
 
-Its attributes are **`priority`** and **`watches`**, the entity it watches; with `notify`, **`message`** and **`done_message`**; with `lights`, **`lights`**, the name of the group it borrows. It's in the device, so it's in the device's area.
+Its attributes are **`priority`** and **`watches`**, the entity it watches; with `notify`, **`message`** and **`done_message`**, which a ready-made alert always has, its own texts without `notify`; with `lights`, **`lights`**, the name of the group it borrows. It's in the device, so it's in the device's area.
 
 ## Needs
 

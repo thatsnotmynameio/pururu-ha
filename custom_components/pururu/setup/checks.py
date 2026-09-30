@@ -1,7 +1,8 @@
 """The rules over the whole house that no one block owns: references, real entities, IDs, areas, messages.
 
 Each is a Check (schema.CHECKS). The rules a block owns live in its module:
-reactions.check, programs.check, alert_lights.check, places.floors_exist.
+reactions.check, programs.check, alerts.check, alert_lights.check,
+places.floors_exist.
 """
 
 from collections.abc import Iterable, Iterator, Mapping
@@ -10,7 +11,6 @@ from typing import Any
 import voluptuous as vol
 
 from ..const import (
-    CONF_ALERTS,
     CONF_AREA,
     CONF_AREAS,
     CONF_CONFIG,
@@ -20,7 +20,7 @@ from ..const import (
     CONF_NOTIFY,
     CONF_REACTIONS,
 )
-from ..core.feature import ALERTS_KEY, Feature
+from ..core.feature import Feature
 from ..core.resolve import Index, Ref, find
 from ..core.roles import Configured, Generates, Provides, Refers, Requires
 from ..device_keys import notifications
@@ -50,7 +50,7 @@ def _provides(feature: Feature, capability: str) -> bool:
 def references(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> Iterator[vol.Invalid]:
-    """Refuse a reference that isn't another feature's entity key, or an alert watching an alert."""
+    """Refuse a reference that isn't another feature's entity key (an alert watching an alert: alerts.check)."""
     for key, device in house[CONF_DEVICES].items():
         for name, feature in builders.items():
             if name in device and (refers := feature.role(Refers)) is not None:
@@ -67,11 +67,6 @@ def _refused_refs(
             yield vol.Invalid(
                 f"{name}: {ref.key} is not an entity key of another feature "
                 "of this device",
-                path=[CONF_DEVICES, key, name],
-            )
-        elif name == CONF_ALERTS and target.by == ALERTS_KEY:
-            yield vol.Invalid(
-                f"{CONF_ALERTS}: {ref.key} is an alert: an alert can't watch another",
                 path=[CONF_DEVICES, key, name],
             )
 
