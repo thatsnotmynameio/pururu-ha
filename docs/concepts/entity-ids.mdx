@@ -31,7 +31,7 @@ There's no exception, even when an entity key is the same word as its namespace:
 
 So the `running` entity of the device `clothes_washer` is always `binary_sensor.pururu_clothes_washer_appliance_running`. You can write automations and dashboards against it before the device even exists.
 
-A [detected program](/concepts/programs#more-detected-programs)'s key is an entity key of the appliance's namespace (`cotton` → `binary_sensor.pururu_clothes_washer_appliance_cotton`), so it can't be one the appliance already creates, such as `running` or `cycles_total`: that's a configuration error.
+A [detected program](/concepts/programs#more-detected-programs)'s key is an entity key of the appliance's namespace (`cotton` → `binary_sensor.pururu_clothes_washer_appliance_cotton`), so it can't be one the appliance already creates, such as `running` or `cycles_total`, nor one a phase could take later (`phase_…`, or `cotton_phase_…` beside a program `cotton`): that's a configuration error, told at once.
 
 The entity's **unique ID** is the same text without the platform: `pururu_clothes_washer_appliance_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
 

@@ -290,7 +290,7 @@ def unreserved(programs: dict[str, Any]) -> dict[str, Any]:
     checks.keys_distinct refuses it already.
     """
     for key in programs:
-        for of in (None, *programs):
+        for of in (None, *(sibling for sibling in programs if sibling != key)):
             form = _of(PHASE, of)
             if key == form or key.startswith(f"{form}_"):
                 whose = (
