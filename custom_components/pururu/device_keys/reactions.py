@@ -23,11 +23,11 @@ from homeassistant.const import CONF_NAME, STATE_OFF, Platform
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
+from ..aspects import programs
 from ..const import (
     CONF_DEVICES,
     CONF_MESSAGE,
     CONF_NOTIFY,
-    CONF_PROGRAMS,
     CONF_REACTIONS,
     ENTITY_PREFIX,
 )
@@ -46,7 +46,6 @@ from ..core.feature import (
 from ..core.generated import AUTOMATIONS, SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
 from ..core.roles import Counted, Counters, Generates, Items
-from . import programs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -408,7 +407,7 @@ def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Inval
 
     `when` without `device` names an entity key of the device, and never one of
     the reaction's own statistics; `device` names a device; `then` one of the
-    device's programs.
+    device's executable programs.
     """
     devices = house[CONF_DEVICES]
     for key, device in devices.items():
@@ -445,9 +444,10 @@ def _refused(
             f"reactions: {reaction_key}: {when} is its own statistic", path=path
         )
     then = reaction.get("then")
-    if then is not None and then not in devices[key].get(CONF_PROGRAMS, {}):
+    if then is not None and then not in programs.executable(devices[key]):
         return vol.Invalid(
-            f"reactions: {reaction_key}: {then} is not a program of this device",
+            f"reactions: {reaction_key}: {then} is not an executable program of "
+            "this device",
             path=path,
         )
     if when is None:

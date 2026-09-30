@@ -1,11 +1,12 @@
-"""Programs: sequences of actions on a device's own entities, as Home Assistant scripts.
+"""Programs: the executable ones of a device, as Home Assistant scripts.
 
-A program is a method of its device: something starts it, and it turns the
-device's own switches and lights on and off, with delays between. Its steps are
-pururu's, translated to HA's script syntax in pururu/scripts/programs.yaml,
-whose folder configuration.yaml includes (generated.py); HA runs it. No step
-can reach outside the device. Each run is a cycle: its statistics are sensors
-of its device (STATISTICS).
+An executable program (`programs: executable:` at the device) is a method of
+its device: something starts it, and it turns the device's own switches and
+lights on and off, with delays between. Its steps are pururu's, translated to
+HA's script syntax in pururu/scripts/programs.yaml, whose folder
+configuration.yaml includes (generated.py); HA runs it. No step can reach
+outside the device. Each run is a cycle: its statistics are sensors of its
+device (PROGRAMS, the device key).
 """
 
 from collections.abc import Collection, Hashable, Iterable, Iterator, Mapping
@@ -25,7 +26,14 @@ from homeassistant.core import (
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 
-from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, ENTITY_PREFIX
+from ..const import (
+    CONF_AREA,
+    CONF_DETECTED,
+    CONF_DEVICES,
+    CONF_EXECUTABLE,
+    CONF_PROGRAMS,
+    ENTITY_PREFIX,
+)
 from ..core import generated, vocabulary
 from ..core.entity import PururuEntity
 from ..core.feature import EACH, Device, Feature, Item, qualified
@@ -64,12 +72,19 @@ def _step(value: Any) -> dict[str, Any]:
 LAST_RUN = tuple(d for d in LAST_CYCLE if d.key != "last_cycle_energy")
 
 
+def slug(program_key: str) -> str:
+    """An executable program's slug, executable_<key>: every entity key of it and its script's ID start with it."""
+    return f"{CONF_EXECUTABLE}_{program_key}"
+
+
 def _item(key: str, program: Mapping[str, Any]) -> Item:
-    return Item(slug=key, name=program[CONF_NAME])
+    return Item(slug=slug(key), name=program[CONF_NAME])
 
 
-# The statistics aspect meters them, `statistics:` in each program
-COUNTED = Counted(needs={"runtime": None, "cycles": None}, at=(EACH,), item=_item)
+# The statistics aspect meters them, `statistics:` in each executable program
+COUNTED = Counted(
+    needs={"runtime": None, "cycles": None}, at=(CONF_EXECUTABLE, EACH), item=_item
+)
 PER_PROGRAM: dict[str, Platform] = {
     **{description.key: Platform.SENSOR for description in LAST_RUN},
     **{f"{counter}_total": Platform.SENSOR for counter in COUNTED.needs},
@@ -82,8 +97,30 @@ PROGRAM = vol.Schema(
         vol.Required("sequence"): vol.All([_step], vol.Length(min=1)),
     }
 )
-# A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
-SCHEMA = vol.All(vol.Schema({cv.slug: PROGRAM}), vol.Length(min=1))
+
+
+def _executable_only(block: Any) -> Any:
+    """Refuse `detected:` at the device: a detected program reads a feature's reading, in its block."""
+    if isinstance(block, dict) and CONF_DETECTED in block:
+        raise vol.Invalid(
+            "a device's programs are executable: a detected program sits in the "
+            "block of the feature whose reading it reads",
+            path=[CONF_DETECTED],
+        )
+    return block
+
+
+# Schemas of their own: ALLOW_EXTRA would let a key that isn't a slug through
+SCHEMA = vol.All(
+    _executable_only,
+    vol.Schema(
+        {
+            vol.Required(CONF_EXECUTABLE): vol.All(
+                vol.Schema({cv.slug: PROGRAM}), vol.Length(min=1)
+            )
+        }
+    ),
+)
 
 
 def targets(program: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
@@ -93,8 +130,14 @@ def targets(program: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
 
 
 def script_id(device_key: str, program_key: str) -> str:
-    """The script's object ID, and its unique ID: the pururu pattern."""
-    return f"{ENTITY_PREFIX}_{device_key}_{qualified(NAMESPACE, program_key)}"
+    """The script's object ID, and its unique ID: pururu_<device>_program_executable_<key>."""
+    return f"{ENTITY_PREFIX}_{device_key}_{qualified(NAMESPACE, slug(program_key))}"
+
+
+def executable(device: Mapping[str, Any]) -> Mapping[str, Any]:
+    """A validated device's executable programs, by key; none without `programs`."""
+    found: Mapping[str, Any] = device.get(CONF_PROGRAMS, {}).get(CONF_EXECUTABLE, {})
+    return found
 
 
 def _translated(
@@ -173,7 +216,7 @@ class Runs(CyclesTotal, CycleSource):
 
 
 def _items(config: Mapping[str, Any]) -> list[Item]:
-    return [_item(key, program) for key, program in config.items()]
+    return [_item(key, program) for key, program in config[CONF_EXECUTABLE].items()]
 
 
 def build(
@@ -188,8 +231,9 @@ def build(
     program whose script ID someone else holds counts nothing.
     """
     entities: list[PururuEntity] = []
-    for item in _items(config):
-        script = inputs.get(script_id(device.key, item.slug))
+    for key, program in config[CONF_EXECUTABLE].items():
+        item = _item(key, program)
+        script = inputs.get(script_id(device.key, key))
         counted = item.key("cycles_total")
         entities.append(Runs(device, script, item=item))
         entities.extend(
@@ -202,19 +246,22 @@ def build(
     return entities
 
 
-# Not a device's feature: its programs' statistics, built as a Feature's entities
-STATISTICS = Feature(
+# The device key: not a device's feature; its executable programs' statistics,
+# built as a Feature's entities
+PROGRAMS = Feature(
     schema=SCHEMA,
     entity_keys={},
     build=build,
-    example={"clean": {"name": "Clean", "sequence": [{"delay": 1}]}},
+    example={CONF_EXECUTABLE: {"clean": {"name": "Clean", "sequence": [{"delay": 1}]}}},
     namespace=NAMESPACE,
     roles=(
         Items(PER_PROGRAM, _items),
         Counters((COUNTED,)),
         Generates(
             "program",
-            lambda key, config: ((SCRIPTS.domain, script_id(key, p)) for p in config),
+            lambda key, config: (
+                (SCRIPTS.domain, script_id(key, p)) for p in config[CONF_EXECUTABLE]
+            ),
         ),
     ),
 )
@@ -223,8 +270,14 @@ STATISTICS = Feature(
 def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
     """Refuse a step on what isn't another feature's entity key of the device taking its action (a schema check)."""
     for key, device in house[CONF_DEVICES].items():
-        for program_key, program in device.get(CONF_PROGRAMS, {}).items():
-            path: list[Hashable] = [CONF_DEVICES, key, CONF_PROGRAMS, program_key]
+        for program_key, program in executable(device).items():
+            path: list[Hashable] = [
+                CONF_DEVICES,
+                key,
+                CONF_PROGRAMS,
+                CONF_EXECUTABLE,
+                program_key,
+            ]
             for action, entity_key in targets(program):
                 target = find(index, key, Ref(None, entity_key))
                 if target is None:
@@ -257,7 +310,7 @@ def plan(
     held: set[str] = set()
     targets_: set[str] = set()
     for key, config in devices.items():
-        for program_key, program in config.get(CONF_PROGRAMS, {}).items():
+        for program_key, program in executable(config).items():
             unique_id = script_id(key, program_key)
             entity_ids = _acted_on(hass, index[key], unique_id, program, created)
             if entity_ids is None:

@@ -525,8 +525,9 @@ def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
         ["devices", "greenhouse", "programs"],
         id="an item-placed aspect's block isn't a map"),
     pytest.param(
-        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SWITCHES, "programs": {"clean": 5}}}},
-        ["devices", "greenhouse", "programs", "clean"],
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SWITCHES,
+                                    "programs": {"executable": {"clean": 5}}}}},
+        ["devices", "greenhouse", "programs", "executable", "clean"],
         id="an item isn't a map"),
 ])
 def test_mount_refuses_a_block_or_item_that_isnt_a_map(

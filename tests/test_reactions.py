@@ -216,7 +216,7 @@ CLEAN_PROGRAM = {"name": "Limpar", "sequence": [{"turn_on": "light_teto"}]}
 
 def with_program(**reactions: dict[str, Any]) -> dict[str, Any]:
     config = devices(**reactions)
-    config[LIGHTS]["programs"] = {"clean": CLEAN_PROGRAM}
+    config[LIGHTS]["programs"] = {"executable": {"clean": CLEAN_PROGRAM}}
     return config
 
 
@@ -238,16 +238,16 @@ async def test_then_not_a_program_of_the_device_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, config: dict[str, Any]) -> None:
     then = config[LIGHTS]["reactions"]["it"]["then"]
     assert not await setup(ha, config)
-    assert f"reactions: it: {then} is not a program of this device" in caplog.text
+    assert f"reactions: it: {then} is not an executable program of this device" in caplog.text
 
 
 async def test_then_another_devices_program_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """The washer's program isn't the lights': a reaction runs its own device's."""
     config = devices(it={**OVERLOAD, "then": "clean"})
-    config[WASHER]["programs"] = {"clean": {"name": "X", "sequence": [{"delay": 1}]}}
+    config[WASHER]["programs"] = {"executable": {"clean": {"name": "X", "sequence": [{"delay": 1}]}}}
     assert not await setup(ha, config)
-    assert "reactions: it: clean is not a program of this device" in caplog.text
+    assert "reactions: it: clean is not an executable program of this device" in caplog.text
 
 
 # --- translation ----------------------------------------------------------------------
@@ -368,7 +368,7 @@ def test_a_try_with_then_looks_at_the_program(ha: HomeAssistant) -> None:
     reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({"name": "Tarde", "at": "13:00", "retry": RETRY,
                                    "then": "clean"})
-    script = "script.pururu_lights_program_clean"
+    script = "script.pururu_lights_program_executable_clean"
     assert reactions.automation(LIGHTS, "Luzes", "afternoon", reaction, None,
                                 script)["conditions"] == [
         {"condition": "template",
@@ -380,7 +380,7 @@ def test_without_retry_there_are_no_conditions(ha: HomeAssistant) -> None:
     reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({"name": "Noite", "at": "22:00", "then": "clean"})
     written = reactions.automation(LIGHTS, "Luzes", "night", reaction, None,
-                                   "script.pururu_lights_program_clean")
+                                   "script.pururu_lights_program_executable_clean")
     assert list(written) == ["id", "alias", "description", "triggers", "actions"]
 
 
@@ -406,7 +406,7 @@ def test_the_automation_of_a_reaction(ha: HomeAssistant) -> None:
 def test_then_starts_its_program_unless_it_runs(ha: HomeAssistant) -> None:
     reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({**DOOR_OPENS, "then": "clean"})
-    script = "script.pururu_lights_program_clean"
+    script = "script.pururu_lights_program_executable_clean"
     assert reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, script)["actions"] == [{
         "if": [{"condition": "state", "entity_id": script, "state": "off"}],
         "then": [{"action": "script.turn_on", "target": {"entity_id": script}}],
@@ -416,7 +416,7 @@ def test_then_starts_its_program_unless_it_runs(ha: HomeAssistant) -> None:
 def test_a_message_is_told_after_its_program_starts(ha: HomeAssistant) -> None:
     reactions = module("device_keys.reactions")
     reaction = reactions.REACTION({**TOLD, "then": "clean"})
-    script = "script.pururu_lights_program_clean"
+    script = "script.pururu_lights_program_executable_clean"
     actions = reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, script,
                                    ["notify.a", "notify.b"])["actions"]
     assert actions[0]["then"] == [{"action": "script.turn_on", "target": {"entity_id": script}}]
@@ -432,7 +432,7 @@ def test_without_a_message_nobody_is_told(ha: HomeAssistant) -> None:
     assert reactions.automation(LIGHTS, "Luzes", "door", reaction, DOOR, None, ["notify.a"])["actions"] == []
 
 
-@pytest.mark.parametrize("then", [["clean"], "script.pururu_lights_program_clean"])
+@pytest.mark.parametrize("then", [["clean"], "script.pururu_lights_program_executable_clean"])
 def test_then_is_a_slug(ha: HomeAssistant, then: Any) -> None:
     reaction = module("device_keys.reactions").REACTION
     with pytest.raises(vol.Invalid):
@@ -594,7 +594,7 @@ async def test_the_sun_fires_at_its_offset(ha: HomeAssistant, freezer: Any,
 GREENHOUSE = "greenhouse"
 REAL_SPRINKLER = "switch.greenhouse_sprinkler"
 SPRINKLER = "switch.pururu_greenhouse_switch_sprinkler"
-CLEAN = "script.pururu_greenhouse_program_clean"
+CLEAN = "script.pururu_greenhouse_program_executable_clean"
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
     {"turn_on": "switch_sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switch_sprinkler"}]}
 
@@ -603,7 +603,7 @@ def greenhouse(**reactions: dict[str, Any]) -> dict[str, Any]:
     """The greenhouse: its sprinkler, its cleaning, and reactions to the door; `clean` also a reaction key."""
     return {GREENHOUSE: {"name": "Estufa",
                    "switches": {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}},
-                   "programs": {"clean": CLEANING},
+                   "programs": {"executable": {"clean": CLEANING}},
                    "reactions": reactions or {"clean": {**DOOR_OPENS, "then": "clean"}}}}
 
 
@@ -673,11 +673,11 @@ async def test_a_trigger_while_the_program_runs_does_nothing(ha: HomeAssistant,
 async def test_a_program_not_generated_drops_its_reaction(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
-        "script", "template", "someone_else", suggested_object_id="pururu_greenhouse_program_clean")
+        "script", "template", "someone_else", suggested_object_id="pururu_greenhouse_program_executable_clean")
     night = {"name": "Noite", "at": "22:00"}
     assert await setup(ha, greenhouse(clean={**DOOR_OPENS, "then": "clean"}, night=night))
     assert [a["id"] for a in generated(ha)] == ["pururu_greenhouse_reaction_night"]
-    assert ("automation.pururu_greenhouse_reaction_clean runs script.pururu_greenhouse_program_clean, "
+    assert ("automation.pururu_greenhouse_reaction_clean runs script.pururu_greenhouse_program_executable_clean, "
             "which is not generated; not generating it") in caplog.text
 
 
@@ -782,7 +782,7 @@ async def test_a_script_not_written_drops_its_reaction(
         # Failing again: the script, tracked since, still isn't in the file
         await reload(ha, after)
         assert [a["id"] for a in generated(ha)] == ["pururu_greenhouse_reaction_night"]
-    assert ("automation.pururu_greenhouse_reaction_clean runs script.pururu_greenhouse_program_clean, "
+    assert ("automation.pururu_greenhouse_reaction_clean runs script.pururu_greenhouse_program_executable_clean, "
             "which is not generated; not generating it") in caplog.text
 
 
@@ -808,7 +808,7 @@ async def test_every_trigger_counts_even_one_its_program_skips(ha: HomeAssistant
     await fake(ha, DOOR, "on")
     await settle()
     assert count(ha) == "2"
-    assert count(ha, "sensor.pururu_greenhouse_program_clean_cycles_total") == "0"
+    assert count(ha, "sensor.pururu_greenhouse_program_executable_clean_cycles_total") == "0"
 
 
 async def test_a_reaction_without_then_counts_too(ha: HomeAssistant, freezer: Any,
@@ -842,10 +842,10 @@ async def test_a_reaction_on_its_own_meter_is_refused(
 
 
 async def test_a_reaction_on_a_programs_statistic(ha: HomeAssistant) -> None:
-    done = {"name": "Limpou", "when": "program_clean_last_cycle_end", "to": "unknown"}
+    done = {"name": "Limpou", "when": "program_executable_clean_last_cycle_end", "to": "unknown"}
     assert await setup(ha, greenhouse(done=done))
     trigger = generated(ha)[0]["triggers"][0]
-    assert trigger["entity_id"] == "sensor.pururu_greenhouse_program_clean_last_cycle_end"
+    assert trigger["entity_id"] == "sensor.pururu_greenhouse_program_executable_clean_last_cycle_end"
 
 
 async def test_the_count_follows_its_automation_renamed(ha: HomeAssistant, both: None) -> None:
@@ -869,7 +869,7 @@ async def test_a_run_its_reaction_started_is_counted_at_its_end(
     await settle()
     await tick(ha, freezer, 2 * 60 * 60)
     await ha.async_block_till_done()
-    assert count(ha, "sensor.pururu_greenhouse_program_clean_cycles_total") == "1"
+    assert count(ha, "sensor.pururu_greenhouse_program_executable_clean_cycles_total") == "1"
     assert count(ha) == "1"
 
 

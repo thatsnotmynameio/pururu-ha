@@ -15,15 +15,16 @@ pururu:
       switches:
         sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
       programs:
-        clean:
-          name: Limpar
-          sequence:
-            - turn_on: switch_sprinkler
-            - delay: {hours: 2}
-            - turn_off: switch_sprinkler
+        executable:
+          clean:
+            name: Limpar
+            sequence:
+              - turn_on: switch_sprinkler
+              - delay: {hours: 2}
+              - turn_off: switch_sprinkler
 ```
 
-This writes `script.pururu_greenhouse_program_clean`, shown as **Estufa Limpar**, to `pururu/scripts/programs.yaml`.
+This writes `script.pururu_greenhouse_program_executable_clean`, shown as **Estufa Limpar**, to `pururu/scripts/programs.yaml`.
 
 ## The include
 
@@ -37,7 +38,7 @@ Until it's there, **Settings → Repairs** says so. pururu rewrites the file on 
 
 ## Settings
 
-`programs` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after the namespace `program`: `clean` → `script.pururu_greenhouse_program_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
+`programs: executable:` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after `program_executable_`: `clean` → `script.pururu_greenhouse_program_executable_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
 
 <Property name="name" type="string" required>
   The name shown after the device's name. It can't be empty, and it's the same in every language.
@@ -80,7 +81,7 @@ A program is a method of its device. It acts only on its device's entities, and 
 
 ## The script
 
-`script.pururu_<key>_program_<program key>`, in the device's area. Home Assistant keeps a script from YAML out of any device, so it isn't on the device's page.
+`script.pururu_<key>_program_executable_<program key>`, in the device's area. Home Assistant keeps a script from YAML out of any device, so it isn't on the device's page.
 
 - **Starting it:** `script.turn_on`, or **Run** in the UI. It returns at once: an automation starting it doesn't wait for it to end.
 - **While it runs**, its state is `on`, and `script.turn_off` stops it. What it already did stays: if the sprinkler was on, it stays on.
@@ -100,12 +101,12 @@ Each run of a program is a **cycle**, as an [appliance](/features/appliance)'s: 
 
 | Entity | Unit | What |
 |---|---|---|
-| `sensor.pururu_<key>_program_<program>_last_cycle_start` | | When the last run started |
-| `sensor.pururu_<key>_program_<program>_last_cycle_end` | | When it ended |
-| `sensor.pururu_<key>_program_<program>_last_cycle_duration` | min | How long it ran |
-| `sensor.pururu_<key>_program_<program>_cycles_total` | cycles | Runs finished, all time |
-| `sensor.pururu_<key>_program_<program>_runtime_total` | h | Hours running, all time |
-| `sensor.pururu_<key>_program_<program>_runtime_<period>`, `…_cycles_<period>` | h, cycles | This period's [statistics](/concepts/statistics), one per `statistics` entry |
+| `sensor.pururu_<key>_program_executable_<program>_last_cycle_start` | | When the last run started |
+| `sensor.pururu_<key>_program_executable_<program>_last_cycle_end` | | When it ended |
+| `sensor.pururu_<key>_program_executable_<program>_last_cycle_duration` | min | How long it ran |
+| `sensor.pururu_<key>_program_executable_<program>_cycles_total` | cycles | Runs finished, all time |
+| `sensor.pururu_<key>_program_executable_<program>_runtime_total` | h | Hours running, all time |
+| `sensor.pururu_<key>_program_executable_<program>_runtime_<period>`, `…_cycles_<period>` | h, cycles | This period's [statistics](/concepts/statistics), one per `statistics` entry |
 
 They're named after the program: **Estufa Limpar cycles**.
 
@@ -116,7 +117,7 @@ They're named after the program: **Estufa Limpar cycles**.
 - **While the program isn't generated** (an entity it acts on is disabled or not created), its statistics keep their values and count nothing. **Removing the program** from the YAML removes them.
 - **Renaming the script** in the UI is followed: pururu reloads and watches its new ID.
 - **A script ID someone else holds** (one of your scripts, another integration's entity): the program isn't generated, and its statistics count nothing. They never count an entity pururu doesn't manage.
-- A reaction can watch them: `when: program_clean_last_cycle_end`.
+- A reaction can watch them: `when: program_executable_clean_last_cycle_end`.
 
 ## From 0.1.14 and before
 

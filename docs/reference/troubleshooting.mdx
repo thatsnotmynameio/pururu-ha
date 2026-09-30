@@ -106,7 +106,7 @@ This entity depends on one that couldn't be created, usually because of the erro
 ### `automation.… runs script.…, which is not generated; not generating it`
 
 ```
-automation.pururu_greenhouse_reaction_morning runs script.pururu_greenhouse_program_clean, which is not generated; not generating it
+automation.pururu_greenhouse_reaction_morning runs script.pururu_greenhouse_program_executable_clean, which is not generated; not generating it
 ```
 
 A [reaction](/concepts/reactions#starting-a-program)'s `then` names a program whose script isn't generated: an entity it acts on isn't created or is disabled, or its ID is taken. The line logged just before says which. The reaction's automation isn't generated either, since it would start a missing script. When the program is only waiting for a disabled entity, the reaction waits with it and comes back as you left it.
@@ -326,7 +326,7 @@ The scripts of pururu's programs are not loaded: add "script pururu: !include_di
 ### `script.… follows …, which is not created; not generating it`
 
 ```
-script.pururu_greenhouse_program_clean follows switch.pururu_greenhouse_switch_sprinkler, which is not created; not generating it
+script.pururu_greenhouse_program_executable_clean follows switch.pururu_greenhouse_switch_sprinkler, which is not created; not generating it
 ```
 
 An entity the program acts on isn't created, usually because its ID is taken. Fix that entity, then reload pururu.
@@ -334,7 +334,7 @@ An entity the program acts on isn't created, usually because its ID is taken. Fi
 ### `script.… acts on …, which is disabled; not generating it`
 
 ```
-script.pururu_greenhouse_program_clean acts on switch.pururu_greenhouse_switch_sprinkler, which is disabled; not generating it
+script.pururu_greenhouse_program_executable_clean acts on switch.pururu_greenhouse_switch_sprinkler, which is disabled; not generating it
 ```
 
 You disabled an entity the program acts on. Until you enable it again, the script is `unavailable` and starting it does nothing. Enable it again and the program comes back, with what you set on its script (disabled, entity ID, area).
@@ -342,7 +342,7 @@ You disabled an entity the program acts on. Until you enable it again, the scrip
 ### `script.… is already taken by …; not generating it`
 
 ```
-script.pururu_greenhouse_program_clean is already taken by script.mine, a script with the same ID; not generating it
+script.pururu_greenhouse_program_executable_clean is already taken by script.mine, a script with the same ID; not generating it
 ```
 
 A script of your own, or of another integration, has the program's ID. pururu never takes it over: rename or remove the other script, or give the program another key.

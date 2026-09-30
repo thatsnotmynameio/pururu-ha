@@ -18,9 +18,10 @@ pururu:
       lights:
         teto: {entity: light.despensa_teto, name: Teto}
       programs:
-        blink:
-          name: Piscar
-          sequence: [{turn_on: light_teto}, {delay: 2}, {turn_off: light_teto}]
+        executable:
+          blink:
+            name: Piscar
+            sequence: [{turn_on: light_teto}, {delay: 2}, {turn_off: light_teto}]
       reactions:
         teto_on:     {name: Teto acendeu, when: light_teto, to: "on"}
         washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off", then: blink}
@@ -137,7 +138,7 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 ### What it does
 
 <Property name="then" type="program key" optional>
-  A key of **this device's** [`programs`](/concepts/programs): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a script's entity ID or a list is a configuration error: `reactions: morning: clean is not a program of this device`.
+  A key of **this device's** [`programs: executable:`](/concepts/programs): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a script's entity ID or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`.
 </Property>
 
 ---
@@ -171,11 +172,11 @@ A reaction with `then` starts its program's script, but only if it isn't running
   actions:
     - if:
         - condition: state
-          entity_id: script.pururu_laundry_lights_program_blink
+          entity_id: script.pururu_laundry_lights_program_executable_blink
           state: "off"
       then:
         - action: script.turn_on
-          target: {entity_id: script.pururu_laundry_lights_program_blink}
+          target: {entity_id: script.pururu_laundry_lights_program_executable_blink}
 ```
 
 | When | What happens |
@@ -218,7 +219,7 @@ The automation triggers at 13:00, and again at 14:00, 15:00 and 16:00. A try run
     - {trigger: time, at: "16:00:00", id: retry_3, variables: {since: 10860}}
   conditions:
     - condition: template
-      value_template: "{{ since is not defined or as_timestamp(state_attr('script.pururu_orchard_program_water', 'last_triggered'), 0) < now().timestamp() - since }}"
+      value_template: "{{ since is not defined or as_timestamp(state_attr('script.pururu_orchard_program_executable_water', 'last_triggered'), 0) < now().timestamp() - since }}"
   actions: [...]
 ```
 

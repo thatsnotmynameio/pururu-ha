@@ -89,7 +89,7 @@ async def test_alerts_alone_are_not_a_feature(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """`alerts` is a device key, like `programs`: neither counts as a device's feature."""
     program = {"name": "X", "sequence": [{"turn_on": "switch_sprinkler"}]}
-    assert not await setup(ha, {KEY: {"name": "Dummy washer", "programs": {"it": program},
+    assert not await setup(ha, {KEY: {"name": "Dummy washer", "programs": {"executable": {"it": program}},
                                       "alerts": {"overload": OVERLOAD}}})
     # Only the real features, in FEATURES' order: alerts is none of them
     assert ("a device needs at least one feature "
@@ -116,9 +116,9 @@ async def test_an_alert_may_watch_a_meter(ha: HomeAssistant) -> None:
 async def test_an_alert_may_watch_a_programs_statistic(ha: HomeAssistant) -> None:
     """A program's statistic is a device key's entity key, not a feature's: an alert still watches it."""
     program = {"name": "Clean", "sequence": [{"turn_on": "switch_sprinkler"}]}
-    too_many = {"name": "Too many", "when": "program_clean_cycles_total", "above": 5}
+    too_many = {"name": "Too many", "when": "program_executable_clean_cycles_total", "above": 5}
     assert await setup(ha, {KEY: {"name": "Dummy washer", "switches": SWITCHES,
-                                  "programs": {"clean": program},
+                                  "programs": {"executable": {"clean": program}},
                                   "alerts": {"too_many": too_many}}})
     assert ha.states.get(alert("too_many")) is not None
 

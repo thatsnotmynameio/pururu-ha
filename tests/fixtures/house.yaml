@@ -110,15 +110,16 @@ devices:
     switches:
       sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
     programs:
-      clean:
-        name: Limpar
-        sequence:
-          - turn_on: switch_sprinkler
-          - delay: {hours: 2}
-          - turn_off: switch_sprinkler
-        statistics:
-          runtime: [today, week, month, year]
-          cycles: [today, week, month, year]
+      executable:
+        clean:
+          name: Limpar
+          sequence:
+            - turn_on: switch_sprinkler
+            - delay: {hours: 2}
+            - turn_off: switch_sprinkler
+          statistics:
+            runtime: [today, week, month, year]
+            cycles: [today, week, month, year]
     reactions:
       morning:
         name: Manhã

@@ -45,9 +45,9 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "device washer: reactions: it: device dryer is not in devices",
         id="a reaction's device"),
     pytest.param(
-        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "programs": {
-            "clean": {"name": "Clean", "sequence": [{"turn_on": "switch_nope"}]}}}}},
-        ["devices", "greenhouse", "programs", "clean"],
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "programs": {"executable": {
+            "clean": {"name": "Clean", "sequence": [{"turn_on": "switch_nope"}]}}}}}},
+        ["devices", "greenhouse", "programs", "executable", "clean"],
         "programs: switch_nope is not an entity key of another feature of this device",
         id="a program's step"),
     pytest.param(

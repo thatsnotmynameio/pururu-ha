@@ -58,13 +58,14 @@ pururu:
       switches:
         sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
       programs:
-        clean:
-          name: Limpar
-          sequence:
-            - turn_on: switch_sprinkler
-            - delay: {hours: 2}
-            - turn_off: switch_sprinkler
-          statistics: {runtime: [month], cycles: [month]}
+        executable:
+          clean:
+            name: Limpar
+            sequence:
+              - turn_on: switch_sprinkler
+              - delay: {hours: 2}
+              - turn_off: switch_sprinkler
+            statistics: {runtime: [month], cycles: [month]}
       reactions:
         morning: {name: Manhã, at: "08:00", then: clean, statistics: {triggered: [month]}}
     biblioteca:
@@ -190,7 +191,7 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 ---
 
 <Property name="programs" type="map" optional>
-  A map of **program key → program**, each one a Home Assistant script. It isn't a feature. See [Programs](/concepts/programs#settings).
+  `executable:`, a map of **program key → program**, each one a Home Assistant script. It isn't a feature. See [Programs](/concepts/programs#settings).
 </Property>
 
 ---

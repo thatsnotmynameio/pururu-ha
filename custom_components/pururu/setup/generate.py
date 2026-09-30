@@ -5,12 +5,12 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from ..aspects import notifications
+from ..aspects import notifications, programs
 from ..const import CONF_CONFIG, CONF_DEVICES, CONF_NOTIFY
 from ..core import generated
 from ..core.roles import Generates
 from ..core.runtime import Built, PururuConfigEntry
-from ..device_keys import programs, reactions
+from ..device_keys import reactions
 from . import catalogue
 
 _LOGGER = logging.getLogger(__name__)

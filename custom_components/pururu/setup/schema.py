@@ -9,7 +9,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_NAME
 from homeassistant.helpers import config_validation as cv
 
-from ..aspects import alerts
+from ..aspects import alerts, programs
 from ..const import (
     CONF_ALERTS,
     CONF_AREA,
@@ -24,7 +24,7 @@ from ..const import (
 from ..core import messages
 from ..core.feature import Feature
 from ..core.resolve import Index
-from ..device_keys import programs, reactions
+from ..device_keys import reactions
 from ..features import FEATURES
 from ..outputs import alert_lights, events, places
 from . import catalogue, checks

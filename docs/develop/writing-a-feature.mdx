@@ -171,7 +171,7 @@ For a feature that stands for real entities of one domain, build each entity on 
 
 **Entity keys repeated per item.** Some features create the same set of entities for every item of their block: the programs give each program its own last cycle, totals and meters. Add `Items(keys, of)`: `keys` the suffixes (suffix → platform), `of` a function that returns, from the validated block, its items as `Item(slug, name)` (`core/feature.py`). `Configured` and `Items` never go together:
 
-- An item's entity key is `<slug>_<suffix>` (`clean_cycles_total`), so `sensor.pururu_<key>_program_clean_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
+- An item's entity key is `<slug>_<suffix>` (`executable_clean_cycles_total`), so `sensor.pururu_<key>_program_executable_clean_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
 - Each is named by its suffix's translation, `<namespace>_<suffix>` (`program_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{program} cycles"`, `"Ciclos de {program}"`.
 - Each entity calls `self._identify(device, platform, suffix, item=item)`.
 

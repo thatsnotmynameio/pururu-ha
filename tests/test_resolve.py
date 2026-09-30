@@ -19,7 +19,7 @@ HOUSE: dict[str, Any] = {
             "alerts": {"offline": None},
         },
         "switches": {"plug": {"entity": "switch.washer_plug", "name": "Plug"}},
-        "programs": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switch_plug"}]}},
+        "programs": {"executable": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switch_plug"}]}}},
     },
     "lights": {"name": "Lights", "lights": {"teto": {"entity": "light.teto", "name": "Teto"}}},
 }
@@ -59,8 +59,8 @@ def test_a_configured_key_takes_its_builders_actions(index: Any) -> None:
 
 
 def test_an_items_key_knows_its_item(index: Any) -> None:
-    target = find(index, "washer", None, "program_clean_cycles_total")
-    assert (target.builder, target.item) == ("programs", "clean")
+    target = find(index, "washer", None, "program_executable_clean_cycles_total")
+    assert (target.builder, target.item) == ("programs", "executable_clean")
 
 
 def test_a_meter_is_by_statistics(index: Any) -> None:
@@ -72,8 +72,8 @@ def test_a_meter_is_by_statistics(index: Any) -> None:
 
 
 def test_an_items_meter_knows_its_item(index: Any) -> None:
-    target = find(index, "washer", None, "program_clean_cycles_year")
-    assert (target.builder, target.by, target.item) == ("programs", "statistics", "clean")
+    target = find(index, "washer", None, "program_executable_clean_cycles_year")
+    assert (target.builder, target.by, target.item) == ("programs", "statistics", "executable_clean")
 
 
 def test_another_devices_key(index: Any) -> None:

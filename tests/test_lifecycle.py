@@ -61,15 +61,15 @@ async def test_a_failing_first_step_leaves_the_others_and_the_listener(
     """The events failing first: the generated scripts, the dashboard and the rename rule still come."""
     clean = {"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}]}
     with patch.object(module("outputs.events"), "async_setup", side_effect=RuntimeError("boom")):
-        assert await setup(ha, {"greenhouse": {**SWITCH, "programs": {"clean": clean}}})
+        assert await setup(ha, {"greenhouse": {**SWITCH, "programs": {"executable": {"clean": clean}}}})
     assert "Step events failed" in caplog.text
     caplog.clear()  # expected: the autouse fixture would fail on it
     [entry] = ha.config_entries.async_entries(DOMAIN)
-    assert entry.data["scripts"] == ["pururu_greenhouse_program_clean"]
+    assert entry.data["scripts"] == ["pururu_greenhouse_program_executable_clean"]
     assert "pururu" in ha.data[LOVELACE_DATA].dashboards
     with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
         er.async_get(ha).async_update_entity(
-            "script.pururu_greenhouse_program_clean", new_entity_id="script.limpar"
+            "script.pururu_greenhouse_program_executable_clean", new_entity_id="script.limpar"
         )
         await ha.async_block_till_done()
     reloading.assert_called_once()
