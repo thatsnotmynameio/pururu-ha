@@ -215,11 +215,11 @@ class Aspect:
     # The block key it mounts: "statistics", "alerts", "notifications"
     key: str
     # Whether this builder offers it: it has what the aspect needs (Counters;
-    # at least one ready-made alert, or notification)
+    # at least one ready-made alert; at least one Happening)
     offered: Callable[[Feature], bool]
     # Validates the aspect's value, for this builder and its key in the device,
-    # for an aspect whose messages name the builder (the ready-made
-    # notifications'); the alerts aspect doesn't need it
+    # for an aspect whose messages name the builder: the notifications
+    # aspect uses it; the alerts and statistics aspects don't need it
     schema: Callable[[Feature, str], Callable[[Any], Any]]
     # The local entity keys it adds: suffixes for an Items builder; none for
     # the ready-made notifications (automations)

@@ -197,7 +197,7 @@ A feature whose entity carries a cycle (`Provides`) builds it as a `CycleSource`
 
 The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The alerts aspect (`aspects/alerts.py`, `ASPECT`) sees the role, adds the `alert_<name>` keys itself (`catalogue.aspects_of`, `catalogue.keys`), validates the block's `alerts` and builds the enabled ones. Add each one's name and icon under `<namespace>_alert_<name>`, and its default texts under `<namespace>_alert_<name>_message` and `_done_message` in the translations' `common` block; nothing else is needed.
 
-**Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Add `Happenings(<name → Happening>)` (`Happening` in `core/feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py`'s `HAPPENINGS` does. It creates no entity: `device_keys/notifications.py` validates that key of the block (`catalogue._feature_block` takes it out before the feature's schema) and generates an automation per enabled one. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
+**Ready-made notifications.** A feature can offer notifications for what happens to it, off until its block's `notifications` enables them, as `alerts` enables its ready-made alerts. Add `Happenings(<name → Happening>)` (`Happening` in `core/feature.py`): the entity key it watches and the state it goes `to` (and `from_`), as `features/appliance/notifications.py`'s `HAPPENINGS` does. The `Happenings` role is enough: the builder then offers the notifications aspect (`aspects/notifications.py`, `ASPECT`), which takes the block's `notifications` out before the feature's schema, validates it, and generates an automation per enabled one; it creates no entity. Add its name and default message under `<namespace>_notification_<name>_name` and `_message` in the translations' `common` block, and a row to the table of [Notifications](/concepts/notifications#ready-made-notifications).
 
 ## 6. What the contract test checks
 
@@ -219,10 +219,10 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 | `test_items_have_suffixes_and_slugs` | `Items` has suffixes, and the example's items are slugs |
 | `test_every_per_item_name_has_its_placeholder` | Every suffix's name has the `{<namespace>}` placeholder, in both languages |
 | `test_ready_made_alerts_line_up` | Every ready-made alert's key is the alerts aspect's, not the builder's own (`entity_keys` lacks it, `by == "alerts"`), it watches (and counts from) its own feature's entity keys, has both default texts in both languages, and its settings validate |
-| `test_ready_made_alerts_are_offered_only_with_one` | The alerts aspect is offered only for at least one ready-made alert, the rule `presets_of` gives `alert_lights`: an empty `Presets` offers nothing |
+| `test_ready_made_are_offered_only_with_one` | The alerts aspect is offered only for at least one ready-made alert (the rule `presets_of` gives `alert_lights`), the notifications aspect only for at least one `Happening`: an empty `Presets` or `Happenings` offers nothing |
 | `test_every_alert_takes_the_shared_keys` | The hand-written alert's schema and every ready-made alert's settings take `problem.shared`'s keys (`priority`, `notify`, `lights`); a ready-made alert adds only `for`, and only the default priority differs |
 | `test_alerts_is_a_device_key_not_a_feature` | `alerts` is in `DEVICE_KEYS`, not in `FEATURES`: it never counts as a device's feature |
-| `test_ready_made_notifications_line_up` | Every ready-made notification watches its own feature's entity key, has its name and message in both languages, and validates |
+| `test_ready_made_notifications_line_up` | Every ready-made notification watches its own feature's entity key, has its name and message in both languages, and validates through the notifications aspect, which adds no entity key |
 | `test_each_role_at_most_once` | No role twice in `roles` |
 | `test_configured_and_items_never_together` | A block's keys are either its entity keys or its items |
 | `test_a_device_key_neither_provides_requires_nor_acts` | No device key (`programs`, `reactions`, `alerts`) has `Provides`, `Requires` or `Actions` |
@@ -230,14 +230,15 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 | `test_a_generating_builder_generates_from_its_example` | What `Generates` writes carries its device's pururu pattern |
 | `test_a_capability_is_carried_by_a_cycle_source` | What a builder `Provides` is a `CycleSource` |
 | `test_the_other_cycle_sources_are_pinned_too` | `modes`' `Current` and the programs' `Runs` are `CycleSource` too, though no `Provides` names them |
-| `test_the_aspects_each_builder_offers` | Which aspects (`statistics`, `alerts`) each builder offers, pinned: `appliance` offers both, the rest at most `statistics` |
+| `test_the_aspects_each_builder_offers` | Which aspects (`statistics`, `alerts`, `notifications`) each builder offers, pinned: `appliance` offers all three, the rest at most `statistics` |
+| `test_the_aspects_in_build_order` | `ASPECTS` is the ready-made alerts, then statistics, then the ready-made notifications |
 | `test_an_aspects_keys_are_named_once` | Every key an offered aspect adds has a name and icon in both languages, under the translation key the aspect names it (`Aspect.named`): statistics' outside every namespace (`item_<key>` with `{item}` for an `Items` builder), ready-made alerts' under the builder's |
-| `test_an_offered_aspect_validates_and_builds` | The builder's example with the aspect's own example goes through `mount`, and the aspect builds only the entity keys it lists |
+| `test_an_offered_aspect_validates_and_builds` | The builder's example with the aspect's own example goes through `mount`, and the aspect builds only the entity keys it lists, none when it lists none (the ready-made notifications') |
 | `test_a_builders_own_schema_refuses_an_aspects_key` | The builder's own schema, without `mount`, refuses the aspect's key where it sits: only `mount` may take it out first |
 | `test_a_configured_builder_offers_no_block_aspect` | A `Configured` feature's block is its entity keys, so it offers no aspect |
 | `test_mount_leaves_an_items_key_alone` | In a block of items (`Configured`, or an aspect placed `"item"`), a key alike an aspect's is an item, not the aspect's |
 | `test_mount_refuses_a_block_or_item_that_isnt_a_map` | A block, or an item, that isn't a map is refused with a path, a `vol.Invalid`, not a `KeyError` or `TypeError` |
-| `test_an_absent_aspect_key` | Absent, statistics is mounted as `{}` and ready-made alerts are left out (`mount_absent`); a block that isn't a map gets only the builder's own refusal |
+| `test_an_absent_aspect_key` | Absent, statistics is mounted as `{}` and ready-made alerts and notifications are left out (`mount_absent`), an explicit `{}` or null of theirs still refused; a block that isn't a map gets only the builder's own refusal |
 | `test_mount_skips_an_aspect_without_a_check` | An aspect without a `check` still mounts |
 | `test_a_counter_is_totalled` | Each of a `Counters` feature's needed counters has a `<counter>_total` entity key (per item, with `Items`) for the statistics aspect to meter |
 | `test_a_counter_without_its_setting_is_refused` | A counter needing a setting takes no periods without it (`statistics.idle_energy needs energy`); asking for none passes regardless |

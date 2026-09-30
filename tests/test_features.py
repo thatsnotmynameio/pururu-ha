@@ -528,8 +528,9 @@ def test_an_absent_aspect_key(features: dict[str, Any]) -> None:
         if aspect.mount_absent:
             continue
         for empty in ({}, None):
+            given = placed(aspect, feature, empty, dict(feature.example))
             with pytest.raises(vol.MultipleInvalid) as refused:
-                mount(feature, name, placed(aspect, feature, empty, dict(feature.example)))
+                mount(feature, name, given)
             assert refused.value.errors, (aspect.key, name)
             assert all(error.path[-1] == aspect.key for error in refused.value.errors), (aspect.key, name)
     appliance = features["appliance"]
