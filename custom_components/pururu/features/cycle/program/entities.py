@@ -1,6 +1,6 @@
 """The detector in HA: the program's carrier, and its phases' entities showing it."""
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
@@ -15,6 +15,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
 )
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import STATE_ON, Platform
 from homeassistant.core import (
     CALLBACK_TYPE,
@@ -24,6 +25,7 @@ from homeassistant.core import (
     State,
     callback,
 )
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
@@ -32,6 +34,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.util import dt as dt_util
 
+from ....const import DOMAIN
 from ....core.entity import PururuEntity, reading
 from ....core.feature import Device
 from .. import Cycle, CycleSource, cycle_signal
@@ -59,9 +62,12 @@ class Snapshot(ExtraStoredData):
 class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
     """On while the program runs: it owns the detector, and the phases' entities show it.
 
-    It follows the reading and waits for the detector's next delay. Each step
-    writes its own state (sending the program's cycle when it ends), then calls
-    each view (`subscribe`) with the step's changes.
+    It follows the reading and waits for the detector's next delay, from once
+    its entry is set up: every view listens by then (`subscribe`, and the
+    phases' cycle entities on their signals), so no step's cycle is lost. It
+    wraps its phases: a step writes its own state, then calls each view with
+    the step's changes; a step that ends the program calls the views first,
+    then writes its state and sends the program's cycle.
     """
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -84,6 +90,8 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
         self._views: list[View] = []
         # Whether the detector holds what was restored: until then, a view shows its own
         self.ready = False
+        # Whether it follows the reading: once its entry is set up
+        self._started = False
         self._timer: CALLBACK_TYPE | None = None
 
     @property
@@ -113,23 +121,55 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
 
     @callback
     def subscribe(self, view: View) -> CALLBACK_TYPE:
-        """Call `view` with each step's changes, after the carrier's own; returns the unsubscribe."""
+        """Call `view` with each step's changes (after the carrier's state; before it when the program ends); returns the unsubscribe."""
         self._views.append(view)
         return partial(self._views.remove, view)
 
     @override
     async def async_added_to_hass(self) -> None:
-        """Restore the detector, then follow the reading from its current state."""
+        """Restore the detector; follow the reading once the entry is set up, every view listening.
+
+        A step at add could end a restored phase before its entities listen
+        (on this platform, added after the carrier; on another, maybe not
+        added yet), and its cycle would be lost.
+        """
         await super().async_added_to_hass()
         if (extra := await self.async_get_last_extra_data()) is not None:
-            self.detector.restore(extra.as_dict())
+            self._restore(extra.as_dict())
         self.ready = True
+        self.async_on_remove(self._cancel_timer)
+        entry = self.platform.config_entry
+        if entry is None or entry.state is ConfigEntryState.LOADED:
+            self._start()
+        else:
+            self.async_on_remove(
+                entry.async_on_state_change(partial(self._entry_changed, entry))
+            )
+
+    def _restore(self, data: Any) -> None:
+        """Take back the snapshot; one the detector can't read (a hand-edited .storage) is none."""
+        if not isinstance(data, Mapping):
+            return
+        try:
+            self.detector.restore(data)
+        except ValueError:  # an impossible date
+            self.detector = Detector(self.detector.program)
+
+    @callback
+    def _entry_changed(self, entry: ConfigEntry[Any]) -> None:
+        # Not unsubscribed here: HA iterates its callbacks while calling them
+        if not self._started and entry.state is ConfigEntryState.LOADED:
+            self._start()
+
+    @callback
+    def _start(self) -> None:
+        """Follow the reading from its current state."""
+        self._started = True
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass, self._reading, self._reading_changed
             )
         )
-        self.async_on_remove(self._cancel_timer)
         self._step(self._read(self.hass.states.get(self._reading)))
 
     def _read(self, state: State | None) -> list[Change]:
@@ -156,16 +196,21 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
 
     @callback
     def _step(self, changes: list[Change]) -> None:
-        """Show a step: the carrier's state (and the program's cycle), then each view; then wait for the next delay."""
+        """Show a step, then wait for the next delay.
+
+        The carrier's state, then each view; when the program ends, each view
+        first, then the carrier's state and the program's cycle: its end
+        comes with its phases' ended (the events' states agree).
+        """
         ended = next(
             (c.cycle for c in changes if isinstance(c, Ended) and c.key is None), None
         )
-        if ended is not None:
-            self._send(ended)
-        else:
+        if ended is None:
             self.async_write_ha_state()
         for view in list(self._views):
             view(changes)
+        if ended is not None:
+            self._send(ended)
         self._cancel_timer()
         if (due := self.detector.due()) is not None:
             self._timer = async_track_point_in_utc_time(
@@ -177,7 +222,10 @@ class PhaseRunning(CycleSource, BinarySensorEntity):
     """On while its phase runs: the source of the phase's cycles.
 
     Added after the carrier on the same platform, so the detector is restored
-    by then: its first state is already the restored one.
+    by then: its first state is already the restored one. That holds because
+    `build` puts the carrier first, `binary_sensor.py` hands a platform's
+    entities to one `async_add_entities`, and HA's `EntityPlatform` adds them
+    one by one, each awaited; splitting that call would break it.
     """
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -241,7 +289,12 @@ class PhaseRunning(CycleSource, BinarySensorEntity):
 
 
 class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
-    """The phase that started last among those running, or idle; those running and seen as attributes."""
+    """The phase that started last among those running, or idle; those running and seen as attributes.
+
+    Until the carrier restored the detector (another platform may add it
+    first), it shows its own restored state and attributes. A disabled carrier
+    never runs the detector: it shows idle, as every phase shows off.
+    """
 
     _attr_device_class = SensorDeviceClass.ENUM
 
@@ -253,14 +306,16 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
         self.sources = (source,)
         self._carrier = carrier
         phases = carrier.detector.program.phases
-        self._options = [IDLE, *(phase.key for phase in phases)]
+        self._phases = [phase.key for phase in phases]
+        self._options = [IDLE, *self._phases]
         self._attr_options = self._options
         self._restored = IDLE
+        self._restored_attributes: dict[str, Any] = {"running": [], "seen": []}
 
     @property
     @override
     def native_value(self) -> str:
-        """The current phase; the restored one until the carrier restored the detector (another platform may add it first)."""
+        """The current phase; the restored one until the carrier restored the detector."""
         if not self._carrier.ready:
             return self._restored
         return self._carrier.detector.current
@@ -268,18 +323,46 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
-        """The running phases, and those the program's current or last cycle saw, in the configuration's order."""
+        """The running phases, and those the program's current or last cycle saw, in the configuration's order; the restored ones until the carrier restored the detector."""
+        if not self._carrier.ready:
+            return self._restored_attributes
         detector = self._carrier.detector
         return {"running": detector.running, "seen": detector.seen}
 
     @override
     async def async_added_to_hass(self) -> None:
-        """Take the restored phase, then show each step of the carrier's."""
+        """Take the restored phase, unless the carrier is disabled; then show each step of the carrier's."""
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
-        if last is not None and last.state in self._options:
+        if (
+            last is not None
+            and last.state in self._options
+            and not self._carrier_disabled()
+        ):
             self._restored = last.state
+            own = [] if last.state == IDLE else [last.state]
+            self._restored_attributes = {
+                name: self._known(last.attributes.get(name), own)
+                for name in ("running", "seen")
+            }
         self.async_on_remove(self._carrier.subscribe(self._changed))
+
+    def _carrier_disabled(self) -> bool:
+        """Whether the user disabled the carrier: HA never adds it."""
+        registry = er.async_get(self.hass)
+        found = registry.async_get_entity_id(
+            Platform.BINARY_SENSOR, DOMAIN, str(self._carrier.unique_id)
+        )
+        entry = None if found is None else registry.async_get(found)
+        return entry is not None and entry.disabled
+
+    def _known(self, value: Any, default: list[str]) -> list[str]:
+        """A restored list of phases, in the configuration's order; `default` when it isn't one."""
+        if not isinstance(value, list) or not all(
+            isinstance(key, str) and key in self._phases for key in value
+        ):
+            return default
+        return [key for key in self._phases if key in value]
 
     @callback
     def _changed(self, _changes: list[Change]) -> None:

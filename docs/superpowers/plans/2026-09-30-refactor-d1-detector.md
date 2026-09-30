@@ -90,9 +90,12 @@ Where the spec is silent, decided here:
 15. **Restoring:**
     - The carrier stores the whole snapshot: the running cycles, the order they started in, and `seen`. Delays and armed phases aren't stored; they count again from the next reading.
     - A `PhaseRunning` is added after the carrier on the same platform (`build`'s order; HA adds one platform's entities one by one), so it never shows an unrestored state.
-    - `PhaseCurrent` (another platform) shows its restored state until the carrier is `ready`.
+    - `PhaseCurrent` (another platform) shows its restored state and attributes (`running`, `seen`) until the carrier is `ready`.
+    - The carrier follows the reading only once its entry is set up (`LOADED`): a step at add could end a restored phase (delays of 0) before its entities listen, and the cycle would be lost. A reading before that is read by its first step.
+    - A snapshot the detector can't read (not a map, an impossible date) is none: the carrier starts from nothing.
 16. **After the program ends,** a running phase whose band still holds is armed, and starts with the next program cycle (today's modes).
 17. **Ordering at one instant:** the program's deadline first, then the phases' ends, then their starts, each in the configuration's order.
+    The carrier wraps its phases' entities: its state is written before theirs when the program starts, and after theirs when it ends (its `running` → `off` and its end signal come with its phases ended, `phase_current` idle and `phase_last` set: the events' `states` agree).
 18. **Translation keys owned by the detector (`NAMED`)**, outside every namespace, as the statistics aspect's:
     - `phase_current` (today's key of `phases`, whose name is the same; D2 deletes `phases` and the key stays);
     - `phase_last`;
@@ -101,6 +104,7 @@ Where the spec is silent, decided here:
 
     A configured phase's binary sensor is named by its `name`, as a configured entity is. The contract test counts `NAMED` as created and checks each is named and has an icon.
 19. **The 10:10 heating of the purifier's day is not truncated on `main` already.** On `main`, today's modes record 189 s at a 1-s replay and 185 s at a 30-s step; the handover's start from when it was armed came with 0.1.20 (#30). The ~69 s once pinned elsewhere comes from a replay of an older version. D1's replay pins the detector's result, 10:10:50.569 → 10:13:59.899 UTC on the anonymised day (189.33 s, its on_delay excluded). D1's own gain on that data is the idle gap: a phase armed during another's gap is no longer lost (Task 1's idle-gap tests). On that day itself the counts are unchanged (14 drinks, 21 chills, 2 heatings, 33 appliance cycles), and `other` never runs.
+20. **A disabled carrier:** HA never adds it, so the detector never runs. Its phases' entities are still created (`creatable` ignores a disabled source, as for every follower today): each `phase_<key>` shows off and `phase_current` shows `idle`, not its restored phase. Dropping the followers of a disabled source would change every feature, not only this one.
 
 ---
 
