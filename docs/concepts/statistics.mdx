@@ -60,9 +60,9 @@ A counter under **Needs** takes no periods without that other setting: `applianc
 
 ## Entities
 
-Each meter is `sensor.pururu_<key>_<namespace>_<counter>_<period>`, for a block's own counter, or `sensor.pururu_<key>_<namespace>_<item>_<counter>_<period>` for a phase's, a program's or a reaction's, `<item>` its slug (`phase_<key>`, `phase_other`; a detected program's phase `<program>_phase_<key>`; an executable program `executable_<key>`) or its key (a detected program, a reaction).
+Each meter is `sensor.pururu_<key>_<namespace>_<counter>_<period>`, for a block's own counter, or `sensor.pururu_<key>_<namespace>_<item>_<counter>_<period>` for a phase's, a program's or a reaction's, `<item>` its slug (`phase_<key>`, `phase_other`; a detected program's phase `<program>_phase_<key>`, `<program>_phase_other`; an executable program `executable_<key>`) or its key (a detected program, a reaction).
 
-It's named after the device, the counter and the period: **Tanquinho Runtime today**. Per item, the item's own name goes between the device's name and the counter's, as in a phase's meters, [`programs`](/concepts/programs#statistics) and [`reactions`](/concepts/reactions#statistics): **Tanquinho Aquecendo cycles today**, or a detected program's, **Tanquinho Algodão cycles today**. `other`'s meters are named by their own translations instead: **Tanquinho Other phase cycles today**.
+It's named after the device, the counter and the period: **Tanquinho Runtime today**. Per item, the item's own name goes between the device's name and the counter's, as in a phase's meters, [`programs`](/concepts/programs#statistics) and [`reactions`](/concepts/reactions#statistics): **Tanquinho Aquecendo cycles today**, or a detected program's, **Tanquinho Algodão cycles today**. `other`'s meters are named by their own translations instead: **Tanquinho Other phase cycles today**; a detected program's `other`'s carry its name: **Tanquinho Algodão other phase cycles today**.
 
 Every meter's unique ID is its entity ID without the platform, and it survives restarts and reloads: it's Home Assistant's `utility_meter`, seeded from the total's current value the first time it's added, so it doesn't sit at `unknown` until the total next changes.
 

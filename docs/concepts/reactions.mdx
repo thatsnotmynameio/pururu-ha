@@ -138,7 +138,7 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 ### What it does
 
 <Property name="then" type="program key" optional>
-  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a script's entity ID or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`. A detected program can't be started: `reactions: <reaction>: <key> is not an executable program of this device`.
+  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a detected program (it can't be started), a script's entity ID or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`.
 </Property>
 
 ---

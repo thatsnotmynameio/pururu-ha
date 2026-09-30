@@ -145,16 +145,22 @@ appliance:
   Its [phases](#phases) and [`other`](#other), as the running program's.
 </Property>
 
-It reads the appliance's `power`, and its `energy` for each cycle's kWh. It runs on its own, beside the running program: a cycle of `cotton` is also one of the running program's (both bands hold), and each counts its own. A restart or reload keeps its running cycle, as the running program's.
+It reads the appliance's `power`, and its `energy` for each cycle's kWh. It runs on its own, beside the running program. Here, a cycle of `cotton` is also one of the running program's (both bands hold); each counts its own. A restart or reload keeps its running cycle, as the running program's.
 
 Its key is a slug, and an entity key of the appliance's namespace (`cotton` → `binary_sensor.pururu_clothes_washer_appliance_cotton`), so a key whose entities would be the appliance's is refused at the configuration: `device clothes_washer: pururu_clothes_washer_appliance_idle_energy_total would be two entities`. That rules out:
 
 - the appliance's own entity keys (`power`, `running`, `cycles_total`…, and `idle`, whose `idle_energy_total` is the appliance's);
 - its ready-made alerts' (`alert_offline`…) and its meters' (`runtime_today`…);
-- its running program's phases' (`phase_current`, `phase_<phase>`…);
-- another detected program's (`cotton_phase_warming` beside `cotton` with a phase `warming`).
+- another detected program's (`cotton_cycles_total` or `cotton_runtime_today` beside `cotton`).
 
-Pick a word, not an entity's name.
+These count even while the setting that adds them is off (no `energy`, no `statistics`, no alert enabled), so turning it on later never breaks the configuration.
+
+A phase can be added later too, with any key, and its entities' keys begin with `phase` (the running program's) or `<program>_phase` (a detected program's). So a detected program keyed `phase` or `phase_…`, or `cotton_phase` or `cotton_phase_…` beside a detected program `cotton`, is refused at once, whether those phases exist yet or not:
+
+- `phase_warming is reserved for the running program's phases (phase, phase_…): name the program otherwise`;
+- `cotton_phase_warming is reserved for detected program cotton's phases (cotton_phase, cotton_phase_…): name the program otherwise`.
+
+`phases`, or `rinse_phase` without a program `rinse`, is a key like any other. Pick a word, not an entity's name.
 
 ### Phases
 
@@ -201,7 +207,7 @@ A phase's key is a slug. `idle` (the state while none runs) and `other` (the bui
 
 | Entity | What it is |
 |---|---|
-| `binary_sensor.pururu_<key>_appliance_running` | The program: on while the appliance runs (see [`appliance`](/features/appliance#entities)) |
+| `binary_sensor.pururu_<key>_appliance_running` | The running program: on while the appliance runs (see [`appliance`](/features/appliance#entities)) |
 | `sensor.pururu_<key>_appliance_phase_current` | The running phase that started last, or `idle`. Device class `enum`. Attributes: `name` (a configured phase's `name`; none for `idle` and `other`, whose state is translated), `running` (the running phases, in the configuration's order) and `seen` (the phases of the current or last cycle, `other` included, cleared when a cycle starts) |
 | `sensor.pururu_<key>_appliance_phase_last` | The phase of the last phase cycle that ended; `enum`, kept across restarts, `unknown` until the first |
 | `binary_sensor.pururu_<key>_appliance_phase_<phase>` | On while the phase runs, named by its `name` (`other`: "Other phase"). Attributes `cycle_start`, and `cycle_end` while its `off_delay` runs |
@@ -233,7 +239,7 @@ A configured phase's key, such as `warming` or `wringing`, is shown as written: 
 
 An alert's or a reaction's `when` names a phase's entity key as it ends every entity ID: `appliance_phase_current`, `appliance_phase_resfriar`, `appliance_phase_resfriar_cycles_total`. A phase not configured, or any phase key of an appliance without phases, is refused at the configuration: `alerts: appliance_phase_morno is not an entity key of another feature of this device`.
 
-A detected program's the same way: `when: appliance_cotton`, `appliance_cotton_phase_current`, `appliance_cotton_cycles_total`. It can't be started: a reaction's `then` naming it is refused (`reactions: <reaction>: cotton is not an executable program of this device`), and so is a step acting on it (`programs: appliance_cotton does not take turn_on`).
+A detected program's entities are named the same way: `when: appliance_cotton`, `appliance_cotton_cycles_total`, and, with phases, `appliance_cotton_phase_current`. It can't be started: a reaction's `then` naming it is refused (`reactions: <reaction>: cotton is not an executable program of this device`), and so is a step acting on it (`programs: appliance_cotton does not take turn_on`).
 
 Renaming a phase's entity in the UI is followed, as every pururu entity. If `running` can't be created (its ID taken), neither are the phases: `sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it`. A detected program's entities follow its own binary sensor the same way.
 
