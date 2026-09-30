@@ -26,7 +26,7 @@ pururu:
 ## Settings
 
 <Property name="power" type="entity ID" required>
-  The plug's power sensor. Its value is compared with `running.threshold`, in the sensor's own unit (usually W).
+  The plug's power sensor. Its value is compared with `running_program.above`, in the sensor's own unit (usually W).
 </Property>
 
 ---
@@ -37,20 +37,20 @@ pururu:
 
 ---
 
-<Property name="running.threshold" type="number" required>
-  Above this power the appliance is working. The threshold itself isn't above: with `threshold: 4`, a reading of exactly 4 W counts as stopped.
+<Property name="running_program.above" type="number" required>
+  Above this power the appliance is working. The value itself isn't above: with `above: 4`, a reading of exactly 4 W counts as stopped.
 </Property>
 
 ---
 
-<Property name="running.on_delay" type="time period" required>
-  How long the power must stay **above** the threshold before a cycle starts. It ignores button presses and short spikes.
+<Property name="running_program.on_delay" type="time period" optional>
+  How long the power must stay **above** `above` before a cycle starts. It ignores button presses and short spikes. Without it, 0: a cycle starts at the first reading above.
 </Property>
 
 ---
 
-<Property name="running.off_delay" type="time period" required>
-  How long the power must stay **at or below** the threshold before the cycle ends. It carries the cycle through pauses and the appliance's end-of-cycle tail. A reading back above the threshold during this delay cancels the end.
+<Property name="running_program.off_delay" type="time period" optional>
+  How long the power must stay **at or below** `above` before the cycle ends. It carries the cycle through pauses and the appliance's end-of-cycle tail. A reading back above during this delay cancels the end. Without it, 0: the cycle ends at the first reading at or below.
 </Property>
 
 ---

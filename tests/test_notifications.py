@@ -1,6 +1,7 @@
 """Ready-made notifications: a made-up washer tells when its cycle finishes."""
 
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from pathlib import Path
 import re
 from typing import Any
@@ -12,7 +13,7 @@ from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
 
-from helpers import fake, generated, module, reload, setup, tick
+from helpers import capture, fake, generated, module, reload, settle, setup, tick
 
 KEY = "washer"
 POWER = "sensor.demo_plug_power"
@@ -188,6 +189,28 @@ async def test_the_phone_is_told_when_a_cycle_finishes(ha: HomeAssistant, freeze
     await fake(ha, POWER, "0")
     assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
     await cycle(ha, freezer)
+    assert [call.data for call in calls] == [{"title": "Máquina", "message": "The cycle finished."}]
+
+
+async def test_a_late_timer_still_ends_the_cycle_before_the_next(ha: HomeAssistant, freezer: Any,
+                                                                automations: None) -> None:
+    """on_delay 0: a reading above after off_delay passed, before its timer ran, ends the cycle and starts the next; running goes through off, and the phone is told."""
+    calls = async_mock_service(ha, "notify", "phone")
+    quick = {"power": POWER, "running_program": {"above": 4, "off_delay": {"minutes": 2}},
+             "notifications": ENABLED}
+    await fake(ha, POWER, "0")
+    assert await setup(ha, {KEY: {"name": "Máquina", "appliance": quick}}, config={"notify": PHONE})
+    changes = capture(ha, "state_changed")
+    await fake(ha, POWER, "100")
+    await fake(ha, POWER, "0")
+    freezer.tick(timedelta(seconds=130))  # off_delay passed at 120 s; its timer hasn't run
+    ha.states.async_set(POWER, "100")  # handled at once, before the timer
+    await settle()
+    await ha.async_block_till_done()
+    shown = [event.data["new_state"].state for event in changes
+             if event.data["entity_id"] == RUNNING
+             and event.data["new_state"].state != event.data["old_state"].state]
+    assert shown == ["on", "off", "on"], shown
     assert [call.data for call in calls] == [{"title": "Máquina", "message": "The cycle finished."}]
 
 

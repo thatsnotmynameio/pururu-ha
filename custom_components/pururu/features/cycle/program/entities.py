@@ -69,7 +69,9 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
     and the removed carrier never starts; if that unload fails too, HA keeps
     the entities and the carrier runs them. It wraps its phases: a step writes its own state, then calls each view with
     the step's changes; a step that ends the program calls the views first,
-    then writes its state and sends the program's cycle.
+    then writes its state and sends the program's cycle. A reading's step
+    comes after, in its own step, the delays a late timer missed: a program
+    ended and started again by one reading shows `off` in between.
     """
 
     _attr_device_class = BinarySensorDeviceClass.RUNNING
@@ -180,16 +182,25 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
                 self.hass, self._reading, self._reading_changed
             )
         )
-        self._step(self._read(self.hass.states.get(self._reading)))
+        self._read(self.hass.states.get(self._reading))
 
-    def _read(self, state: State | None) -> list[Change]:
-        return self.detector.read(
-            reading(state), dt_util.utcnow(), kwh_now(self.hass, self._energy)
-        )
+    @callback
+    def _read(self, state: State | None) -> None:
+        """Show a reading: first, in its own step, what a late timer missed.
+
+        One reading can end the program (its off_delay passed, the timer not
+        run yet) and start it again (on_delay 0): the end is shown first, `off`
+        and its phases' ends, then the reading's step shows the new cycle.
+        """
+        now = dt_util.utcnow()
+        kwh = kwh_now(self.hass, self._energy)
+        if missed := self.detector.catch_up(now, kwh):
+            self._step(missed)
+        self._step(self.detector.read(reading(state), now, kwh))
 
     @callback
     def _reading_changed(self, event: Event[EventStateChangedData]) -> None:
-        self._step(self._read(event.data["new_state"]))
+        self._read(event.data["new_state"])
 
     @callback
     def _delay_passed(self, _now: datetime) -> None:

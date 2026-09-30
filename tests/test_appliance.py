@@ -87,6 +87,26 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
     assert not await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
 
 
+@pytest.mark.parametrize(("block", "reasons"), [
+    pytest.param({"power": POWER, "running": {"on_delay": 60, "off_delay": 120, "threshold": 4}},
+                 ["'running' is an invalid option for 'pururu', check: "
+                  f"pururu->devices->{KEY}->appliance->running",
+                  "required key 'running_program' not provided"],
+                 id="running is now running_program"),
+    pytest.param({**APPLIANCE, "running_program": {**APPLIANCE["running_program"], "name": "X"}},
+                 ["running_program takes no name: it is the appliance running for dictionary value "
+                  f"'pururu->devices->{KEY}->appliance->running_program'"],
+                 id="running_program takes no name"),
+])
+async def test_the_old_block_and_a_name_are_refused_by_their_text(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, block: dict[str, Any],
+        reasons: list[str]) -> None:
+    assert not await setup(ha, {KEY: {"name": "Demo washer", "appliance": block}})
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    for reason in reasons:
+        assert any(reason in message for message in errors), (reason, errors)
+
+
 # --- running -------------------------------------------------------------------
 
 
@@ -639,6 +659,18 @@ async def test_cycle_start_is_shown_while_running(washer: HomeAssistant, freezer
     assert washer.states.get(RUNNING).attributes["cycle_start"] == started
     await end_cycle(washer, freezer)
     assert "cycle_start" not in washer.states.get(RUNNING).attributes
+
+
+async def test_a_late_timer_dates_the_start_when_on_delay_passed(washer: HomeAssistant,
+                                                                freezer: Any) -> None:
+    """120 W from t0, the timer run 5 s late: the cycle starts at t0 + on_delay, however late it ran."""
+    started = dt_util.utcnow() + timedelta(seconds=60)
+    await watts(washer, 120)
+    await tick(washer, freezer, 65)
+    assert running(washer) == "on"
+    assert washer.states.get(RUNNING).attributes["cycle_start"] == started
+    await end_cycle(washer, freezer)
+    assert dt_util.parse_datetime(value(washer, "last_cycle_start")) == started
 
 
 async def test_cycle_end_is_shown_while_the_end_is_pending(washer: HomeAssistant,

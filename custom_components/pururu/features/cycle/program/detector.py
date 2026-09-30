@@ -172,7 +172,7 @@ class Detector:
         counting: each counts again from the next reading, and every run, and
         when it left, stays.
         """
-        changes = self._pass(now, kwh, at_now=False)
+        changes = self.catch_up(now, kwh)
         if value is None:
             for track in (self._program, *self._phases.values()):
                 track.starting = track.ending = None
@@ -195,6 +195,16 @@ class Detector:
         # The delays passing now, a delay of 0 too; then a phase that waited
         # (a dip, the program's reading out) starts if this reading ended its wait
         return [*changes, *self.advance(now, kwh), *self._start_armed(kwh)]
+
+    def catch_up(self, now: datetime, kwh: float | None) -> list[Change]:
+        """Every delay passed before `now`, each at its own time: what `read` passes first.
+
+        Called before `read` at the same `now`, it splits one reading's step
+        in two, and `read` then passes none of them again: a late timer's end
+        comes before what the reading starts, a program ended and started
+        again by one reading (on_delay 0) too.
+        """
+        return self._pass(now, kwh, at_now=False)
 
     def advance(self, now: datetime, kwh: float | None) -> list[Change]:
         """Every delay passed by `now`, each at its own time; what they started and ended."""

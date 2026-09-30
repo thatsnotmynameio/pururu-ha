@@ -213,6 +213,34 @@ async def test_the_programs_cycle_is_sent_on_the_carriers_signals(
     assert [each.end for each in cycles] == [left]
 
 
+def shown(changes: list[Any], entity_id: str) -> list[str]:
+    """The states `entity_id` went through in `changes`, attribute-only writes left out."""
+    return [event.data["new_state"].state for event in changes
+            if event.data["entity_id"] == entity_id
+            and event.data["new_state"].state != event.data["old_state"].state]
+
+
+async def test_a_late_timer_ends_the_phases_before_the_next_cycle(ha: HomeAssistant, freezer: Any) -> None:
+    """on_delay 0: a reading back above after the program's off_delay passed, before its timer ran, ends the program and its phase, then starts both again; each shows its end."""
+    quick = {"above": 4, "off_delay": {"minutes": 2},
+             "phases": {"gelar": {"name": "Gelar", "above": 40, "off_delay": {"minutes": 5}}}}
+    assert await setup(ha, {KEY: {"name": "Demo filter",
+                                  "appliance": {"power": POWER, "running_program": quick}}})
+    await watts(ha, IDLE_W)
+    await watts(ha, 120)
+    assert (state(ha, RUNNING), state(ha, GELAR), state(ha, CURRENT)) == ("on", "on", "gelar")
+    changes = capture(ha, "state_changed")
+    await watts(ha, IDLE_W)
+    freezer.tick(timedelta(seconds=130))  # the program's off_delay passed at 120 s; its timer hasn't run
+    ha.states.async_set(POWER, "120")  # handled at once, before the timer
+    await ha.async_block_till_done()
+    assert shown(changes, RUNNING) == ["off", "on"]
+    assert shown(changes, GELAR) == ["off", "on"]
+    assert shown(changes, CURRENT) == ["idle", "gelar"]
+    assert state(ha, sensor("cycles_total")) == "1"
+    assert state(ha, sensor("phase_gelar_cycles_total")) == "1"
+
+
 async def test_a_handover_never_shows_idle(purifier: HomeAssistant, freezer: Any) -> None:
     """gelar to quente after a dip: phase_current goes straight from gelar to quente."""
     await cool(purifier, freezer)

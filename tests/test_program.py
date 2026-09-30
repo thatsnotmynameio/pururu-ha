@@ -828,6 +828,21 @@ def test_a_reading_back_as_its_off_delay_passes_keeps_the_cycle(ha: HomeAssistan
     assert drive.ended == []
 
 
+def test_catch_up_is_what_a_late_reading_passes_first(ha: HomeAssistant) -> None:
+    """on_delay 0, the program's off_delay passed at 130 s, 100 W read at 140 s: catch_up gives its end alone, then read its restart; together, read's own changes."""
+    config = {"above": 4, "off_delay": {"minutes": 2}}
+    alone, split = Drive(config), Drive(config)
+    for drive in (alone, split):
+        drive.read(0, 100)
+        drive.read(10, 1)
+    alone.read(140, 100)
+    split._note(split.detector.catch_up(at(140), None))
+    assert (split.started, split.ended) == ([(None, 0)], [(None, 0, 10)])
+    split.read(140, 100)
+    assert (split.started, split.ended) == (alone.started, alone.ended)
+    assert alone.started == [(None, 0), (None, 140)]
+
+
 def test_at_one_instant_a_phase_ends_before_another_starts(ha: HomeAssistant) -> None:
     """gelar left for no band at 160 s (its end at 190); bebendo's on_delay passes at 190 too: gelar's end comes first."""
     drive = purifier()
