@@ -9,7 +9,7 @@ pururu reports problems in **Settings → System → Logs**, under the **Pururu*
 
 The configuration is probably invalid. Home Assistant logs the reason as `Invalid config for 'pururu'`, and pururu keeps everything as it was. Common causes:
 
-- A typo in a key, such as `floor:` for `floors:` or `running:` for `running_program:` (an old key is `extra keys not allowed`).
+- A typo in a key, such as `floor:` for `floors:` or `running:` for `running_program:` (an old key is `'running' is an invalid option`), or the appliance's `statistics: runtime`/`cycles` still in the block instead of in `running_program` (`'cycles' is an invalid option`).
 - A key that isn't a slug, such as `Laundry Washer:` instead of `clothes_washer:`.
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
 - A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
