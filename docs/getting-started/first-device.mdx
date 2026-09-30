@@ -116,7 +116,7 @@ pururu:
 
 You now have `sensor.pururu_clothes_washer_appliance_phase_current`. It shows `idle` outside a cycle, `warming` or `wringing` while one of those holds, and `other` in between. Its `name` attribute is the running phase's `name` ("Aquecendo"), and its `seen` attribute lists the phases the current (or last) cycle went through, and `binary_sensor.pururu_clothes_washer_appliance_phase_warming` is on while `warming` runs.
 
-Watch a wash in **History** and tune the bands to your machine. [Detected programs and phases](/concepts/detected-programs) covers overlapping bands, dips and idle gaps in full.
+Watch a wash in **History** and tune the bands to your machine. [Phases](/concepts/programs#phases) covers overlapping bands, dips and idle gaps in full. A kind of wash the power alone tells apart, such as a cotton wash that heats harder, can be a [detected program](/concepts/programs#more-detected-programs) of its own, with its own cycles and totals.
 
 ## Step 4: put it in a room
 
@@ -205,6 +205,6 @@ A **Tanquinho** device in the **Despensa** area. It knows when it runs, which ph
 
 Next:
 
-- [`appliance`](/features/appliance) lists every setting and entity; [Detected programs and phases](/concepts/detected-programs) covers `running_program` in full.
+- [`appliance`](/features/appliance) lists every setting and entity; [Programs](/concepts/programs#the-running-program) covers `running_program` in full.
 - [Devices and features](/concepts/devices-and-features) explains how a device is put together.
 - [Troubleshooting](/reference/troubleshooting) covers what to do when something doesn't appear.

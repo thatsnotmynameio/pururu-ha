@@ -18,7 +18,7 @@ Every entity pururu creates has the ID
 
 | Feature or device key | Namespace | Example |
 |---|---|---|
-| [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_clothes_washer_appliance_running`, `sensor.pururu_clothes_washer_appliance_phase_warming_cycles_total` |
+| [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_clothes_washer_appliance_running`, `sensor.pururu_clothes_washer_appliance_phase_warming_cycles_total`, `binary_sensor.pururu_clothes_washer_appliance_cotton` (a detected program) |
 | [`door`](/features/door) | `door` | `binary_sensor.pururu_porta_cercado_frente_door_open` |
 | [`window`](/features/window) | `window` | `binary_sensor.pururu_janela_quarto_window_open` |
 | [`lights`](/features/lights) | `light` | `light.pururu_biblioteca_light_teto` |
@@ -28,6 +28,8 @@ Every entity pururu creates has the ID
 | [`reactions`](/concepts/reactions) | `reaction` | `automation.pururu_greenhouse_reaction_morning` (a Home Assistant automation), `sensor.pururu_greenhouse_reaction_morning_triggered_total` |
 
 There's no exception, even when an entity key is the same word as its namespace: a switch keyed `switch` is `switch.pururu_greenhouse_switch_switch`.
+
+A [detected program](/concepts/programs#more-detected-programs)'s key is an entity key of the appliance's namespace (`cotton` → `binary_sensor.pururu_clothes_washer_appliance_cotton`), so it can't be one the appliance already creates, such as `running` or `cycles_total`: that's a configuration error.
 
 So the `running` entity of the device `clothes_washer` is always `binary_sensor.pururu_clothes_washer_appliance_running`. You can write automations and dashboards against it before the device even exists.
 
@@ -41,7 +43,7 @@ The entity's **unique ID** is the same text without the platform: `pururu_clothe
 
 An entity's name comes from its entity key, in Home Assistant's language: English and Portuguese are translated. It's shown after the device's name, so `running` on **Tanquinho** is **Tanquinho Running**, or **Tanquinho Em funcionamento** in Portuguese. You can rename any entity in the UI as usual.
 
-A [switch](/features/switches)'s, a [light](/features/lights)'s, or an [alert](/concepts/alerts)'s entity key is the key you gave it, so its name is the `name:` you wrote, the same in every language. A [program](/concepts/programs)'s script is named `<device name> <name:>` too.
+A [switch](/features/switches)'s, a [light](/features/lights)'s, or an [alert](/concepts/alerts)'s entity key is the key you gave it, so its name is the `name:` you wrote, the same in every language. An [executable program](/concepts/programs#executable-programs)'s script is named `<device name> <name:>` too.
 
 ## Renaming an entity ID
 

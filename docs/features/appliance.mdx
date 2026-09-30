@@ -23,6 +23,9 @@ pururu:
           phases:
             warming: {name: Aquecendo, above: 1000}
             wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+        programs:
+          detected:
+            cotton: {name: Algodão, above: 1500, on_delay: {minutes: 5}}
         statistics:
           idle_energy: [today, month]
 ```
@@ -36,13 +39,19 @@ pururu:
 ---
 
 <Property name="energy" type="entity ID" optional>
-  The plug's **lifetime** energy counter, the one that only goes up. Any energy unit works (Wh, kWh, MWh…); a counter with no unit is read as kWh. Without it, the device has no `energy_total`, no `last_cycle_energy`, no `idle_energy_total`, and no phase's `energy_total` or `last_cycle_energy`.
+  The plug's **lifetime** energy counter, the one that only goes up. Any energy unit works (Wh, kWh, MWh…); a counter with no unit is read as kWh. Without it, the device has no `energy_total`, no `last_cycle_energy`, no `idle_energy_total`, and no phase's or detected program's `energy_total` or `last_cycle_energy`.
 </Property>
 
 ---
 
 <Property name="running_program" type="map" required>
-  A [detected program](/concepts/detected-programs): `above` and/or `below`, `on_delay` and `off_delay` (0 when absent), `statistics` (for `runtime` and `cycles`), `phases` and `other`. It takes no `name`: it's the appliance running.
+  A [detected program](/concepts/programs#the-running-program): `above` and/or `below`, `on_delay` and `off_delay` (0 when absent), `statistics` (for `runtime` and `cycles`), `phases` and `other`. It takes no `name`: it's the appliance running.
+</Property>
+
+---
+
+<Property name="programs.detected" type="map" optional>
+  More [detected programs](/concepts/programs#more-detected-programs) of the plug's power, each with its `name`, a band, `statistics`, `phases`. Each is `binary_sensor.pururu_<key>_appliance_<program>`.
 </Property>
 
 ---
@@ -94,8 +103,9 @@ A `below` band reads the same way, the other way round. That affects what the cy
 | `sensor.pururu_<key>_appliance_runtime_<period>` | h | Hours run this period, one per `running_program.statistics.runtime` entry |
 | `sensor.pururu_<key>_appliance_cycles_<period>` | cycles | Cycles finished this period, one per `running_program.statistics.cycles` entry |
 | `sensor.pururu_<key>_appliance_idle_energy_<period>` | kWh | Energy used while idle this period, one per `statistics.idle_energy` entry |
+| `binary_sensor.pururu_<key>_appliance_<program>`, `sensor.pururu_<key>_appliance_<program>_…` | | Each of `programs.detected`: on while it runs, its last cycle, totals, meters and phases. See [Programs](/concepts/programs#entities). |
 
-With `running_program.phases`, the running phase (its `name` as an attribute), the last one, and each phase's own entities: see [Detected programs](/concepts/detected-programs#entities).
+With `running_program.phases`, the running phase (its `name` as an attribute), the last one, and each phase's own entities: see [Programs](/concepts/programs#entities).
 
 ### Last cycle
 
@@ -173,4 +183,4 @@ See [Notifications](/concepts/notifications#ready-made-notifications).
 
 ## Phases
 
-`running_program`'s `phases` split each cycle into what the appliance is doing: see [Detected programs and phases](/concepts/detected-programs).
+`running_program`'s `phases` split each cycle into what the appliance is doing: see [Phases](/concepts/programs#phases). A kind of run the power alone tells apart, such as a cotton wash, can be a detected program of its own, under `programs: detected:`: see [More detected programs](/concepts/programs#more-detected-programs).

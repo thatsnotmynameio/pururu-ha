@@ -1,9 +1,9 @@
 ---
 title: Reactions
-description: How a device behaves. Each reaction listens to one thing, can start one of the device's programs, and becomes a Home Assistant automation.
+description: How a device behaves. Each reaction listens to one thing, can start one of the device's executable programs, and becomes a Home Assistant automation.
 ---
 
-A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. When it fires, it can start one of the device's [programs](/concepts/programs): the reaction decides **when**, the program **what**. It can also tell a [message](/concepts/notifications#a-reactions-message) to your phone. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
+A device **reacts** to what happens around it: one of its own entities changing, another device's, any entity in Home Assistant, a time of day, or the sun. When it fires, it can start one of the device's [executable programs](/concepts/programs#executable-programs): the reaction decides **when**, the program **what**. It can also tell a [message](/concepts/notifications#a-reactions-message) to your phone. Each reaction you declare becomes a real **Home Assistant automation**. It shows up in **Settings → Automations & scenes** with its traces and its on/off toggle.
 
 ```yaml title="configuration.yaml"
 pururu:
@@ -64,7 +64,7 @@ A reaction listens to **exactly one** of these sources.
 ### An entity of the device
 
 <Property name="when" type="entity key">
-  An entity of **this device**, written as its entity ID ends after the device key: `light_teto`, `appliance_running`, `alert_overload`. See [Entity IDs](/concepts/entity-ids#the-pattern).
+  An entity of **this device**, written as its entity ID ends after the device key: `light_teto`, `appliance_running`, `appliance_cotton` (a [detected program](/concepts/programs#referring-to-a-program-or-a-phase)), `alert_overload`. See [Entity IDs](/concepts/entity-ids#the-pattern).
 </Property>
 
 ### An entity of another device
@@ -138,7 +138,7 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 ### What it does
 
 <Property name="then" type="program key" optional>
-  A key of **this device's** [`programs: executable:`](/concepts/programs): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a script's entity ID or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`.
+  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a script's entity ID or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`. A detected program can't be started: `reactions: <reaction>: <key> is not an executable program of this device`.
 </Property>
 
 ---

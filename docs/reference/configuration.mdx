@@ -40,6 +40,9 @@ pururu:
           phases:
             warming: {name: Aquecendo, above: 1000}
             wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+        programs:
+          detected:
+            cotton: {name: Algodão, above: 1500, on_delay: {minutes: 5}}
         alerts:
           offline:
         notifications:
@@ -87,12 +90,12 @@ alert2:                          # alerts with notify: see alerts
 ## General rules
 
 - `pururu:` has five optional keys: `config`, `floors`, `areas`, `devices` and `events`. Any other key is an error.
-- Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a program, is a **slug**: lowercase letters, digits and `_`.
+- Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a detected or executable program, is a **slug**: lowercase letters, digits and `_`.
 - A feature's own `alerts` enables its ready-made alerts, one key each: see [Ready-made alerts](/concepts/alerts#ready-made-alerts). The device's `alerts` is for alerts you write.
 - A feature's own `notifications` enables its ready-made notifications the same way: see [Notifications](/concepts/notifications#ready-made-notifications).
-- A `statistics` counts one of the block's totals per period: in a feature's own block (`appliance`, `door`, `window`), in an appliance's `running_program`, in each of its phases and `other`, or inside each program or reaction. See [Statistics](/concepts/statistics).
+- A `statistics` counts one of the block's totals per period: in a feature's own block (`appliance`, `door`, `window`), in an appliance's `running_program`, in each of its phases and `other`, in each detected program (and its phases and `other`), or inside each executable program or reaction. See [Statistics](/concepts/statistics).
 - An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_sprinkler`). See [alerts](/concepts/alerts#settings).
-- A program's steps name entity keys of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/concepts/programs#steps).
+- An executable program's steps name entity keys of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/concepts/programs#steps).
 - No two devices give an entity the same ID. Device `greenhouse` with the switch `switch_sprinkler` and device `greenhouse_switch` with the switch `sprinkler` would both have `switch.pururu_greenhouse_switch_switch_sprinkler`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `greenhouse` with the switch `appliance_energy_total` is refused next to a device `greenhouse_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
 - In one device, a real entity is in one of `switches` and `lights` at most: `switches: switch.sonoff_abajur is already in lights`. Two devices can each use it their own way.
 - An unknown key anywhere is a configuration error. When the configuration is invalid, Home Assistant logs why, and a reload **changes nothing**.
@@ -191,7 +194,7 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 ---
 
 <Property name="programs" type="map" optional>
-  `executable:`, a map of **program key → program**, each one a Home Assistant script. It isn't a feature. See [Programs](/concepts/programs#settings).
+  `executable:`, a map of **program key → program**, each one a Home Assistant script. It isn't a feature. See [Programs](/concepts/programs#settings). A detected program sits in its feature's block instead (`programs: detected:`): see [More detected programs](/concepts/programs#more-detected-programs).
 </Property>
 
 ---
@@ -205,7 +208,7 @@ A map of **device key → device**. See [Devices and features](/concepts/devices
 <Property name="<feature>" type="map" required>
   At least one feature, under its own key:
 
-  - [`appliance`](/features/appliance#settings): an appliance on a power-measuring plug, its `running_program` and phases.
+  - [`appliance`](/features/appliance#settings): an appliance on a power-measuring plug, its `running_program` and phases, and its detected programs (`programs: detected:`).
   - [`door`](/features/door#settings): a door from its contact sensor.
   - [`window`](/features/window): a window from its contact sensor.
   - [`lights`](/features/lights#settings): real lights, or relays that drive a lamp, inside the device.

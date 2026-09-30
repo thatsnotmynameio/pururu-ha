@@ -31,7 +31,13 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - An alert whose `when` is a ready-made alert: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
 - A program step naming something that isn't an entity of another feature of the device: `programs: switch_greenhouse_sprinkler is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_sprinkler`), not as an entity ID.
 - A program step whose entity doesn't take the action: `programs: appliance_power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
-- A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`.
+- A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`. An executable program takes no `phases` yet (`'phases' is an invalid option`), nor a band (`'above' is an invalid option`).
+- A device's `programs:` written as a flat map, as before 0.2.0, or with no group: `a device's programs sit under executable: (programs: executable: <key>: …) for dictionary value 'pururu->devices->greenhouse->programs'`. Indent its programs under `executable:`.
+- `detected:` in a device's `programs:` (`a device's programs are executable: a detected program sits in the block of the feature whose reading it reads`): move it into the appliance's block. `executable:` in a feature's `programs:` (`a feature's programs are detected: executable programs are the device's`): move it to the device.
+- A feature's `programs:` without `detected:`, such as `programs: {}` or a flat map: `a feature's programs needs detected`.
+- A detected program without `name`: `a detected program needs a name: it names its entities`.
+- A reaction's `then` naming a detected program, which can't be started: `reactions: <reaction>: cotton is not an executable program of this device`.
+- A detected program keyed as one of the appliance's entities, such as `idle`, `running` or `cycles_total`: `device clothes_washer: pururu_clothes_washer_appliance_idle_energy_total would be two entities`. Pick another key: see [More detected programs](/concepts/programs#more-detected-programs).
 - A reaction with no source or two (`a reaction needs one source: when, entity, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `device` without `when`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`. A `retry` on a reaction to an entity (`a reaction's retry goes with at or sun`), with `times × every` over 12 hours (`a reaction's retries must end within 12 hours`), with `every` under a minute or not in whole seconds (`a reaction's retry every must be whole seconds`), or with `times` not a whole number (`a reaction's retry times must be a whole number`).
 - A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device clothes_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
 - Two reactions whose automations would share an ID: `device lights_reaction_b: automation.pururu_lights_reaction_b_reaction_c is already a reaction of device lights`. Rename a device key or a reaction key.
@@ -311,7 +317,7 @@ Another automation already has the entity ID the reaction's automation would hav
 
 pururu couldn't write the file, usually because of permissions on the configuration folder. The devices keep working; the reactions and the ready-made notifications keep their last written automations.
 
-## Programs
+## Executable programs
 
 ### The programs' scripts aren't loaded
 
