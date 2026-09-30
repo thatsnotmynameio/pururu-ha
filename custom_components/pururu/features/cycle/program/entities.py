@@ -264,21 +264,14 @@ class PhaseRunning(CycleSource, BinarySensorEntity):
     ) -> None:
         """Show `phase` of `carrier`'s detector; `source`: the carrier's entity key."""
         item = phase.item
-        if phase.other and phase.of is not None:
-            # <of>_phase_other, named with its program's name
+        if phase.other:
+            # phase_other, or <of>_phase_other named with its program's name
             self._identify(
                 device,
                 Platform.BINARY_SENSOR,
                 f"{PHASE}_{OTHER}",
                 item=phase.of,
-                translation=f"{DETECTED}_{PHASE}_{OTHER}",
-            )
-        elif phase.other:
-            self._identify(
-                device,
-                Platform.BINARY_SENSOR,
-                item.slug,
-                translation=f"{PHASE}_{OTHER}",
+                translation=_named_in(f"{PHASE}_{OTHER}", phase.of),
             )
         else:
             self._identify(device, Platform.BINARY_SENSOR, item.slug, name=phase.name)
@@ -348,7 +341,7 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
             Platform.SENSOR,
             f"{PHASE}_current",
             item=of,
-            translation=_fixed(f"{PHASE}_current", of),
+            translation=_named_in(f"{PHASE}_current", of),
         )
         self.sources = (source,)
         self._carrier = carrier
@@ -434,7 +427,7 @@ class PhaseLast(PururuEntity, RestoreSensor):
             Platform.SENSOR,
             f"{PHASE}_last",
             item=of,
-            translation=_fixed(f"{PHASE}_last", of),
+            translation=_named_in(f"{PHASE}_last", of),
         )
         self.sources = (source,)
         self._device = device
@@ -464,8 +457,8 @@ class PhaseLast(PururuEntity, RestoreSensor):
         self.async_write_ha_state()
 
 
-def _fixed(key: str, of: Item | None) -> str:
-    """What the current or last phase is named under: its key, or detected_<key> with {item} in a detected program."""
+def _named_in(key: str, of: Item | None) -> str:
+    """The translation `key` is named under: itself in the running program, detected_<key> (with {item}, the program's name) in a detected program."""
     return key if of is None else f"{DETECTED}_{key}"
 
 
@@ -473,7 +466,7 @@ def _translation(phase: Phase, suffix: str) -> str:
     """What a phase's cycle entity is named under: phase_<suffix> with {item}, or other's own (a detected program's, with {item})."""
     if not phase.other:
         return f"{PHASE}_{suffix}"
-    return _fixed(f"{PHASE}_{OTHER}_{suffix}", phase.of)
+    return _named_in(f"{PHASE}_{OTHER}_{suffix}", phase.of)
 
 
 def _cycle_entities(

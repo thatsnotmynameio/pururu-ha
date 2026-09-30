@@ -19,19 +19,21 @@ from ..last import LAST_CYCLE
 IDLE = "idle"
 # The built-in phase: the program runs outside every configured phase's band
 OTHER = "other"
-# Every phase's entity keys start with it: phase_<key>, phase_<key>_<suffix>
+# Every phase's entity keys have it: phase_<key>[_<suffix>], or
+# <of>_phase_<key>[_<suffix>] in detected program `of`
 PHASE = "phase"
 # other's delays when `other:` doesn't set them: a chill's 2-s spike is no phase
 OTHER_DELAY = timedelta(seconds=30)
 
-# A phase's cycle entities: phase_<key>_<suffix>
+# A cycle source's entities: <slug>_<suffix> (a phase's, a detected program's)
 SUFFIXES: dict[str, Platform] = {
     **{description.key: Platform.SENSOR for description in LAST_CYCLE},
     "cycles_total": Platform.SENSOR,
     "runtime_total": Platform.SENSOR,
     "energy_total": Platform.SENSOR,
 }
-# The detector's own entity keys; the program's carrier is its builder's (the appliance's `running`)
+# The detector's own entity keys; the program's carrier is its builder's (the
+# appliance's `running`), or <of>_… and the carrier <of> in detected program `of`
 FIXED: dict[str, Platform] = {
     f"{PHASE}_current": Platform.SENSOR,
     f"{PHASE}_last": Platform.SENSOR,
@@ -345,7 +347,8 @@ def program_of(config: Mapping[str, Any], of: Item | None = None) -> Program:
     if phases:
         other = config.get(OTHER, {"on_delay": OTHER_DELAY, "off_delay": OTHER_DELAY})
         # other's band has no bounds: only its delays count; `Detector.read` decides where it holds.
-        # Its name is only its item's: its entities are named by their own translations.
+        # Its name is unused with `of` (its item takes the program's); its
+        # entities are named by their own translations.
         # Only its delays: the mounted block holds its statistics too
         band = Band(on_delay=other["on_delay"], off_delay=other["off_delay"])
         phases.append(Phase(key=OTHER, name=OTHER, band=band, of=of))

@@ -162,8 +162,9 @@ def test_an_aspect_inside_another_keeps_a_whole_number_key(ha: HomeAssistant) ->
 def test_a_refusal_inside_another_aspect_says_where(ha: HomeAssistant) -> None:
     catalogue = module("setup.catalogue")
     block = {**PLAIN, "outer": {"each": {1: {"n": 1, "inner": {"m": "two"}}}}}
-    with patch.object(catalogue, "ASPECTS", nested()), pytest.raises(vol.MultipleInvalid) as refused:
-        catalogue.mount(catalogue.builders()["appliance"], "appliance", block)
+    appliance, aspects = catalogue.builders()["appliance"], nested()
+    with patch.object(catalogue, "ASPECTS", aspects), pytest.raises(vol.MultipleInvalid) as refused:
+        catalogue.mount(appliance, "appliance", block)
     assert [error.path for error in refused.value.errors] == [["outer", "each", "1", "inner", "m"]]
 
 
@@ -178,8 +179,9 @@ def test_a_check_inside_another_aspect_gets_its_container_put_back(ha: HomeAssis
             raise vol.Invalid("too many", path=["inner"])
 
     block = {**PLAIN, "outer": {"each": {"a": {"n": 1, "inner": {"m": 2}}, "b": {"n": 3, "inner": {"m": 1}}}}}
-    with patch.object(catalogue, "ASPECTS", nested(check)), pytest.raises(vol.MultipleInvalid) as refused:
-        catalogue.mount(catalogue.builders()["appliance"], "appliance", block)
+    appliance, aspects = catalogue.builders()["appliance"], nested(check)
+    with patch.object(catalogue, "ASPECTS", aspects), pytest.raises(vol.MultipleInvalid) as refused:
+        catalogue.mount(appliance, "appliance", block)
     assert seen == [{"n": 1, "inner": {"m": 2}}, {"n": 3, "inner": {"m": 1}}]
     assert [error.path for error in refused.value.errors] == [["outer", "each", "a", "inner"]]
 

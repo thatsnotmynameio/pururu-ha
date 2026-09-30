@@ -2,7 +2,8 @@
 
 Each is a band of the appliance's power, as its running program is: a made-up
 washer whose cotton wash draws over 1500 W. Its entity IDs are
-<platform>.pururu_<device>_appliance_<key>[_<suffix>].
+<platform>.pururu_<device>_appliance_<key>[_<suffix>], and with phases
+…_<key>_phase_<phase>[_<suffix>] and …_<key>_phase_current/_last.
 """
 
 from typing import Any
@@ -12,7 +13,7 @@ from homeassistant.core import HomeAssistant, State
 import pytest
 import voluptuous as vol
 
-from helpers import DOMAIN, fake, generated, held, module, restart, setup, snapshot, tick
+from helpers import DOMAIN, capture, fake, generated, held, module, restart, setup, snapshot, tick
 
 KEY = "clothes_washer"
 POWER = "sensor.washer_plug_power"
@@ -34,6 +35,17 @@ def appliance(**block: Any) -> dict[str, Any]:
 
 def devices(**block: Any) -> dict[str, Any]:
     return {KEY: {"name": "Tanquinho", "appliance": appliance(**block)}}
+
+
+# Cotton heats its water over 1800 W; the appliance's running program warms over 1000 W
+WARMING: dict[str, Any] = {"name": "Aquecendo", "above": 1800}
+PHASED: dict[str, Any] = {"cotton": {**DETECTED["cotton"], "phases": {"warming": WARMING}, "other": {}}}
+
+
+def phased(**block: Any) -> dict[str, Any]:
+    """The washer whose running program warms over 1000 W and whose cotton program heats over 1800 W."""
+    return devices(**{"running_program": {**RUNNING_PROGRAM, "phases": {"warming": {"name": "Aquecendo", "above": 1000}}},
+                      "programs": {"detected": PHASED}, **block})
 
 
 def sensor(entity_key: str) -> str:
@@ -272,8 +284,8 @@ async def test_detected_programs_may_not_take_each_others_keys(ha: HomeAssistant
 
     Its carrier's, cycle entities' and phases' (Place.derived's pairs:
     cotton_phase_current, cotton_phase_warming, cotton_phase_other_cycles_total…),
-    and each of its meters' (the statistics aspect's rows, cotton's item): cotton
-    asks for them all.
+    and each of its meters', its phases' and other's (the statistics aspect's
+    rows, by their items): listed whether asked for or not.
     """
     catalogue = module("setup.catalogue")
     schema = module("setup.schema").CONFIG_SCHEMA
@@ -283,9 +295,10 @@ async def test_detected_programs_may_not_take_each_others_keys(ha: HomeAssistant
               "statistics": {counter: list(periods) for counter in program.PHASE_COUNTERS}}
     block = catalogue.mount(catalogue.builders()["appliance"], "appliance",
                             appliance(programs={"detected": {"cotton": cotton}}))
+    items = {"cotton", "cotton_phase_warming", "cotton_phase_other"}
     meters = {key for _, key, _, by, item in catalogue.keys({"appliance": block})
-              if by == "statistics" and item == "cotton"}
-    assert len(meters) == len(program.PHASE_COUNTERS) * len(periods)
+              if by == "statistics" and item in items}
+    assert len(meters) == len(items) * len(program.PHASE_COUNTERS) * len(periods)
     derived = set(program.detected_keys("cotton", cotton))
     assert {"cotton_phase_current", "cotton_phase_warming", "cotton_phase_other_cycles_total"} <= derived
     for key in sorted((derived | meters) - {"cotton"}):
@@ -307,16 +320,6 @@ def test_its_keys_are_in_the_index(ha: HomeAssistant) -> None:
 
 
 # --- its phases ---------------------------------------------------------------------
-
-# Cotton heats its water over 1800 W; the appliance's running program warms over 1000 W
-WARMING: dict[str, Any] = {"name": "Aquecendo", "above": 1800}
-PHASED: dict[str, Any] = {"cotton": {**DETECTED["cotton"], "phases": {"warming": WARMING}, "other": {}}}
-
-
-def phased(**block: Any) -> dict[str, Any]:
-    """The washer whose running program warms over 1000 W and whose cotton program heats over 1800 W."""
-    return devices(**{"running_program": {**RUNNING_PROGRAM, "phases": {"warming": {"name": "Aquecendo", "above": 1000}}},
-                      "programs": {"detected": PHASED}, **block})
 
 
 async def test_its_phases_entities_and_ids(ha: HomeAssistant) -> None:
@@ -352,13 +355,20 @@ async def test_a_detected_programs_phases_count_apart(ha: HomeAssistant, freezer
     assert state(ha, sensor("cotton_phase_warming_cycles_total")) == "1"
 
 
-async def test_a_restart_keeps_a_detected_programs_phase(ha: HomeAssistant, freezer: Any) -> None:
+async def test_a_restart_keeps_a_detected_programs_phase(ha: HomeAssistant) -> None:
+    """Cotton's carrier restores its phase's run, as the running program's does: from its own start, with no reading yet."""
     since = "2026-09-16T16:50:00+00:00"
-    await restart(ha, phased(), (State(COTTON, "on"), snapshot(since, warming={"since": since})))
-    await watts(ha, 2000)
-    await tick(ha, freezer, 1)
-    assert state(ha, f"binary_sensor.{PREFIX}_cotton_phase_warming") == "on"
-    assert state(ha, sensor("cotton_phase_current")) == "warming"
+    warming, current = f"binary_sensor.{PREFIX}_cotton_phase_warming", sensor("cotton_phase_current")
+    changes = capture(ha, "state_changed")
+    await restart(ha, phased(), (State(COTTON, "on"), snapshot(since, warming={"since": since})),
+                  (State(warming, "on"), {}), (State(current, "warming"), {}))
+    assert state(ha, warming) == "on"
+    assert ha.states.get(warming).attributes["cycle_start"].isoformat() == since
+    assert state(ha, current) == "warming"
+    assert ha.states.get(current).attributes["name"] == "Aquecendo"
+    shown = [event.data["new_state"].state for event in changes if event.data["entity_id"] in (warming, current)]
+    assert "off" not in shown, shown
+    assert "idle" not in shown, shown
 
 
 @pytest.mark.parametrize(("language", "names"), [
@@ -367,6 +377,7 @@ async def test_a_restart_keeps_a_detected_programs_phase(ha: HomeAssistant, free
         sensor("cotton_phase_last"): "Tanquinho Algodão last phase",
         f"binary_sensor.{PREFIX}_cotton_phase_warming": "Tanquinho Aquecendo",
         sensor("cotton_phase_warming_cycles_total"): "Tanquinho Aquecendo cycles",
+        sensor("cotton_phase_warming_cycles_today"): "Tanquinho Aquecendo cycles today",
         f"binary_sensor.{PREFIX}_cotton_phase_other": "Tanquinho Algodão other phase",
         sensor("cotton_phase_other_cycles_total"): "Tanquinho Algodão other phase cycles",
         sensor("cotton_phase_other_energy_month"): "Tanquinho Algodão other phase energy this month",
@@ -374,6 +385,7 @@ async def test_a_restart_keeps_a_detected_programs_phase(ha: HomeAssistant, free
     pytest.param("pt-BR", {
         sensor("cotton_phase_current"): "Tanquinho Fase de Algodão",
         sensor("cotton_phase_last"): "Tanquinho Última fase de Algodão",
+        sensor("cotton_phase_warming_cycles_today"): "Tanquinho Ciclos de Aquecendo hoje",
         f"binary_sensor.{PREFIX}_cotton_phase_other": "Tanquinho Outra fase de Algodão",
         sensor("cotton_phase_other_cycles_total"): "Tanquinho Ciclos de outra fase de Algodão",
         sensor("cotton_phase_other_energy_month"): "Tanquinho Energia de outra fase de Algodão no mês",
@@ -383,7 +395,8 @@ async def test_a_detected_programs_phases_are_named(
         ha: HomeAssistant, language: str, names: dict[str, str]) -> None:
     """A phase by its name, as the running program's; the fixed ones and other's with the program's name."""
     ha.config.language = language
-    cotton = {**PHASED["cotton"], "other": {"statistics": {"energy": ["month"]}}}
+    cotton = {**PHASED["cotton"], "phases": {"warming": {**WARMING, "statistics": {"cycles": ["today"]}}},
+              "other": {"statistics": {"energy": ["month"]}}}
     assert await setup(ha, phased(programs={"detected": {"cotton": cotton}}))
     for entity_id, name in names.items():
         assert ha.states.get(entity_id).attributes["friendly_name"] == name
