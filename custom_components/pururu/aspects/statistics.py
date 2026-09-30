@@ -60,10 +60,11 @@ class Meter(PururuEntity, UtilityMeterSensor):
         total: str,
         source: str,
         period: str,
+        translation: str,
         *,
         item: Item | None = None,
     ) -> None:
-        """Meter `source`, the entity of `total`, over `period` as `entity_key` (of `item`)."""
+        """Meter `source`, the entity of `total`, over `period` as `entity_key` (of `item`), named `translation`."""
         self.sources = (item_key(total, item),)
         # Where utility_meter looks itself up; ':' keeps it apart from YAML meter names
         self._meter = f"{DOMAIN}:{device.object_id(item_key(entity_key, item))}"
@@ -84,8 +85,6 @@ class Meter(PururuEntity, UtilityMeterSensor):
             sensor_always_available=False,
         )
         del self._attr_name  # the name comes from the entity key's translation
-        # Named once for every builder: <counter>_<period>, item_<counter>_<period> per item
-        translation = entity_key if item is None else f"item_{entity_key}"
         self._identify(
             device, Platform.SENSOR, entity_key, item=item, translation=translation
         )
@@ -155,9 +154,18 @@ def _example(builder: Feature) -> dict[str, list[str]]:
     }
 
 
+def _named(builder: Feature, key: str) -> str:
+    """The translation key `key` (`<counter>_<period>`) is named under: once for every builder.
+
+    `key` itself at the block level, `item_<key>` (with the `{item}` placeholder) for an Items builder.
+    """
+    return key if builder.role(Items) is None else f"item_{key}"
+
+
 def _meters(
     hass: HomeAssistant,
     device: Device,
+    builder: Feature,
     asked: Mapping[str, list[str]],
     item: Item | None,
 ) -> Iterator[Meter]:
@@ -166,7 +174,10 @@ def _meters(
         total = f"{counter}_total"
         source = device.current_entity_id(hass, Platform.SENSOR, item_key(total, item))
         for period in periods:
-            yield Meter(device, f"{counter}_{period}", total, source, period, item=item)
+            key = f"{counter}_{period}"
+            yield Meter(
+                device, key, total, source, period, _named(builder, key), item=item
+            )
 
 
 def _placed(builder: Feature) -> Literal["block", "item"]:
@@ -184,13 +195,13 @@ def _build(
     build from here; `*_` takes it without naming it.
     """
     if (items := builder.role(Items)) is None:
-        return list(_meters(hass, device, block[KEY], None))
+        return list(_meters(hass, device, builder, block[KEY], None))
     in_items = _placed(builder) == "item"
     return [
         meter
         for item in items.of(block)
         for meter in _meters(
-            hass, device, (block[item.slug] if in_items else block)[KEY], item
+            hass, device, builder, (block[item.slug] if in_items else block)[KEY], item
         )
     ]
 
@@ -207,6 +218,7 @@ ASPECT = Aspect(
     offered=lambda builder: builder.role(Counters) is not None,
     schema=_schema,
     keys=_keys,
+    named=_named,
     example=_example,
     placed=_placed,
     build=_build,

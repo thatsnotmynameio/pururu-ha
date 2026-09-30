@@ -6,7 +6,7 @@ import re
 from typing import Any
 from unittest.mock import patch
 
-from homeassistant.core import HomeAssistant, split_entity_id
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.setup import async_setup_component
 import pytest
@@ -328,35 +328,29 @@ def test_a_generating_builder_generates_from_its_example(features: dict[str, Any
             assert unique_id.startswith("pururu_dev_"), name
 
 
-def test_an_aspects_keys_are_named_once(ha: HomeAssistant, features: dict[str, Any]) -> None:
-    """Every entity an aspect builds is named and has an icon: each aspect's own naming, whatever it is.
+def test_an_aspects_keys_are_named_once(features: dict[str, Any]) -> None:
+    """Every key an aspect can add is named and has an icon: each aspect's own naming (Aspect.named), whatever it is.
 
-    Generic over how an aspect names its keys (statistics' once outside every
-    namespace, a later aspect's under the builder's own): it reads each built
-    entity's actual translation key, not a naming rule hard-coded here.
+    Generic over how an aspect names its keys (statistics' own, outside every
+    namespace; a later aspect's may be under the builder's own, as B3's
+    ready-made alerts will), by reading Aspect.named itself rather than a
+    naming rule hard-coded here. Exhaustive over aspect.keys(feature), not just
+    an example: a settings-gated counter's meters (idle_energy, a mode's
+    energy) and every period (week, month, year) are checked too, not only
+    what the builder's minimal example asks for.
     """
-    catalogue = module("setup.catalogue")
-    device_cls = module("core.feature").Device
     en, pt, icons = load("translations/en.json"), load("translations/pt-BR.json"), load("icons.json")
     pairs = offered(features)
     assert pairs, "no builder offers an aspect"
     for aspect, name, feature in pairs:
-        raw = placed(aspect, feature, aspect.example(feature), dict(feature.example))
-        block = catalogue.mount(feature, name, raw)
-        device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
-        built = aspect.build(ha, device, feature, block, {})
-        assert built, name
-        for entity in built:
-            key = entity._attr_translation_key
-            assert key, (name, entity.entity_id)
-            platform = split_entity_id(entity.entity_id)[0]
-            placeholders = getattr(entity, "_attr_translation_placeholders", None) or {}
+        for key, platform in aspect.keys(feature).items():
+            translation = aspect.named(feature, key)
             for translations in (en, pt):
-                text = translations["entity"][platform][key]["name"]
+                text = translations["entity"][platform][translation]["name"]
                 assert text, (name, key)
-                if "item" in placeholders:
+                if role(feature, "Items"):
                     assert "{item}" in text, (name, key)
-            assert icons["entity"][platform][key]["default"].startswith("mdi:"), (name, key)
+            assert icons["entity"][platform][translation]["default"].startswith("mdi:"), (name, key)
 
 
 def test_an_offered_aspect_validates_and_builds(
@@ -442,6 +436,7 @@ def test_mount_skips_an_aspect_without_a_check(features: dict[str, Any]) -> None
         offered=lambda builder: builder is feature,
         schema=lambda builder, name: (lambda value: value),
         keys=lambda builder: {},
+        named=lambda builder, key: key,
         example=lambda builder: {},
         placed=lambda builder: "block",
         build=lambda hass, device, builder, block, texts: [],

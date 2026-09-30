@@ -426,6 +426,8 @@ class Aspect:                                   # 3 instances; deletes the 5 cop
     offered: Callable[[Feature], bool]          # f.role(Counters) is not None, …
     schema: Callable[[Feature, str], Callable[[Any], Any]]   # (builder, its key in the device, for messages)
     keys: Callable[[Feature], Mapping[str, Platform]]        # local entity keys it can add to the builder
+    named: Callable[[Feature, str], str]        # a local key's translation key: statistics' own, or under
+                                                 # the builder's namespace, as a later aspect's may be
     example: Callable[[Feature], Any]           # a valid value, for the contract test
     placed: Callable[[Feature], Literal["block", "item"]]    # where its key sits: the block, or each item
     build: AspectBuild
@@ -434,9 +436,10 @@ class Aspect:                                   # 3 instances; deletes the 5 cop
 
 type AspectBuild = Callable[
     [HomeAssistant, Device, Feature, Any, Mapping[str, str], Mapping[str, str]], list[PururuEntity]
-]   # hass, the device in the builder's namespace, the builder, the aspect's validated value,
-    # inputs (reference text -> current entity ID), texts (the translations' common texts:
-    # ready-made alerts' default message and done_message)
+]   # hass, the device in the builder's namespace, the builder, its whole validated
+    # block (the aspect's value in it, or in each item), inputs (reference text ->
+    # current entity ID), texts (the translations' common texts: ready-made
+    # alerts' default message and done_message)
 
 # resolve.py: deletes reference resolution spread over __init__.py (_references_resolved,
 # _reaction_resolved, _alert_light_group_resolved, _referable, _watched, _acted_on; _entity_keys becomes catalogue.keys())

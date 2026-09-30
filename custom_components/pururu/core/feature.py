@@ -226,6 +226,10 @@ class Aspect:
     schema: Callable[[Feature, str], Callable[[Any], Any]]
     # The local entity keys it adds: suffixes for an Items builder
     keys: Callable[[Feature], Mapping[str, Platform]]
+    # The translation key one of its local keys is named under, for this
+    # builder: statistics' own at the block level, or under the builder's
+    # namespace, as a later aspect's may be (B3's ready-made alerts)
+    named: Callable[[Feature, str], str]
     # A valid value, for the contract test
     example: Callable[[Feature], Any]
     # Where its key sits for this builder: in the block, or in each item
