@@ -13,10 +13,10 @@ Every entity pururu creates has the ID
 
 - **platform**: `sensor`, `binary_sensor`, `switch` or `light`.
 - **device key**: the device's key under `devices:`.
-- **namespace**: the feature that creates the entity. Each feature has its own, so two features never give two entities one ID.
+- **namespace**: the feature or device key that creates the entity. Each has its own, so two features never give two entities one ID.
 - **entity key**: which of the feature's entities it is. Each feature's page lists its entity keys. An entity key counted per period ends with that period, as in `runtime_month`.
 
-| Feature | Namespace | Example |
+| Feature or device key | Namespace | Example |
 |---|---|---|
 | [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_laundry_washer_appliance_running` |
 | [`door`](/features/door) | `door` | `binary_sensor.pururu_porta_clausura_frente_door_open` |

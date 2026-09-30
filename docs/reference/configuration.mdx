@@ -93,7 +93,7 @@ alert2:                          # alerts with notify: see alerts
 
 - `pururu:` has five optional keys: `config`, `floors`, `areas`, `devices` and `events`. Any other key is an error.
 - Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a program, is a **slug**: lowercase letters, digits and `_`.
-- A feature's own `alerts` enables its ready-made alerts, one key each: see the [appliance's](/features/appliance#ready-made-alerts). The device's `alerts` is for alerts you write.
+- A feature's own `alerts` enables its ready-made alerts, one key each: see [Ready-made alerts](/concepts/alerts#ready-made-alerts). The device's `alerts` is for alerts you write.
 - A feature's own `notifications` enables its ready-made notifications the same way: see [Notifications](/concepts/notifications#ready-made-notifications).
 - A `statistics` counts one of the block's totals per period: in a feature's own block (`appliance`, `door`, `window`), once in a `modes` block, or inside each program or reaction. See [Statistics](/concepts/statistics).
 - An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_pump`). See [alerts](/concepts/alerts#settings).
