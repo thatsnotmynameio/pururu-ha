@@ -27,7 +27,9 @@ should. "Could be" is not a finding.
 - `docs/superpowers/` (specs and plans): only when the same PR's code contradicts it.
 - Lockfiles and generated files: `uv.lock`, `pnpm-lock.yaml`, `.hassfest/`.
 - Anything outside the pull request's changes, unless the change breaks it.
-- Compatibility with older configurations: there is one user and no migration promise.
+- Compatibility with older configurations (the user's YAML): there is one user and no migration
+  promise. This never covers what pururu itself left behind (see "State left by the previous
+  version" below).
 
 ## Worth checking in this repository
 
@@ -41,6 +43,15 @@ These are where bugs have been found here. `CLAUDE.md` explains each; don't repe
   and tasks removed on unload, entry reloads triggered by registry changes.
 - Generated files (`generated.py`, `alert2_alerts.py`, `files.py`): rewritten only on change,
   failures logged not raised, the domain reloaded, IDs pre-registered and never taken over.
+- State left by the previous version: the one user upgrades an installed pururu. When a PR
+  renames or merges a generated file, an `entry.data` key, a Repairs issue, a unique ID or an
+  entity ID, check what the old one leaves on the next reload: an old file still in an included
+  folder (`!include_dir_merge_*` loads every file there, so its items run twice or never go),
+  IDs tracked under the old key (orphaned registry entries), an old issue never cleared. It is
+  handled either by code or by a documented manual upgrade step (in the PR description, or the
+  spec or an "Updating to …" docs page the PR points at): read `gh pr view` and those before
+  flagging. Only when neither covers it, it is a P1 if it duplicates or keeps running something.
+  When a step covers it, check the step is complete (every stale file and key it leaves).
 - Configuration: the voluptuous `ALLOW_EXTRA` gotcha in nested mappings ("Voluptuous gotcha"),
   error messages in both `translations/en.json` and `translations/pt-BR.json`.
 - Docs: a change in behaviour, configuration, entities or log messages updates the matching
