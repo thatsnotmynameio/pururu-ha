@@ -436,9 +436,6 @@ async def test_the_program_ends_after_its_phases(detecting: HomeAssistant, freez
 @pytest.mark.parametrize("extra", [
     pytest.param(["not", "a", "map"], id="not a map"),
     pytest.param({"program": {"since": "2020-02-30T10:00:00+00:00"}}, id="an impossible date"),
-    pytest.param(snapshot("2020-01-01T10:00:00+00:00",
-                          gelar={"since": "2020-02-30T10:00:00+00:00"}),
-                 id="a phase's impossible date"),
 ])
 async def test_a_snapshot_the_detector_cannot_use_is_ignored(
         detecting: HomeAssistant, freezer: Any, extra: Any) -> None:
@@ -450,6 +447,23 @@ async def test_a_snapshot_the_detector_cannot_use_is_ignored(
     await tick(detecting, freezer, 35)
     assert state(detecting, RUNNING) == "on"
     assert state(detecting, CURRENT) == "gelar"
+
+
+async def test_a_phases_impossible_date_is_no_start(
+        detecting: HomeAssistant, freezer: Any) -> None:
+    """A hand-edited .storage: the program and its phase run on, the phase without a start, and end with the readings."""
+    since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
+    await restart(detecting, DEVICES,
+                  (State(RUNNING, "on"), snapshot(since, gelar={"since": "2020-02-30T10:00:00+00:00"})),
+                  (State(CURRENT, "gelar"), {}))
+    assert state(detecting, RUNNING) == "on"
+    assert state(detecting, CURRENT) == "gelar"
+    await watts(detecting, IDLE_W)
+    await tick(detecting, freezer, 125)
+    assert state(detecting, RUNNING) == "off"
+    assert state(detecting, CURRENT) == "idle"
+    assert state(detecting, sensor("phase_gelar_cycles_total")) == "1"
+    assert state(detecting, sensor("phase_gelar_last_cycle_start")) == "unknown"
 
 
 async def test_a_disabled_carrier_leaves_the_phases_idle(detecting: HomeAssistant) -> None:

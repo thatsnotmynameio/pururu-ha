@@ -147,13 +147,13 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
             )
 
     def _restore(self, data: Any) -> None:
-        """Take back the snapshot; one the detector can't read (a hand-edited .storage) is none."""
-        if not isinstance(data, Mapping):
-            return
-        try:
+        """Take back the snapshot; one that isn't a map (a hand-edited .storage) is none.
+
+        The detector drops what it can't read in a map: a time without a zone,
+        an impossible date, a key no longer configured.
+        """
+        if isinstance(data, Mapping):
             self.detector.restore(data)
-        except ValueError:  # an impossible date
-            self.detector = Detector(self.detector.program)
 
     @callback
     def _entry_changed(self, entry: ConfigEntry[Any]) -> None:

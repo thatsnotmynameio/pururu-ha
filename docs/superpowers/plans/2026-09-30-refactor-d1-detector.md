@@ -51,17 +51,23 @@ The five input classes most likely to bite, each with the tests that pin it:
 1. **Readings at the edges between bands: a dip vs an idle gap.** From a running phase's band straight into another's (a dip), the other waits. Via a reading outside every band (a gap: exactly on a strict bound, like 40 W between `below: 40` and `above: 40`, or under the program's band, like the purifier's 0.8 W), it doesn't wait. The phase that left still ends at the moment it left, and coming back to its band cancels its end. Pinned in Task 1:
    - `test_after_a_dip_another_phase_waits_for_the_running_one`, `test_a_dip_into_another_band_does_not_split_the_cycle`;
    - `test_after_an_idle_gap_the_next_phase_does_not_wait`, `test_after_an_idle_gap_below_the_program_the_next_phase_does_not_wait`;
-   - `test_a_gap_then_back_in_its_band_is_still_one_cycle`, `test_other_is_not_below_the_programs_band`.
-2. **Several things at one instant.** Overlapping bands start and end independently. Deadlines at the same instant pass in a fixed order: the program's, then the phases' ends, then their starts, each in the configuration's order. A handover writes `phase_current` once, never `idle` in between. A configured phase starting ends `other` at once. Pinned:
+   - `test_a_gap_then_back_in_its_band_is_still_one_cycle`, `test_other_is_not_below_the_programs_band`;
+   - `test_a_phase_armed_in_a_dip_starts_when_the_reading_holds_both` (a dip into an overlap);
+   - `test_no_phase_starts_while_the_programs_reading_is_out`, `test_the_programs_reading_back_starts_the_phase_that_waited` (a phase band reaching below the program's).
+2. **Several things at one instant.** Overlapping bands start and end independently. Deadlines at the same instant pass in a fixed order: the program's, then the phases' ends in the order they started, then their starts in the configuration's order. A reading at the very instant a delay passes comes before it. A handover writes `phase_current` once, never `idle` in between. A configured phase starting ends `other` at once. Pinned:
    - Task 1: `test_overlapping_bands_run_at_once_and_none_wins`, `test_a_handover_never_shows_idle`, `test_other_ends_at_once_when_a_phase_starts`, `test_each_delay_passes_at_its_own_time`;
+   - Task 1, the order (ruling 17): `test_at_one_instant_the_program_ends_before_its_phases`, `test_at_one_instant_a_phase_ends_before_another_starts`, `test_phases_starting_at_one_instant_start_in_the_configurations_order`, `test_phases_ending_at_one_instant_end_in_the_order_they_started`, `test_a_phase_whose_delay_passes_as_the_program_ends_waits_for_the_next`;
+   - Task 1, a reading at a delay's instant: `test_a_reading_leaving_as_its_on_delay_passes_starts_nothing`, `test_a_reading_back_as_its_off_delay_passes_keeps_the_cycle`;
    - Task 2: `test_a_handover_never_shows_idle` (the entity), `test_a_phases_cycle_is_sent_after_its_state_its_end_last`.
 3. **Readings without a value** (`unavailable`, `unknown`, not a number; the CSV has them). Every delay counts again from the next reading. Runs, and when a run's reading left, stay. Pinned in Task 1:
    - `test_no_value_counts_the_delays_again_and_keeps_the_end`, `test_no_value_keeps_the_phase_and_counts_its_delays_again`;
    - `test_a_band_pending_its_on_delay_starts_over_after_no_value`, `test_no_value_keeps_a_phase_whose_band_held`;
    - the replay, which reads the CSV's `unavailable` rows.
 4. **Restored state that doesn't fit.** A snapshot can name phases no longer configured, repeat a key, hold garbage, or lack a start. The views can be added before the carrier restored the detector (`phase_current` is on another platform). A restart must neither flicker a phase off then on, nor count HA's downtime as runtime. Pinned:
-   - Task 1: `test_a_snapshot_restores_the_running_cycles`, `test_a_snapshot_it_cannot_use_is_ignored`, `test_a_phase_restored_twice_runs_once`;
-   - Task 2: `test_a_restart_keeps_the_running_phase`, `test_a_reload_mid_phase_counts_one_cycle`, `test_last_restores`.
+   - Task 1: `test_a_snapshot_restores_the_running_cycles`, `test_a_phase_restored_twice_runs_once`, `test_seen_holds_after_the_program_over_a_restart`;
+   - Task 1: `test_a_snapshot_it_cannot_use_is_ignored`, whose params include `seen while stopped`, `program without a start`, the times without a zone, `keys not strings`, and the impossible dates;
+   - Task 2: `test_a_restart_keeps_the_running_phase`, `test_a_reload_mid_phase_counts_one_cycle`, `test_last_restores`, `test_a_snapshot_the_detector_cannot_use_is_ignored`, `test_a_phases_impossible_date_is_no_start`;
+   - the shared `CycleStart.from_dict`: `test_appliance.py`'s `test_restart_with_an_impossible_start_restores_running`.
 5. **Phase keys that collide or are reserved.** These keys are refused with a message, before any entity ID can meet another: `idle` and `other`; `current` and `last` (the detector's `phase_current` and `phase_last`); `gelar` beside `gelar_cycles_total`; `other_cycles_total`. Pinned in Task 1: `test_invalid_program_is_refused`'s params.
 
 ## Rulings
@@ -71,8 +77,8 @@ Where the spec is silent, decided here:
 1. **How D1 lands:** the detector is a module no registered builder uses. Its entities are tested through a test-only builder swapped in for `FEATURES["appliance"]` (Architecture explains why).
 2. **A package, not one file:** `features/cycle/program/` (`schema.py`, `detector.py`, `entities.py`; `__init__` re-exports). As one file it would be about 900 lines. The import path is the spec's.
 3. **The detector is pure.** It holds no HA object and reads no clock. It takes `(value, now, kwh)` and returns `Started`/`Ended`, and each delay passes at its own deadline. The carrier's one timer waits for `due()`.
-4. **What stays of the arbitration (spec item 1 vs "the modes' one-at-a-time arbitration", Tests #6):** overlapping bands run at once and no band wins. A phase whose band holds while another phase's cycle *ends after a dip* waits for that end, then starts from when its on_delay passed (today's handover, and today's dip protection: a chill's tail dipping into the sip band is no drink). Without overlap, every cycle, start and end is today's.
-5. **The idle gap (item 5), in the detector's terms:** a running phase's `gap` is set by any reading outside every configured band after it left its own. A gap blocks nothing. The phase still ends, when its off_delay passes, at the moment it left. Its reading back in its band cancels the end and clears the gap.
+4. **What stays of the arbitration (spec item 1 vs "the modes' one-at-a-time arbitration", Tests #6):** overlapping bands run at once and no band wins. A phase whose band holds while another phase's cycle *ends after a dip* waits for that end, or for a reading back in both bands, then starts from when its on_delay passed (today's handover, and today's dip protection: a chill's tail dipping into the sip band is no drink). Without overlap, every cycle, start and end is today's, two edge cases excepted: a phase band reaching below the program's (ruling 21), and a reading at the very instant a delay passes (ruling 17). None of today's configurations has the first; the second needs a reading at exactly a deadline's time.
+5. **The idle gap (item 5), in the detector's terms:** a running phase's `gap` is set by any reading outside every configured band after it left its own; a reading under the program's band is one. A gap blocks nothing: a phase whose on_delay passes starts at once, without waiting for the gap's phase's off_delay, and both run until that off_delay passes (`running` lists both). The gap's phase still ends then, at the moment it left. Its reading back in its band cancels the end and clears the gap. A phase that left straight into another band (a dip, ruling 4) has no gap, and the other waits for it; a gap reading during its off_delay sets the gap then.
 6. **`other` (item 4):**
    - its region is the program's band minus every configured band; a reading under the program's band (the program ending) isn't `other`;
    - it exists only with at least one configured phase;
@@ -89,13 +95,18 @@ Where the spec is silent, decided here:
 14. **Energy:** a cycle's energy is the counter's growth from its start to when its end is processed (today's rule for modes and `running`), however far back the end is dated.
 15. **Restoring:**
     - The carrier stores the whole snapshot: the running cycles, the order they started in, and `seen`. Delays and armed phases aren't stored; they count again from the next reading.
+    - `seen` is restored whether or not the program runs: after a restart, a finished program still shows the phases it saw, as before it. Only phases still configured are kept.
+    - The program runs only with a start: a snapshot whose program has none, or one the detector can't read, restores no running cycle. A running phase is restored with or without a start (one without ends when its reading left).
+    - What the detector can't read is dropped: a key that isn't a string or no longer configured, a time without a zone, and an impossible date (`2026-02-30`), which `CycleStart.from_dict` reads as no time. That helper is shared with the appliance's `running`, `modes` and the openings, which gain the same guard.
     - A `PhaseRunning` is added after the carrier on the same platform (`build`'s order; HA adds one platform's entities one by one), so it never shows an unrestored state.
     - `PhaseCurrent` (another platform) shows its restored state and attributes (`running`, `seen`) until the carrier is `ready`.
     - The carrier follows the reading only once its entry is set up (`LOADED`): a step at add could end a restored phase (delays of 0) before its entities listen, and the cycle would be lost. A reading before that is read by its first step.
-    - A snapshot the detector can't read (not a map, an impossible date) is none: the carrier starts from nothing.
-16. **After the program ends,** a running phase whose band still holds is armed, and starts with the next program cycle (today's modes).
-17. **Ordering at one instant:** the program's deadline first, then the phases' ends, then their starts, each in the configuration's order.
-    The carrier wraps its phases' entities: its state is written before theirs when the program starts, and after theirs when it ends (its `running` → `off` and its end signal come with its phases ended, `phase_current` idle and `phase_last` set: the events' `states` agree).
+    - A snapshot that isn't a map is none: the carrier starts from nothing. Anything in a map goes to the detector, which drops what it can't read (above), so the carrier needs no guard of its own.
+16. **After the program ends,** a running phase whose band still holds is armed, and starts with the next program cycle (today's modes). When the program ends, its running phases end with it, in the order they started (ruling 17).
+17. **Ordering at one instant:**
+    - The program's deadline first, then the phases' ends, then their starts. The phases' ends go in the order the phases started, whether their off_delays pass together or the program's end ends them: the current phase ends last, so `phase_last` shows it. Their starts go in the configuration's order (no start order exists yet), so the later configured one is current.
+    - A reading at the very instant a delay passes comes before it. `read` passes the delays before its instant, applies the reading, then passes those at its instant (delays of 0 among them). So a band held for exactly its on_delay isn't held, and no cycle is empty for it; a reading back in its band as its off_delay passes keeps the cycle; a reading without a value at that instant stops the delay, as any other. `advance` alone passes the delays at its instant too.
+    - The detector returns the program's `Ended` before its phases' (its deadline passes first). The carrier wraps its phases' entities: its state is written before theirs when the program starts, and after theirs when it ends (its `running` → `off` and its end signal come with its phases ended, `phase_current` idle and `phase_last` set: the events' `states` agree).
 18. **Translation keys owned by the detector (`NAMED`)**, outside every namespace, as the statistics aspect's:
     - `phase_current` (today's key of `phases`, whose name is the same; D2 deletes `phases` and the key stays);
     - `phase_last`;
@@ -105,6 +116,7 @@ Where the spec is silent, decided here:
     A configured phase's binary sensor is named by its `name`, as a configured entity is. The contract test counts `NAMED` as created and checks each is named and has an icon.
 19. **The 10:10 heating of the purifier's day is not truncated on `main` already.** On `main`, today's modes record 189 s at a 1-s replay and 185 s at a 30-s step; the handover's start from when it was armed came with 0.1.20 (#30). The ~69 s once pinned elsewhere comes from a replay of an older version. D1's replay pins the detector's result, 10:10:50.569 → 10:13:59.899 UTC on the anonymised day (189.33 s, its on_delay excluded). D1's own gain on that data is the idle gap: a phase armed during another's gap is no longer lost (Task 1's idle-gap tests). On that day itself the counts are unchanged (14 drinks, 21 chills, 2 heatings, 33 appliance cycles), and `other` never runs.
 20. **A disabled carrier:** HA never adds it, so the detector never runs. Its phases' entities are still created (`creatable` ignores a disabled source, as for every follower today): each `phase_<key>` shows off and `phase_current` shows `idle`, not its restored phase. Dropping the followers of a disabled source would change every feature, not only this one.
+21. **While the program's reading is out** (its off_delay counting), no phase starts. One whose on_delay passes then stays armed: it starts on the program's reading back, dated from when its on_delay passed, or with the next program cycle. Only a phase band reaching below the program's can hold then. Today's modes start it and end it with the program, a zero-length cycle; none of today's configurations has such a band.
 
 ---
 
@@ -959,6 +971,73 @@ class Detector:
       assert [(type(c).__name__, c.key) for c in changes] == [("Ended", None), ("Ended", "p")]
 
 
+  @pytest.mark.parametrize("keys", [["x", "y"], ["y", "x"]], ids=["x configured first", "y first"])
+  @pytest.mark.parametrize(("value", "ended"), [(5, ["y", "x"]), (1, [None, "y", "x"])],
+                           ids=["their off_delays", "the program's end"])
+  def test_phases_ending_at_one_instant_end_in_the_order_they_started(
+          ha: HomeAssistant, keys: list[str], value: float, ended: list[str | None]) -> None:
+      """y starts at 0 s and x, the current phase, at 10 s, whatever the configuration's order; both left at 100 s: y ends first, x last."""
+      bands = {"x": {"name": "X", "above": 20, "off_delay": {"seconds": 5}},
+               "y": {"name": "Y", "above": 10, "off_delay": {"seconds": 5}}}
+      drive = Drive({"above": 4, "off_delay": {"seconds": 5},
+                     "phases": {key: bands[key] for key in keys}})
+      drive.read(0, 15)
+      drive.read(10, 50)
+      assert drive.current == "x"
+      drive.read(100, value)
+      changes = drive.detector.advance(at(105), None)
+      assert [c.key for c in changes] == ended
+      assert all(c.cycle.end == at(100) for c in changes)
+
+
+  def _program_leaving() -> Drive:
+      """The washer's program: 120 W from 125 s, its on_delay passing at 185 s, when 1.4 W comes."""
+      drive = Drive(WASHER)
+      drive.read(0, 1.4)
+      drive.read(125, 120)
+      drive.read(185, 1.4)
+      return drive
+
+
+  def _phase_leaving() -> Drive:
+      """spinning: 150 W from 200 s, its on_delay passing at 380 s, when 7 W comes."""
+      drive = washer()
+      drive.read(200, 150)
+      drive.read(380, 7)
+      return drive
+
+
+  def _other_leaving() -> Drive:
+      """other: 7 W from 190 s, its on_delay passing at 220 s, when 150 W comes."""
+      drive = washer()
+      drive.read(220, 150)
+      return drive
+
+
+  @pytest.mark.parametrize(("leaving", "key"), [
+      pytest.param(_program_leaving, None, id="the program"),
+      pytest.param(_phase_leaving, "spinning", id="a phase"),
+      pytest.param(_other_leaving, "other", id="other"),
+  ])
+  def test_a_reading_leaving_as_its_on_delay_passes_starts_nothing(
+          ha: HomeAssistant, leaving: Any, key: str | None) -> None:
+      """The reading at the instant a delay passes comes before it: in for exactly its on_delay isn't in, and no empty cycle."""
+      drive = leaving()
+      drive.to(1000)
+      assert key not in [each for each, _ in drive.started]
+      assert drive.cycles(key) == []
+
+
+  def test_a_reading_back_as_its_off_delay_passes_keeps_the_cycle(ha: HomeAssistant) -> None:
+      """gelar left at 160 s; 120 W comes back at 190 s, the instant its off_delay passes: the reading first, gelar goes on."""
+      drive = purifier()
+      drive.read(160, 1)
+      drive.read(190, 120)
+      drive.to(1000)
+      assert drive.current == "gelar"
+      assert drive.ended == []
+
+
   def test_at_one_instant_a_phase_ends_before_another_starts(ha: HomeAssistant) -> None:
       """gelar left for no band at 160 s (its end at 190); bebendo's on_delay passes at 190 too: gelar's end comes first."""
       drive = purifier()
@@ -1006,6 +1085,13 @@ class Detector:
       pytest.param({"program": {}, "seen": ["gelar"]}, False, [], ["gelar"],
                    id="program without a start"),
       pytest.param({"program": {"since": NAIVE}}, False, [], [], id="program's start without a zone"),
+      pytest.param({"program": {"since": "2026-02-30T10:00:00+00:00"}, "seen": ["gelar"]},
+                   False, [], ["gelar"], id="program's impossible date"),
+      pytest.param({"program": {"since": T0.isoformat()},
+                    "phases": {"gelar": {"since": "2026-13-45T00:00:00+00:00",
+                                         "until": "2026-02-30T10:00:00+00:00"}},
+                    "order": ["gelar"], "seen": ["gelar"]}, True, ["gelar"], ["gelar"],
+                   id="a phase's impossible dates"),
       pytest.param({"program": {"since": T0.isoformat()}, "phases": {"gone": {"since": T0.isoformat()}},
                     "order": ["gone", 5], "seen": ["gone", "gelar"]}, True, [], ["gelar"],
                    id="a phase no longer configured"),
@@ -1434,7 +1520,12 @@ class Detector:
         it waits for nothing, and ends at once when a phase starts.
       - A cycle ends when its reading left, or when the program's did if earlier:
         off_delay only confirms it. Each delay passes at its own time, however
-        late `advance` comes.
+        late `advance` comes; a reading at the very instant a delay passes comes
+        before it, so a band held for exactly its on_delay isn't held, and no
+        cycle is empty for it.
+      - At one instant: the program's delay first, then the phases' ends, in the
+        order they started (the current phase last), then their starts, in the
+        configuration's order.
       """
 
       def __init__(self, program: Program) -> None:
@@ -1496,11 +1587,12 @@ class Detector:
       ) -> list[Change]:
           """A reading at `now` (None: it has no value), `kwh` the energy counter then; what it started and ended.
 
-          The delays passed by `now` pass first. A reading without a value
-          stops every delay counting: each counts again from the next reading,
-          and every run, and when it left, stays.
+          The delays passed before `now` pass first; those passing at `now`, once
+          the reading counted. A reading without a value stops every delay
+          counting: each counts again from the next reading, and every run, and
+          when it left, stays.
           """
-          changes = self.advance(now, kwh)
+          changes = self._pass(now, kwh, at_now=False)
           if value is None:
               for track in (self._program, *self._phases.values()):
                   track.starting = track.ending = None
@@ -1520,33 +1612,45 @@ class Detector:
               if gap and track.run is not None:
                   track.run.gap = True
               self._follow(track, holds[phase.key], now, phase.band)
-          # A delay of 0 passes now; then a phase that waited (a dip, the
-          # program's reading out) starts if this reading ended its wait
+          # The delays passing now, a delay of 0 too; then a phase that waited
+          # (a dip, the program's reading out) starts if this reading ended its wait
           return [*changes, *self.advance(now, kwh), *self._start_armed(kwh)]
 
       def advance(self, now: datetime, kwh: float | None) -> list[Change]:
           """Every delay passed by `now`, each at its own time; what they started and ended."""
+          return self._pass(now, kwh, at_now=True)
+
+      def _pass(self, now: datetime, kwh: float | None, *, at_now: bool) -> list[Change]:
+          """Every delay passed before `now`, and those passing at `now` if `at_now`."""
           changes: list[Change] = []
           while (deadline := min(self._deadlines(), default=None)) is not None:
-              when, _, position, ending = deadline
-              if when > now:
+              when, _, _, position, ending = deadline
+              if when > now or (when == now and not at_now):
                   break
               key = None if position < 0 else self.program.phases[position].key
               changes.extend(self._passed(key, ending, when, kwh))
           return changes
 
-      def _deadlines(self) -> Iterator[tuple[datetime, int, int, bool]]:
-          """(when, rank, position, ending) of each delay counting.
+      def _deadlines(self) -> Iterator[tuple[datetime, int, int, int, bool]]:
+          """(when, rank, order, position, ending) of each delay counting.
 
-          At one instant: the program's first, then the phases' ends, then their
-          starts, each in the configuration's order (position -1: the program).
+          At one instant: the program's first, then the phases' ends in the
+          order they started, then their starts in the configuration's order
+          (position -1: the program).
           """
-          tracks = [self._program, *self._phases.values()]
-          for position, track in enumerate(tracks, start=-1):
+          yield from self._program_deadlines()
+          for position, (key, track) in enumerate(self._phases.items()):
               if track.ending is not None:
-                  yield (track.ending, 0 if position < 0 else 1, position, True)
+                  yield (track.ending, 1, self._order.index(key), position, True)
               if track.starting is not None:
-                  yield (track.starting, 0 if position < 0 else 2, position, False)
+                  yield (track.starting, 2, position, position, False)
+
+      def _program_deadlines(self) -> Iterator[tuple[datetime, int, int, int, bool]]:
+          track = self._program
+          if track.ending is not None:
+              yield (track.ending, 0, 0, -1, True)
+          if track.starting is not None:
+              yield (track.starting, 0, 0, -1, False)
 
       def _track(self, key: str | None) -> _Track:
           return self._program if key is None else self._phases[key]
@@ -1595,7 +1699,7 @@ class Detector:
           return self._start_armed(kwh)
 
       def _program_ends(self, when: datetime, kwh: float | None) -> list[Change]:
-          """The program's cycle ends when its reading left; each running phase's with it, if not before.
+          """The program's cycle ends when its reading left; each running phase's with it, if not before, in the order they started.
 
           A phase whose band still holds is armed: it starts with the next cycle.
           """

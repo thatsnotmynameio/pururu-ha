@@ -158,6 +158,16 @@ async def test_restart_restores_running(ha: HomeAssistant, freezer: Any) -> None
     await end_cycle(ha, freezer)
 
 
+async def test_restart_with_an_impossible_start_restores_running(
+        ha: HomeAssistant, freezer: Any) -> None:
+    """A hand-edited .storage: a well-formed but impossible date is no start, and the cycle goes on."""
+    await restart(ha, DEVICES, (State(RUNNING, "on"),
+                                {"since": "2020-02-30T10:00:00+00:00", "since_energy": 100.0}))
+    assert running(ha) == "on"
+    await end_cycle(ha, freezer)
+    assert ha.states.get(sensor("cycles_total")).state == "1"
+
+
 # --- mirrors, entities, names --------------------------------------------------
 
 

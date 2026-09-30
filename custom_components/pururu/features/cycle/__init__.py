@@ -81,11 +81,19 @@ class CycleStart(ExtraStoredData):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Read back what as_dict saved; anything else means no running cycle."""
-        since = data.get("since")
         energy = data.get("since_energy")
-        until = data.get("until")
         return cls(
-            since=dt_util.parse_datetime(since) if isinstance(since, str) else None,
+            since=_datetime(data.get("since")),
             since_energy=float(energy) if isinstance(energy, int | float) else None,
-            until=dt_util.parse_datetime(until) if isinstance(until, str) else None,
+            until=_datetime(data.get("until")),
         )
+
+
+def _datetime(value: Any) -> datetime | None:
+    """A time as_dict saved; anything else, an impossible date too (a hand-edited .storage), is none."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return dt_util.parse_datetime(value)
+    except ValueError:  # well-formed, but no such day or month
+        return None

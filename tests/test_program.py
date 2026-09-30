@@ -761,6 +761,73 @@ def test_at_one_instant_the_program_ends_before_its_phases(ha: HomeAssistant) ->
     assert [(type(c).__name__, c.key) for c in changes] == [("Ended", None), ("Ended", "p")]
 
 
+@pytest.mark.parametrize("keys", [["x", "y"], ["y", "x"]], ids=["x configured first", "y first"])
+@pytest.mark.parametrize(("value", "ended"), [(5, ["y", "x"]), (1, [None, "y", "x"])],
+                         ids=["their off_delays", "the program's end"])
+def test_phases_ending_at_one_instant_end_in_the_order_they_started(
+        ha: HomeAssistant, keys: list[str], value: float, ended: list[str | None]) -> None:
+    """y starts at 0 s and x, the current phase, at 10 s, whatever the configuration's order; both left at 100 s: y ends first, x last."""
+    bands = {"x": {"name": "X", "above": 20, "off_delay": {"seconds": 5}},
+             "y": {"name": "Y", "above": 10, "off_delay": {"seconds": 5}}}
+    drive = Drive({"above": 4, "off_delay": {"seconds": 5},
+                   "phases": {key: bands[key] for key in keys}})
+    drive.read(0, 15)
+    drive.read(10, 50)
+    assert drive.current == "x"
+    drive.read(100, value)
+    changes = drive.detector.advance(at(105), None)
+    assert [c.key for c in changes] == ended
+    assert all(c.cycle.end == at(100) for c in changes)
+
+
+def _program_leaving() -> Drive:
+    """The washer's program: 120 W from 125 s, its on_delay passing at 185 s, when 1.4 W comes."""
+    drive = Drive(WASHER)
+    drive.read(0, 1.4)
+    drive.read(125, 120)
+    drive.read(185, 1.4)
+    return drive
+
+
+def _phase_leaving() -> Drive:
+    """spinning: 150 W from 200 s, its on_delay passing at 380 s, when 7 W comes."""
+    drive = washer()
+    drive.read(200, 150)
+    drive.read(380, 7)
+    return drive
+
+
+def _other_leaving() -> Drive:
+    """other: 7 W from 190 s, its on_delay passing at 220 s, when 150 W comes."""
+    drive = washer()
+    drive.read(220, 150)
+    return drive
+
+
+@pytest.mark.parametrize(("leaving", "key"), [
+    pytest.param(_program_leaving, None, id="the program"),
+    pytest.param(_phase_leaving, "spinning", id="a phase"),
+    pytest.param(_other_leaving, "other", id="other"),
+])
+def test_a_reading_leaving_as_its_on_delay_passes_starts_nothing(
+        ha: HomeAssistant, leaving: Any, key: str | None) -> None:
+    """The reading at the instant a delay passes comes before it: in for exactly its on_delay isn't in, and no empty cycle."""
+    drive = leaving()
+    drive.to(1000)
+    assert key not in [each for each, _ in drive.started]
+    assert drive.cycles(key) == []
+
+
+def test_a_reading_back_as_its_off_delay_passes_keeps_the_cycle(ha: HomeAssistant) -> None:
+    """gelar left at 160 s; 120 W comes back at 190 s, the instant its off_delay passes: the reading first, gelar goes on."""
+    drive = purifier()
+    drive.read(160, 1)
+    drive.read(190, 120)
+    drive.to(1000)
+    assert drive.current == "gelar"
+    assert drive.ended == []
+
+
 def test_at_one_instant_a_phase_ends_before_another_starts(ha: HomeAssistant) -> None:
     """gelar left for no band at 160 s (its end at 190); bebendo's on_delay passes at 190 too: gelar's end comes first."""
     drive = purifier()
@@ -808,6 +875,13 @@ NAIVE = "2026-09-16T13:00:00"
     pytest.param({"program": {}, "seen": ["gelar"]}, False, [], ["gelar"],
                  id="program without a start"),
     pytest.param({"program": {"since": NAIVE}}, False, [], [], id="program's start without a zone"),
+    pytest.param({"program": {"since": "2026-02-30T10:00:00+00:00"}, "seen": ["gelar"]},
+                 False, [], ["gelar"], id="program's impossible date"),
+    pytest.param({"program": {"since": T0.isoformat()},
+                  "phases": {"gelar": {"since": "2026-13-45T00:00:00+00:00",
+                                       "until": "2026-02-30T10:00:00+00:00"}},
+                  "order": ["gelar"], "seen": ["gelar"]}, True, ["gelar"], ["gelar"],
+                 id="a phase's impossible dates"),
     pytest.param({"program": {"since": T0.isoformat()}, "phases": {"gone": {"since": T0.isoformat()}},
                   "order": ["gone", 5], "seen": ["gone", "gelar"]}, True, [], ["gelar"],
                  id="a phase no longer configured"),

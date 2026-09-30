@@ -100,7 +100,12 @@ class Detector:
       it waits for nothing, and ends at once when a phase starts.
     - A cycle ends when its reading left, or when the program's did if earlier:
       off_delay only confirms it. Each delay passes at its own time, however
-      late `advance` comes.
+      late `advance` comes; a reading at the very instant a delay passes comes
+      before it, so a band held for exactly its on_delay isn't held, and no
+      cycle is empty for it.
+    - At one instant: the program's delay first, then the phases' ends, in the
+      order they started (the current phase last), then their starts, in the
+      configuration's order.
     """
 
     def __init__(self, program: Program) -> None:
@@ -162,11 +167,12 @@ class Detector:
     ) -> list[Change]:
         """A reading at `now` (None: it has no value), `kwh` the energy counter then; what it started and ended.
 
-        The delays passed by `now` pass first. A reading without a value
-        stops every delay counting: each counts again from the next reading,
-        and every run, and when it left, stays.
+        The delays passed before `now` pass first; those passing at `now`, once
+        the reading counted. A reading without a value stops every delay
+        counting: each counts again from the next reading, and every run, and
+        when it left, stays.
         """
-        changes = self.advance(now, kwh)
+        changes = self._pass(now, kwh, at_now=False)
         if value is None:
             for track in (self._program, *self._phases.values()):
                 track.starting = track.ending = None
@@ -186,33 +192,45 @@ class Detector:
             if gap and track.run is not None:
                 track.run.gap = True
             self._follow(track, holds[phase.key], now, phase.band)
-        # A delay of 0 passes now; then a phase that waited (a dip, the
-        # program's reading out) starts if this reading ended its wait
+        # The delays passing now, a delay of 0 too; then a phase that waited
+        # (a dip, the program's reading out) starts if this reading ended its wait
         return [*changes, *self.advance(now, kwh), *self._start_armed(kwh)]
 
     def advance(self, now: datetime, kwh: float | None) -> list[Change]:
         """Every delay passed by `now`, each at its own time; what they started and ended."""
+        return self._pass(now, kwh, at_now=True)
+
+    def _pass(self, now: datetime, kwh: float | None, *, at_now: bool) -> list[Change]:
+        """Every delay passed before `now`, and those passing at `now` if `at_now`."""
         changes: list[Change] = []
         while (deadline := min(self._deadlines(), default=None)) is not None:
-            when, _, position, ending = deadline
-            if when > now:
+            when, _, _, position, ending = deadline
+            if when > now or (when == now and not at_now):
                 break
             key = None if position < 0 else self.program.phases[position].key
             changes.extend(self._passed(key, ending, when, kwh))
         return changes
 
-    def _deadlines(self) -> Iterator[tuple[datetime, int, int, bool]]:
-        """(when, rank, position, ending) of each delay counting.
+    def _deadlines(self) -> Iterator[tuple[datetime, int, int, int, bool]]:
+        """(when, rank, order, position, ending) of each delay counting.
 
-        At one instant: the program's first, then the phases' ends, then their
-        starts, each in the configuration's order (position -1: the program).
+        At one instant: the program's first, then the phases' ends in the
+        order they started, then their starts in the configuration's order
+        (position -1: the program).
         """
-        tracks = [self._program, *self._phases.values()]
-        for position, track in enumerate(tracks, start=-1):
+        yield from self._program_deadlines()
+        for position, (key, track) in enumerate(self._phases.items()):
             if track.ending is not None:
-                yield (track.ending, 0 if position < 0 else 1, position, True)
+                yield (track.ending, 1, self._order.index(key), position, True)
             if track.starting is not None:
-                yield (track.starting, 0 if position < 0 else 2, position, False)
+                yield (track.starting, 2, position, position, False)
+
+    def _program_deadlines(self) -> Iterator[tuple[datetime, int, int, int, bool]]:
+        track = self._program
+        if track.ending is not None:
+            yield (track.ending, 0, 0, -1, True)
+        if track.starting is not None:
+            yield (track.starting, 0, 0, -1, False)
 
     def _track(self, key: str | None) -> _Track:
         return self._program if key is None else self._phases[key]
@@ -261,7 +279,7 @@ class Detector:
         return self._start_armed(kwh)
 
     def _program_ends(self, when: datetime, kwh: float | None) -> list[Change]:
-        """The program's cycle ends when its reading left; each running phase's with it, if not before.
+        """The program's cycle ends when its reading left; each running phase's with it, if not before, in the order they started.
 
         A phase whose band still holds is armed: it starts with the next cycle.
         """
