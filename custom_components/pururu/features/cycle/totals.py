@@ -45,10 +45,13 @@ class CyclesTotal(PururuEntity, RestoreSensor):
         source: str,
         item: Item | None = None,
         entity_key: str = "cycles_total",
+        translation: str | None = None,
     ) -> None:
         """Count the cycles (of `item`) that `source` sends, as `entity_key` (a door's openings)."""
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, entity_key, item=item)
+        self._identify(
+            device, Platform.SENSOR, entity_key, item=item, translation=translation
+        )
         self._signal = cycle_signal(device, item)  # only _watch reads it
         self._cycles = 0
 
@@ -88,11 +91,18 @@ class EnergyTotal(PururuEntity, RestoreSensor):
     _attr_suggested_display_precision = 3
 
     def __init__(
-        self, device: Device, *, source: str, item: Item | None = None
+        self,
+        device: Device,
+        *,
+        source: str,
+        item: Item | None = None,
+        translation: str | None = None,
     ) -> None:
         """Add up the energy of the cycles (of `item`) that `source` sends."""
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, "energy_total", item=item)
+        self._identify(
+            device, Platform.SENSOR, "energy_total", item=item, translation=translation
+        )
         self._signal = cycle_signal(device, item)
         self._kwh = 0.0
 
@@ -144,10 +154,13 @@ class RuntimeTotal(PururuEntity, RestoreSensor):
         source: str,
         item: Item | None = None,
         entity_key: str = "runtime_total",
+        translation: str | None = None,
     ) -> None:
         """Add up the time `watched`, the entity of `source`, is in `state`, as `entity_key`."""
         self.sources = (source,)
-        self._identify(device, Platform.SENSOR, entity_key, item=item)
+        self._identify(
+            device, Platform.SENSOR, entity_key, item=item, translation=translation
+        )
         self._watched = watched
         self._state = state
         self._hours = 0.0
