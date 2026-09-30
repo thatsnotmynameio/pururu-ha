@@ -642,7 +642,11 @@ pool:
 Small choices that don't change the model:
 
 1. **Overlapping phases** — decided (the owner, 2026-09-29): bands may overlap. Two bands that hold at once are two cycles running at the same time; the configuration doesn't refuse it and no band wins. Today phases pick the first listed band that holds and modes refuse overlapping bands; both go.
-2. **Entity IDs and names of phases** (today `mode_<key>_*`, `mode_current`, `mode_last`, `phase_current`), and the current phase's state when none holds (today `defaults.stopped`/`running` for phases, `idle` for modes). The owner accepts changing these IDs in 0.2.0 when the new ones are the right shape (2026-09-29); the names themselves are chosen when D starts. The appliance's own entities (`appliance_running`, its totals and meters) keep their IDs.
+2. **Entity IDs of phases** — decided (the owner, 2026-09-30): `<platform>.pururu_<device>_appliance_phase_<key>_<suffix>`, in the appliance's namespace with a fixed `phase`, for the washer's and the purifier's alike (today `mode_<key>_*`, `mode_current`, `mode_last`, `phase_current`). The appliance's own entities (`appliance_running`, its totals and meters) keep their IDs.
+3. **Showing the running phases** — decided (2026-09-30): each phase gets a binary sensor, `appliance_phase_<key>`, on while it runs (overlap reads naturally); `appliance_phase_current` lists the phases running, and `appliance_phase_last` keeps the last one.
+4. **The current phase when none holds** — decided (2026-09-30): `idle` while the appliance is stopped; `other` while it runs outside every band. `other` is a built-in phase with the full set of phase entities and statistics (`appliance_phase_other_*`); it starts after its `on_delay` outside every band and ends when the appliance stops, or at once when a band's phase starts (a configured phase has priority). Its delays default to 30 s each (so the chill's 2-s compressor spike isn't a cycle), tuned by an optional `other: {on_delay, off_delay}` in `running_program`. `idle` and `other` are reserved phase keys. It also covers exact band bounds and gaps between bands.
+5. **The idle-gap end** — decided (from 0.1.12's notes and a real day of data): a running phase whose reading left for no band, and stayed out past its `off_delay`, ends at the moment it left, so the next phase isn't truncated; a dip into another band still waits its `off_delay`. The non-overlapping behaviour (one band at a time) stays identical otherwise.
+6. **Three PRs, D1–D3** — decided (2026-09-30): the detector alone first, then `running_program` replacing `modes`/`phases`, then `programs: {detected, executable}` (see PRs).
 
 ### Not in 0.2.0
 
@@ -854,7 +858,9 @@ Each leaves the whole suite green. Before merging A1, which bumps the version, c
 | B2 | The statistics aspect: `Aspect`, `mount`, `Counters` | stays 0.2.0 |
 | B3 | The alerts aspect; `alerts` becomes a device key | stays 0.2.0 |
 | B4 | The notifications aspect; one automations kind; the whole layer table | stays 0.2.0 |
-| D | Part 4: programs | stays 0.2.0 |
+| D1 | The detector: `features/cycle/program.py` (the detected `Program` schema; bands with `on_delay`/`off_delay`, overlap allowed, the idle-gap end, the built-in `other`) and its entities, tested alone | stays 0.2.0 |
+| D2 | `running_program` with its phases replaces the appliance's `running`/`threshold`, `modes`, `phases`, `cycle_from` and `Provides`/`Requires` | stays 0.2.0 |
+| D3 | `programs: {detected, executable}`: the `Programs` role, `aspects/programs.py`, the device key's items under `executable:` | stays 0.2.0 |
 | C | Part 2: the vocabulary | stays 0.2.0 |
 
 **Why this order.** Each PR builds on the previous one without redoing it:
