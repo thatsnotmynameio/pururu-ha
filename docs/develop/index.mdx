@@ -55,11 +55,10 @@ custom_components/pururu/     the integration
     files.py                  the generated files' writer
     generated.py              a Kind per generated domain: sync, include check, removal
   features/                   one module or package per feature, and FEATURES
-    appliance/                running, mirrors, alerts, notifications
+    appliance/                running_program, mirrors, alerts, notifications
     cycle/                    the cycle machinery: CycleSource, last cycle, totals, energy
       program/                the detector of detected programs: schema, detector, entities
     lights.py
-    phases.py
     standing.py               what switches and lights share: their schema, is_pururu
     switches.py
   aspects/                    ASPECTS: concerns written once, mounted where a builder offers them

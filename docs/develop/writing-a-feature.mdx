@@ -106,7 +106,7 @@ The pieces:
 - **`entity_keys`** lists **every** entity key the feature can create, even those that only exist with some settings, mapped to its platform.
 - **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, entity_key)`, which gives it its entity ID, unique ID, device and translated name.
 - **`example`** is a minimal valid block. The contract test validates it.
-- **`namespace`** is where the feature's entity keys live in an entity ID: `total` becomes `sensor.pururu_front_door_openings_total`. It's a slug no other feature uses, and not another feature's namespace followed by `_`. There's no exception for an entity key that is the same word as the namespace, so don't name one that way: `phases`' only entity key is `current` (`sensor.pururu_<key>_phase_current`), not `phase`. `build()` gets a `device` already in this namespace, so the feature only ever writes its own entity keys.
+- **`namespace`** is where the feature's entity keys live in an entity ID: `total` becomes `sensor.pururu_front_door_openings_total`. It's a slug no other feature uses, and not another feature's namespace followed by `_`. There's no exception for an entity key that is the same word as the namespace, so don't name one that way: an entity key `appliance` under the `appliance` namespace would read `sensor.pururu_<key>_appliance_appliance`. `build()` gets a `device` already in this namespace, so the feature only ever writes its own entity keys.
 
 ## 2. Register it
 
@@ -151,16 +151,11 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 **On an entity of the same device:** set `sources` on the entity to the entity keys of its own feature it reads. If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another entity key's entity, use `device.current_entity_id(hass, platform, entity_key)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `features/cycle/totals.py` is an example.
 
-**On another feature:** declare it as a capability instead of hard-coding the other feature's name. What a feature is beyond its five fields goes in its `roles` (`core/roles.py`):
-
-- The provider names the entity key that carries the capability: `roles=(Provides("cycle", "running"),)`.
-- The consumer has `Requires("cycle")`. Its schema then **must** have a `cycle_from` key (use `cv.slug`), and its `example` must include it.
-- `build()` receives the providing entity's current ID in `inputs["cycle"]`, and the consumer's entities depend on it automatically.
-- The device schema checks that `cycle_from` names a feature of the same device that provides `cycle`.
-
-`phases.py` is the example to copy.
+A feature reads another feature's entity only through `Refers`, never by hard-coding its name or taking a capability from it.
 
 **On one entity of another feature, named in the configuration:** add `Refers(of)`, `of` a function that returns, from the validated block, a `Ref` (`core/resolve.py`) for each entity key it names, in their namespace: `Ref(None, "appliance_power")` on this device. `checks.references` checks each is another feature's entity key, and `build()` receives its current ID in `inputs` under the reference as written (`Ref.text`, `appliance_power`). Set `follows` on each entity to the keys it reads. [`alerts`](/concepts/alerts) (`aspects/alerts.py`, the device key `ALERTS`) is the example.
+
+**Entity keys the block adds.** A feature whose validated block decides more entity keys than `entity_keys` lists (the appliance's phases, from its `running_program`'s `phases`) adds `Derived(of)` (`core/roles.py`): `of` takes the validated block and returns the entity keys it adds, by platform. `setup/catalogue.keys` lists them too, so an alert, a reaction or a `when:` can name one; they're never in `entity_keys` itself, since they depend on the block. `program.keys_of` is the example: every entity key a program block's phases create, `other`'s too, none without phases.
 
 **Being acted on:** a feature whose entities a [program](/concepts/programs) can act on has `Actions(...)`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `Actions(("turn_on", "turn_off", "toggle"))`.
 
@@ -171,21 +166,20 @@ Some features create one entity per key the user writes, such as [`switches`](/f
 - Add `Configured(<platform of those entities>)`, and leave `entity_keys` empty.
 - The schema is a `vol.Schema({cv.slug: ...})` of its own, with a required `name`. A feature whose entities stand for real entities uses `standing.schema(*domains)` (`features/standing.py`): `{key: {entity, name}}`, `entity` one of those domains and not pururu's own. In `build()`, `standing.is_pururu(hass, entity)` catches a pururu entity renamed in the UI; log it and skip that entity.
 - Each entity calls `self._identify(device, platform, entity_key, name)`: it's named by `name`, with no translation key.
-- It can't `Provides` a capability: a capability points to a fixed entity key.
 
 For a feature that stands for real entities of one domain, build each entity on Home Assistant's group entity of that domain, with the real entity as its only member: `Switch` in `features/switches.py` is a `SwitchGroup` of one, and `Light` in `features/lights.py` a `LightGroup` of one, as `Mirror` is a `SensorGroup` of one. The group already follows the real entity's state and passes every command on, with everything its domain offers. One feature per domain of the entity pururu creates: a light gets `lights`, not a place in `switches`. When a feature takes several domains of real entity, a mapping from each domain to its class (`KINDS` in `lights.py`) gives both the schema's domains and the class to build: `lights` takes a `switch.*` as a `SwitchLight`, on `GroupEntity`, on and off only. In one device, a real entity is in one configured feature at most.
 
-**Entity keys repeated per item.** Some features create the same set of entities for every item of their block: `modes`, before 0.2.0's refactor, gave each mode its own last cycle, totals and meters. Add `Items(keys, of)`: `keys` the suffixes (suffix → platform), `of` a function that returns, from the validated block, its items as `Item(slug, name)` (`core/feature.py`). `Configured` and `Items` never go together:
+**Entity keys repeated per item.** Some features create the same set of entities for every item of their block: the programs give each program its own last cycle, totals and meters. Add `Items(keys, of)`: `keys` the suffixes (suffix → platform), `of` a function that returns, from the validated block, its items as `Item(slug, name)` (`core/feature.py`). `Configured` and `Items` never go together:
 
-- An item's entity key is `<slug>_<suffix>` (`resfriar_cycles_total`), so `sensor.pururu_<key>_mode_resfriar_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
-- Each is named by its suffix's translation, `<namespace>_<suffix>` (`mode_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{mode} cycles"`, `"Ciclos de {mode}"`.
+- An item's entity key is `<slug>_<suffix>` (`clean_cycles_total`), so `sensor.pururu_<key>_program_clean_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
+- Each is named by its suffix's translation, `<namespace>_<suffix>` (`program_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{program} cycles"`, `"Ciclos de {program}"`.
 - Each entity calls `self._identify(device, platform, suffix, item=item)`.
 
-The cycle code `appliance`, `modes`, `door`, `window` and the programs' statistics share (the last cycle's sensors, the totals, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
+The cycle code the appliance (its running program and phases), `door`, `window` and the programs' statistics share (the last cycle's sensors, the totals, a cycle's energy) is in `features/cycle/`, and takes `item`. A feature with its own words for them passes its own `LastCycleDescription`s and an `entity_key` to `CyclesTotal` and `RuntimeTotal`, as `door` does (`last_opened`, `openings_total`).
 
-**Offering statistics.** A feature whose totals (`<counter>_total`, built with `CyclesTotal`, `RuntimeTotal` and the like) should have a per-period meter adds `Counters(needs, mount)` (`core/roles.py`): `needs` maps each counter to the setting it needs before it can be metered (`None` for none, `"energy"` for `appliance`'s `idle_energy` and `modes`' `energy`), and `mount` says only where `statistics:` sits, `"block"` (the default) or `"item"`: with `Items`, the meters repeat per item either way, as `core/roles.py`'s `Counters` docstring says (`modes` mounts in the block, once for every mode; `programs` and `reactions` mount in each item). The feature builds only its totals; the statistics aspect (`aspects/statistics.py`) builds the meters from them, one `Meter` (a `UtilityMeterSensor`) per counter and period asked for, and owns their translation keys, `<counter>_<period>` for the block's own, `item_<counter>_<period>` (with the `{item}` placeholder) for a per-item one. See [Statistics](/concepts/statistics).
+**Offering statistics.** A feature whose totals (`<counter>_total`, built with `CyclesTotal`, `RuntimeTotal` and the like) should have a per-period meter adds `Counters(places)` (`core/roles.py`): `places` a tuple of `Counted(needs, at, item, named)`, one per place `statistics:` can sit. `needs` maps each counter to the setting it needs before it can be metered, looked up in the builder's whole block (`None` for none, `"energy"` for `appliance`'s `idle_energy`), for one counter at the block itself: `Counters((Counted(needs={"total": None}),))` (`at=()` is the default). A place deeper in the block, such as a phase's, gives `at` the path to it: `Counted(needs=PHASE_COUNTERS, at=("running_program", "phases", EACH), item=_phase_item)` meters each phase's counters, where `EACH` (`core/feature.py`) stands for every key of a map. `program.counted(at)` is the example: the program's own place, then each phase's, then `other`'s. The feature builds only its totals, at each place; the statistics aspect (`aspects/statistics.py`) builds the meters from them, one `Meter` (a `UtilityMeterSensor`) per counter and period asked for, and owns their translation keys, `<counter>_<period>` for the block's own, `item_<counter>_<period>` (with the `{item}` placeholder) for an item's, or `Counted.named`'s own prefix (`other`'s). See [Statistics](/concepts/statistics).
 
-A feature whose entity carries a cycle (`Provides`) builds it as a `CycleSource` (`features/cycle/__init__.py`): call `_cycle_signals(device, item)` once to set up its signals, and `_send(cycle)` when the cycle ends, which writes the state, then sends the cycle on its own signal, then on the end signal. `Running`, `Open` and `Runs` are the example; `modes`' `Current` calls `_cycle_signals` again for each item it sends. The contract test checks the entity a builder `Provides` is a `CycleSource`.
+An entity that sends cycles — what a `LastCycleValue`, `CyclesTotal` or `RuntimeTotal` follows — is a `CycleSource` (`features/cycle/__init__.py`): call `_cycle_signals(device, item)` once to set up its signals, and `_send(cycle)` when the cycle ends, which writes the state, then sends the cycle on its own signal, then on the end signal. `Open`, `Runs`, the carrier (a detected program's, `features/cycle/program/entities.py`) and `PhaseRunning` are the examples; the carrier and each `PhaseRunning` call `_cycle_signals` again for their own key. The contract test (`test_what_a_last_cycle_follows_is_a_cycle_source`) checks what every last cycle follows is a `CycleSource`.
 
 **Ready-made alerts.** A feature can offer alerts for what usually goes wrong with it, off until its block's `alerts` enables them. Add `Presets(<name → Preset>)` (`Preset` in `core/feature.py`), as `features/appliance/` does with `features/appliance/alerts.py`'s `PRESETS`:
 
@@ -205,12 +199,13 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 |---|---|
 | `test_translation_files_match` | `pt-BR.json` has exactly `en.json`'s keys |
 | `test_namespaces_are_distinct_slugs` | Every namespace is a slug, no two are equal, and none is another's followed by `_` |
-| `test_no_entity_key_repeats_its_namespace` | No fixed entity key is its feature's namespace, which would read `…_phase_phase` |
+| `test_no_entity_key_repeats_its_namespace` | No fixed entity key is its feature's namespace, which would read `…_appliance_appliance` |
 | `test_every_entity_key_is_named_and_has_an_icon` | A name in both languages and an `mdi:` icon for every entity key, under its key in its namespace |
 | `test_every_translated_entity_key_is_created` | Every name and icon is under a key some feature creates |
 | `test_example_is_valid_and_unknown_keys_are_refused` | `example` passes `schema`, and `example` plus an unknown key fails |
 | `test_every_platform_is_set_up` | Every entity key's platform, and a configured feature's platform, is in `PLATFORMS` |
-| `test_capabilities_line_up` | `Provides` points to a real entity key and a configured feature provides nothing, every `Requires` is provided by some feature, and the example has `<capability>_from` |
+| `test_what_a_last_cycle_follows_is_a_cycle_source` | Each `LastCycleValue`'s source is a `CycleSource`: the appliance's `running` and each phase, a door's or a window's `open`, a program's `runs` |
+| `test_a_derived_key_is_in_the_index` | What a validated block adds (`Derived`) is listed by `catalogue.keys`, and the example builds only listed keys |
 | `test_refers_names_entity_keys_as_in_an_entity_id` | What `Refers` returns for the example names slugs, as entity keys in their namespace |
 | `test_every_action_is_a_service_of_its_platform` | A feature with `Actions` is configured, and its platform has a service for each action |
 | `test_it_takes_turn_on_turn_off_and_toggle` | `switches` and `lights` have exactly `("turn_on", "turn_off", "toggle")` |
@@ -223,27 +218,25 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 | `test_ready_made_notifications_line_up` | Every ready-made notification watches its own feature's entity key, has its name and message in both languages, and validates through the notifications aspect, which adds no entity key |
 | `test_each_role_at_most_once` | No role twice in `roles` |
 | `test_configured_and_items_never_together` | A block's keys are either its entity keys or its items |
-| `test_a_device_key_neither_provides_requires_nor_acts` | No device key (`programs`, `reactions`, `alerts`) has `Provides`, `Requires` or `Actions` |
+| `test_a_device_key_neither_acts_nor_derives` | No device key (`programs`, `reactions`, `alerts`) has `Actions` or `Derived` |
 | `test_ready_made_watch_the_builders_keys` | What a ready-made alert or notification watches, or counts from, is one of its builder's entity keys |
 | `test_a_generating_builder_generates_from_its_example` | What `Generates` writes carries its device's pururu pattern |
-| `test_a_capability_is_carried_by_a_cycle_source` | What a builder `Provides` is a `CycleSource` |
-| `test_the_other_cycle_sources_are_pinned_too` | `modes`' `Current` and the programs' `Runs` are `CycleSource` too, though no `Provides` names them |
 | `test_the_aspects_each_builder_offers` | Which aspects (`statistics`, `alerts`, `notifications`) each builder offers, pinned: `appliance` offers all three, the rest at most `statistics` |
 | `test_the_aspects_in_build_order` | `ASPECTS` is the ready-made alerts, then statistics, then the ready-made notifications |
-| `test_an_aspects_keys_are_named_once` | Every key an offered aspect adds has a name and icon in both languages, under the translation key the aspect names it (`Aspect.named`): statistics' outside every namespace (`item_<key>` with `{item}` for an `Items` builder), ready-made alerts' under the builder's |
-| `test_an_offered_aspect_validates_and_builds` | The builder's example with the aspect's own example goes through `mount`, and the aspect builds only the entity keys it lists, none when it lists none (the ready-made notifications') |
-| `test_a_builders_own_schema_refuses_an_aspects_key` | The builder's own schema, without `mount`, refuses the aspect's key where it sits: only `mount` may take it out first |
+| `test_an_aspects_keys_are_named_once` | Every key an aspect can add is named and has an icon, at each place (`Place.named`): `{item}` all or none per place, none without an item |
+| `test_an_offered_aspect_validates_and_builds` | The builder's example, with each place's example put in, goes through `mount`; the example reaches every place, and the aspect builds only the entity keys it lists, none when it lists none (the ready-made notifications') |
+| `test_a_builders_own_schema_refuses_an_aspects_key` | The builder's own schema, without `mount`, refuses the aspect's key at each place's containers (`put`) |
 | `test_a_configured_builder_offers_no_block_aspect` | A `Configured` feature's block is its entity keys, so it offers no aspect |
-| `test_mount_leaves_an_items_key_alone` | In a block of items (`Configured`, or an aspect placed `"item"`), a key alike an aspect's is an item, not the aspect's |
+| `test_mount_leaves_an_items_key_alone` | In a block of items (`Configured`, or an aspect placed at a map's items), a key alike an aspect's is an item, not the aspect's |
 | `test_mount_refuses_a_block_or_item_that_isnt_a_map` | A block, or an item, that isn't a map is refused with a path, a `vol.Invalid`, not a `KeyError` or `TypeError` |
 | `test_an_absent_aspect_key` | Absent, statistics is mounted as `{}` and ready-made alerts and notifications are left out (`mount_absent`), an explicit `{}` or null of theirs still refused; a block that isn't a map gets only the builder's own refusal |
-| `test_mount_skips_an_aspect_without_a_check` | An aspect without a `check` still mounts |
-| `test_a_counter_is_totalled` | Each of a `Counters` feature's needed counters has a `<counter>_total` entity key (per item, with `Items`) for the statistics aspect to meter |
-| `test_a_counter_without_its_setting_is_refused` | A counter needing a setting takes no periods without it (`statistics.idle_energy needs energy`); asking for none passes regardless |
+| `test_mount_skips_a_place_without_a_check` | A place without a `check` still mounts |
+| `test_a_counter_is_totalled` | Each of a `Counters` feature's needed counters has a `<counter>_total` entity key at each place it counts (an item's, the builder's own elsewhere) for the statistics aspect to meter |
+| `test_a_counter_without_its_setting_is_refused` | A counter needing a setting takes no periods without it, at every place it counts (`statistics.idle_energy needs energy`); asking for none passes regardless |
 
 The name, icon, platform and namespace checks above cover `Items`' suffixes and an aspect's keys too.
 
-The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_phases.py` do.
+The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_program_entities.py` do.
 
 ## 7. Document it
 
