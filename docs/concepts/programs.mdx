@@ -228,7 +228,7 @@ A key whose entities would be another's is refused too, at the configuration:
 | `sensor.pururu_<key>_appliance_<program>_<counter>_<period>` | One per entry of its `statistics` |
 | `sensor.pururu_<key>_appliance_<program>_phase_current`, `_phase_last`, `binary_sensor.…_<program>_phase_<phase>`, `sensor.…_<program>_phase_<phase>_<suffix>` | Its phases, as the running program's, under its key |
 
-A phase's cycle entities are named after its `name` ("Aquecendo cycles", "Ciclos de Aquecendo"). `other`'s are named by their own translations ("Other phase cycles", "Ciclos de outra fase"). While `running` is disabled, every phase is off and `phase_current` is `idle`.
+A phase's cycle entities are named after its `name` ("Aquecendo cycles", "Ciclos de Aquecendo"). `other`'s are named by their own translations ("Other phase cycles", "Ciclos de outra fase"). While `running` is disabled, every phase of the running program is off and `phase_current` is `idle`; so are a detected program's phases while its own binary sensor (`appliance_<program>`) is.
 
 A detected program's own entities, its fixed ones and its `other`'s are named after its name ("Tanquinho Algodão cycles", "Tanquinho Algodão phase", "Tanquinho Algodão other phase"; "Ciclos de Algodão", "Fase de Algodão", "Outra fase de Algodão"); a phase's after the phase's name, as the running program's.
 
