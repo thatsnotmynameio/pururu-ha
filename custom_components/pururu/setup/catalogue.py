@@ -109,17 +109,28 @@ def mount(builder: Feature, name: str, value: Any) -> Any:
         raise vol.MultipleInvalid(_flat(errors))
     for (path, key), each in mounted.items():
         block = _put(block, path, key, each)
-    for path, key in mounted:
-        if (check := by_key[key].check) is None:
+    if errors := _checked(builder, by_key, block, mounted.keys()):
+        raise vol.MultipleInvalid(_flat(errors))
+    return block
+
+
+def _checked(
+    builder: Feature,
+    aspects: Mapping[str, Aspect],
+    block: dict[str, Any],
+    places: Iterable[tuple[Place, str]],
+) -> list[vol.Invalid]:
+    """Each aspect's check (Aspect.check) on each container it sits in; the refusals, with their path."""
+    errors: list[vol.Invalid] = []
+    for path, key in places:
+        if (check := aspects[key].check) is None:
             continue
         try:
             check(builder, block[path[0]] if path else block)
         except vol.Invalid as error:
             error.prepend(list(path))
             errors.append(error)
-    if errors:
-        raise vol.MultipleInvalid(_flat(errors))
-    return block
+    return errors
 
 
 def _put(block: dict[str, Any], path: Place, key: str, value: Any) -> Any:
@@ -187,19 +198,26 @@ def keys(
                 (name, entity_key, configured.platform, None, None)
                 for entity_key in device[name]
             )
-        items = feature.role(Items)
-        each = [] if items is None else list(items.of(device[name]))
-        if items is not None:
+        each: list[Item] | None = None
+        if (items := feature.role(Items)) is not None:
+            each = list(items.of(device[name]))
             yield from _per_item(name, each, items.keys, None)
-        for aspect in aspects_of(feature):
-            added = aspect.keys(feature)
-            if items is not None:
-                yield from _per_item(name, each, added, aspect.key)
-                continue
-            yield from (
-                (name, entity_key, platform, aspect.key, None)
-                for entity_key, platform in added.items()
-            )
+        yield from _aspects_keys(name, feature, each)
+
+
+def _aspects_keys(
+    name: str, feature: Feature, items: list[Item] | None
+) -> Iterator[tuple[str, str, Platform, str | None, str | None]]:
+    """keys()' rows for the keys each aspect it offers adds: per item for an Items builder (`items`)."""
+    for aspect in aspects_of(feature):
+        added = aspect.keys(feature)
+        if items is not None:
+            yield from _per_item(name, items, added, aspect.key)
+            continue
+        yield from (
+            (name, entity_key, platform, aspect.key, None)
+            for entity_key, platform in added.items()
+        )
 
 
 def _per_item(
