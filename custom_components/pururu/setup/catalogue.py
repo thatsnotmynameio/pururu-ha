@@ -62,7 +62,8 @@ def _take(
     if not isinstance(value, dict):
         return value
     head, *rest = path
-    keys = list(value) if head == EACH else [head] if head in value else []
+    present = [head] if head in value else []
+    keys = list(value) if head == EACH else present
     return {
         **value,
         **{

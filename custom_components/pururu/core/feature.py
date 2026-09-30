@@ -221,7 +221,9 @@ def walk(value: Any, path: Path, at: Path = ()) -> Iterator[tuple[Path, Any]]:
     if not isinstance(value, Mapping):
         return
     head, *rest = path
-    for key in value if head == EACH else (head,) if head in value else ():
+    present = (head,) if head in value else ()
+    keys = value if head == EACH else present
+    for key in keys:
         # As the builder's schema returns it: cv.slug makes YAML's 1 "1"
         yield from walk(value[key], tuple(rest), (*at, str(key)))
 

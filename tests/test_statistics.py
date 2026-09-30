@@ -359,11 +359,30 @@ async def test_an_unknown_counter_is_refused(ha: HomeAssistant) -> None:
     assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
 
 
-async def test_the_appliances_counters_sit_where_they_count(ha: HomeAssistant) -> None:
+@pytest.mark.parametrize(
+    ("block", "where"),
+    [
+        pytest.param(
+            {**APPLIANCE_MINIMAL, "statistics": {"cycles": ["today"]}},
+            "appliance->statistics->cycles",
+            id="cycles in the block",
+        ),
+        pytest.param(
+            counting({"idle_energy": ["today"]}),
+            "appliance->running_program->statistics->idle_energy",
+            id="idle_energy in running_program",
+        ),
+    ],
+)
+async def test_the_appliances_counters_sit_where_they_count(
+    ha: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    block: dict[str, Any],
+    where: str,
+) -> None:
     """runtime and cycles are its running program's, idle energy its block's: each refused at the other place."""
-    for block in ({**APPLIANCE_MINIMAL, "statistics": {"cycles": ["today"]}},
-                  counting({"idle_energy": ["today"]})):
-        assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
+    assert not await setup(ha, {APPLIANCE_KEY: {"name": APPLIANCE_NAME, "appliance": block}})
+    assert f"{APPLIANCE_KEY}->{where}" in caplog.text
 
 
 @pytest.mark.parametrize("place", ["resfriar", "other"])

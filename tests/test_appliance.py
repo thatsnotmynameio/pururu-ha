@@ -102,6 +102,10 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
                  ["running_program takes no name: it is the appliance running for dictionary value "
                   f"'pururu->devices->{KEY}->appliance->running_program'"],
                  id="running_program takes no name"),
+    pytest.param({**APPLIANCE, "statistics": {"cycles": ["today"]}},
+                 ["'cycles' is an invalid option for 'pururu', check: "
+                  f"pururu->devices->{KEY}->appliance->statistics->cycles"],
+                 id="cycles in the block"),
 ])
 async def test_the_old_block_and_a_name_are_refused_by_their_text(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, block: dict[str, Any],

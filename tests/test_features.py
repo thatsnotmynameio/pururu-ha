@@ -495,8 +495,9 @@ def test_a_builders_own_schema_refuses_an_aspects_key(features: dict[str, Any]) 
         valid = dict(feature.example)
         feature.schema(valid)
         for place in aspect.places(feature, name):
+            invalid = put(valid, place.path, aspect.key, place.example)
             with pytest.raises(vol.Invalid):
-                feature.schema(put(valid, place.path, aspect.key, place.example))
+                feature.schema(invalid)
 
 
 def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:

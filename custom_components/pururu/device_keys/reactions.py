@@ -57,16 +57,14 @@ SOURCES = ("when", "entity", "at", "sun")
 # data. A string, not automation's constant: pururu doesn't depend on it
 AUTOMATION_TRIGGERED = "automation_triggered"
 PER_REACTION: dict[str, Platform] = {"triggered_total": Platform.SENSOR}
+
+
+def _item(key: str, reaction: Mapping[str, Any]) -> Item:
+    return Item(slug=key, name=reaction[CONF_NAME])
+
+
 # The statistics aspect meters it, `statistics:` in each reaction
-COUNTERS = Counters(
-    (
-        Counted(
-            needs={"triggered": None},
-            at=(EACH,),
-            item=lambda key, reaction: Item(slug=key, name=reaction[CONF_NAME]),
-        ),
-    )
-)
+COUNTERS = Counters((Counted(needs={"triggered": None}, at=(EACH,), item=_item),))
 # Keys that only a reaction on an entity's state takes
 STATE_KEYS = ("to", "from", "above", "below", "for")
 # How late a reaction's last try may be, after its occurrence: a chain never
@@ -363,9 +361,7 @@ class TriggersTotal(PururuEntity, RestoreSensor):
 
 
 def _items(config: Mapping[str, Any]) -> list[Item]:
-    return [
-        Item(slug=key, name=reaction[CONF_NAME]) for key, reaction in config.items()
-    ]
+    return [_item(key, reaction) for key, reaction in config.items()]
 
 
 def build(

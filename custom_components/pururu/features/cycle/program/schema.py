@@ -52,9 +52,14 @@ PHASE_COUNTERS: dict[str, str | None] = {
 }
 
 
+def phase_slug(key: str) -> str:
+    """A phase's entity keys' slug: phase_<key>, the one rule every phase key uses."""
+    return f"{PHASE}_{key}"
+
+
 def _phase_item(key: str, phase: Mapping[str, Any]) -> Item:
     """A configured phase's item: phase_<key>, named by its name."""
-    return Item(slug=f"{PHASE}_{key}", name=phase["name"])
+    return Item(slug=phase_slug(key), name=phase["name"])
 
 
 def _other_item(*_: Any) -> Item:
@@ -83,7 +88,7 @@ def counted(at: Path) -> tuple[Counted, ...]:
 
 def phase_keys(key: str) -> dict[str, Platform]:
     """Every entity key phase `key` can create: its binary sensor, then its cycle entities."""
-    slug = f"{PHASE}_{key}"
+    slug = phase_slug(key)
     return {
         slug: Platform.BINARY_SENSOR,
         **{f"{slug}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
@@ -209,7 +214,7 @@ class Phase:
     @property
     def item(self) -> Item:
         """Its entity keys' item: phase_<key>_<suffix>."""
-        return Item(slug=f"{PHASE}_{self.key}", name=self.name)
+        return Item(slug=phase_slug(self.key), name=self.name)
 
     @property
     def other(self) -> bool:
