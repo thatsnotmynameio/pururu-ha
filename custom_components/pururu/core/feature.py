@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import voluptuous as vol
 
@@ -227,5 +227,10 @@ class Aspect:
     keys: Callable[[Feature], Mapping[str, Platform]]
     # A valid value, for the contract test
     example: Callable[[Feature], Any]
+    # Where its key sits for this builder: in the block, or in each item
+    placed: Callable[[Feature], Literal["block", "item"]]
     # Its entities, from the builder's validated block
     build: AspectBuild
+    # Refuses (vol.Invalid) what it can't be once validated, given the builder
+    # and each container (the block, or an item) with its value put back
+    check: Callable[[Feature, Mapping[str, Any]], None] | None = None

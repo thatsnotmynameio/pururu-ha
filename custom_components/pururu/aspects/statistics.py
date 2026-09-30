@@ -6,7 +6,7 @@ in its block or in each item (Counters.mount), asks for their meters by period.
 
 from collections.abc import Iterator, Mapping
 from datetime import timedelta
-from typing import Any, override
+from typing import Any, Literal, override
 
 import voluptuous as vol
 
@@ -166,13 +166,18 @@ def _meters(
             yield Meter(device, f"{counter}_{period}", total, source, period, item=item)
 
 
+def _placed(builder: Feature) -> Literal["block", "item"]:
+    """Where `statistics:` sits for this builder: its Counters say."""
+    return _counters(builder).mount
+
+
 def _build(
-    hass: HomeAssistant, device: Device, builder: Feature, block: Any, _texts: Texts
+    hass: HomeAssistant, device: Device, builder: Feature, block: Any, texts: Texts
 ) -> list[PururuEntity]:
     """The meters asked for; per item for an Items builder, from the item's or the block's statistics."""
     if (items := builder.role(Items)) is None:
         return list(_meters(hass, device, block[KEY], None))
-    in_items = _counters(builder).mount == "item"
+    in_items = _placed(builder) == "item"
     return [
         meter
         for item in items.of(block)
@@ -182,11 +187,20 @@ def _build(
     ]
 
 
+def _check(builder: Feature, container: Mapping[str, Any]) -> None:
+    """Refuse a counter with periods whose setting (Counters.needs) isn't in its block (or item)."""
+    for counter, setting in _counters(builder).needs.items():
+        if setting is not None and container[KEY][counter] and setting not in container:
+            raise vol.Invalid(f"{KEY}.{counter} needs {setting}")
+
+
 ASPECT = Aspect(
     key=KEY,
     offered=lambda builder: builder.role(Counters) is not None,
     schema=_schema,
     keys=_keys,
     example=_example,
+    placed=_placed,
     build=_build,
+    check=_check,
 )

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -57,17 +58,11 @@ def aspect_groups(aspect: Any, feature: Any) -> dict[str, Any]:
     return {f"{prefix}{key}": platform for key, platform in aspect.keys(feature).items()}
 
 
-def in_items(feature: Any) -> bool:
-    """Whether an aspect sits in each item of the block (Counters(mount="item")), not in the block."""
-    counters = role(feature, "Counters")
-    return counters is not None and counters.mount == "item"
-
-
-def placed(feature: Any, key: str, value: Any, block: Any) -> dict[str, Any]:
-    """`block` with `value` under `key` where the builder takes its aspects: the block, or each item."""
-    if in_items(feature):
-        return {each: {**item, key: value} for each, item in block.items()}
-    return {**block, key: value}
+def placed(aspect: Any, feature: Any, value: Any, block: Any) -> dict[str, Any]:
+    """`block` with `value` under the aspect's key where it sits for this builder: the block, or each item."""
+    if aspect.placed(feature) == "item":
+        return {each: {**item, aspect.key: value} for each, item in block.items()}
+    return {**block, aspect.key: value}
 
 
 @pytest.fixture
@@ -357,7 +352,8 @@ def test_an_offered_aspect_validates_and_builds(
     catalogue = module("setup.catalogue")
     device_cls = module("core.feature").Device
     for aspect, name, feature in offered(features):
-        raw = placed(feature, aspect.key, aspect.example(feature), dict(feature.example))
+        assert aspect.placed(feature) == "block" or role(feature, "Items"), f"{name} has no items"
+        raw = placed(aspect, feature, aspect.example(feature), dict(feature.example))
         block = catalogue.mount(feature, name, raw)
         device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
         built = aspect.build(ha, device, feature, block, {})
@@ -368,24 +364,31 @@ def test_an_offered_aspect_validates_and_builds(
 
 
 def test_a_builders_own_schema_refuses_an_aspects_key(features: dict[str, Any]) -> None:
-    """Only mount takes an aspect's key: the builder's schema refuses it where the aspect sits."""
+    """Only mount takes an aspect's key: the builder's schema refuses it where the aspect sits.
+
+    A valid block (for an item aspect, one valid item of the example) is
+    refused only once the aspect's valid value is put where it sits.
+    """
     for aspect, name, feature in offered(features):
-        example = dict(feature.example)
+        valid = dict(feature.example)
+        if aspect.placed(feature) == "item":
+            valid = dict([next(iter(valid.items()))])
+        feature.schema(valid)
+        mounted = placed(aspect, feature, aspect.example(feature), valid)
         with pytest.raises(vol.Invalid):
-            feature.schema({**example, aspect.key: {}})
-        with pytest.raises(vol.Invalid):
-            feature.schema(placed(feature, aspect.key, {}, example))
+            feature.schema(mounted)
 
 
 def test_mount_leaves_an_items_key_alone(features: dict[str, Any]) -> None:
     """In a block of items, a key alike an aspect's is an item: a program keyed `statistics` is a program."""
-    mount = module("setup.catalogue").mount
-    for aspect in module("aspects").ASPECTS:
-        for name, feature in features.items():
-            if not (role(feature, "Configured") or in_items(feature)):
-                continue
-            item = next(iter(feature.example.values()))
-            block = mount(feature, name, {aspect.key: item})
+    catalogue = module("setup.catalogue")
+    for name, feature in features.items():
+        in_items = any(aspect.placed(feature) == "item" for aspect in catalogue.aspects_of(feature))
+        if not (role(feature, "Configured") or in_items):
+            continue
+        item = next(iter(feature.example.values()))
+        for aspect in module("aspects").ASPECTS:
+            block = catalogue.mount(feature, name, {aspect.key: item})
             assert set(block) == {aspect.key}, name
 
 
@@ -412,12 +415,14 @@ def test_a_counter_is_totalled(features: dict[str, Any]) -> None:
 def test_a_counter_without_its_setting_is_refused(features: dict[str, Any]) -> None:
     """A counter needing a setting (energy) takes no period without it; asking none passes."""
     mount = module("setup.catalogue").mount
+    statistics = module("aspects.statistics").ASPECT
     needing = [(name, feature, counter, setting) for name, feature in features.items()
                if (counters := role(feature, "Counters")) is not None
                for counter, setting in counters.needs.items() if setting is not None]
     assert needing, "no counter needs a setting"
     for name, feature, counter, setting in needing:
         example = {key: value for key, value in feature.example.items() if key != setting}
-        with pytest.raises(vol.Invalid, match=f"statistics.{counter} needs {setting}"):
-            mount(feature, name, placed(feature, "statistics", {counter: ["today"]}, example))
-        mount(feature, name, placed(feature, "statistics", {counter: []}, example))
+        asked = placed(statistics, feature, {counter: ["today"]}, example)
+        with pytest.raises(vol.Invalid, match=re.escape(f"statistics.{counter} needs {setting}")):
+            mount(feature, name, asked)
+        mount(feature, name, placed(statistics, feature, {counter: []}, example))
