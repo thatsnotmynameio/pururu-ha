@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from pathlib import Path
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant, State
@@ -10,7 +11,7 @@ from homeassistant.util import dt as dt_util
 import pytest
 import yaml
 
-from helpers import capture, fake, held, reload, restart, setup, tick
+from helpers import capture, fake, held, module, reload, restart, setup, tick
 
 KEY = "cercado_frente"
 NAME = "Cercado frente"
@@ -861,3 +862,20 @@ async def test_an_alert_is_an_alert2_alert(ha: HomeAssistant, kind: str) -> None
     [written] = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert written["name"] == f"{KEY}_{kind}_alert_no_opening"
     assert written["message"] == "It hasn't been opened in a while."
+
+
+# --- the docs ----------------------------------------------------------------------------
+
+DOOR_PAGE = Path(__file__).resolve().parents[1] / "docs/features/door.mdx"
+
+
+def test_the_door_page_lists_every_ready_made_alert(ha: HomeAssistant) -> None:
+    """The window page points to the door's: one list for both."""
+    page = DOOR_PAGE.read_text(encoding="utf-8")
+    section = re.search(r"## Ready-made alerts\n(.*?)\n## ", page, re.DOTALL)
+    assert section is not None, "no Ready-made alerts section"
+    features = module("features").FEATURES
+    for name in module("core.feature").presets_of(features["door"]):
+        assert f"`{name}`" in section[1], name
+    assert set(module("core.feature").presets_of(features["window"])) == set(
+        module("core.feature").presets_of(features["door"]))
