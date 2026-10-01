@@ -56,6 +56,11 @@ SKILLS = {"ce-plan": "plan", "ce-brainstorm": "plan", "ce-doc-review": "plan rev
           "ce-commit-push-pr": "pull request", "ce-babysit-pr": "CI"}
 UNSTARTED = ("pending",) * len(STAGES)
 LATEST = 200  # characters of the session's last sentence shown at most
+STATUS = "dispatcher-status"  # the hidden marker's tag on the status comment's last line
+QUEUED = "queued"  # the status comment's states beside the labels'
+RUNNING = "running"
+MARK_SIGNS = {"done": "✅", "current": "⏳", "pending": "⬜", "skipped": "➖", "failed": "❌",
+              "paused": "⏸️"}
 
 
 @dataclass(frozen=True)
@@ -326,6 +331,118 @@ def orphans(in_progress: Iterable[Issue], worktrees: Mapping[int, list[str]]) ->
                             "(the dispatcher was stopped or crashed).",
                             *(f"Worktree: `{path}`" for path in worktrees.get(issue.number, [])))
             for issue in in_progress]
+
+
+# The status comment
+
+STATUS_LINE = re.compile(rf"<!-- {STATUS} (\{{.*\}}) -->")
+
+
+@dataclass(frozen=True)
+class Status:
+    """What an issue's status comment says: its state, the checklist, and what the state shows.
+
+    Queued shows its `reason` only; running, the checklist, the minutes since `started` and the
+    `latest` sentence; paused, the checklist and the limit's `reset` (None: unknown); in review,
+    ready to merge and needs attention, the checklist. Every one ends with the marks' marker.
+    """
+
+    state: str
+    marks: tuple[str, ...] = UNSTARTED
+    reason: str = ""
+    latest: str | None = None
+    started: float = 0.0
+    reset: float | None = None
+
+    def body(self, now: float) -> str:
+        """The comment, in English, updated at `now`, its last line the marker holding the marks."""
+        header = f"**Dispatcher status: {self.state}**"
+        if self.state == RUNNING:
+            stage = next((name for name, mark in zip(STAGES, self.marks, strict=True)
+                          if mark == "current"), RUNNING)
+            minutes = max(int((now - self.started) // 60), 0)
+            header = f"**Dispatcher status: {stage}** (running {minutes} min)"
+        parts = [header]
+        if self.state == QUEUED:
+            parts.append(self.reason[:1].upper() + self.reason[1:] + ".")
+        else:
+            parts.append("\n".join(f"{MARK_SIGNS[mark]} {name[:1].upper()}{name[1:]}"
+                                   for mark, name in zip(self.marks, STAGES, strict=True)))
+        if self.state == RUNNING and self.latest:
+            longest = max((len(run) for run in re.findall("`+", self.latest)), default=0)
+            fence = "`" * max(3, longest + 1)
+            parts.append(f"Latest:\n{fence}text\n{self.latest}\n{fence}")
+        if self.state == PAUSED:
+            parts.append("The Claude usage limit stopped the session. "
+                         + (f"It resets at {local_time(self.reset)}." if self.reset is not None
+                            else "Its reset time is unknown."))
+        stamp = f"<!-- {STATUS} {json.dumps({'stages': list(self.marks)})} -->"
+        parts.append(f"Updated {local_time(now)}\n{stamp}")
+        return "\n\n".join(parts)
+
+
+def waiting(blocked: int = 0, held: bool = False, until: float | None = None) -> str:
+    """Why a queued issue waits: its open blockers, else the usage limit until then, else a slot."""
+    if blocked:
+        return f"blocked by {blocked} open issue{'s' if blocked > 1 else ''}"
+    if held:
+        return ("waiting for the Claude usage limit to reset at "
+                + (local_time(until) if until is not None else "an unknown time"))
+    return "waiting for a free session"
+
+
+def status_marks(body: str) -> tuple[str, ...] | None:
+    """The marks in a status comment's marker, if its last line is one holding a mark per stage."""
+    lines = body.strip().splitlines()
+    found = STATUS_LINE.fullmatch(lines[-1].strip()) if lines else None
+    try:
+        record = json.loads(found[1]) if found else None
+    except ValueError:
+        return None
+    stages = record.get("stages") if isinstance(record, dict) else None
+    if (isinstance(stages, list) and len(stages) == len(STAGES)
+            and all(isinstance(mark, str) and mark in MARK_SIGNS for mark in stages)):
+        return tuple(stages)
+    return None
+
+
+def same_status(old: str, new: str) -> bool:
+    """Whether two bodies say the same, their `Updated` lines (just above the marker) aside."""
+    def unstamped(body: str) -> list[str]:
+        lines = body.strip().splitlines()
+        if len(lines) > 1 and lines[-2].startswith("Updated "):
+            del lines[-2]
+        return lines
+    return unstamped(old) == unstamped(new)
+
+
+def marks_opened(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """A pull request opened: the stages before it done if entered, else skipped; CI current."""
+    pr = STAGES.index("pull request")
+    return tuple(("done" if mark in ("done", "current", "paused", "failed") else "skipped")
+                 for mark in marks[:pr]) + ("done", "current")
+
+
+def marks_passed(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """The pull request's required checks pass: CI done."""
+    return (*marks[:-1], "done")
+
+
+def marks_stopped(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """The session stopped: the current stage failed, else the paused one, else the plan."""
+    stage = next((index for wanted in ("current", "paused") for index, mark in enumerate(marks)
+                  if mark == wanted), 0)
+    return tuple("failed" if index == stage else mark for index, mark in enumerate(marks))
+
+
+def marks_paused(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """The usage limit stopped the session: the current stage paused."""
+    return tuple("paused" if mark == "current" else mark for mark in marks)
+
+
+def marks_resumed(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """The session resumed: the paused stage current again."""
+    return tuple("current" if mark == "paused" else mark for mark in marks)
 
 
 # GitHub, through `gh`

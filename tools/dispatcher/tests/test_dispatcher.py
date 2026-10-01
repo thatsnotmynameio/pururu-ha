@@ -790,6 +790,196 @@ def test_the_ending_reads_the_progress_with_the_reason_and_the_limit(tmp_path: P
                                                           "Reviewing."))
 
 
+# The status comment
+
+NOW = at(10, 47)
+UPDATED = f"Updated {dispatcher.local_time(NOW)}"
+
+
+def stamp_of(stages: tuple[str, ...]) -> str:
+    """The hidden status marker these marks make."""
+    return f'<!-- dispatcher-status {json.dumps({"stages": list(stages)})} -->'
+
+
+def test_a_running_status_shows_the_checklist_the_latest_sentence_and_its_minutes() -> None:
+    """AE2: plan and plan review done, implementation current, 42 minutes in."""
+    status = dispatcher.Status(dispatcher.RUNNING, marks("done", "done", "current"),
+                               latest=AE2_SENTENCE, started=at(10, 5))
+    assert status.body(NOW) == "\n".join((
+        "**Dispatcher status: implementation** (running 42 min)", "",
+        "✅ Plan", "✅ Plan review", "⏳ Implementation", "⬜ Code review", "⬜ Pull request",
+        "⬜ CI", "", "Latest:", "```text", AE2_SENTENCE, "```", "", UPDATED,
+        stamp_of(marks("done", "done", "current"))))
+
+
+def test_the_running_time_is_whole_minutes_since_the_start() -> None:
+    """KTD7: 59 seconds are no minute yet."""
+    status = dispatcher.Status(dispatcher.RUNNING, marks("current"), started=at(10, 46, 1))
+    assert status.body(NOW).startswith("**Dispatcher status: plan** (running 0 min)\n")
+    later = dataclasses.replace(status, started=at(9, 0))
+    assert later.body(NOW).startswith("**Dispatcher status: plan** (running 107 min)\n")
+
+
+def test_a_running_status_without_a_sentence_has_no_latest_block() -> None:
+    body = dispatcher.Status(dispatcher.RUNNING, marks("current"), started=NOW).body(NOW)
+    assert "Latest:" not in body and "```" not in body
+
+
+def test_a_latest_sentence_with_backticks_sits_in_a_longer_fence() -> None:
+    """KTD4: nothing of the session's words renders as Markdown, mentions included."""
+    sentence = "Ran ```` `uv run pytest` ```` then pinged @someone about #12 ``` done"
+    body = dispatcher.Status(dispatcher.RUNNING, marks("current"), latest=sentence,
+                             started=NOW).body(NOW)
+    assert "Latest:\n`````text\n" + sentence + "\n`````\n" in body
+    assert body.count(sentence) == 1
+
+
+def test_a_short_backtick_run_keeps_the_three_backtick_fence() -> None:
+    body = dispatcher.Status(dispatcher.RUNNING, marks("current"), latest="Ran `uv run pytest`.",
+                             started=NOW).body(NOW)
+    assert "Latest:\n```text\nRan `uv run pytest`.\n```\n" in body
+
+
+def test_a_queued_status_says_why_it_waits_with_no_checklist() -> None:
+    """AE1: blocked by 2 open issues, then by 1."""
+    body = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=2)).body(NOW)
+    assert body == "\n".join(("**Dispatcher status: queued**", "", "Blocked by 2 open issues.",
+                              "", UPDATED, stamp_of(marks())))
+    assert "Blocked by 1 open issue.\n" in dispatcher.Status(
+        dispatcher.QUEUED, reason=dispatcher.waiting(blocked=1)).body(NOW)
+
+
+def test_why_a_queued_issue_waits() -> None:
+    """R3: its blockers first, then the usage limit's reset, else a free session."""
+    assert dispatcher.waiting() == "waiting for a free session"
+    assert dispatcher.waiting(blocked=2, held=True, until=at(20, 31)) == (
+        "blocked by 2 open issues")
+    assert dispatcher.waiting(held=True, until=at(20, 31)) == (
+        f"waiting for the Claude usage limit to reset at {dispatcher.local_time(at(20, 31))}")
+    assert dispatcher.waiting(held=True) == (
+        "waiting for the Claude usage limit to reset at an unknown time")
+
+
+def test_the_same_status_at_two_times_is_the_same_text() -> None:
+    """KTD6: only the Updated line differs; a changed reason is a change."""
+    status = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=2))
+    assert status.body(NOW) != status.body(NOW + 3600)
+    assert dispatcher.same_status(status.body(NOW), status.body(NOW + 3600))
+    other = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=1))
+    assert not dispatcher.same_status(status.body(NOW), other.body(NOW))
+
+
+def test_a_sentence_starting_like_the_updated_line_still_counts() -> None:
+    """Only the line above the marker is the stamp, never the session's words."""
+    first = dispatcher.Status(dispatcher.RUNNING, marks("current"), latest="Updated the plan.",
+                              started=NOW)
+    second = dataclasses.replace(first, latest="Updated the tests.")
+    assert not dispatcher.same_status(first.body(NOW), second.body(NOW))
+
+
+def test_ending_with_a_pull_request_marks_it_done_and_ci_current() -> None:
+    """AE6: implementation done, code review never entered, pull request done, CI current."""
+    assert dispatcher.marks_opened(marks("done", "done", "current")) == (
+        "done", "done", "done", "skipped", "done", "current")
+    after_ci = ("skipped", "skipped", "done", "done", "done", "current")
+    assert dispatcher.marks_opened(after_ci) == after_ci
+
+
+def test_checks_passing_marks_ci_done() -> None:
+    """AE6: ready to merge."""
+    assert dispatcher.marks_passed(("done", "done", "done", "skipped", "done", "current")) == (
+        "done", "done", "done", "skipped", "done", "done")
+
+
+def test_stopping_fails_the_current_stage() -> None:
+    """AE4: Ctrl-C during implementation; with no stage entered, the plan fails."""
+    assert dispatcher.marks_stopped(marks("done", "done", "current")) == marks(
+        "done", "done", "failed")
+    assert dispatcher.marks_stopped(marks()) == marks("failed")
+
+
+def test_stopping_a_paused_checklist_fails_the_paused_stage_not_the_plan() -> None:
+    assert dispatcher.marks_stopped(marks("done", "done", "paused")) == marks(
+        "done", "done", "failed")
+
+
+def test_pausing_and_resuming_keep_the_stage() -> None:
+    """AE7: paused in implementation, then current again."""
+    assert dispatcher.marks_paused(marks("done", "done", "current")) == marks(
+        "done", "done", "paused")
+    assert dispatcher.marks_resumed(marks("done", "done", "paused")) == marks(
+        "done", "done", "current")
+
+
+def test_a_paused_status_keeps_the_checklist_and_says_when_the_limit_resets() -> None:
+    """AE7: implementation paused, the reset at 20:30; no running time, no sentence."""
+    status = dispatcher.Status(PAUSED, marks("done", "done", "paused"), latest=AE2_SENTENCE,
+                               started=at(10, 5), reset=at(20, 30))
+    assert status.body(NOW) == "\n".join((
+        "**Dispatcher status: paused**", "",
+        "✅ Plan", "✅ Plan review", "⏸️ Implementation", "⬜ Code review", "⬜ Pull request",
+        "⬜ CI", "", "The Claude usage limit stopped the session. It resets at "
+        f"{dispatcher.local_time(at(20, 30))}.", "", UPDATED,
+        stamp_of(marks("done", "done", "paused"))))
+
+
+def test_a_paused_status_with_an_unknown_reset_says_so() -> None:
+    body = dispatcher.Status(PAUSED, marks("done", "done", "paused")).body(NOW)
+    assert ("The Claude usage limit stopped the session. Its reset time is unknown.\n"
+            in body)
+
+
+@pytest.mark.parametrize("state, stages", [
+    (IN_REVIEW, ("done", "done", "done", "skipped", "done", "current")),
+    (READY_TO_MERGE, ("done", "done", "done", "skipped", "done", "done")),
+    (NEEDS_ATTENTION, marks("done", "done", "failed")),
+])
+def test_an_ended_status_shows_the_checklist_without_time_or_sentence(
+        state: str, stages: tuple[str, ...]) -> None:
+    """R8, R9: the checklist frozen as it ended."""
+    status = dispatcher.Status(state, stages, latest=AE2_SENTENCE, started=at(10, 5))
+    lines = [f"{dispatcher.MARK_SIGNS[mark]} {name[0].upper()}{name[1:]}"
+             for mark, name in zip(stages, dispatcher.STAGES, strict=True)]
+    assert status.body(NOW) == "\n".join((f"**Dispatcher status: {state}**", "", *lines, "",
+                                          UPDATED, stamp_of(stages)))
+    assert "❌ Implementation" in dispatcher.Status(
+        NEEDS_ATTENTION, marks("done", "done", "failed")).body(NOW)
+
+
+@pytest.mark.parametrize("status", [
+    dispatcher.Status(dispatcher.QUEUED, reason="waiting for a free session"),
+    dispatcher.Status(dispatcher.RUNNING, marks("done", "done", "current"), latest="Working.",
+                      started=0.0),
+    dispatcher.Status(IN_REVIEW, ("done", "done", "done", "skipped", "done", "current")),
+    dispatcher.Status(READY_TO_MERGE, ("done", "done", "done", "skipped", "done", "done")),
+    dispatcher.Status(NEEDS_ATTENTION, marks("done", "failed")),
+    dispatcher.Status(PAUSED, marks("done", "done", "paused"), reset=None),
+], ids=lambda status: status.state)
+def test_every_status_marker_reads_back_its_marks(status: dispatcher.Status) -> None:
+    """KTD2: the marker is the body's last line and holds the marks, and only them."""
+    body = status.body(NOW)
+    assert body.splitlines()[-1] == stamp_of(status.marks)
+    assert dispatcher.status_marks(body) == status.marks
+
+
+@pytest.mark.parametrize("body", [
+    "Dispatcher: pull request https://github.com/o/r/pull/101 is open.",
+    "",
+    stamp_of(marks("done", "started")),
+    stamp_of((*marks(), "pending")),
+    stamp_of(("done", "done")),
+    '<!-- dispatcher-status {"stages": ["done", "done", -->',
+    '<!-- dispatcher-status {"stages": "done"} -->',
+    '<!-- dispatcher-status {"marks": ["pending", "pending", "pending", "pending", "pending", '
+    '"pending"]} -->',
+    stamp_of(marks()) + "\n\nA later line.",
+    f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", "reset": null}} -->',
+], ids=["no marker", "empty", "unknown mark", "seven stages", "two stages", "invalid json",
+        "not a list", "no stages", "not the last line", "the pause marker"])
+def test_an_unreadable_status_marker_reads_as_none(body: str) -> None:
+    assert dispatcher.status_marks(body) is None
+
+
 def test_a_resume_continues_the_conversation_headless(tmp_path: Path) -> None:
     """KTD7: the same flags as a dispatch, the limit back in the prompt."""
     (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
