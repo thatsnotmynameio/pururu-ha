@@ -18,7 +18,7 @@ uv run ruff check --fix custom_components/pururu
 uv run ruff format custom_components/pururu
 uv run mypy custom_components/pururu
 python3 release.py check                        # the manifest version must be semver and not below the latest release
-git diff --name-only origin/main... | python3 changes.py pull_request   # the checks CI runs for these changes: build, docs, hacs true|false
+git diff --name-only origin/main... | python3 .github/scripts/changes.py pull_request   # the checks CI runs for these changes: build, docs, hacs true|false
 python3 tools/dispatcher/dispatcher.py run      # ready issues become pull requests, one lfg session each
 ```
 
@@ -105,7 +105,7 @@ python3 tools/dispatcher/dispatcher.py run      # ready issues become pull reque
 ## Releases and CI
 
 - **Releases:** the version is `version` in `custom_components/pururu/manifest.json`. A PR that changes it is a release. After it merges to `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release, which HACS offers.
-- **CI:** on every PR, `ci.yml` classifies the changed files (`changes.py`) and calls only the workflows they need: Build (`build.yml`: a lint job with `release.py check` and `tests/test_code.py`, three test shards, then SonarQube on the combined coverage, waiting for the quality gate on PRs) for code or workflows, Docs (`docs.yml`: docs.page check and docs tests) for docs, code or workflows, Validate (`validate.yml`, HACS) for `hacs.json`, the manifest, `README.md` or workflows; agent and planning files run none, a file in no group runs all. "CI ok" is the only required Actions check. Build, Docs and Validate have no `pull_request` trigger of their own; Release on `main` calls Build and Validate in full. CodeQL (default setup) analyses every PR. GitHub Actions are pinned by SHA, Python packages by hash (`uv.lock`), pnpm packages by hash (`pnpm-lock.yaml`).
+- **CI:** on every PR, `ci.yml` classifies the changed files (`.github/scripts/changes.py`) and calls only the workflows they need: Build (`build.yml`: a lint job with `release.py check` and `tests/test_code.py`, three test shards, then SonarQube on the combined coverage, waiting for the quality gate on PRs) for code or workflows, Docs (`docs.yml`: docs.page check and docs tests) for docs, code or workflows, Validate (`validate.yml`, HACS) for `hacs.json`, the manifest, `README.md` or workflows; agent and planning files run none, a file in no group runs all. "CI ok" is the only required Actions check. Build, Docs and Validate have no `pull_request` trigger of their own; Release on `main` calls Build and Validate in full. CodeQL (default setup) analyses every PR. GitHub Actions are pinned by SHA, Python packages by hash (`uv.lock`), pnpm packages by hash (`pnpm-lock.yaml`).
 - **Issues:** GitHub Issues track the work (`project_tracker: github`).
 - **Sonar suppressions:** a Sonar finding that conflicts with HA's required signatures or conventions is suppressed in `sonar-project.properties` (`sonar.issue.ignore.multicriteria`), with a comment giving the reason, not in code.
 

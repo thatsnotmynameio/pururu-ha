@@ -38,7 +38,7 @@ Source: GitHub docs, "Troubleshooting required status checks" (https://docs.gith
 
 So the layout is one caller workflow, `.github/workflows/ci.yml`, triggered on `pull_request` (and `workflow_dispatch`) (`ci.yml:14-17`):
 
-- Job `changes` checks out the PR's merge commit with `fetch-depth: 2` and diffs it against its first parent (`ci.yml:38-46`). It pipes the file list into `changes.py pull_request` and exports `build`, `docs` and `hacs` as job outputs (`ci.yml:33-36`, `:51`).
+- Job `changes` checks out the PR's merge commit with `fetch-depth: 2` and diffs it against its first parent (`ci.yml:38-46`). It pipes the file list into `.github/scripts/changes.py pull_request` and exports `build`, `docs` and `hacs` as job outputs (`ci.yml:33-36`, `:51`).
 - Jobs `build`, `docs` and `validate` call `build.yml`, `docs.yml` and `validate.yml` through `uses:`, each guarded by `if: needs.changes.outputs.<check> == 'true'` (`ci.yml:58-72`).
 - Job "CI ok" has `needs:` on all four jobs and `if: always()`. It fails only when a needed job's result is `failure` or `cancelled`, so skipped jobs pass (`ci.yml:74-83`).
 
@@ -56,12 +56,12 @@ ok:
 
 `changes.py` runs everything unless a rule allows a skip:
 
-- An empty diff runs every check (`changes.py:74-75`).
-- A file in no group runs every check (`changes.py:79`).
-- Any event other than `pull_request` runs every check (`changes.py:97-98`).
-- A change to `.github/workflows/` runs every check (`changes.py:42`, `:48-52`).
+- An empty diff runs every check (`.github/scripts/changes.py:74-75`).
+- A file in no group runs every check (`.github/scripts/changes.py:79`).
+- Any event other than `pull_request` runs every check (`.github/scripts/changes.py:97-98`).
+- A change to `.github/workflows/` runs every check (`.github/scripts/changes.py:42`, `:48-52`).
 
-`changes.py` never classifies its own change. When `changes.py` is in the diff, `ci.yml` sets all three outputs to true without running it (`ci.yml:47-50`). Otherwise a broken fallback could skip the very tests that would catch it.
+`changes.py` never classifies its own change. When `.github/scripts/changes.py` is in the diff, `ci.yml` sets all three outputs to true without running it (`ci.yml:47-50`). Otherwise a broken fallback could skip the very tests that would catch it.
 
 ### 2. Called workflows: no `pull_request` trigger, no workflow-level `concurrency`
 
@@ -143,9 +143,9 @@ The PR that introduces "CI ok" no longer produces "Tests and SonarQube". It stay
 | `CLAUDE.md` only | all `false` | nothing but `changes` and "CI ok" | "CI ok" passes; CodeQL still about 1 to 1.5 min |
 | `custom_components/pururu/manifest.json` | all `true` (code and hacs) | Build, Docs, Validate | all must pass |
 | `.github/workflows/build.yml` | all `true` | everything | all must pass |
-| `changes.py` | forced all `true` by `ci.yml:48-49`, `changes.py` not run | everything | all must pass |
+| `.github/scripts/changes.py` | forced all `true` by `ci.yml:48-49`, the script not run | everything | all must pass |
 
-To preview the checks locally: `git diff --name-only origin/main... | python3 changes.py pull_request` (`CLAUDE.md:21`, `docs/develop/releases.mdx:57-59`).
+To preview the checks locally: `git diff --name-only origin/main... | python3 .github/scripts/changes.py pull_request` (`CLAUDE.md:21`, `docs/develop/releases.mdx:57-59`).
 
 Anti-patterns that were rejected:
 

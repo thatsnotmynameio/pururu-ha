@@ -1,4 +1,4 @@
-"""changes.py: the changed files decide which checks a pull request runs."""
+""".github/scripts/changes.py: the changed files decide which checks a pull request runs."""
 
 import io
 
@@ -28,7 +28,7 @@ NONE = {"build": False, "docs": False, "hacs": False}
         pytest.param(["CONCEPTS.md", "STRATEGY.md", "docs/ideation/x.html",
                       ".compound-engineering/x.md", "docs/superpowers/x.mdx"], NONE,
                      id="planning files"),
-        pytest.param(["changes.py"], ALL, id="changes.py"),
+        pytest.param([".github/scripts/changes.py"], ALL, id="the classifier itself"),
         pytest.param([".github/dependabot.yml"], ALL, id="dependabot"),
         pytest.param(["SECURITY.md"], ALL, id="SECURITY.md"),
         pytest.param(["tests/test_changes.py"],
