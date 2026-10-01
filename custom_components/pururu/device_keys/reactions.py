@@ -46,15 +46,7 @@ from ..core.feature import (
     state_of,
 )
 from ..core.generated import AUTOMATIONS, SCRIPTS, Planned
-from ..core.resolve import (
-    Index,
-    Ref,
-    Target,
-    entity_id_hint,
-    find_key,
-    local_key,
-    reference,
-)
+from ..core.resolve import Index, Owner, Ref, Target, find, key_alone, path, resolve
 from ..core.roles import Counted, Counters, Generates, Items
 
 _LOGGER = logging.getLogger(__name__)
@@ -170,8 +162,8 @@ REACTION = vol.All(
         {
             # A blank name would show the automation as its device's name alone
             vol.Required(CONF_NAME): TEXT,
-            # An entity key: of this device, or of another (<device>.<key>)
-            vol.Optional("when"): reference,
+            # A path: of this device, or of another (device.<device>.<path>)
+            vol.Optional("when"): path,
             vol.Optional("entity"): cv.entity_id,
             vol.Optional("to"): state_of("to"),
             vol.Optional("from"): state_of("from"),
@@ -183,8 +175,8 @@ REACTION = vol.All(
             vol.Optional("offset"): cv.time_period,
             # More tries of an at or sun occurrence, each skipped once it ran
             vol.Optional("retry"): RETRY,
-            # A program of this device, started when the reaction fires
-            vol.Optional("then"): local_key,
+            # A program of this device, by its key, started when the reaction fires
+            vol.Optional("then"): key_alone("then", "program"),
             # Told when the reaction fires, to its own notify or config's
             vol.Optional(CONF_MESSAGE): TEXT,
             vol.Optional(CONF_NOTIFY): messages.TARGETS,
@@ -423,11 +415,11 @@ STATISTICS = Feature(
 
 
 def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
-    """Refuse a reaction's `when` or `then` it can't have (a schema check).
+    """Refuse a reaction's `when` or `then` it can't have (a schema check), at that field.
 
-    `when` names an entity key of the device, or of another device
-    (<device>.<key>), never one of the reaction's own statistics; `then` one of
-    the device's executable programs.
+    `when` names an entity of the device, or of another device
+    (device.<device>.<path>), never one of the reaction's own statistics;
+    `then` one of the device's executable programs.
     """
     devices = house[CONF_DEVICES]
     for key, device in devices.items():
@@ -438,14 +430,33 @@ def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Inval
                 yield refused
 
 
-def _own_statistic(target: Target | None, key: str, reaction_key: str) -> bool:
+def _own_statistic(target: Target, key: str, reaction_key: str) -> bool:
     """Whether it counts this reaction: watching it, the reaction would feed itself."""
     return (
-        target is not None
-        and target.device.key == key
+        target.device.key == key
         and target.builder == CONF_REACTIONS
         and target.item == reaction_key
     )
+
+
+def _refused_when(index: Index, key: str, reaction_key: str, when: str) -> str | None:
+    """Why the reaction can't watch `when`, after its place; None when it can.
+
+    A reaction (reactions.<key>) is no entity: what it does is counted, its
+    triggered_total.
+    """
+    ref = Ref.parse(when)
+    if ref.owner is Owner.HOME_ASSISTANT:
+        return f"{when} is Home Assistant's: watch it with entity: {ref.path}"
+    block, _, rest = ref.path.partition(".")
+    if block == CONF_REACTIONS and "." not in rest:
+        return f"{when} is a reaction: watch {when}.triggered_total"
+    found = resolve(index, key, ref)
+    if isinstance(found, str):
+        return found
+    if _own_statistic(found, key, reaction_key):
+        return f"{when} is its own statistic"
+    return None
 
 
 def _refused(
@@ -456,38 +467,19 @@ def _refused(
     reaction: Mapping[str, Any],
 ) -> vol.Invalid | None:
     """Why this reaction can't be, the first reason; None when it can."""
-    path: list[Hashable] = [CONF_DEVICES, key, CONF_REACTIONS, reaction_key]
-    ref = Ref.parse(reaction["when"]) if "when" in reaction else None
-    target = None if ref is None else find_key(index, key, ref)
-    if ref is not None and _own_statistic(target, key, reaction_key):
-        return vol.Invalid(
-            f"reactions: {reaction_key}: {ref.key} is its own statistic", path=path
-        )
+    place: list[Hashable] = [CONF_DEVICES, key, CONF_REACTIONS, reaction_key]
+    where = f"reactions: {reaction_key}"
+    if "when" in reaction and (
+        why := _refused_when(index, key, reaction_key, reaction["when"])
+    ):
+        return vol.Invalid(f"{where}: {why}", path=[*place, "when"])
     then = reaction.get("then")
     if then is not None and then not in programs.executable(devices[key]):
         return vol.Invalid(
-            f"reactions: {reaction_key}: {then} is not an executable program of "
-            "this device",
-            path=path,
+            f"{where}: {then} is not an executable program of this device",
+            path=[*place, "then"],
         )
-    if ref is None or target is not None:
-        return None
-    if ref.device is None:
-        return vol.Invalid(
-            f"reactions: {reaction_key}: {ref.key} is not an entity key of this device",
-            path=path,
-        )
-    where = f"device {key}: reactions: {reaction_key}"
-    if ref.device not in devices:
-        hint = entity_id_hint(
-            index, ref, f"watch a real entity with entity: {ref.text}"
-        )
-        return vol.Invalid(
-            f"{where}: device {ref.device} is not in devices{hint}", path=path
-        )
-    return vol.Invalid(
-        f"{where}: {ref.key} is not an entity key of device {ref.device}", path=path
-    )
+    return None
 
 
 def plan(
@@ -553,7 +545,7 @@ def _watched(
     """
     if (when := reaction.get("when")) is None:
         return True, reaction.get("entity")
-    target = find_key(index, key, Ref.parse(when))
+    target = find(index, key, Ref.parse(when))
     assert target is not None  # the schema checked it (check)
     if target.unique_id not in created:
         _LOGGER.error(

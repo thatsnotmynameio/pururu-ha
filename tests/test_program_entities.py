@@ -764,7 +764,7 @@ def with_alert(**alert: Any) -> dict[str, Any]:
 
 
 async def test_an_alert_can_watch_the_current_phase(ha: HomeAssistant, freezer: Any) -> None:
-    assert await setup(ha, with_alert(when="appliance_phase_current", **{"state": "quente"}))
+    assert await setup(ha, with_alert(when="appliance.running_program.phase_current", **{"state": "quente"}))
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     assert state(ha, HOT) == "off"
@@ -774,7 +774,7 @@ async def test_an_alert_can_watch_the_current_phase(ha: HomeAssistant, freezer: 
 
 
 async def test_an_alert_can_watch_a_phases_binary_sensor(ha: HomeAssistant, freezer: Any) -> None:
-    assert await setup(ha, with_alert(when="appliance_phase_quente", **{"state": "on"}))
+    assert await setup(ha, with_alert(when="appliance.running_program.phases.quente", **{"state": "on"}))
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     assert state(ha, HOT) == "off"
@@ -784,25 +784,25 @@ async def test_an_alert_can_watch_a_phases_binary_sensor(ha: HomeAssistant, free
 
 
 async def test_an_alert_can_watch_a_phases_total(ha: HomeAssistant) -> None:
-    assert await setup(ha, with_alert(when="appliance_phase_quente_cycles_total", above=10))
+    assert await setup(ha, with_alert(when="appliance.running_program.phases.quente.cycles_total", above=10))
     assert state(ha, HOT) == "off"
 
 
 async def test_a_reaction_can_watch_a_phase(ha: HomeAssistant) -> None:
     devices = {KEY: {**DEVICES[KEY], "reactions": {
-        "hot": {"name": "Quente", "when": "appliance_phase_quente", "to": "on"}}}}
+        "hot": {"name": "Quente", "when": "appliance.running_program.phases.quente", "to": "on"}}}}
     assert await setup(ha, devices)
     assert generated(ha)[0]["triggers"][0]["entity_id"] == QUENTE
 
 
 @pytest.mark.parametrize("when", [
-    pytest.param("appliance_phase_morno_cycles_total", id="a phase not configured"),
-    pytest.param("appliance_phase_morno", id="its binary sensor"),
+    pytest.param("appliance.running_program.phases.morno.cycles_total", id="a phase not configured"),
+    pytest.param("appliance.running_program.phases.morno", id="its binary sensor"),
 ])
 async def test_a_reference_to_a_phase_not_configured_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, when: str) -> None:
     assert not await setup(ha, with_alert(when=when, above=10))
-    assert f"alerts: {when} is not an entity key of another feature of this device" in caplog.text
+    assert f"alerts: {when} is not an entity of this device" in caplog.text
 
 
 async def test_no_phase_keys_without_phases(
@@ -810,11 +810,10 @@ async def test_no_phase_keys_without_phases(
     """Without phases the appliance creates no phase entity, so none can be named."""
     devices = {KEY: {"name": "Dummy station",
                      "appliance": {"power": POWER, "running_program": {"above": 4}},
-                     "alerts": {"hot": {"name": "Esquentando", "when": "appliance_phase_current",
+                     "alerts": {"hot": {"name": "Esquentando", "when": "appliance.running_program.phase_current",
                                         "state": "quente"}}}}
     assert not await setup(ha, devices)
-    assert ("alerts: appliance_phase_current is not an entity key of another feature "
-            "of this device") in caplog.text
+    assert "alerts: appliance.running_program.phase_current is not an entity of this device" in caplog.text
 
 
 async def test_a_renamed_phase_is_followed(purifier: HomeAssistant, freezer: Any) -> None:

@@ -31,7 +31,7 @@ CLEAN = "script.pururu_greenhouse_program_executable_clean"
 SWITCHES: dict[str, Any] = {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
 TWO_HOURS = 2 * 60 * 60
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
-    {"turn_on": "switch_sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switch_sprinkler"}]}
+    {"turn_on": "switches.sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switches.sprinkler"}]}
 APPLIANCE = {"power": "sensor.greenhouse_sprinkler_power",
              "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
 
@@ -93,36 +93,46 @@ async def greenhouse(scripts: HomeAssistant) -> HomeAssistant:
 @pytest.mark.parametrize("program", [
     pytest.param({"name": "Limpar"}, id="no sequence"),
     pytest.param({"name": "Limpar", "sequence": []}, id="empty sequence"),
-    pytest.param({"sequence": [{"turn_on": "switch_sprinkler"}]}, id="no name"),
-    pytest.param({"name": " ", "sequence": [{"turn_on": "switch_sprinkler"}]}, id="blank name"),
+    pytest.param({"sequence": [{"turn_on": "switches.sprinkler"}]}, id="no name"),
+    pytest.param({"name": " ", "sequence": [{"turn_on": "switches.sprinkler"}]}, id="blank name"),
     pytest.param({"name": "Limpar", "sequence": [{"action": "switch.turn_on"}]}, id="an HA action"),
-    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler", "delay": 5}]},
+    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switches.sprinkler", "delay": 5}]},
                  id="two keys in a step"),
     pytest.param({"name": "Limpar", "sequence": [{}]}, id="an empty step"),
     pytest.param({"name": "Limpar", "sequence": ["turn_on"]}, id="a step that isn't a mapping"),
     pytest.param({"name": "Limpar", "sequence": [{"delay": -5}]}, id="a negative delay"),
     pytest.param({"name": "Limpar", "sequence": [{"turn_on": REAL_SPRINKLER}]}, id="a real entity ID"),
-    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "greenhouse.switch_sprinkler"}]},
+    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "device.greenhouse.switches.sprinkler"}]},
                  id="a step with a device"),
-    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}], "icon": "mdi:greenhouse"},
+    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switches.sprinkler"}], "icon": "mdi:greenhouse"},
                  id="unknown key"),
 ])
 async def test_invalid_program_is_refused(ha: HomeAssistant, program: dict[str, Any]) -> None:
     assert not await setup(ha, devices(clean=program))
 
 
-@pytest.mark.parametrize("written", [
-    pytest.param("greenhouse.switch_sprinkler", id="with its device"),
-    pytest.param(REAL_SPRINKLER, id="an entity ID"),
+STEP = "'pururu->devices->greenhouse->programs->executable->clean->sequence->0->turn_on'"
+
+
+@pytest.mark.parametrize(("written", "why"), [
+    pytest.param("device.greenhouse.switches.sprinkler",
+                 "device.greenhouse.switches.sprinkler is this device's: write switches.sprinkler",
+                 id="with its own device"),
+    pytest.param("device.dryer.switches.plug", "device.dryer.switches.plug is not of this device",
+                 id="another device"),
+    pytest.param("homeassistant.switch.greenhouse_sprinkler",
+                 "homeassistant.switch.greenhouse_sprinkler is not of this device", id="Home Assistant's"),
+    pytest.param(REAL_SPRINKLER, "switch.greenhouse_sprinkler: switch is not a block of this device",
+                 id="an entity ID"),
+    pytest.param("greenhouse.switch_sprinkler",
+                 "greenhouse.switch_sprinkler: greenhouse is not a block of this device",
+                 id="with its device, as before 0.2.2"),
 ])
 async def test_a_step_acts_only_on_this_device(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, written: str) -> None:
-    """A step names its device's entity key: a dot is another device's, or an entity ID."""
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, written: str, why: str) -> None:
+    """A step names a path of its own device, from its block."""
     assert not await setup(ha, devices(clean={"name": "Limpar", "sequence": [{"turn_on": written}]}))
-    assert (f"{written} must be of this device: its entity key, without <device>. or <domain>. "
-            "for dictionary value "
-            "'pururu->devices->greenhouse->programs->executable->clean->sequence->0->turn_on'"
-            ) in caplog.text
+    assert f"programs: {why} {STEP}" in caplog.text
 
 
 # A flat map (before D3) or a block without its group: the device's programs
@@ -152,15 +162,22 @@ async def test_the_programs_block_is_executable(
     assert message in caplog.text
 
 
-@pytest.mark.parametrize("target", [
-    pytest.param("switch_greenhouse_sprinkler", id="not an entity key of the device"),
-    pytest.param("switch_heater", id="a switch the device doesn't have"),
-    pytest.param("program_executable_clean", id="a program"),
+@pytest.mark.parametrize(("target", "why"), [
+    pytest.param("switches.greenhouse_sprinkler", "switches.greenhouse_sprinkler is not an entity of this device",
+                 id="not an entity of the device"),
+    pytest.param("switches.heater", "switches.heater is not an entity of this device",
+                 id="a switch the device doesn't have"),
+    pytest.param("programs.executable.clean", "programs.executable.clean is not an entity of this device",
+                 id="a program"),
+    pytest.param("switch_sprinkler", None, id="an entity key, as before 0.2.2"),
 ])
 async def test_a_target_not_of_another_feature_is_refused(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, target: str) -> None:
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, target: str, why: str | None) -> None:
     assert not await setup(ha, devices(clean={"name": "Limpar", "sequence": [{"turn_on": target}]}))
-    assert f"programs: {target} is not an entity key of another feature of this device" in caplog.text
+    if why is None:
+        assert f"{target} is not a path: write it from its block, <block>.<key> for dictionary value {STEP}" in caplog.text
+    else:
+        assert f"programs: {why}" in caplog.text
 
 
 async def test_programs_alone_are_not_a_feature(
@@ -171,10 +188,10 @@ async def test_programs_alone_are_not_a_feature(
 
 async def test_an_action_the_target_does_not_take_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    program = {"name": "Ligar", "sequence": [{"turn_on": "appliance_power"}]}
+    program = {"name": "Ligar", "sequence": [{"turn_on": "appliance.power"}]}
     assert not await setup(ha, {KEY: {"name": "Estufa", "appliance": APPLIANCE,
                                       "programs": {"executable": {"start": program}}}})
-    assert "programs: appliance_power does not take turn_on" in caplog.text
+    assert f"programs: appliance.power does not take turn_on {STEP.replace('clean', 'start')}" in caplog.text
 
 
 async def test_two_programs_with_one_script_id_are_refused(
@@ -183,7 +200,7 @@ async def test_two_programs_with_one_script_id_are_refused(
     config = devices(b_program_executable_c=CLEANING)
     config["greenhouse_program_executable_b"] = {
         "name": "Outra", "switches": {"x": {"entity": "switch.dummy_x", "name": "X"}},
-        "programs": {"executable": {"c": {"name": "C", "sequence": [{"turn_on": "switch_x"}]}}},
+        "programs": {"executable": {"c": {"name": "C", "sequence": [{"turn_on": "switches.x"}]}}},
     }
     assert not await setup(ha, config)
     assert ("device greenhouse_program_executable_b: "
@@ -247,7 +264,7 @@ async def test_turning_it_on_runs_the_sequence(greenhouse: HomeAssistant, freeze
 
 async def test_toggle_flips_the_switch(scripts: HomeAssistant) -> None:
     await fake(scripts, REAL_SPRINKLER, "on")
-    assert await setup(scripts, devices(flip={"name": "Inverter", "sequence": [{"toggle": "switch_sprinkler"}]}))
+    assert await setup(scripts, devices(flip={"name": "Inverter", "sequence": [{"toggle": "switches.sprinkler"}]}))
     calls = capture(scripts, "call_service")
     await start(scripts, "script.pururu_greenhouse_program_executable_flip")
     assert reached(calls) == ["turn_off"]
@@ -262,7 +279,7 @@ async def test_it_turns_a_light_on_and_off(
         scripts: HomeAssistant, freezer: Any, real: str, attributes: dict[str, Any]) -> None:
     await fake(scripts, real, "off", attributes)
     evening = {"name": "Noite", "sequence": [
-        {"turn_on": "light_teto"}, {"delay": {"minutes": 30}}, {"turn_off": "light_teto"}]}
+        {"turn_on": "lights.teto"}, {"delay": {"minutes": 30}}, {"turn_off": "lights.teto"}]}
     assert await setup(scripts, {"biblioteca": {"name": "Biblioteca",
                                           "lights": {"teto": {"entity": real, "name": "Teto"}},
                                           "programs": {"executable": {"evening": evening}}}})
@@ -471,7 +488,7 @@ TWO_SWITCHES: dict[str, Any] = {**SWITCHES, "vent": {"entity": "switch.greenhous
 async def two_switches(hass: HomeAssistant, *keys: str) -> None:
     """The greenhouse with a sprinkler and a vent; its program turns on the switches of `keys`."""
     await fake(hass, "switch.greenhouse_vent", "off")
-    program = {"name": "Limpar", "sequence": [{"turn_on": f"switch_{key}"} for key in keys]}
+    program = {"name": "Limpar", "sequence": [{"turn_on": f"switches.{key}"} for key in keys]}
     assert await setup(hass, {KEY: {"name": "Estufa", "switches": TWO_SWITCHES,
                                     "programs": {"executable": {"clean": program}}}})
 
@@ -563,7 +580,7 @@ async def test_a_reload_keeps_an_unchanged_program_running(greenhouse: HomeAssis
 async def test_a_reload_that_changes_the_program_stops_it(greenhouse: HomeAssistant, freezer: Any) -> None:
     """HA loads the new script: what the old one did stays, the sprinkler stays on."""
     longer = {**CLEANING, "sequence": [
-        {"turn_on": "switch_sprinkler"}, {"delay": {"hours": 3}}, {"turn_off": "switch_sprinkler"}]}
+        {"turn_on": "switches.sprinkler"}, {"delay": {"hours": 3}}, {"turn_off": "switches.sprinkler"}]}
     calls = capture(greenhouse, "call_service")
     await start(greenhouse)
     await reload_while_running(greenhouse, devices(clean=longer))
@@ -813,7 +830,7 @@ def value_of(hass: HomeAssistant, entity_id: str) -> str:
 
 
 async def test_a_removed_program_takes_its_statistics(greenhouse: HomeAssistant) -> None:
-    wash = {"name": "Lavar", "sequence": [{"turn_on": "switch_sprinkler"}]}
+    wash = {"name": "Lavar", "sequence": [{"turn_on": "switches.sprinkler"}]}
     await reload(greenhouse, devices(wash=wash))
     assert er.async_get(greenhouse).async_get(STAT + "cycles_total") is None
     assert er.async_get(greenhouse).async_get("sensor.pururu_greenhouse_program_executable_wash_cycles_total") is not None

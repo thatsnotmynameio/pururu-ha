@@ -97,7 +97,7 @@ SCRIPT = Case(
     one="a script", plural="scripts", source="programs", kind="SCRIPTS", empty={},
     device="greenhouse", prefix="program_executable", block="programs",
     feature={"switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}},
-    item={"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}]},
+    item={"name": "Limpar", "sequence": [{"turn_on": "switches.sprinkler"}]},
     process="homeassistant.components.script._async_process_config",
     group="executable",
 )

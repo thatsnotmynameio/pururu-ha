@@ -253,7 +253,7 @@ async def test_programs_meters(scripts: HomeAssistant, language: str) -> None:
                 "executable": {
                     PROGRAM_SLUG: {
                         "name": PROGRAM_ITEM_NAME,
-                        "sequence": [{"turn_on": "switch_sprinkler"}],
+                        "sequence": [{"turn_on": "switches.sprinkler"}],
                         "statistics": {counter: list(PERIODS) for counter in PROGRAM_COUNTERS},
                     }
                 }

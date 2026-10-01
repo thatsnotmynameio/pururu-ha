@@ -55,15 +55,9 @@ from ..const import (
     DEFAULT_ALERT_LIGHTS,
     EVENT_ALERT_LIGHTS_RELEASED,
 )
+from ..core import resolve
 from ..core.feature import ALERTS_KEY, PRIORITIES, Feature, presets_of
-from ..core.resolve import (
-    Index,
-    Ref,
-    by_key,
-    device_reference,
-    entity_id_hint,
-    find_key,
-)
+from ..core.resolve import DEVICE, Index, Owner, Ref, Target, find
 from ..core.runtime import Built, PururuConfigEntry
 from ..core.vocabulary import NO_READING
 from ..features.lights import Borrowable
@@ -102,8 +96,18 @@ def _distinct(lights: list[str]) -> list[str]:
     return lights
 
 
-# Its lights, each <device>.light_<key>; check() checks them against the devices
-GROUP = vol.All([device_reference], vol.Length(min=1), _distinct)
+def _member(value: Any) -> str:
+    """A group's light, written as from another device (device.<device>.lights.<key>); any other form refused."""
+    text = resolve.path(value)
+    if Ref.parse(text).owner is not Owner.DEVICE:
+        raise vol.Invalid(
+            f"{text} needs its device: {DEVICE}.<device>.{CONF_LIGHTS}.<key>"
+        )
+    return text
+
+
+# Its lights, each device.<device>.lights.<key>; check() checks them against the devices
+GROUP = vol.All([_member], vol.Length(min=1), _distinct)
 PRIORITY = vol.Schema(
     {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Optional(REPEAT): PERIOD}
 )
@@ -156,19 +160,16 @@ def settings(configured: Mapping[str, Any]) -> dict[str, Any]:
 def light_ids(settings: Mapping[str, Any], index: Index) -> dict[str, list[str]]:
     """Each group's lights, by unique ID (pururu_<device>_light_<key>): check() found each in `index`."""
     return {
-        group: [
-            by_key(index[device])[ref.key].unique_id
-            for device, ref in map(_member, members)
-        ]
+        group: [_light(index, member).unique_id for member in members]
         for group, members in settings[GROUPS].items()
     }
 
 
-def _member(text: str) -> tuple[str, Ref]:
-    """A group's member, as device_reference validated it: its device, and the reference."""
-    ref = Ref.parse(text)
-    assert ref.device is not None  # device_reference
-    return ref.device, ref
+def _light(index: Index, member: str) -> Target:
+    """A group's member, as _member validated it and check() found it."""
+    target = find(index, None, Ref.parse(member))
+    assert target is not None  # check()
+    return target
 
 
 @dataclass(eq=False)
@@ -630,8 +631,9 @@ def _group_refused(
     lights).
     """
     where = f"config.alerts.lights.groups: {group}"
-    for at, (device, ref) in enumerate(map(_member, members)):
-        path: list[Hashable] = [
+    for at, member in enumerate(members):
+        ref = Ref.parse(member)
+        place: list[Hashable] = [
             CONF_CONFIG,
             CONF_ALERTS,
             CONF_LIGHTS,
@@ -639,16 +641,14 @@ def _group_refused(
             group,
             at,
         ]
-        if device not in devices:
-            hint = entity_id_hint(
-                index, ref, "a group lists <device>.light_<key> of a device's lights"
-            )
+        if ref.device not in devices:
             return vol.Invalid(
-                f"{where}: device {device} is not in devices{hint}", path=path
+                f"{where}: {member}: device {ref.device} is not in devices",
+                path=place,
             )
-        target = find_key(index, device, ref)
+        target = find(index, None, ref)
         if target is None or target.builder != CONF_LIGHTS or target.by is not None:
-            return vol.Invalid(f"{where}: {ref.text} is not a light", path=path)
+            return vol.Invalid(f"{where}: {member} is not a light", path=place)
     return None
 
 

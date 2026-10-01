@@ -55,7 +55,7 @@ from ..core.feature import (
     qualified,
 )
 from ..core.generated import SCRIPTS, Planned
-from ..core.resolve import Index, Ref, Target, by_key, find_key, local_key
+from ..core.resolve import Index, Owner, Ref, Target, path, resolve
 from ..core.roles import Counted, Counters, Generates, Items, Programs
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
@@ -78,7 +78,8 @@ ACTIONS = ("turn_on", "turn_off", "toggle")
 STEP = vol.Schema(
     {
         vol.Optional(DELAY): cv.positive_time_period,
-        **{vol.Optional(action): local_key for action in ACTIONS},
+        # A path of this device: switches.sprinkler
+        **{vol.Optional(action): path for action in ACTIONS},
     }
 )
 
@@ -163,7 +164,7 @@ SCHEMA = vol.All(
 
 
 def targets(program: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
-    """(action, entity key) of each step that acts on an entity, in order."""
+    """(action, path) of each step that acts on an entity, in order: a path of its device."""
     for step in program["sequence"]:
         yield from ((action, key) for action, key in step.items() if action != DELAY)
 
@@ -200,7 +201,7 @@ def script(
     program: Mapping[str, Any],
     entity_ids: Mapping[str, str],
 ) -> dict[str, Any]:
-    """The script of a program; `entity_ids` maps each entity key it acts on to its current ID.
+    """The script of a program; `entity_ids` maps each path it acts on to its current ID.
 
     single: a start while it runs is ignored, and HA logs it.
     """
@@ -307,30 +308,49 @@ PROGRAMS = Feature(
 
 
 def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
-    """Refuse a step on what isn't another feature's entity key of the device taking its action (a schema check)."""
+    """Refuse a step on what isn't another feature's entity of the device taking its action (a schema check), at the step's action."""
     for key, device in house[CONF_DEVICES].items():
         for program_key, program in executable(device).items():
-            path: list[Hashable] = [
+            if (refused := _refused_step(index, key, program_key, program)) is not None:
+                yield refused
+
+
+def _refused_step(
+    index: Index, key: str, program_key: str, program: Mapping[str, Any]
+) -> vol.Invalid | None:
+    """Why the program's first step that can't be can't be; None when all can.
+
+    A step acts on its own device only.
+    """
+    for position, step in enumerate(program["sequence"]):
+        for action, text in step.items():
+            if action == DELAY:
+                continue
+            place: list[Hashable] = [
                 CONF_DEVICES,
                 key,
                 CONF_PROGRAMS,
                 CONF_EXECUTABLE,
                 program_key,
+                "sequence",
+                position,
+                action,
             ]
-            for action, entity_key in targets(program):
-                target = find_key(index, key, Ref(None, entity_key))
-                if target is None:
-                    yield vol.Invalid(
-                        f"programs: {entity_key} is not an entity key of another "
-                        "feature of this device",
-                        path=path,
-                    )
-                    break
-                if action not in target.actions:
-                    yield vol.Invalid(
-                        f"programs: {entity_key} does not take {action}", path=path
-                    )
-                    break
+            ref = Ref.parse(text)
+            if ref.owner is Owner.HOME_ASSISTANT or (
+                ref.owner is Owner.DEVICE and ref.device != key
+            ):
+                return vol.Invalid(
+                    f"programs: {text} is not of this device", path=place
+                )
+            found = resolve(index, key, ref)
+            if isinstance(found, str):
+                return vol.Invalid(f"programs: {found}", path=place)
+            if action not in found.actions:
+                return vol.Invalid(
+                    f"programs: {text} does not take {action}", path=place
+                )
+    return None
 
 
 def plan(
@@ -351,9 +371,7 @@ def plan(
     for key, config in devices.items():
         for program_key, program in executable(config).items():
             unique_id = script_id(key, program_key)
-            entity_ids = _acted_on(
-                hass, by_key(index[key]), unique_id, program, created
-            )
+            entity_ids = _acted_on(hass, index[key], unique_id, program, created)
             if entity_ids is None:
                 continue
             if _disabled(registry, unique_id, entity_ids.values()):
@@ -379,7 +397,10 @@ def _acted_on(
     program: Mapping[str, Any],
     created: Collection[str],
 ) -> dict[str, str] | None:
-    """Each entity key the program acts on -> its current entity ID; None, logged, when one isn't created."""
+    """Each path the program acts on -> its current entity ID; None, logged, when one isn't created.
+
+    `found` is its device's targets, by path: a step names its own device's.
+    """
     entity_ids: dict[str, str] = {}
     for _, key in targets(program):
         target = found[key]

@@ -52,7 +52,7 @@ custom_components/pururu/     the integration
     runtime.py                PururuConfigEntry, Built, Step: what the entry carries
     feature.py                Device and Feature: the contract every feature fulfils
     roles.py                  the roles a Feature declares (Configured, Items, Refers…)
-    resolve.py                Ref, Target, Index, find; the reference form: reference, local_key, device_reference, Ref.parse
+    resolve.py                Ref, Target, Index, find, resolve; the reference forms: path, key_alone, Ref.parse
     entity.py                 PururuEntity (the base of every entity), reading() and as_time()
     vocabulary.py             Condition, parse, band, trigger, period: what makes a watched state hold, and its trigger; a period as HA reads it.
     texts.py                  the translations' common texts

@@ -220,16 +220,16 @@ async def test_then_names_an_executable_program(ha: HomeAssistant, caplog: pytes
 
 async def test_a_step_on_a_detected_program_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     config = devices()
-    config[KEY]["programs"] = {"executable": {"start": {"name": "X", "sequence": [{"turn_on": "appliance_cotton"}]}}}
+    config[KEY]["programs"] = {"executable": {"start": {"name": "X", "sequence": [{"turn_on": "appliance.programs.detected.cotton"}]}}}
     assert not await setup(ha, config)
-    assert "programs: appliance_cotton does not take turn_on" in caplog.text
+    assert "programs: appliance.programs.detected.cotton does not take turn_on" in caplog.text
 
 
 async def test_an_alert_and_a_reaction_can_watch_it(ha: HomeAssistant, freezer: Any) -> None:
     """The alert follows the carrier, and the reaction's automation triggers on it."""
     config = devices()
-    config[KEY]["alerts"] = {"long": {"name": "Longo", "when": "appliance_cotton", "state": "on", "for": {"hours": 3}}}
-    config[KEY]["reactions"] = {"done": {"name": "Pronto", "when": "appliance_cotton", "from": "on", "to": "off"}}
+    config[KEY]["alerts"] = {"long": {"name": "Longo", "when": "appliance.programs.detected.cotton", "state": "on", "for": {"hours": 3}}}
+    config[KEY]["reactions"] = {"done": {"name": "Pronto", "when": "appliance.programs.detected.cotton", "from": "on", "to": "off"}}
     await fake(ha, ENERGY, "100")
     assert await setup(ha, config)
     (reaction,) = [each for each in generated(ha) if each["id"] == f"pururu_{KEY}_reaction_done"]
@@ -548,9 +548,28 @@ async def test_a_detected_programs_phase_statistics(ha: HomeAssistant) -> None:
     assert {sensor("cotton_phase_warming_cycles_today"), sensor("cotton_phase_other_runtime_week")} <= held(ha, KEY)
 
 
+async def test_an_alert_watches_the_running_program_by_its_path(ha: HomeAssistant) -> None:
+    """appliance.running_program is the running program's own entity, the appliance's running."""
+    config = devices()
+    config[KEY]["alerts"] = {"stuck": {"name": "Travada", "when": "appliance.running_program", "state": "on"}}
+    assert await setup(ha, config)
+    assert ha.states.get(f"binary_sensor.pururu_{KEY}_alert_stuck").attributes["watches"] == RUNNING
+
+
+async def test_an_alert_watches_a_meter_by_its_path(ha: HomeAssistant) -> None:
+    """Every level written is a segment, structure words included, and the period is the last."""
+    cotton = {**PHASED["cotton"], "other": {"statistics": {"energy": ["month"]}}}
+    config = phased(programs={"detected": {"cotton": cotton}})
+    when = "appliance.programs.detected.cotton.other.statistics.energy.month"
+    config[KEY]["alerts"] = {"heavy": {"name": "Pesado", "when": when, "above": 10}}
+    assert await setup(ha, config)
+    assert (ha.states.get(f"binary_sensor.pururu_{KEY}_alert_heavy").attributes["watches"]
+            == sensor("cotton_phase_other_energy_month"))
+
+
 async def test_an_alert_can_watch_a_detected_programs_phase(ha: HomeAssistant) -> None:
     config = phased()
-    config[KEY]["alerts"] = {"hot": {"name": "Quente", "when": "appliance_cotton_phase_current", "state": "warming",
+    config[KEY]["alerts"] = {"hot": {"name": "Quente", "when": "appliance.programs.detected.cotton.phase_current", "state": "warming",
                                      "for": {"hours": 1}}}
     assert await setup(ha, config)
     assert ha.states.get(f"binary_sensor.pururu_{KEY}_alert_hot") is not None

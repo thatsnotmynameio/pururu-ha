@@ -118,10 +118,10 @@ async def test_a_quoted_number_in_state_compares_as_text(ha: HomeAssistant, valu
 
 
 async def test_a_program_with_a_dot_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    """A button's program is its own device's, as a reaction's then: one message for both."""
+    """A button's program is its own device's, by its key alone, as a reaction's then."""
     assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
-        "ler": {**BUTTONS["ler"], "program": "estufa.regar"}}}})
-    assert ("estufa.regar must be of this device: its entity key, without <device>. or <domain>. "
+        "ler": {**BUTTONS["ler"], "program": "programs.executable.regar"}}}})
+    assert ("program is its program's key alone: regar "
             "for dictionary value 'pururu->devices->biblioteca->buttons->ler->program'"
             ) in caplog.text
 
@@ -139,7 +139,7 @@ async def test_an_unquoted_on_is_the_state_on(ha: HomeAssistant) -> None:
 async def test_a_program_of_another_device_is_refused(ha: HomeAssistant) -> None:
     """Covers AE8: a button starts its own device's executable programs only."""
     other = {"name": "Estufa", "switches": {"sprinkler": {"entity": "switch.x", "name": "X"}},
-             "programs": {"executable": {"regar": {"name": "Regar", "sequence": [{"turn_on": "switch_sprinkler"}]}}}}
+             "programs": {"executable": {"regar": {"name": "Regar", "sequence": [{"turn_on": "switches.sprinkler"}]}}}}
     assert not await setup(ha, {"estufa": other, KEY: {"name": "Biblioteca", "buttons": {
         "ler": {**BUTTONS["ler"], "program": "regar"}}}})
 
@@ -156,9 +156,9 @@ async def test_a_refusal_is_told_with_the_others(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
         "ler": {**BUTTONS["ler"], "program": "regar"}},
-        "reactions": {"x": {"name": "X", "when": "nothing", "to": "on"}}}})
+        "reactions": {"x": {"name": "X", "when": "buttons.nothing", "to": "on"}}}})
     assert "buttons: ler: regar is not an executable program of this device" in caplog.text
-    assert "reactions: x: nothing is not an entity key of this device" in caplog.text
+    assert "reactions: x: buttons.nothing is not an entity of this device" in caplog.text
 
 
 # --- the device ----------------------------------------------------------------
@@ -414,7 +414,7 @@ CLEAN = "script.pururu_greenhouse_program_executable_clean"
 CLEAN_BUTTON = "button.pururu_greenhouse_button_clean"
 BELL = "button.pururu_greenhouse_button_bell"
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
-    {"turn_on": "switch_sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switch_sprinkler"}]}
+    {"turn_on": "switches.sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switches.sprinkler"}]}
 GREENHOUSE_DEVICES: dict[str, Any] = {GREENHOUSE: {
     "name": "Estufa",
     "switches": {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}},
@@ -747,17 +747,17 @@ async def test_an_alert_watches_a_buttons_meter(ha: HomeAssistant) -> None:
     """A button's meter is an entity key of its device (`key`), as any other feature's."""
     await fake(ha, REMOTE, "")
     buttons = {**BUTTONS, "ler": {**BUTTONS["ler"], "statistics": {"triggered": ["today"]}}}
-    busy = {"name": "Muito lida", "when": "button_ler_triggered_today", "above": 20}
+    busy = {"name": "Muito lida", "when": "buttons.ler.statistics.triggered.today", "above": 20}
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": buttons,
                                   "alerts": {"busy": busy}}})
     assert ha.states.get("binary_sensor.pururu_biblioteca_alert_busy") is not None
 
 
 async def test_another_devices_reaction_watches_a_buttons_total(ha: HomeAssistant) -> None:
-    """Another device names it as `<device>.<key>`, the one reference form."""
+    """Another device names it by device.<device>. then its path: buttons.<key>.triggered_total."""
     await fake(ha, REMOTE, "")
     sala = {"name": "Sala", "lights": {"teto": {"entity": "light.dummy_sala", "name": "Teto"}},
-            "reactions": {"leitura": {"name": "Leitura", "when": f"{KEY}.button_ler_triggered_total",
+            "reactions": {"leitura": {"name": "Leitura", "when": f"device.{KEY}.buttons.ler.triggered_total",
                                       "above": 2}}}
     assert await setup(ha, {**DEVICES, "sala": sala})
     assert ha.states.get("sensor.pururu_sala_reaction_leitura_triggered_total") is not None

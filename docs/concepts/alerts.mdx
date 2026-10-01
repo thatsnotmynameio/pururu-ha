@@ -24,14 +24,14 @@ pururu:
       alerts:
         long_cycle:
           name: Ciclo longo
-          when: appliance_running
+          when: appliance.running_program
           state: "on"
           for: {hours: 3}
           priority: medium
           message: A máquina passou de 3 horas ligada!
           done_message: A máquina terminou.
-        overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
-        plug_offline: {name: Tomada offline, when: appliance_power, state: unavailable, for: {minutes: 10}}
+        overload: {name: Sobrecarga, when: appliance.power, above: 2500, for: {minutes: 1}, priority: high}
+        plug_offline: {name: Tomada offline, when: appliance.power, state: unavailable, for: {minutes: 10}}
 ```
 
 This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **Tanquinho Ciclo longo**, and one alert for each other key.
@@ -115,7 +115,7 @@ appliance:
 - Each one takes `for`, `priority`, `message` and `done_message`, and `lights`, as a written alert does, and nothing else. What it watches and when it's on are the ready-made alert's own.
 - Its defaults are its own too: its `for` (some need one), its `priority`, and texts of its own in Home Assistant's language, which `message` and `done_message` replace.
 - Each one is `binary_sensor.pururu_<key>_<namespace>_alert_<name>`, in the feature's namespace: `binary_sensor.pururu_clothes_washer_appliance_alert_offline`.
-- A [reaction](/concepts/reactions) may watch one (`when: appliance_alert_offline`). An alert can't: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
+- A [reaction](/concepts/reactions) may watch one (`when: appliance.alerts.offline`). An alert can't: `alerts: appliance.alerts.offline is an alert: an alert can't watch another`.
 - Which ones a feature offers, what each watches and its defaults: each feature's page, such as the [appliance's](/features/appliance#ready-made-alerts) and the [door's](/features/door#ready-made-alerts) (a window's are the door's).
 
 ## Entity

@@ -5,7 +5,7 @@ reactions.check, programs.check, alerts.check, alert_lights.check,
 places.floors_exist.
 """
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Hashable, Iterator, Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -25,7 +25,7 @@ from ..const import (
 )
 from ..core import generated
 from ..core.feature import Device, Feature
-from ..core.resolve import Index, Ref, find_key
+from ..core.resolve import Index, Owner, resolve
 from ..core.roles import Configured, Generates, Refers
 from . import catalogue
 
@@ -33,24 +33,30 @@ from . import catalogue
 def references(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> Iterator[vol.Invalid]:
-    """Refuse a reference that isn't another feature's entity key (an alert watching an alert: alerts.check)."""
+    """Refuse a reference that isn't another block's entity, within its reach, at its field (an alert watching an alert: alerts.check)."""
     for key, device in house[CONF_DEVICES].items():
         for name, feature in builders.items():
             if name in device and (refers := feature.role(Refers)) is not None:
-                yield from _refused_refs(index, key, name, refers.of(device[name]))
+                yield from _refused_refs(index, key, name, refers, device[name])
 
 
 def _refused_refs(
-    index: Index, key: str, name: str, refs: Iterable[Ref]
+    index: Index, key: str, name: str, refers: Refers, block: Any
 ) -> Iterator[vol.Invalid]:
-    """Builder `name`'s references on device `key` that it can't have: one refusal each."""
-    for ref in refs:
-        target = find_key(index, key, ref)
-        if target is None or target.builder == name:
+    """Builder `name`'s references on device `key` that it can't have: one refusal each, at its field."""
+    for where, ref in refers.of(block):
+        path: list[Hashable] = [CONF_DEVICES, key, name, *where]
+        if ref.owner is Owner.HOME_ASSISTANT or (
+            ref.owner is Owner.DEVICE and ref.device != key and not refers.others
+        ):
+            yield vol.Invalid(f"{name}: {ref.text} is not of this device", path=path)
+            continue
+        found = resolve(index, key, ref)
+        if isinstance(found, str):
+            yield vol.Invalid(f"{name}: {found}", path=path)
+        elif found.builder == name:
             yield vol.Invalid(
-                f"{name}: {ref.key} is not an entity key of another feature "
-                "of this device",
-                path=[CONF_DEVICES, key, name],
+                f"{name}: {ref.text} is not another block's entity", path=path
             )
 
 
@@ -99,7 +105,7 @@ def keys_distinct(
 ) -> Iterator[vol.Invalid]:
     """Refuse two entities of one device with one unique ID, whatever their platforms.
 
-    The index keeps one entity per qualified key and would lose the other. A
+    Home Assistant keeps one entity per unique ID and would lose the other. A
     phase keyed resfriar_cycles_today has the binary sensor
     phase_resfriar_cycles_today, phase resfriar's meter's key.
     """

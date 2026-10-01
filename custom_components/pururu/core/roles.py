@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.const import Platform
 
 if TYPE_CHECKING:  # feature.py imports this module
-    from .feature import Born, Happening, Item, Preset
+    from .feature import Born, Happening, Item, Path, Preset
     from .resolve import Ref
 
 
@@ -106,13 +106,18 @@ class Counters:
 
 @dataclass(frozen=True)
 class Refers:
-    """Entity keys of other features its validated block names.
+    """Entities of other features its validated block names, each a path, with the field that names it.
 
-    Validated against the device; build() gets their current entity IDs in
-    `inputs`, by each reference as written (Ref.text).
+    `of` gives (the field's path in the block, the reference) pairs:
+    (("stuck", "when"), appliance.running_program). Validated against the
+    device, refused at the field (checks.references); build() gets their
+    current entity IDs in `inputs`, by each reference as written (Ref.text).
+    `others`: whether it may name another device's (device.<device>.…); a
+    Home Assistant entity is never one.
     """
 
-    of: Callable[[Any], Iterable[Ref]]
+    of: Callable[[Any], Iterable[tuple[Path, Ref]]]
+    others: bool = False
 
 
 @dataclass(frozen=True)

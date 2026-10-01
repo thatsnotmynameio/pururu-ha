@@ -52,7 +52,7 @@ from ..const import CONF_DEVICES
 from ..core.entity import PururuEntity
 from ..core.feature import EACH, TEXT, Device, Feature, Item, Path, at, state_of
 from ..core.generated import SCRIPTS
-from ..core.resolve import local_key
+from ..core.resolve import key_alone
 from ..core.roles import Configured, Counted, Counters, Items
 from ..core.vocabulary import NO_READING
 from . import standing
@@ -100,8 +100,8 @@ ITEM = vol.Schema(
         vol.Required("state"): pressed_state,
         # A blank name would show the button as its device's name alone
         vol.Required("name"): TEXT,
-        # Its own device's program, as a reaction's then: a dot is another device's
-        vol.Optional("program"): local_key,
+        # Its own device's executable program, by its key alone, as a reaction's then
+        vol.Optional("program"): key_alone("program", "program"),
     }
 )
 
@@ -285,7 +285,7 @@ def check(house: Mapping[str, Any], *_: Any) -> Iterator[vol.Invalid]:
                 yield vol.Invalid(
                     f"buttons: {button_key}: {program} is not an executable program "
                     "of this device",
-                    path=path,
+                    path=[*path, "program"],
                 )
             value = (button["entity"], button["state"])
             if (other := pressing.setdefault(value, button_key)) != button_key:

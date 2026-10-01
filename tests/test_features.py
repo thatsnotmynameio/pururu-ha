@@ -129,12 +129,15 @@ def test_no_entity_key_repeats_its_namespace(features: dict[str, Any]) -> None:
         assert feature.namespace not in named_keys(feature), name
 
 
-def test_refers_names_entity_keys_as_in_an_entity_id(features: dict[str, Any]) -> None:
-    """What a feature refers to is a qualified entity key, such as appliance_running: a slug."""
+def test_refers_names_paths_as_written(features: dict[str, Any]) -> None:
+    """What a feature refers to is a path, such as appliance.running_program: it reads back as written."""
+    resolve = module("core.resolve")
     for name, feature in features.items():
         if (refers := role(feature, "Refers")) is not None:
-            for ref in refers.of(feature.schema(dict(feature.example))):
-                assert cv.slug(ref.key) == ref.key, name
+            for where, ref in refers.of(feature.schema(dict(feature.example))):
+                assert resolve.path(ref.text) == ref.text, name
+                assert resolve.Ref.parse(ref.text) == ref, name
+                assert where, name
 
 
 def test_every_entity_key_is_named_and_has_an_icon(features: dict[str, Any]) -> None:

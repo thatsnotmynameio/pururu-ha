@@ -59,7 +59,7 @@ async def test_a_failing_first_step_leaves_the_others_and_the_listener(
     ha: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The events failing first: the generated scripts, the dashboard and the rename rule still come."""
-    clean = {"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}]}
+    clean = {"name": "Limpar", "sequence": [{"turn_on": "switches.sprinkler"}]}
     with patch.object(module("outputs.events"), "async_setup", side_effect=RuntimeError("boom")):
         assert await setup(ha, {"greenhouse": {**SWITCH, "programs": {"executable": {"clean": clean}}}})
     assert "Step events failed" in caplog.text

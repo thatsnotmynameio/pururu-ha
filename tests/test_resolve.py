@@ -1,4 +1,4 @@
-"""The index of every entity key a device can create, and finding a reference in it."""
+"""The index of every entity a device can create, the reference forms, and finding a reference in the index."""
 
 import re
 from typing import Any
@@ -21,7 +21,7 @@ HOUSE: dict[str, Any] = {
             "alerts": {"offline": None},
         },
         "switches": {"plug": {"entity": "switch.washer_plug", "name": "Plug"}},
-        "programs": {"executable": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switch_plug"}]}}},
+        "programs": {"executable": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switches.plug"}]}}},
     },
     "lights": {"name": "Lights", "lights": {"teto": {"entity": "light.teto", "name": "Teto"}}},
 }
@@ -33,17 +33,14 @@ def index(ha: HomeAssistant) -> Any:
     return module("setup.catalogue").index(devices)
 
 
-def ref(device: str | None, key: str) -> Any:
-    return module("core.resolve").Ref(device, key)
-
-
-def find(index: Any, here: str, device: str | None, key: str) -> Any:
-    return module("core.resolve").find(index, here, ref(device, key))
+def find(index: Any, here: str, text: str) -> Any:
+    resolve = module("core.resolve")
+    return resolve.find(index, here, resolve.Ref.parse(text))
 
 
 def test_a_features_own_key(index: Any) -> None:
     """Found by its path; its key stays qualified, and its IDs are as before."""
-    target = find(index, "washer", None, "appliance.running_program")
+    target = find(index, "washer", "appliance.running_program")
     assert (target.builder, target.by, target.item, target.actions) == ("appliance", None, None, ())
     assert (target.key, target.path) == ("appliance_running", "appliance.running_program")
     assert target.platform is Platform.BINARY_SENSOR
@@ -53,117 +50,143 @@ def test_a_features_own_key(index: Any) -> None:
 
 
 def test_a_ready_made_alert_is_by_alerts(index: Any) -> None:
-    target = find(index, "washer", None, "appliance.alerts.offline")
+    target = find(index, "washer", "appliance.alerts.offline")
     assert (target.builder, target.by) == ("appliance", "alerts")
 
 
 def test_a_configured_key_takes_its_builders_actions(index: Any) -> None:
-    target = find(index, "washer", None, "switches.plug")
+    target = find(index, "washer", "switches.plug")
     assert (target.builder, target.platform, target.actions) == ("switches", Platform.SWITCH, SWITCH_ACTIONS)
 
 
 def test_an_items_key_knows_its_item(index: Any) -> None:
-    target = find(index, "washer", None, "programs.executable.clean.cycles_total")
+    target = find(index, "washer", "programs.executable.clean.cycles_total")
     assert (target.builder, target.item) == ("programs", "executable_clean")
 
 
 def test_a_meter_is_by_statistics(index: Any) -> None:
     """The statistics aspect's keys are in the index whatever the settings, as the builder's own."""
-    target = find(index, "washer", None, "appliance.running_program.statistics.runtime.today")
+    target = find(index, "washer", "appliance.running_program.statistics.runtime.today")
     assert (target.builder, target.by, target.item) == ("appliance", "statistics", None)
     assert target.platform is Platform.SENSOR
     assert target.unique_id == "pururu_washer_appliance_runtime_today"
 
 
 def test_an_items_meter_knows_its_item(index: Any) -> None:
-    target = find(index, "washer", None, "programs.executable.clean.statistics.cycles.year")
+    target = find(index, "washer", "programs.executable.clean.statistics.cycles.year")
     assert (target.builder, target.by, target.item) == ("programs", "statistics", "executable_clean")
 
 
 def test_another_devices_key(index: Any) -> None:
-    target = find(index, "washer", "lights", "lights.teto")
+    target = find(index, "washer", "device.lights.lights.teto")
     assert (target.device.key, target.builder, target.actions) == ("lights", "lights", SWITCH_ACTIONS)
     assert target.unique_id == "pururu_lights_light_teto"
 
 
-@pytest.mark.parametrize(("device", "key"), [
-    pytest.param(None, "appliance.nothing", id="unknown path"),
-    pytest.param(None, "appliance_running", id="a qualified key is no path"),
-    pytest.param("dryer", "appliance.running_program", id="unknown device"),
-    pytest.param("lights", "appliance.running_program", id="a path the other device doesn't have"),
+@pytest.mark.parametrize("text", [
+    pytest.param("appliance.nothing", id="unknown path"),
+    pytest.param("device.dryer.appliance.running_program", id="unknown device"),
+    pytest.param("device.lights.appliance.running_program", id="a path the other device doesn't have"),
+    pytest.param("homeassistant.binary_sensor.door", id="Home Assistant's: not in the index"),
 ])
-def test_what_isnt_there_is_none(index: Any, device: str | None, key: str) -> None:
-    assert find(index, "washer", device, key) is None
+def test_what_isnt_there_is_none(index: Any, text: str) -> None:
+    assert find(index, "washer", text) is None
 
 
 def test_the_current_entity_id_follows_a_rename(ha: HomeAssistant, index: Any) -> None:
     registry = er.async_get(ha)
     registry.async_get_or_create("binary_sensor", DOMAIN, "pururu_washer_appliance_running",
                                  suggested_object_id="lavadora_ligada")
-    target = find(index, "washer", None, "appliance.running_program")
+    target = find(index, "washer", "appliance.running_program")
     assert target.current_entity_id(ha) == "binary_sensor.lavadora_ligada"
 
 
-def test_a_reference_reads_as_written() -> None:
-    assert ref(None, "appliance_running").text == "appliance_running"
-    assert ref("washer", "appliance_running").text == "washer.appliance_running"
+# --- the reference forms -------------------------------------------------------------------
 
 
-# --- the one reference form ---------------------------------------------------------------
-
-
-@pytest.mark.parametrize(("text", "device", "key"), [
-    pytest.param("appliance_running", None, "appliance_running", id="this device"),
-    pytest.param("washer.appliance_running", "washer", "appliance_running", id="another device"),
+@pytest.mark.parametrize(("text", "owner", "device", "path"), [
+    pytest.param("appliance.running_program", "here", None, "appliance.running_program", id="this device"),
+    pytest.param("device.washer.appliance.running_program", "device", "washer", "appliance.running_program",
+                 id="another device"),
+    pytest.param("homeassistant.binary_sensor.door", "homeassistant", None, "binary_sensor.door",
+                 id="Home Assistant's"),
 ])
-def test_a_reference_parses_as_written(ha: HomeAssistant, text: str, device: str | None, key: str) -> None:
+def test_a_reference_parses_as_written(ha: HomeAssistant, text: str, owner: str, device: str | None,
+                                       path: str) -> None:
     parsed = module("core.resolve").Ref.parse(text)
-    assert (parsed.device, parsed.key) == (device, key)
+    assert (parsed.owner, parsed.device, parsed.path) == (owner, device, path)
     assert parsed.text == text
 
 
 @pytest.mark.parametrize("text", [
-    pytest.param(".appliance_running", id="no device"),
-    pytest.param("washer.", id="no key"),
-    pytest.param("a.b.c", id="two dots"),
+    pytest.param("appliance_running", id="one segment"),
+    pytest.param("device.washer.appliance", id="another device without its path"),
+    pytest.param("homeassistant.binary_sensor", id="Home Assistant's without its object ID"),
     pytest.param("", id="empty"),
 ])
 def test_a_reference_not_validated_is_a_programming_error(ha: HomeAssistant, text: str) -> None:
-    """Ref.parse reads what reference validated: other text wouldn't read back as written."""
+    """Ref.parse reads what path validated: other text wouldn't read back as written."""
     parse = module("core.resolve").Ref.parse
     with pytest.raises(ValueError, match="is not a validated reference"):
         parse(text)
 
 
-@pytest.mark.parametrize(("validator", "value"), [
-    pytest.param("reference", "appliance_running", id="a reference, local"),
-    pytest.param("reference", "washer.appliance_running", id="a reference, of another device"),
-    pytest.param("local_key", "switch_plug", id="a local key"),
-    pytest.param("device_reference", "lights.light_teto", id="a device's key"),
+@pytest.mark.parametrize("value", [
+    pytest.param("appliance.running_program", id="a path of this device"),
+    pytest.param("appliance.programs.detected.cotton.other.statistics.energy.month", id="a deep path"),
+    pytest.param("device.washer.appliance.running_program", id="another device's path"),
+    pytest.param("homeassistant.binary_sensor.door", id="a Home Assistant entity"),
+    pytest.param("reactions.morning", id="a path the checks refuse"),
+    pytest.param("binary_sensor.door", id="a bare entity ID reads as a path: the checks refuse its first word"),
 ])
-def test_a_reference_is_accepted(ha: HomeAssistant, validator: str, value: str) -> None:
-    assert getattr(module("core.resolve"), validator)(value) == value
+def test_a_path_is_accepted(ha: HomeAssistant, value: str) -> None:
+    assert module("core.resolve").path(value) == value
 
 
-@pytest.mark.parametrize(("validator", "value", "message"), [
-    pytest.param("reference", "washer.", "washer. is neither an entity key nor <device>.<key>",
-                 id="no key"),
-    pytest.param("reference", ".appliance_running",
-                 ".appliance_running is neither an entity key nor <device>.<key>", id="no device"),
-    pytest.param("reference", "a.b.c", "a.b.c is neither an entity key nor <device>.<key>",
-                 id="two dots"),
-    pytest.param("reference", "Washer.appliance_running", "invalid slug Washer", id="not a slug"),
-    pytest.param("local_key", "washer.switch_plug",
-                 "washer.switch_plug must be of this device: its entity key, without <device>. or <domain>.",
-                 id="a local key with a device"),
-    pytest.param("local_key", "Switch", "invalid slug Switch", id="a local key not a slug"),
-    pytest.param("device_reference", "light_teto", "light_teto needs its device: <device>.light_teto",
-                 id="a light group's member without its device"),
-    pytest.param("reference", "", "an entity key can't be empty", id="an empty reference"),
-    pytest.param("local_key", "", "an entity key can't be empty", id="an empty local key"),
-    pytest.param("device_reference", "", "an entity key can't be empty", id="an empty device's key"),
+NOT_A_PATH = "{} is not a path: write it from its block, <block>.<key>"
+
+
+@pytest.mark.parametrize(("value", "message"), [
+    pytest.param("appliance_running", NOT_A_PATH.format("appliance_running"), id="a 0.2.1 key"),
+    pytest.param("appliance.", NOT_A_PATH.format("appliance."), id="an empty last segment"),
+    pytest.param(".running", NOT_A_PATH.format(".running"), id="an empty first segment"),
+    pytest.param("appliance..running", NOT_A_PATH.format("appliance..running"), id="two dots"),
+    pytest.param("Appliance.running_program", "invalid slug Appliance", id="a segment not a slug"),
+    pytest.param("device.washer.appliance",
+                 "device.washer.appliance is not a path of another device: device.<device>.<block>.<key>",
+                 id="another device without a path"),
+    pytest.param("homeassistant.binary_sensor",
+                 "homeassistant.binary_sensor is not a Home Assistant entity: homeassistant.<domain>.<object_id>",
+                 id="Home Assistant's without its object ID"),
+    pytest.param("homeassistant.binary_sensor.door.x",
+                 "homeassistant.binary_sensor.door.x is not a Home Assistant entity: "
+                 "homeassistant.<domain>.<object_id>",
+                 id="Home Assistant's with a path"),
+    pytest.param("", "a path can't be empty", id="empty"),
 ])
-def test_a_reference_is_refused(ha: HomeAssistant, validator: str, value: str, message: str) -> None:
-    validate = getattr(module("core.resolve"), validator)
+def test_a_path_is_refused(ha: HomeAssistant, value: str, message: str) -> None:
     with pytest.raises(vol.Invalid, match=re.escape(message)):
-        validate(value)
+        module("core.resolve").path(value)
+
+
+@pytest.mark.parametrize(("field", "of", "value"), [
+    pytest.param("then", "program", "blink", id="a program's key"),
+    pytest.param("area", "area", "despensa", id="an area's key"),
+])
+def test_a_key_alone_is_accepted(ha: HomeAssistant, field: str, of: str, value: str) -> None:
+    assert module("core.resolve").key_alone(field, of)(value) == value
+
+
+@pytest.mark.parametrize(("field", "of", "value", "message"), [
+    pytest.param("then", "program", "programs.executable.blink", "then is its program's key alone: blink",
+                 id="a program's path"),
+    pytest.param("then", "program", "device.greenhouse.programs.executable.blink",
+                 "then is its program's key alone: blink", id="another device's program"),
+    pytest.param("area", "area", "areas.despensa", "area is its area's key alone: despensa", id="an area's path"),
+    pytest.param("floor", "floor", "floors.terreo", "floor is its floor's key alone: terreo", id="a floor's path"),
+    pytest.param("then", "program", "Blink", "invalid slug Blink", id="not a slug"),
+    pytest.param("then", "program", "", "then can't be empty", id="empty"),
+])
+def test_a_key_alone_refuses_a_path(ha: HomeAssistant, field: str, of: str, value: str, message: str) -> None:
+    with pytest.raises(vol.Invalid, match=re.escape(message)):
+        module("core.resolve").key_alone(field, of)(value)

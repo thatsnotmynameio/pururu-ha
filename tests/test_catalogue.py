@@ -236,9 +236,9 @@ WASHER: dict[str, Any] = {
     "door": {"contact": "binary_sensor.washer_door", "alerts": {"long_opening": {"for": {"minutes": 5}}}},
     "switches": {"sprinkler": {"entity": "switch.sprinkler", "name": "Sprinkler"}},
     "buttons": {"ler": {"entity": "sensor.remote_action", "state": "1_single", "name": "Ler"}},
-    "programs": {"executable": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switch_sprinkler"}]}}},
+    "programs": {"executable": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switches.sprinkler"}]}}},
     "reactions": {"morning": {"name": "Morning", "at": "07:00"}},
-    "alerts": {"long_cycle": {"name": "Long cycle", "when": "appliance_running", "state": "on"}},
+    "alerts": {"long_cycle": {"name": "Long cycle", "when": "appliance.running_program", "state": "on"}},
 }
 
 

@@ -4,8 +4,8 @@ config:
   alerts:
     lights:
       groups:
-        default: [biblioteca.light_teto]
-        externas: [biblioteca.light_teto, biblioteca.light_abajur]
+        default: [device.biblioteca.lights.teto]
+        externas: [device.biblioteca.lights.teto, device.biblioteca.lights.abajur]
       high: {turn_on: {color_name: red, effect: breathe}, repeat: "00:00:15"}
       resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}
 floors:
@@ -66,14 +66,14 @@ devices:
     alerts:
       stuck:
         name: Travada
-        when: appliance_phase_current
+        when: appliance.running_program.phase_current
         state: wringing
         for: {hours: 1}
         priority: medium
         lights: externas
         message: Travada!
         done_message: Destravou.
-      overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
+      overload: {name: Sobrecarga, when: appliance.power, above: 2500, for: {minutes: 1}, priority: high}
   water_station:
     name: Purificador
     appliance:
@@ -140,9 +140,9 @@ devices:
         clean:
           name: Limpar
           sequence:
-            - turn_on: switch_sprinkler
+            - turn_on: switches.sprinkler
             - delay: {hours: 2}
-            - turn_off: switch_sprinkler
+            - turn_off: switches.sprinkler
           statistics:
             runtime: [today, week, month, year]
             cycles: [today, week, month, year]
@@ -161,7 +161,7 @@ devices:
     reactions:
       washer_done:
         name: Lavadora terminou
-        when: clothes_washer.appliance_running
+        when: device.clothes_washer.appliance.running_program
         from: "on"
         to: "off"
       night: {name: Noite, at: "22:00", message: Hora de apagar as luzes.}

@@ -23,7 +23,7 @@ from ..const import (
 )
 from ..core import messages
 from ..core.feature import TEXT, Feature
-from ..core.resolve import Index
+from ..core.resolve import Index, key_alone
 from ..device_keys import reactions
 from ..features import FEATURES, buttons
 from ..outputs import alert_lights, events, places
@@ -39,7 +39,7 @@ def _device(value: Any) -> dict[str, Any]:
     schema: dict[Any, Any] = {
         # A blank name would show its entities by their own names alone
         vol.Required(CONF_NAME): TEXT,
-        vol.Optional(CONF_AREA): cv.slug,
+        vol.Optional(CONF_AREA): key_alone(CONF_AREA, CONF_AREA),
         **{
             vol.Optional(name): partial(catalogue.mount, builder, name)
             for name, builder in catalogue.builders().items()
