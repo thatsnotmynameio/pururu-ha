@@ -16,6 +16,7 @@ uv run ruff check --fix custom_components/pururu
 uv run ruff format custom_components/pururu
 uv run mypy custom_components/pururu
 python3 release.py check                        # the manifest version must be semver and not below the latest release
+python3 dispatcher.py run                       # ready issues become pull requests, one lfg session each
 ```
 
 - **Running single-process:** `pyproject.toml` addopts already pass `-n 4 --dist loadfile`, so use `-n 0` to run in one process. `-p no:xdist` breaks the run.

@@ -1,0 +1,68 @@
+---
+title: Issue dispatcher
+description: dispatcher.py turns the issues you mark ready into pull requests, one headless lfg session each.
+---
+
+`dispatcher.py` polls this repository's GitHub issues and starts a headless Claude session running `lfg` for each issue you mark `ready`. Each session works in its own new worktree and ends at an open pull request. You review and merge.
+
+## Running it
+
+From the main checkout, logged in to `gh` as the issues' author, with `claude` and the compound-engineering plugin installed:
+
+```sh
+python3 dispatcher.py run                       # 2 sessions at most, a poll every 5 minutes
+python3 dispatcher.py run --sessions 3 --every 120
+```
+
+It runs until you stop it with Ctrl-C. Only one dispatcher runs at a time: a second one refuses to start while the first is alive.
+
+## Which issues it takes
+
+An issue is taken when it's open, you opened it, and it carries the `ready` label. The oldest goes first. An issue blocked by an open issue (GitHub's **Blocked by** relation) is skipped, and the next one is considered. Once the blocker closes, the issue is taken at a later poll.
+
+Broad or umbrella issues stay out of the queue until you add `ready`.
+
+## Labels
+
+The labels show where each issue stands. The dispatcher creates the missing ones on its first run.
+
+| Label | Meaning |
+|---|---|
+| `ready` | You queued it. |
+| `in progress` | A session is working on it. |
+| `in review` | The session ended with an open pull request; its required checks don't all pass yet. |
+| `ready to merge` | That pull request's required checks all pass. |
+| `needs attention` | The session ended without a pull request. A comment says why, with the worktree and the log. |
+
+```mermaid
+stateDiagram-v2
+  [*] --> ready: you add the label
+  ready --> in_progress: a slot is free
+  in_progress --> in_review: pull request open
+  in_progress --> needs_attention: no pull request, could not start, or dispatcher stopped
+  in_review --> ready_to_merge: required checks pass
+  needs_attention --> ready: you add the label again
+  ready_to_merge --> [*]: you merge, the issue closes
+```
+
+A failed issue is never retried on its own: add `ready` again to queue it.
+
+Every poll checks the issues `in review` again, so one whose checks turn green later moves to `ready to merge`. `ready to merge` reads only the required checks. Code scanning and the pull request rules of `main` can still block the merge.
+
+## The pull request closes the issue
+
+The session is asked to put `Closes #N` in the pull request's body. When the body still lacks it, the dispatcher adds it. Merging then closes the issue, which is what frees the issues it blocks.
+
+## Where things are
+
+- **Worktrees:** `.claude/worktrees/issue-N` on a branch `issue-N` from the latest `origin/main`, with `-2`, `-3`… when the name is taken. The dispatcher never removes them.
+- **Logs:** `.dispatch/logs/issue-N.log`, the session's JSON lines. The last `result` event holds its final message and its cost.
+- **Lock:** `.dispatch/lock`, the running dispatcher's PID. `.dispatch/` is git-ignored.
+
+## Stopping and restarting
+
+Ctrl-C ends the running sessions and moves their issues to `needs attention`. If the dispatcher dies without that, for example when the Mac sleeps, the next start finds the issues left `in progress` and moves them to `needs attention`, naming their worktrees.
+
+## Sessions
+
+A session is `claude -p` in the worktree, running `/compound-engineering:lfg #N` with `--permission-mode auto`. It ends where `lfg` ends: an open pull request, never a merge. A session has no time or cost limit. One that stops, for example at a permission `auto` doesn't grant, ends without a pull request, and its issue needs attention.
