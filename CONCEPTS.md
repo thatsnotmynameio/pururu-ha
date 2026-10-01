@@ -25,3 +25,11 @@ A counter's all-time value, an entity of its own that only grows and survives re
 
 ### Meter
 How much a total grew in the current period (today, this week, this month, this year), reset when the period turns over. A meter exists only when the block that has the counter asks for that period under its statistics.
+
+## Goals
+
+### Goal
+What a device must achieve in each calendar period, measured by something that accumulates: the pool filters 6 hours a day, tracked by its runtime total.
+*Avoid:* debt, quota
+
+A goal's target is a number in the tracked entity's unit. Its done is how much that entity grew since the period began, whoever caused it; what's left, met and at risk all derive from the two.
