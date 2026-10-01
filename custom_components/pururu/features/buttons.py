@@ -44,7 +44,6 @@ from ..const import CONF_DEVICES
 from ..core.entity import PururuEntity
 from ..core.feature import TEXT, Device, Feature, state_text
 from ..core.generated import SCRIPTS
-from ..core.resolve import Index
 from ..core.roles import Configured
 from ..core.vocabulary import NO_READING
 from . import standing
@@ -148,17 +147,23 @@ class Button(PururuEntity, ButtonEntity):
         """Start the program, once the press's time is recorded: only when it is idle.
 
         Its script is found now, renamed or not: scripts are written after the
-        entities. Only `off` is a script generated and idle; running, not
-        generated, held out (HA's restored placeholder) or not loaded yet start
-        nothing. Not awaited: a start single mode refuses would wait for the
-        running program's next step.
+        entities. Only a script the entry manages (generated: a script of the
+        user's holding its ID is theirs, never started) whose state is `off` is
+        generated and idle; running, held out (HA's restored placeholder) or
+        not loaded yet start nothing. Not awaited: a start single mode refuses
+        would wait for the running program's next step.
         """
-        if self._script is None:
+        entry = self.platform.config_entry
+        if self._script is None or entry is None:
             return
         script = er.async_get(self.hass).async_get_entity_id(
             SCRIPTS.domain, SCRIPTS.domain, self._script
         )
-        if script is None or not self.hass.states.is_state(script, STATE_OFF):
+        if (
+            self._script not in entry.data.get(SCRIPTS.data_key, [])
+            or script is None
+            or not self.hass.states.is_state(script, STATE_OFF)
+        ):
             _LOGGER.debug(
                 "%s: script.%s is not idle; not starting it",
                 self.entity_id,
@@ -198,7 +203,7 @@ def build(
     return buttons
 
 
-def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
+def check(house: Mapping[str, Any], *_: Any) -> Iterator[vol.Invalid]:
     """Refuse a button's program that isn't its device's, and one value pressing two buttons.
 
     A button starts one of its own device's executable programs. Two buttons

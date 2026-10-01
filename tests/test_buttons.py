@@ -489,6 +489,20 @@ async def test_a_press_before_the_scripts_run_starts_nothing(ha: HomeAssistant) 
     assert started(calls) == []
 
 
+async def test_a_script_of_ones_own_with_the_programs_id_is_not_started(ha: HomeAssistant) -> None:
+    """The user's script holds the program's ID: pururu doesn't generate it, and a press never starts it."""
+    er.async_get(ha).async_get_or_create(
+        "script", "script", "pururu_greenhouse_program_executable_clean", suggested_object_id="mine")
+    ha.states.async_set("script.mine", "off")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, GREENHOUSE_DEVICES)
+    assert generated_scripts(ha) == {}
+    calls = capture(ha, "call_service")
+    await press(ha, CLEAN_BUTTON)
+    assert state(ha, CLEAN_BUTTON) == now()
+    assert started(calls) == []
+
+
 async def test_a_renamed_program_is_still_started(greenhouse: HomeAssistant) -> None:
     er.async_get(greenhouse).async_update_entity(CLEAN, new_entity_id="script.limpar_estufa")
     await greenhouse.async_block_till_done()
