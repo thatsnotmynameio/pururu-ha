@@ -1,10 +1,10 @@
 # HACS's own validation of the repository (hacs.json, manifest, description,
-# topics, issues), so it stays installable as a HACS custom repository. On main,
-# Release runs it before publishing.
+# topics, issues), so it stays installable as a HACS custom repository. CI calls
+# it on pull requests that change hacs.json, the manifest, README.md or the
+# workflows; on main, Release runs it before publishing; it also runs weekly.
 name: Validate
 
 on:
-  pull_request:
   workflow_call:
   schedule:
     - cron: "0 6 * * 1"
