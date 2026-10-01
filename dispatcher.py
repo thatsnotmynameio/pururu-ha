@@ -14,7 +14,8 @@ one gets a new worktree from origin/main under .claude/worktrees/ and a headless
 runs every SECONDS (default 300). Labels show where an issue stands: `in progress`,
 then `in review` (a pull request is open) and `ready to merge` (its required checks
 pass), or `needs attention` (the session ended without one). Logs and the lock are
-in .dispatch/. Ctrl-C stops the sessions and marks their issues `needs attention`.
+in .dispatch/. Ctrl-C judges the sessions that ended, as a poll would, then stops the others
+and marks their issues `needs attention`.
 """
 
 import argparse
@@ -143,13 +144,13 @@ def pick(ready: Iterable[Issue], running: set[int], free: int) -> list[int]:
 
 
 def tick(snapshot: Snapshot, running: set[int], sessions: int) -> list[Action]:
-    """One poll's actions: ended sessions judged, passing reviews promoted, free slots filled.
+    """One poll's actions after the ended sessions' verdicts: reviews promoted, slots filled.
 
     `running` holds the issues whose sessions still run, the ended ones already out of it.
+    The verdicts (`judge`) are applied apart, as a failed one is retried at the next poll.
     """
-    actions = [action for session in snapshot.ended for action in judge(session)]
-    actions += [Move(review.issue, (IN_REVIEW,), (READY_TO_MERGE,))
-                for review in snapshot.reviews if review.passing]
+    actions: list[Action] = [Move(review.issue, (IN_REVIEW,), (READY_TO_MERGE,))
+                             for review in snapshot.reviews if review.passing]
     actions += [Dispatch(number)
                 for number in pick(snapshot.ready, running, sessions - len(running))]
     return actions
@@ -180,14 +181,18 @@ ISSUES = """query($owner: String!, $name: String!, $login: String!, $label: Stri
         number
         labels(first: 30) { nodes { name } }
         issueDependenciesSummary { blockedBy }
-        closedByPullRequestsReferences(first: 10) { nodes { number url state } }
+        closedByPullRequestsReferences(first: 10) {
+          nodes { number url state isCrossRepository }
+        }
       }
     }
   }
 }"""
 LINKED = """query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
-    issue(number: $number) { closedByPullRequestsReferences(first: 10) { nodes { number } } }
+    issue(number: $number) {
+      closedByPullRequestsReferences(first: 10) { nodes { number isCrossRepository } }
+    }
   }
 }"""
 CLOSING = r"\b(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+#{}\b"
@@ -236,26 +241,31 @@ class GitHub:
         return self._login
 
     def issues(self, label: str) -> list[tuple[Issue, tuple[PullRequest, ...]]]:
-        """The user's open issues with this label, oldest first, each with its linked open PRs."""
+        """The user's open issues with this label, oldest first, each with its linked open PRs.
+
+        Only this repository's pull requests count: the repository is public, so a fork's
+        pull request can say `Closes #N` too.
+        """
         found = self._graphql(ISSUES, login=self.login(), label=label)["issues"]["nodes"]
         return [(Issue(node["number"],
                        frozenset(tag["name"] for tag in node["labels"]["nodes"]),
                        node["issueDependenciesSummary"]["blockedBy"]),
                  tuple(PullRequest(pr["number"], pr["url"])
                        for pr in node["closedByPullRequestsReferences"]["nodes"]
-                       if pr["state"] == "OPEN"))
+                       if pr["state"] == "OPEN" and not pr["isCrossRepository"]))
                 for node in found]
 
     def linked(self, issue: int) -> frozenset[int]:
-        """The pull requests GitHub links to an issue (a closing keyword in their body)."""
+        """This repository's pull requests GitHub links to an issue (a closing keyword)."""
         found = self._graphql(LINKED, number=issue)["issue"]["closedByPullRequestsReferences"]
-        return frozenset(pr["number"] for pr in found["nodes"])
+        return frozenset(pr["number"] for pr in found["nodes"] if not pr["isCrossRepository"])
 
     def head(self, branch: str) -> tuple[PullRequest, ...]:
-        """The open pull requests from a branch."""
+        """This repository's open pull requests from a branch: `--head` matches forks' too."""
         found = json.loads(self._ok(["pr", "list", "--head", branch, "--state", "open",
-                                     "--json", "number,url"]))
-        return tuple(PullRequest(pr["number"], pr["url"]) for pr in found)
+                                     "--json", "number,url,isCrossRepository"]))
+        return tuple(PullRequest(pr["number"], pr["url"])
+                     for pr in found if not pr["isCrossRepository"])
 
     def passing(self, pr: int) -> bool:
         """Whether every required check passes (`gh pr checks` exits 8 while some are pending)."""
@@ -435,6 +445,7 @@ class Dispatcher:
         self.say = say
         self.running: dict[int, Running] = {}
         self.branches: dict[int, str] = {}  # issues in review: the branch their session pushed
+        self.pending: list[Action] = []  # ended sessions' verdicts that failed: the next poll's
 
     def start(self) -> None:
         """Create the missing labels; the issues left in progress need attention."""
@@ -446,14 +457,7 @@ class Dispatcher:
     def snapshot(self) -> tuple[Snapshot, list[Running]]:
         """Read GitHub: ended sessions' pull requests, issues in review, the ready queue."""
         over = [running for running in self.running.values() if running.process.poll() is not None]
-        ended = []
-        for running in over:
-            prs = self.gh.head(running.branch)
-            ended.append(Ended(running.issue, str(running.worktree), str(running.log),
-                               "" if prs else self.sessions.reason(running), prs,
-                               self.gh.linked(running.issue) if prs else frozenset()))
-            if prs:
-                self.branches[running.issue] = running.branch
+        ended = [self.read(running) for running in over]
         reviews = []
         for issue, prs in self.gh.issues(IN_REVIEW):
             if not prs and issue.number in self.branches:
@@ -462,8 +466,22 @@ class Dispatcher:
         ready = tuple(issue for issue, _ in self.gh.issues(READY))
         return Snapshot(tuple(ended), tuple(reviews), ready), over
 
+    def read(self, running: Running) -> Ended:
+        """An ended session with what GitHub says of its branch; one with a PR is remembered."""
+        prs = self.gh.head(running.branch)
+        session = Ended(running.issue, str(running.worktree), str(running.log),
+                        "" if prs else self.sessions.reason(running), prs,
+                        self.gh.linked(running.issue) if prs else frozenset())
+        if prs:
+            self.branches[running.issue] = running.branch
+        return session
+
     def poll(self) -> None:
-        """One poll: read, decide, apply. A failed read skips the poll; ended sessions wait."""
+        """One poll: retry the failed verdicts, read, decide, apply.
+
+        A failed read skips the rest of the poll: ended sessions wait for the next one.
+        """
+        self.pending = [action for action in self.pending if not self.apply(action)]
         try:
             snapshot, over = self.snapshot()
         except (GhError, ValueError, KeyError) as error:
@@ -471,11 +489,17 @@ class Dispatcher:
             return
         for running in over:
             del self.running[running.issue]
+        self.settle(snapshot.ended)
         for action in tick(snapshot, set(self.running), self.slots):
             self.apply(action)
 
-    def apply(self, action: Action) -> None:
-        """One action; a failed `gh` call is reported and the others still run."""
+    def settle(self, ended: Iterable[Ended]) -> None:
+        """Apply the ended sessions' verdicts: no later poll judges them, so a failed one waits."""
+        for session in ended:
+            self.pending += [action for action in judge(session) if not self.apply(action)]
+
+    def apply(self, action: Action) -> bool:
+        """One action, and whether it went; a failed `gh` call is reported, the others still run."""
         try:
             match action:
                 case Move():
@@ -487,6 +511,8 @@ class Dispatcher:
                     self.dispatch(action.issue)
         except GhError as error:
             self.say(f"dispatcher: {action}: {error}")
+            return False
+        return True
 
     def dispatch(self, issue: int) -> None:
         """In progress, then a session; one that cannot start needs attention.
@@ -500,17 +526,33 @@ class Dispatcher:
         except (OSError, subprocess.CalledProcessError) as error:
             detail = (error.stderr if isinstance(error, subprocess.CalledProcessError)
                       and error.stderr else error)
-            self.apply(needs_attention(issue, f"the session could not start: {str(detail).strip()}"))
+            self.apply(needs_attention(issue,
+                                       f"the session could not start: {str(detail).strip()}"))
             return
         self.running[issue] = running
         self.say(f"dispatcher: #{issue} running in {running.worktree}, log {running.log}")
 
     def stop(self) -> None:
-        """End every session and mark its issue: the dispatcher was stopped."""
-        stopped = list(self.running.values())
-        self.sessions.end(stopped)
+        """Judge the sessions that already ended, as a poll would; end the others and mark them.
+
+        The verdicts that failed at earlier polls get one last try: no poll follows.
+        """
+        self.pending = [action for action in self.pending if not self.apply(action)]
+        live: list[Running] = []
+        ended: list[Running] = []
+        for running in self.running.values():
+            (live if running.process.poll() is None else ended).append(running)
         self.running.clear()
-        for running in stopped:
+        for running in ended:
+            try:
+                self.settle([self.read(running)])
+            except (GhError, ValueError, KeyError) as error:
+                self.apply(needs_attention(running.issue, "the session ended, but the dispatcher "
+                                           f"was stopped before GitHub could be read: {error}",
+                                           f"Worktree: `{running.worktree}`",
+                                           f"Log: `{running.log}`"))
+        self.sessions.end(live)
+        for running in live:
             self.apply(needs_attention(running.issue,
                                        "the dispatcher was stopped while the session ran.",
                                        f"Worktree: `{running.worktree}`", f"Log: `{running.log}`"))
@@ -546,7 +588,10 @@ def take(lock: Path) -> bool:
 
 
 def serve(boss: Dispatcher, every: float) -> None:
-    """Poll every `every` seconds until SIGINT or SIGTERM, then stop the sessions."""
+    """Poll every `every` seconds until SIGINT or SIGTERM, then stop the sessions.
+
+    An error stops them too before it propagates: no session is left running detached.
+    """
     stopping = threading.Event()
 
     def stop(signum: int, frame: object) -> None:
@@ -554,12 +599,14 @@ def serve(boss: Dispatcher, every: float) -> None:
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
-    boss.start()
-    while not stopping.is_set():
-        boss.poll()
-        stopping.wait(every)
-    boss.say("dispatcher: stopping")
-    boss.stop()
+    try:
+        boss.start()
+        while not stopping.is_set():
+            boss.poll()
+            stopping.wait(every)
+    finally:
+        boss.say("dispatcher: stopping")
+        boss.stop()
 
 
 def main(argv: list[str]) -> int:

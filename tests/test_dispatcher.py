@@ -1,9 +1,11 @@
 """dispatcher.py: the author's ready issues become pull requests through lfg sessions."""
 
+from collections.abc import Callable, Iterator
 import dataclasses
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 from typing import Any
 
@@ -62,25 +64,23 @@ def test_free_slots_fill_in_order() -> None:
 
 def test_a_session_that_opened_a_pull_request_goes_in_review() -> None:
     """AE4: in review with the link; the slot frees."""
-    snapshot = Snapshot(ended=(ended(74, prs=(PR,), linked=frozenset({101})),), ready=(ready(75),))
-    move, = [action for action in dispatcher.tick(snapshot, set(), 1) if isinstance(action, Move)]
+    move, = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})))
+    assert isinstance(move, Move)
     assert (move.issue, move.remove, move.add) == (74, (IN_PROGRESS,), (IN_REVIEW,))
     assert PR.url in (move.comment or "")
-    assert Dispatch(75) in dispatcher.tick(snapshot, set(), 1)
+    assert dispatcher.tick(Snapshot(ready=(ready(75),)), set(), 1) == [Dispatch(75)]
 
 
 def test_a_pull_request_not_linked_to_its_issue_gets_the_link() -> None:
     """AE1 relies on merging closing the issue: the dispatcher adds Closes #N."""
-    actions = dispatcher.tick(Snapshot(ended=(ended(74, prs=(PR,)),)), set(), 1)
-    assert Link(101, 74) in actions
-    linked = dispatcher.tick(Snapshot(ended=(ended(74, prs=(PR,), linked=frozenset({101})),)),
-                           set(), 1)
+    assert Link(101, 74) in dispatcher.judge(ended(74, prs=(PR,)))
+    linked = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})))
     assert not [action for action in linked if isinstance(action, Link)]
 
 
 def test_a_session_without_a_pull_request_needs_attention() -> None:
     """AE5: the reason and the worktree in the comment."""
-    move, = dispatcher.tick(Snapshot(ended=(ended(74),)), set(), 1)
+    move, = dispatcher.judge(ended(74))
     assert isinstance(move, Move)
     assert (move.remove, move.add) == ((IN_PROGRESS,), (NEEDS_ATTENTION,))
     assert "lfg stopped: no work source" in (move.comment or "")
@@ -131,11 +131,12 @@ def nodes(*issues: dict[str, object]) -> str:
 
 
 def node(number: int, labels: tuple[str, ...], blocked: int = 0,
-         prs: tuple[tuple[int, str], ...] = ()) -> dict[str, object]:
+         prs: tuple[tuple[int, str], ...] = (), forks: tuple[int, ...] = ()) -> dict[str, object]:
     return {"number": number, "labels": {"nodes": [{"name": name} for name in labels]},
             "issueDependenciesSummary": {"blockedBy": blocked},
             "closedByPullRequestsReferences": {"nodes": [
-                {"number": n, "url": f"https://github.com/o/r/pull/{n}", "state": state}
+                {"number": n, "url": f"https://github.com/o/r/pull/{n}", "state": state,
+                 "isCrossRepository": n in forks}
                 for n, state in prs]}}
 
 
@@ -157,6 +158,30 @@ def test_only_open_pull_requests_linked_to_an_issue_are_kept() -> None:
         node(74, ("in review",), prs=((99, "MERGED"), (101, "OPEN"))))))
     (_, prs), = gh.issues(IN_REVIEW)
     assert [pr.number for pr in prs] == [101]
+
+
+def test_a_forks_pull_request_linked_to_an_issue_is_not_kept() -> None:
+    """The repository is public: a fork's PR saying `Closes #N` must not promote the issue."""
+    gh, _ = github((("api", "graphql"), 0, nodes(
+        node(74, ("in review",), prs=((101, "OPEN"), (102, "OPEN")), forks=(102,)))))
+    (_, prs), = gh.issues(IN_REVIEW)
+    assert [pr.number for pr in prs] == [101]
+
+
+def linked_reply(*prs: tuple[int, bool]) -> str:
+    return json.dumps({"data": {"repository": {"issue": {"closedByPullRequestsReferences": {
+        "nodes": [{"number": n, "isCrossRepository": fork} for n, fork in prs]}}}}})
+
+
+def test_the_pull_requests_linked_to_an_issue() -> None:
+    gh, fake = github((("api", "graphql"), 0, linked_reply((99, False), (101, False))))
+    assert gh.linked(74) == frozenset({99, 101})
+    assert "number=74" in fake.calls[-1]
+
+
+def test_a_forks_pull_request_is_not_linked() -> None:
+    gh, _ = github((("api", "graphql"), 0, linked_reply((101, False), (102, True))))
+    assert gh.linked(74) == frozenset({101})
 
 
 def test_required_checks_verdicts() -> None:
@@ -200,9 +225,17 @@ def test_a_pull_request_without_the_closing_line_gets_it_once() -> None:
 
 def test_the_open_pull_requests_of_a_branch() -> None:
     gh, fake = github((("pr", "list"), 0, json.dumps(
-        [{"number": 101, "url": "https://github.com/o/r/pull/101"}])))
+        [{"number": 101, "url": "https://github.com/o/r/pull/101", "isCrossRepository": False}])))
     assert gh.head("issue-74") == (PR,)
     assert fake.calls[-1][:6] == ["pr", "list", "--head", "issue-74", "--state", "open"]
+
+
+def test_a_forks_branch_of_the_same_name_is_not_the_sessions() -> None:
+    """`--head issue-74` matches any fork's `issue-74` too: only this repository's PR counts."""
+    gh, fake = github((("pr", "list"), 0, json.dumps(
+        [{"number": 102, "url": "https://github.com/o/r/pull/102", "isCrossRepository": True}])))
+    assert gh.head("issue-74") == ()
+    assert "number,url,isCrossRepository" in fake.calls[-1]
 
 
 def test_a_failing_gh_call_raises_with_its_stderr() -> None:
@@ -367,7 +400,13 @@ class FakeGitHub:
         self.linked_prs = linked
         self.checks = passing
         self.broken = broken
+        self.flaky: set[str] = set()  # calls that fail once, the next time they are made
         self.writes: list[object] = []
+
+    def _flake(self, call: str) -> None:
+        if call in self.flaky:
+            self.flaky.discard(call)
+            raise dispatcher.GhError(f"gh {call}: HTTP 502")
 
     def ensure_labels(self) -> None:
         self.writes.append("labels")
@@ -376,6 +415,7 @@ class FakeGitHub:
         return self.answers.get(label, [])
 
     def head(self, branch: str) -> tuple[PullRequest, ...]:
+        self._flake("head")
         return self.heads.get(branch, ())
 
     def linked(self, issue: int) -> frozenset[int]:
@@ -387,9 +427,11 @@ class FakeGitHub:
     def move(self, move: Move) -> None:
         if move.issue == self.broken:
             raise dispatcher.GhError("gh issue: HTTP 502")
+        self._flake("move")
         self.writes.append(move)
 
     def link(self, link: Link) -> None:
+        self._flake("link")
         self.writes.append(link)
 
 
@@ -489,3 +531,171 @@ def test_a_failing_label_swap_does_not_stop_the_poll(tmp_path: Path) -> None:
     boss.poll()
     assert moves(gh) == [(74, (IN_PROGRESS,))] and len(spawn.calls) == 1
     assert any("HTTP 502" in line for line in lines)
+
+
+def ended_session(tmp_path: Path, gh: FakeGitHub) -> dispatcher.Dispatcher:
+    """A dispatcher whose session for #74 ran and exited, not judged yet."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    boss = dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None)
+    gh.answers = {READY: [(ready(74), ())]}
+    boss.poll()
+    gh.answers = {}
+    process = boss.running[74].process
+    assert isinstance(process, FakeProcess)
+    process.returncode = 0
+    return boss
+
+
+def test_a_failed_move_after_a_session_ends_is_retried_at_the_next_poll(tmp_path: Path) -> None:
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"move"}
+    boss.poll()
+    assert (74, (IN_REVIEW,)) not in moves(gh) and boss.running == {}
+    boss.poll()
+    assert moves(gh).count((74, (IN_REVIEW,))) == 1
+    assert [write.comment for write in gh.writes  # type: ignore[union-attr]
+            if isinstance(write, Move) and write.add == (IN_REVIEW,)] == [
+        f"Dispatcher: pull request {PR.url} is open."]
+    boss.poll()
+    assert moves(gh).count((74, (IN_REVIEW,))) == 1
+
+
+def test_a_failed_link_after_a_session_ends_is_retried_at_the_next_poll(tmp_path: Path) -> None:
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"link"}
+    boss.poll()
+    assert Link(101, 74) not in gh.writes and (74, (IN_REVIEW,)) in moves(gh)
+    boss.poll()
+    assert gh.writes.count(Link(101, 74)) == 1
+    boss.poll()
+    assert gh.writes.count(Link(101, 74)) == 1
+
+
+def test_an_ended_session_github_cannot_read_waits_for_the_next_poll(tmp_path: Path) -> None:
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"head"}
+    boss.poll()
+    assert 74 in boss.running and moves(gh) == [(74, (IN_PROGRESS,))]
+    boss.poll()
+    assert boss.running == {} and (74, (IN_REVIEW,)) in moves(gh)
+
+
+def two_sessions(tmp_path: Path, gh: FakeGitHub) -> tuple[dispatcher.Dispatcher, FakeProcess,
+                                                          FakeProcess]:
+    """A dispatcher whose session for #74 exited with code 0 while #75's still runs."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    boss = dispatcher.Dispatcher(gh, runner, 2, say=lambda line: None)
+    gh.answers = {READY: [(ready(74), ()), (ready(75), ())]}
+    boss.poll()
+    gh.answers = {}
+    done, live = boss.running[74].process, boss.running[75].process
+    assert isinstance(done, FakeProcess) and isinstance(live, FakeProcess)
+    done.returncode = 0
+    return boss, done, live
+
+
+def test_stopping_judges_a_session_that_already_ended(tmp_path: Path) -> None:
+    """KTD3 at stop: #74 opened its PR and exited before Ctrl-C, so it is in review."""
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss, done, live = two_sessions(tmp_path, gh)
+    boss.stop()
+    assert done.signals == [] and live.signals == ["terminate"]
+    assert moves(gh)[2:] == [(74, (IN_REVIEW,)), (75, (NEEDS_ATTENTION,))]
+    assert Link(101, 74) in gh.writes
+    move = gh.writes[-1]
+    assert isinstance(move, Move) and "stopped while the session ran" in (move.comment or "")
+    assert boss.running == {}
+
+
+def test_stopping_when_github_cannot_read_an_ended_session(tmp_path: Path) -> None:
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss, _, _ = two_sessions(tmp_path, gh)
+    gh.flaky = {"head"}
+    boss.stop()
+    assert moves(gh)[2:] == [(74, (NEEDS_ATTENTION,)), (75, (NEEDS_ATTENTION,))]
+    move = gh.writes[2]
+    assert isinstance(move, Move) and "HTTP 502" in (move.comment or "")
+
+
+# The loop and the lock
+
+class Boss:
+    """A dispatcher standing in for serve(): its poll runs `polled`; records the calls."""
+
+    def __init__(self, polled: Callable[[], None]) -> None:
+        self.polled = polled
+        self.calls: list[str] = []
+
+    def say(self, line: str) -> None:
+        self.calls.append(line)
+
+    def start(self) -> None:
+        self.calls.append("start")
+
+    def poll(self) -> None:
+        self.calls.append("poll")
+        self.polled()
+
+    def stop(self) -> None:
+        self.calls.append("stop")
+
+
+@pytest.fixture
+def handlers() -> Iterator[None]:
+    """serve() installs SIGINT and SIGTERM handlers: put the test runner's back."""
+    saved = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+    yield
+    for signum, handler in saved.items():
+        signal.signal(signum, handler)
+
+
+@pytest.mark.usefixtures("handlers")
+def test_a_signal_ends_the_loop_and_stops_the_sessions() -> None:
+    """KTD9: Ctrl-C during a poll ends the loop, then the sessions."""
+    boss = Boss(lambda: signal.raise_signal(signal.SIGINT))
+    dispatcher.serve(boss, 0)  # type: ignore[arg-type]
+    assert boss.calls == ["start", "poll", "dispatcher: stopping", "stop"]
+
+
+@pytest.mark.usefixtures("handlers")
+def test_an_unexpected_error_still_stops_the_sessions() -> None:
+    """No session is left running detached when the dispatcher dies of a bug."""
+    def broken() -> None:
+        raise RuntimeError("a bug")
+
+    boss = Boss(broken)
+    with pytest.raises(RuntimeError, match="a bug"):
+        dispatcher.serve(boss, 0)  # type: ignore[arg-type]
+    assert boss.calls[-1] == "stop" and boss.calls.count("stop") == 1
+
+
+def command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+            serve: Callable[[object, float], None]) -> Path:
+    """main() over trivial gateways and this serve(): the lock it would take."""
+    monkeypatch.setattr(dispatcher, "ROOT", tmp_path)
+    monkeypatch.setattr(dispatcher, "GitHub", lambda: object())
+    monkeypatch.setattr(dispatcher, "Sessions", lambda root: object())
+    monkeypatch.setattr(dispatcher, "serve", serve)
+    return tmp_path / ".dispatch/lock"
+
+
+def test_the_lock_is_held_while_serving_and_released_after(tmp_path: Path,
+                                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    held: list[bool] = []
+    lock = command(tmp_path, monkeypatch, lambda boss, every: held.append(lock.exists()))
+    assert dispatcher.main(["dispatcher.py", "run", "--every", "0"]) == 0
+    assert held == [True] and not lock.exists()
+
+
+def test_the_lock_is_released_when_serving_fails(tmp_path: Path,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    def serve(boss: object, every: float) -> None:
+        raise RuntimeError("a bug")
+
+    lock = command(tmp_path, monkeypatch, serve)
+    with pytest.raises(RuntimeError, match="a bug"):
+        dispatcher.main(["dispatcher.py", "run", "--every", "0"])
+    assert not lock.exists()

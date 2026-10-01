@@ -47,11 +47,15 @@ stateDiagram-v2
 
 A failed issue is never retried on its own: add `ready` again to queue it.
 
-Every poll checks the issues `in review` again, so one whose checks turn green later moves to `ready to merge`. `ready to merge` reads only the required checks. Code scanning and the pull request rules of `main` can still block the merge.
+Every poll checks the issues `in review` again, so one whose checks turn green later moves to `ready to merge`. `ready to merge` reads only the required checks. Code scanning and the pull request rules of `main` can still block the merge. Nor does it mean anyone read the review threads: `lfg` watches the pull request with `ce-babysit-pr`, which answers and resolves threads under your `gh` login.
 
 ## The pull request closes the issue
 
 The session is asked to put `Closes #N` in the pull request's body. When the body still lacks it, the dispatcher adds it. Merging then closes the issue, which is what frees the issues it blocks.
+
+Only this repository's pull requests count. A fork's pull request from a branch named `issue-N`, or one saying `Closes #N`, moves no label.
+
+When a session ends, a label move or `Closes #N` that GitHub refuses is tried again at the next poll.
 
 ## Where things are
 
@@ -61,7 +65,7 @@ The session is asked to put `Closes #N` in the pull request's body. When the bod
 
 ## Stopping and restarting
 
-Ctrl-C ends the running sessions and moves their issues to `needs attention`. If the dispatcher dies without that, for example when the Mac sleeps, the next start finds the issues left `in progress` and moves them to `needs attention`, naming their worktrees.
+Ctrl-C first judges the sessions that already ended, as a poll would: one with an open pull request goes `in review`. It then ends the sessions still running and moves their issues to `needs attention`. An unexpected error stops the sessions the same way before the dispatcher exits. If the dispatcher dies without that, for example when the Mac sleeps, the next start finds the issues left `in progress` and moves them to `needs attention`, naming their worktrees.
 
 ## Sessions
 
