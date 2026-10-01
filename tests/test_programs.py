@@ -102,6 +102,8 @@ async def greenhouse(scripts: HomeAssistant) -> HomeAssistant:
     pytest.param({"name": "Limpar", "sequence": ["turn_on"]}, id="a step that isn't a mapping"),
     pytest.param({"name": "Limpar", "sequence": [{"delay": -5}]}, id="a negative delay"),
     pytest.param({"name": "Limpar", "sequence": [{"turn_on": REAL_SPRINKLER}]}, id="a real entity ID"),
+    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "greenhouse.switch_sprinkler"}]},
+                 id="a step with a device"),
     pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}], "icon": "mdi:greenhouse"},
                  id="unknown key"),
 ])

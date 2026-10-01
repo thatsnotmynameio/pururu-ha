@@ -33,6 +33,7 @@ from homeassistant.helpers.start import async_at_started
 from ..const import ALERT2, DEFAULT_ALERT_LIGHTS
 from ..core.entity import PururuEntity
 from ..core.feature import PRIORITIES, TEXT, Device, finite_float, state_of
+from ..core.resolve import local_key
 from ..core.vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ ALERT = vol.All(
         {
             # A blank name would show the alert as its device's name alone
             vol.Required("name"): TEXT,
-            vol.Required("when"): cv.slug,
+            vol.Required("when"): local_key,
             # Text, as a reaction's to: a number is a reading's (above/below) or quoted
             vol.Optional("state"): state_of("state"),
             vol.Optional("above"): finite_float,

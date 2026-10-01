@@ -24,7 +24,7 @@ pururu:
             sequence: [{turn_on: light_teto}, {delay: 2}, {turn_off: light_teto}]
       reactions:
         teto_on:     {name: Teto acendeu, when: light_teto, to: "on"}
-        washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off", then: blink}
+        washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off", then: blink}
         door:        {name: Porta abriu, entity: binary_sensor.porta_despensa, to: "on", for: {minutes: 5}}
         night:       {name: Noite, at: "22:00"}
         dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
@@ -69,8 +69,8 @@ A reaction listens to **exactly one** of these sources.
 
 ### An entity of another device
 
-<Property name="device" type="device key">
-  The key of another device under `devices:`, with `when` naming one of **its** entities: `device: clothes_washer`, `when: appliance_running`.
+<Property name="when" type="device.entity key">
+  An entity of **another device**: its device key, a dot, and its entity key, as above: `when: clothes_washer.appliance_running`. Its own device written out (`laundry_lights.light_teto`) is the same as `light_teto`.
 </Property>
 
 ### Any entity
@@ -189,7 +189,7 @@ A reaction with `then` starts its program's script, but only if it isn't running
 | You disabled the program's script | The reaction still fires, and the `if` isn't taken |
 | You renamed the program's script | Followed: pururu reloads and rewrites the automation with its new ID |
 
-A reaction always runs its **own** device's program, even when it listens to another device (`device: clothes_washer`). Programs run one at a time for now: a program already running isn't started again, nor queued.
+A reaction always runs its **own** device's program, even when it listens to another device (`when: clothes_washer.appliance_running`). Programs run one at a time for now: a program already running isn't started again, nor queued.
 
 ## Trying again
 

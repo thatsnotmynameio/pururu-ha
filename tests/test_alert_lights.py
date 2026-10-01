@@ -26,8 +26,8 @@ BULB = {"supported_color_modes": ["hs"], "color_mode": "hs", "brightness": 255,
         "supported_features": 44}
 # The house's switches: turning one on raises the alert watching it
 REAL = {name: f"switch.casa_{name}" for name in ("gate", "smoke", "mail", "leak")}
-GROUPS = {"default": {"greenhouse": ["lantern"]}, "porch": {"varanda": ["rele"]},
-          "both": {"greenhouse": ["lantern"], "varanda": ["rele"]}}
+GROUPS = {"default": ["greenhouse.light_lantern"], "porch": ["varanda.light_rele"],
+          "both": ["greenhouse.light_lantern", "varanda.light_rele"]}
 CONFIG = {"alerts": {"lights": {"groups": GROUPS}}}
 RED = {"color_name": "red", "brightness_pct": 100, "effect": "breathe"}
 ORANGE = {"color_name": "orange", "brightness_pct": 100, "effect": "breathe"}
@@ -145,24 +145,29 @@ def lights_block(**block: Any) -> dict[str, Any]:
                  id="unknown key in alerts"),
     pytest.param(lights_block(colours={}), "'colours' is an invalid option",
                  id="unknown key in lights"),
-    pytest.param(lights_block(groups={"Porch": {"varanda": ["rele"]}}), "invalid slug Porch",
+    pytest.param(lights_block(groups={"Porch": ["varanda.light_rele"]}), "invalid slug Porch",
                  id="group not a slug"),
-    pytest.param(lights_block(groups={"porch": {}}), "length of value must be at least 1",
+    pytest.param(lights_block(groups={"porch": []}), "length of value must be at least 1",
                  id="empty group"),
-    pytest.param(lights_block(groups={"porch": {"varanda": []}}),
-                 "length of value must be at least 1", id="no light"),
-    pytest.param(lights_block(groups={"porch": {"varanda": ["rele", "rele"]}}),
+    pytest.param(lights_block(groups={"porch": ["varanda.light_rele", "varanda.light_rele"]}),
                  "a light is listed twice", id="a light twice"),
-    pytest.param(lights_block(groups={"porch": {"varanda": "rele"}}), "expected a list",
+    pytest.param(lights_block(groups={"porch": "varanda.light_rele"}), "expected a list",
                  id="not a list"),
-    pytest.param(lights_block(groups={"porch": {"garagem": ["rele"]}}),
+    pytest.param(lights_block(groups={"porch": {"varanda": ["rele"]}}), "expected a list",
+                 id="a map of devices, as before 0.2.1"),
+    pytest.param(lights_block(groups={"porch": ["light_rele"]}),
+                 "light_rele needs its device: <device>.light_rele", id="no device"),
+    pytest.param(lights_block(groups={"porch": ["garagem.light_rele"]}),
                  "config.alerts.lights.groups: porch: device garagem is not in devices",
                  id="unknown device"),
-    pytest.param(lights_block(groups={"porch": {"varanda": ["teto"]}}),
-                 "config.alerts.lights.groups: porch: device varanda has no light teto",
+    pytest.param(lights_block(groups={"porch": ["varanda.light_teto"]}),
+                 "config.alerts.lights.groups: porch: varanda.light_teto is not a light",
                  id="unknown light"),
-    pytest.param(lights_block(groups={"porch": {"casa": ["gate"]}}),
-                 "config.alerts.lights.groups: porch: device casa has no light gate",
+    pytest.param(lights_block(groups={"porch": ["varanda.rele"]}),
+                 "config.alerts.lights.groups: porch: varanda.rele is not a light",
+                 id="a light without its namespace"),
+    pytest.param(lights_block(groups={"porch": ["casa.switch_gate"]}),
+                 "config.alerts.lights.groups: porch: casa.switch_gate is not a light",
                  id="a switch, not a light"),
     pytest.param(lights_block(high={"turn_on": {"entity_id": LANTERN}}),
                  "'entity_id' is an invalid option", id="entity_id in turn_on"),
@@ -217,7 +222,7 @@ NO_DEFAULT = ("device casa: alerts: gate: there is no default group in "
 
 
 @pytest.mark.parametrize(("config", "lights", "reason"), [
-    pytest.param(lights_block(groups={"porch": {"varanda": ["rele"]}}), True, NO_DEFAULT,
+    pytest.param(lights_block(groups={"porch": ["varanda.light_rele"]}), True, NO_DEFAULT,
                  id="no default group"),
     pytest.param(None, True, NO_DEFAULT, id="no config"),
     pytest.param(CONFIG, "outside",
@@ -695,7 +700,7 @@ async def test_a_light_out_of_every_group_is_handed_back(
     events = capture(house, "call_service")
     await restart(house, devices(mail=raised("mail", "low", "porch")),
                   (State(LANTERN, "on"), {"alert": "high"}),
-                  config={"alerts": {"lights": {"groups": {"porch": {"varanda": ["rele"]}}}}})
+                  config={"alerts": {"lights": {"groups": {"porch": ["varanda.light_rele"]}}}})
     assert calls(events, LANTERN) == [("turn_on", GREEN)]
     await tick(house, freezer, 120)
     assert [event.data for event in released] == [{"entity_id": LANTERN}]

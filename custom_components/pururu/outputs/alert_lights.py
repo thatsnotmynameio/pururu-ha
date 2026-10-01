@@ -22,7 +22,6 @@ from homeassistant.components.light import ATTR_COLOR_NAME, LIGHT_TURN_ON_SCHEMA
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
-    CONF_NAME,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
     STATE_OFF,
@@ -56,18 +55,11 @@ from ..const import (
     DEFAULT_ALERT_LIGHTS,
     EVENT_ALERT_LIGHTS_RELEASED,
 )
-from ..core.feature import (
-    ALERTS_KEY,
-    PRIORITIES,
-    Device,
-    Feature,
-    presets_of,
-    qualified,
-)
-from ..core.resolve import Index, Ref, find
+from ..core.feature import ALERTS_KEY, PRIORITIES, Feature, presets_of
+from ..core.resolve import Index, Ref, device_reference, find
 from ..core.runtime import Built, PururuConfigEntry
 from ..core.vocabulary import NO_READING
-from ..features.lights import LIGHTS, Borrowable
+from ..features.lights import Borrowable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -106,11 +98,8 @@ def _distinct(lights: list[str]) -> list[str]:
     return lights
 
 
-# Device key -> keys of that device's lights; check() checks them against the devices
-GROUP = vol.All(
-    vol.Schema({cv.slug: vol.All([cv.slug], vol.Length(min=1), _distinct)}),
-    vol.Length(min=1),
-)
+# Its lights, each <device>.light_<key>; check() checks them against the devices
+GROUP = vol.All([device_reference], vol.Length(min=1), _distinct)
 PRIORITY = vol.Schema(
     {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Optional(REPEAT): SECONDS}
 )
@@ -160,17 +149,13 @@ def settings(configured: Mapping[str, Any]) -> dict[str, Any]:
     return dict(block) if block is not None else SCHEMA({})
 
 
-def light_ids(
-    settings: Mapping[str, Any], devices: Mapping[str, Any]
-) -> dict[str, list[str]]:
-    """Each group's lights, by unique ID (pururu_<device>_light_<key>)."""
+def light_ids(settings: Mapping[str, Any], index: Index) -> dict[str, list[str]]:
+    """Each group's lights, by unique ID (pururu_<device>_light_<key>): check() found each in `index`."""
     return {
         group: [
-            Device(
-                key=key, name=devices[key][CONF_NAME], namespace=LIGHTS.namespace
-            ).object_id(light)
-            for key, lights in members.items()
-            for light in lights
+            index[ref.device][ref.key].unique_id
+            for ref in map(Ref.parse, members)
+            if ref.device is not None
         ]
         for group, members in settings[GROUPS].items()
     }
@@ -583,7 +568,7 @@ async def async_step(
             hass,
             entry,
             lights_settings,
-            light_ids(lights_settings, built.house.get(CONF_DEVICES, {})),
+            light_ids(lights_settings, built.index),
             [
                 entity
                 for entity in built.entities.get(Platform.BINARY_SENSOR, ())
@@ -627,22 +612,20 @@ def check(
 
 
 def _group_refused(
-    devices: Mapping[str, Any],
-    index: Index,
-    group: str,
-    members: Mapping[str, list[str]],
+    devices: Mapping[str, Any], index: Index, group: str, members: list[str]
 ) -> vol.Invalid | None:
-    """Why this group can't be: a light of it that isn't a device's; None when it can."""
+    """Why this group can't be: a member that isn't a device's light; None when it can."""
     where = f"config.alerts.lights.groups: {group}"
     path: list[Hashable] = [CONF_CONFIG, CONF_ALERTS, CONF_LIGHTS, GROUPS, group]
-    for key, lights in members.items():
-        if key not in devices:
-            return vol.Invalid(f"{where}: device {key} is not in devices", path=path)
-        for light in lights:
-            if find(index, key, Ref(key, qualified(LIGHTS.namespace, light))) is None:
-                return vol.Invalid(
-                    f"{where}: device {key} has no light {light}", path=path
-                )
+    for ref in map(Ref.parse, members):
+        assert ref.device is not None  # device_reference
+        if ref.device not in devices:
+            return vol.Invalid(
+                f"{where}: device {ref.device} is not in devices", path=path
+            )
+        target = find(index, ref.device, ref)
+        if target is None or target.builder != CONF_LIGHTS:
+            return vol.Invalid(f"{where}: {ref.text} is not a light", path=path)
     return None
 
 

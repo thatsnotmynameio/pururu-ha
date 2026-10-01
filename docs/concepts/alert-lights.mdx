@@ -13,8 +13,8 @@ pururu:
     alerts:
       lights:
         groups:
-          default: {greenhouse: [lantern]}
-          externas: {greenhouse: [lantern], varanda: [teto]}
+          default: [greenhouse.light_lantern]
+          externas: [greenhouse.light_lantern, varanda.light_teto]
   devices:
     greenhouse:
       name: Estufa
@@ -50,7 +50,7 @@ pururu:
 Every key is optional.
 
 <Property name="groups" type="map" optional>
-  A map of **group name → device key → list of that device's `lights`**, such as `externas: {greenhouse: [lantern], varanda: [teto]}`. A group holds at least one light, a light may be in several groups, and a group may hold lights of several devices. Relays (`switch.*` in `lights`) are welcome: they only turn on and off.
+  A map of **group name → list of lights**, each written `<device>.light_<key>`, as its entity ID ends after `light.pururu_`: `externas: [greenhouse.light_lantern, varanda.light_teto]`. A group holds at least one light, a light may be in several groups, and a group may hold lights of several devices. Relays (`switch.*` in `lights`) are welcome: they are `light_<key>` too, and only turn on and off.
 </Property>
 
 ---

@@ -319,7 +319,7 @@ Each step has exactly one key:
 | `toggle: <entity key>` | Turns it on if it's off, off if it's on |
 | `delay: <time period>` | Waits, such as `{hours: 2}`, `"00:30:00"` or `90` (seconds) |
 
-An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_sprinkler` for `switch.pururu_greenhouse_switch_sprinkler`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps.
+An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_sprinkler` for `switch.pururu_greenhouse_switch_sprinkler`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps. A step names an entity key of its own device (`switch_sprinkler`); a `<device>.` before it is refused.
 
 Anything else is a configuration error: an entity ID (`switch.greenhouse_sprinkler`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
 

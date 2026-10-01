@@ -3,8 +3,8 @@ config:
   alerts:
     lights:
       groups:
-        default: {biblioteca: [teto]}
-        externas: {biblioteca: [teto, abajur]}
+        default: [biblioteca.light_teto]
+        externas: [biblioteca.light_teto, biblioteca.light_abajur]
 events: [state_changed, reading]
 floors:
   terreo: {name: Térreo, level: 0}
@@ -149,8 +149,7 @@ devices:
     reactions:
       washer_done:
         name: Lavadora terminou
-        device: clothes_washer
-        when: appliance_running
+        when: clothes_washer.appliance_running
         from: "on"
         to: "off"
       night: {name: Noite, at: "22:00", message: Hora de apagar as luzes.}

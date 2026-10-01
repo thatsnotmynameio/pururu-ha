@@ -2,9 +2,13 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
+
+import voluptuous as vol
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 
 from .feature import Device
 
@@ -16,6 +20,12 @@ class Ref:
     device: str | None
     # Qualified, as the entity ID ends after the device key: appliance_running
     key: str
+
+    @classmethod
+    def parse(cls, text: str) -> Ref:
+        """The reference `text` writes: appliance_running, or washer.appliance_running."""
+        device, _, key = text.rpartition(".")
+        return cls(device or None, key)
 
     @property
     def text(self) -> str:
@@ -71,3 +81,31 @@ def find(index: Index, here: str, ref: Ref) -> Target | None:
     The caller says why, in its own words.
     """
     return index.get(here if ref.device is None else ref.device, {}).get(ref.key)
+
+
+def reference(value: Any) -> str:
+    """An entity key, of this device (appliance_running) or of another (washer.appliance_running)."""
+    text = cv.string(value)
+    parts = text.split(".")
+    if len(parts) > 2 or not all(parts):
+        raise vol.Invalid(f"{text} is neither an entity key nor <device>.<key>")
+    return ".".join(str(cv.slug(part)) for part in parts)
+
+
+def local_key(value: Any) -> str:
+    """An entity key of this device: an alert's when, a program's step, a reaction's then."""
+    text = cv.string(value)
+    if "." in text:
+        raise vol.Invalid(
+            f"{text} must be of this device: its entity key, without <device>. "
+            "or <domain>."
+        )
+    return str(cv.slug(text))
+
+
+def device_reference(value: Any) -> str:
+    """An entity key of a named device, as a light group's: always washer.appliance_running."""
+    text = reference(value)
+    if "." not in text:
+        raise vol.Invalid(f"{text} needs its device: <device>.{text}")
+    return text

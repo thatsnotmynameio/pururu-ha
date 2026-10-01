@@ -76,6 +76,11 @@ NOT_AN_ENTITY_KEY = "is not an entity key of another feature of this device"
                  f"alerts: switch_heater {NOT_AN_ENTITY_KEY}", id="when a switch the device lacks"),
     pytest.param({**OVERLOAD, "when": "alert_other"},
                  f"alerts: alert_other {NOT_AN_ENTITY_KEY}", id="when an alert"),
+    pytest.param({**OVERLOAD, "when": "dummy_washer.appliance_power"},
+                 "dummy_washer.appliance_power must be of this device", id="when with a device"),
+    pytest.param({**OVERLOAD, "when": POWER},
+                 "sensor.dummy_plug_power must be of this device: its entity key, without "
+                 "<device>. or <domain>.", id="when an entity ID"),
     pytest.param({**OVERLOAD, "when": "power"},
                  f"alerts: power {NOT_AN_ENTITY_KEY}", id="when without its namespace"),
 ])
