@@ -12,6 +12,7 @@ from homeassistant.util import dt as dt_util
 import fetch_hassfest
 
 PROJECT = Path(__file__).resolve().parents[1]
+DOCS_TESTS = Path(__file__).resolve().parent / "docs"
 # Every test starts here, in HA's configured time zone: a Wednesday, mid-month, 10:00,
 # so the few hours a test simulates never cross a day, week, month or year by accident
 START = (2026, 9, 16, 10, 0)
@@ -22,6 +23,13 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     """Cache hassfest before the HA plugin blocks sockets (main process only)."""
     if not hasattr(session.config, "workerinput"):
         fetch_hassfest.ensure()
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """The tests under tests/docs/ read the pages: marked docs, run by `pytest -m docs` alone."""
+    for item in items:
+        if item.path.resolve().is_relative_to(DOCS_TESTS):
+            item.add_marker(pytest.mark.docs)
 
 
 @pytest.fixture

@@ -31,7 +31,9 @@ override-dependencies = [
 testpaths = ["tests"]
 pythonpath = [".", "tests"]
 asyncio_mode = "auto"
-addopts = "-n 4 --dist loadfile --import-mode=importlib"
+# The tests that read docs/ (tests/docs/) run apart: uv run pytest -m docs
+addopts = "-n 4 --dist loadfile --import-mode=importlib -m \"not docs\""
+markers = ["docs: a test that reads docs/ (tests/docs/), run by uv run pytest -m docs"]
 
 [tool.coverage.run]
 # The integration only; relative paths, as SonarQube Cloud reads them
