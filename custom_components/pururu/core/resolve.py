@@ -91,7 +91,24 @@ def find(index: Index, here: str, ref: Ref) -> Target | None:
 
 # The domains of entities, to tell an entity ID from <device>.<key>: a
 # device keyed as one is told apart by being in devices
-_DOMAINS = frozenset(platform.value for platform in Platform)
+# The domains an entity ID begins with: HA's platforms, and the helpers and
+# generated items that aren't one (pururu's own scripts and automations among them)
+_DOMAINS = frozenset(platform.value for platform in Platform) | {
+    "automation",
+    "counter",
+    "group",
+    "input_boolean",
+    "input_button",
+    "input_datetime",
+    "input_number",
+    "input_select",
+    "input_text",
+    "person",
+    "schedule",
+    "script",
+    "timer",
+    "zone",
+}
 
 
 def entity_id_hint(index: Index, ref: Ref, real: str) -> str:

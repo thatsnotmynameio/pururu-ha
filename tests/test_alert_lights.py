@@ -172,6 +172,10 @@ def lights_block(**block: Any) -> dict[str, Any]:
                  f"config.alerts.lights.groups: porch: device light is not in devices ({REAL_LANTERN} "
                  "is an entity ID: a group lists <device>.light_<key> of a device's lights)",
                  id="a real light's entity ID"),
+    pytest.param(lights_block(groups={"porch": ["input_boolean.porch_mode"]}),
+                 "config.alerts.lights.groups: porch: device input_boolean is not in devices "
+                 "(input_boolean.porch_mode is an entity ID: a group lists <device>.light_<key> of a device's lights)",
+                 id="a helper's entity ID"),
     pytest.param(lights_block(groups={"porch": ["varanda.light_teto"]}),
                  "config.alerts.lights.groups: porch: varanda.light_teto is not a light",
                  id="unknown light"),
