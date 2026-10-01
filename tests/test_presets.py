@@ -40,6 +40,10 @@ async def test_valid_alerts_are_accepted(ha: HomeAssistant, alerts: Any) -> None
     assert await setup(ha, devices(alerts))
 
 
+OFFLINE_PATH = "pururu->devices->dummy_washer->appliance->alerts->offline"
+OFFLINE_TEXTS = f"an alert needs message and done_message, or neither for dictionary value '{OFFLINE_PATH}'"
+
+
 @pytest.mark.parametrize(("alerts", "reason"), [
     pytest.param({"nope": None}, "nope is not a ready-made alert: offline, no_power, "
                  "long_cycle, no_cycle", id="unknown alert"),
@@ -48,10 +52,11 @@ async def test_valid_alerts_are_accepted(ha: HomeAssistant, alerts: Any) -> None
                  id="lasts on offline"),
     pytest.param({"offline": {"priority": "urgent"}}, "value must be one of",
                  id="unknown priority"),
-    pytest.param({"offline": {"message": "m"}}, "an alert needs message and done_message, or neither",
-                 id="a message without done_message"),
+    pytest.param({"offline": {"message": "m"}}, OFFLINE_TEXTS, id="a message without done_message"),
+    pytest.param({"offline": {"done_message": "d"}}, OFFLINE_TEXTS, id="a done_message without message"),
     pytest.param({"offline": {"notify": {"message": "m", "done_message": "d"}}},
-                 "'notify' is an invalid option", id="notify: {message, done_message}, as before 0.2.1"),
+                 f"'notify' is an invalid option for 'pururu', check: {OFFLINE_PATH}->notify",
+                 id="notify: {message, done_message}, as before 0.2.1"),
     pytest.param({}, "length of value must be at least 1", id="empty"),
     pytest.param({"offline": {"for": {"minutes": -1}}}, "offline", id="negative for"),
 ])
@@ -331,21 +336,29 @@ async def test_no_cycle_does_not_flicker_at_a_reload(ha: HomeAssistant, freezer:
                         if e.data["entity_id"] == alert("no_cycle") and e.data["new_state"]]
 
 
-NOTIFY_ERROR = "has a message, but Alert2 isn't set up to deliver it"
+ALERT2_ERROR = "has a message, but Alert2 isn't set up to deliver it"
+OWN_TEXTS = {"message": "m", "done_message": "d"}
 
 
+@pytest.mark.parametrize(("name", "settings"), [
+    pytest.param("offline", None, id="a condition"),
+    pytest.param("long_cycle", {"for": {"hours": 3}}, id="an elapsed time"),
+])
 async def test_default_texts_without_alert2_are_no_error(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    """A ready-made alert may be enabled for a reaction alone: its own texts ask for nothing."""
-    assert await setup(ha, devices({"offline": None}))
-    assert NOTIFY_ERROR not in caplog.text
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, name: str, settings: Any) -> None:
+    """A ready-made alert may be enabled for a reaction alone: its default texts ask for nothing."""
+    assert await setup(ha, devices({name: settings}))
+    assert ALERT2_ERROR not in caplog.text
 
 
-async def test_texts_of_ones_own_without_alert2_is_an_error(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    texts = {"message": "m", "done_message": "d"}
-    assert await setup(ha, devices({"offline": texts}))
-    assert f"{alert('offline')} {NOTIFY_ERROR}" in caplog.text
+@pytest.mark.parametrize(("name", "settings"), [
+    pytest.param("offline", OWN_TEXTS, id="a condition"),
+    pytest.param("long_cycle", {"for": {"hours": 3}, **OWN_TEXTS}, id="an elapsed time"),
+])
+async def test_ones_own_texts_without_alert2_are_an_error(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, name: str, settings: Any) -> None:
+    assert await setup(ha, devices({name: settings}))
+    assert f"{alert(name)} {ALERT2_ERROR}" in caplog.text
 
 
 # --- the docs ----------------------------------------------------------------------------

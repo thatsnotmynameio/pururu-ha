@@ -140,8 +140,10 @@ BOTH_OR_NEITHER = "an alert needs message and done_message, or neither"
 
 
 @pytest.mark.parametrize(("texts", "reason"), [
-    pytest.param({"done_message": "OK"}, BOTH_OR_NEITHER, id="no message"),
-    pytest.param({"message": "X"}, BOTH_OR_NEITHER, id="no done_message"),
+    pytest.param({"done_message": "OK"}, f"{BOTH_OR_NEITHER} for dictionary value '{ALERT_PATH}'",
+                 id="no message"),
+    pytest.param({"message": "X"}, f"{BOTH_OR_NEITHER} for dictionary value '{ALERT_PATH}'",
+                 id="no done_message"),
     pytest.param({**TEXTS, "message": " "},
                  f"length of value must be at least 1 for dictionary value '{ALERT_PATH}->message'",
                  id="empty message"),
@@ -206,31 +208,31 @@ async def test_without_texts_there_are_none(ha: HomeAssistant) -> None:
 
 # --- Alert2 ------------------------------------------------------------------------------
 
-NOTIFY_ERROR = "has a message, but Alert2 isn't set up to deliver it"
+ALERT2_ERROR = "has a message, but Alert2 isn't set up to deliver it"
 
 
-def notify_errors(caplog: pytest.LogCaptureFixture) -> list[str]:
+def alert2_errors(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [r.getMessage() for r in caplog.records
-            if r.levelname == "ERROR" and NOTIFY_ERROR in r.getMessage()]
+            if r.levelname == "ERROR" and ALERT2_ERROR in r.getMessage()]
 
 
-async def test_notify_without_alert2_is_an_error(
+async def test_texts_without_alert2_are_an_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}, other=OVERLOAD))
-    assert notify_errors(caplog) == [f"{alert('overload')} {NOTIFY_ERROR}"]
+    assert alert2_errors(caplog) == [f"{alert('overload')} {ALERT2_ERROR}"]
 
 
-async def test_notify_with_alert2_is_no_error(
+async def test_texts_with_alert2_are_no_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     ha.config.components.add("alert2")
     assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}))
-    assert notify_errors(caplog) == []
+    assert alert2_errors(caplog) == []
 
 
-async def test_without_notify_there_is_no_alert2_error(
+async def test_without_texts_there_is_no_alert2_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     assert await setup(ha, devices(overload=OVERLOAD))
-    assert notify_errors(caplog) == []
+    assert alert2_errors(caplog) == []
 
 
 async def test_alert2_set_up_before_the_start_is_no_error(
@@ -241,7 +243,7 @@ async def test_alert2_set_up_before_the_start_is_no_error(
     ha.config.components.add("alert2")
     await ha.async_start()
     await ha.async_block_till_done()
-    assert notify_errors(caplog) == []
+    assert alert2_errors(caplog) == []
 
 
 async def test_the_alert2_error_is_logged_once_per_setup(
@@ -250,13 +252,13 @@ async def test_the_alert2_error_is_logged_once_per_setup(
     assert await setup(ha, config)
     caplog.clear()
     await reload(ha, config)
-    assert notify_errors(caplog) == [f"{alert('overload')} {NOTIFY_ERROR}"]
+    assert alert2_errors(caplog) == [f"{alert('overload')} {ALERT2_ERROR}"]
 
 
 # --- is ------------------------------------------------------------------------------
 
 
-async def test_is_turns_on_after_for_and_off_at_once(ha: HomeAssistant, freezer: Any) -> None:
+async def test_state_turns_on_after_for_and_off_at_once(ha: HomeAssistant, freezer: Any) -> None:
     await fake(ha, REAL_SPRINKLER, "off")
     assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "for": {"minutes": 5}}))
     await fake(ha, REAL_SPRINKLER, "on")
@@ -296,7 +298,7 @@ async def test_yaml_booleans_mean_on(ha: HomeAssistant, unquoted: Any) -> None:
     assert state(ha, alert("sprinkler_on")) == "on"
 
 
-NUMBER = ('is a number: compare a reading with above or below, or quote the state as the '
+NUMBER = (': compare a reading with above or below, or quote the state as the '
           'entity shows it ("1.0") for dictionary value '
           "'pururu->devices->dummy_washer->alerts->one->state'")
 
@@ -310,7 +312,8 @@ async def test_a_number_in_state_is_refused(ha: HomeAssistant, caplog: pytest.Lo
     """pururu can't tell which entity shows 1 as 1.0: a YAML number is refused, at its path."""
     assert not await setup(ha, devices(one={"name": "One", "when": "appliance_power", "state": written}))
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-    assert any(f"state: {text} {NUMBER}" in message for message in errors), errors
+    assert any(f"state: YAML reads it as the number {text}{NUMBER}" in message
+               for message in errors), errors
 
 
 @pytest.mark.parametrize(("written", "expected"), [
@@ -400,7 +403,7 @@ async def test_no_reading_keeps_off_and_cancels_a_pending_for(
     assert state(ha, alert("overload")) == "on"
 
 
-async def test_is_unavailable_turns_on_when_the_plug_goes_offline(
+async def test_state_unavailable_turns_on_when_the_plug_goes_offline(
         ha: HomeAssistant, freezer: Any) -> None:
     offline = {"name": "Offline", "when": "appliance_power", "state": "unavailable",
                "for": {"minutes": 10}}

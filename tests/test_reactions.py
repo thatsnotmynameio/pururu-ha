@@ -11,6 +11,7 @@ from homeassistant.helpers.sun import get_astral_event_next
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from homeassistant.util.file import WriteError
+from homeassistant.util.yaml.loader import parse_yaml
 from pytest_homeassistant_custom_component.common import mock_restore_cache
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
@@ -99,13 +100,20 @@ PATH = "'pururu->devices->lights->reactions->it"
                  "a reaction on a state needs to, or above and/or below, not both",
                  id="to and above"),
     pytest.param({**DOOR_OPENS, "to": 1},
-                 'to: 1 is a number: compare a reading with above or below, or quote the state '
-                 f'as the entity shows it ("1.0") for dictionary value {PATH}->to\'',
+                 'to: YAML reads it as the number 1: compare a reading with above or below, '
+                 'or quote the state as the entity shows it ("1.0") for dictionary value '
+                 f'{PATH}->to\'',
                  id="a number in to"),
     pytest.param({**DOOR_OPENS, "from": 0.0},
-                 'from: 0.0 is a number: compare a reading with above or below, or quote the '
-                 f'state as the entity shows it ("1.0") for dictionary value {PATH}->from\'',
+                 'from: YAML reads it as the number 0.0: compare a reading with above or '
+                 'below, or quote the state as the entity shows it ("1.0") for dictionary '
+                 f'value {PATH}->from\'',
                  id="a number in from"),
+    pytest.param({**DOOR_OPENS, **parse_yaml("to: 12:30")},
+                 f"to: YAML reads it as the number 750: compare a reading with above or below, "
+                 f'or quote the state as the entity shows it ("1.0") for dictionary value '
+                 f"{PATH}->to'",
+                 id="a time YAML reads as a number"),
     pytest.param({"name": "X", "entity": DOOR, "state": "on"},
                  f"'state' is an invalid option for 'pururu', check: {PATH[1:]}->state",
                  id="an alert's state"),
@@ -129,6 +137,14 @@ PATH = "'pururu->devices->lights->reactions->it"
     pytest.param({"name": "X", "when": "dryer.appliance_power", "to": "on"},
                  "device lights: reactions: it: device dryer is not in devices",
                  id="device not in devices"),
+    pytest.param({"name": "X", "when": DOOR, "to": "on"},
+                 f"device lights: reactions: it: device binary_sensor is not in devices ({DOOR} is "
+                 f"an entity ID: watch a real entity with entity: {DOOR})",
+                 id="a real entity ID in when"),
+    pytest.param({"name": "X", "when": MIRROR, "to": "on"},
+                 f"device lights: reactions: it: device sensor is not in devices ({MIRROR} is an "
+                 "entity ID: write washer.appliance_power)",
+                 id="a pururu entity ID in when"),
     pytest.param({"name": "X", "when": f"{WASHER}.light_teto", "to": "on"},
                  "device lights: reactions: it: light_teto is not an entity key of device washer",
                  id="when not of that device"),
@@ -251,7 +267,6 @@ async def test_then_a_program_of_the_device_is_accepted(ha: HomeAssistant,
 
 @pytest.mark.parametrize("config", [
     pytest.param(with_program(it={**DOOR_OPENS, "then": "wash"}), id="no such program"),
-    pytest.param(with_program(it={**DOOR_OPENS, "then": ""}), id="empty"),
     pytest.param(devices(it={**DOOR_OPENS, "then": "clean"}), id="the device has no programs"),
 ])
 async def test_then_not_a_program_of_the_device_is_refused(
@@ -259,6 +274,12 @@ async def test_then_not_a_program_of_the_device_is_refused(
     then = config[LIGHTS]["reactions"]["it"]["then"]
     assert not await setup(ha, config)
     assert f"reactions: it: {then} is not an executable program of this device" in caplog.text
+
+
+async def test_an_empty_then_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """An empty then names nothing: refused at its path, with a subject."""
+    assert not await setup(ha, with_program(it={**DOOR_OPENS, "then": ""}))
+    assert f"an entity key can't be empty for dictionary value {PATH}->then'" in caplog.text
 
 
 async def test_then_another_devices_program_is_refused(

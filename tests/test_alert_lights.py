@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from homeassistant.const import Platform
 from homeassistant.core import Context, Event, HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -160,6 +161,14 @@ def lights_block(**block: Any) -> dict[str, Any]:
     pytest.param(lights_block(groups={"porch": ["garagem.light_rele"]}),
                  "config.alerts.lights.groups: porch: device garagem is not in devices",
                  id="unknown device"),
+    pytest.param(lights_block(groups={"porch": ["light.pururu_varanda_light_rele"]}),
+                 "config.alerts.lights.groups: porch: device light is not in devices "
+                 "(light.pururu_varanda_light_rele is an entity ID: write varanda.light_rele)",
+                 id="a pururu light's entity ID"),
+    pytest.param(lights_block(groups={"porch": [REAL_LANTERN]}),
+                 f"config.alerts.lights.groups: porch: device light is not in devices ({REAL_LANTERN} "
+                 "is an entity ID: a group lists <device>.light_<key> of a device's lights)",
+                 id="a real light's entity ID"),
     pytest.param(lights_block(groups={"porch": ["varanda.light_teto"]}),
                  "config.alerts.lights.groups: porch: varanda.light_teto is not a light",
                  id="unknown light"),
@@ -195,6 +204,24 @@ async def test_invalid_alert_lights_are_refused(
     """Refused, and for its own reason: a typo in the test would be refused for another one."""
     assert not await setup(house, devices(), config=config)
     assert any(reason in message for message in errors(caplog)), errors(caplog)
+
+
+@pytest.mark.parametrize(("by", "refused"), [
+    pytest.param(None, False, id="the builder's own"),
+    pytest.param("alerts", True, id="an aspect's"),
+])
+def test_only_a_lights_own_key_is_a_light(ha: HomeAssistant, by: str | None, refused: bool) -> None:
+    """lights offers no aspect today: should it gain one, the keys it adds aren't lights."""
+    resolve = module("core.resolve")
+    device = module("core.feature").Device(key="varanda", name="Varanda", namespace="light")
+    target = resolve.Target(device=device, key="light_alert_x", platform=Platform.LIGHT, builder="lights",
+                            by=by, item=None, actions=())
+    why = module("outputs.alert_lights")._group_refused(
+        {"varanda": {}}, {"varanda": {"light_alert_x": target}}, "porch", ["varanda.light_alert_x"])
+    assert (why is not None) is refused
+    if refused:
+        assert (why.msg, why.path) == ("config.alerts.lights.groups: porch: varanda.light_alert_x is not a light",
+                                       ["config", "alerts", "lights", "groups", "porch", 0])
 
 
 # --- an alert's lights ------------------------------------------------------------------------

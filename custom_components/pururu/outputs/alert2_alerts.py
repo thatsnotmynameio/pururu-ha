@@ -133,9 +133,9 @@ async def _finish(hass: HomeAssistant, names: list[str]) -> None:
     """Once HA has started: reload Alert2 if it doesn't run the file as written, check the include.
 
     Without Alert2 there is nothing to reload nor include: each alert with
-    a message logs so. A written file stays pending until a reload succeeds, so a
-    failed one is retried at the next reload; it raises no issue, the include
-    may be there.
+    texts of its own logs so. A written file stays pending until a reload
+    succeeds, so a failed one is retried at the next reload; it raises no
+    issue, the include may be there.
     """
     if ALERT2 not in hass.config.components:
         ir.async_delete_issue(hass, DOMAIN, ISSUE)

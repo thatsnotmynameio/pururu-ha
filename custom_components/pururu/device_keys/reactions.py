@@ -46,7 +46,15 @@ from ..core.feature import (
     state_of,
 )
 from ..core.generated import AUTOMATIONS, SCRIPTS, Planned
-from ..core.resolve import Index, Ref, Target, find, local_key, reference
+from ..core.resolve import (
+    Index,
+    Ref,
+    Target,
+    entity_id_hint,
+    find,
+    local_key,
+    reference,
+)
 from ..core.roles import Counted, Counters, Generates, Items
 
 _LOGGER = logging.getLogger(__name__)
@@ -471,7 +479,12 @@ def _refused(
         )
     where = f"device {key}: reactions: {reaction_key}"
     if ref.device not in devices:
-        return vol.Invalid(f"{where}: device {ref.device} is not in devices", path=path)
+        hint = entity_id_hint(
+            index, ref, f"watch a real entity with entity: {ref.text}"
+        )
+        return vol.Invalid(
+            f"{where}: device {ref.device} is not in devices{hint}", path=path
+        )
     return vol.Invalid(
         f"{where}: {ref.key} is not an entity key of device {ref.device}", path=path
     )

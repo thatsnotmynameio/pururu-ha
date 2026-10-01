@@ -85,9 +85,15 @@ def washer(**blocks: Any) -> dict[str, Any]:
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER}},
          "config": {"alerts": {"lights": {"groups": {"porch": ["garagem.light_x"]}}}}},
-        ["config", "alerts", "lights", "groups", "porch"],
+        ["config", "alerts", "lights", "groups", "porch", 0],
         "config.alerts.lights.groups: porch: device garagem is not in devices",
         id="a light group"),
+    pytest.param(
+        {"devices": {"garagem": {"name": "Garagem", "lights": {"x": {"entity": "light.dummy_x", "name": "X"}}}},
+         "config": {"alerts": {"lights": {"groups": {"porch": ["garagem.light_x", "garagem.light_y"]}}}}},
+        ["config", "alerts", "lights", "groups", "porch", 1],
+        "config.alerts.lights.groups: porch: garagem.light_y is not a light",
+        id="a light group's second member"),
 ])
 def test_a_check_says_where(ha: HomeAssistant, house: dict[str, Any], path: list[str], message: str) -> None:
     schema = module("setup.schema").CONFIG_SCHEMA

@@ -34,7 +34,6 @@ from ..core.feature import (
 from ..core.resolve import Index, Ref, find
 from ..core.roles import Configured, Refers
 from ..core.texts import Texts
-from ..core.vocabulary import Condition
 from .elapsed import ElapsedAlert
 from .problem import SCHEMA, TEXTS, Alert, shared, texts_together
 
@@ -194,7 +193,7 @@ def _build_ready_made(
             hass, feature.entity_keys[preset.watches], preset.watches
         )
         messages = _messages(device, entity_key, settings, texts)
-        if isinstance(preset.kind, Condition):
+        if isinstance(preset.kind, vocabulary.Condition):
             entities.append(
                 Alert(
                     device,

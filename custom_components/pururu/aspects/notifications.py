@@ -32,7 +32,6 @@ from ..core.feature import (
     happenings_of,
     qualified,
 )
-from ..core.vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,7 +107,9 @@ def automation(
         "description": f"pururu: {device.key}, {device.namespace} {NAMESPACE} {name}",
         "triggers": [
             vocabulary.trigger(
-                entity_id, Condition(state=happening.to), from_=happening.from_
+                entity_id,
+                vocabulary.Condition(state=happening.to),
+                from_=happening.from_,
             )
         ],
         "actions": messages.actions(notify, device.name, message),

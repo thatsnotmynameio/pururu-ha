@@ -56,7 +56,7 @@ from ..const import (
     EVENT_ALERT_LIGHTS_RELEASED,
 )
 from ..core.feature import ALERTS_KEY, PRIORITIES, Feature, presets_of
-from ..core.resolve import Index, Ref, device_reference, find
+from ..core.resolve import Index, Ref, device_reference, entity_id_hint, find
 from ..core.runtime import Built, PururuConfigEntry
 from ..core.vocabulary import NO_READING
 from ..features.lights import Borrowable
@@ -153,12 +153,17 @@ def light_ids(settings: Mapping[str, Any], index: Index) -> dict[str, list[str]]
     """Each group's lights, by unique ID (pururu_<device>_light_<key>): check() found each in `index`."""
     return {
         group: [
-            index[ref.device][ref.key].unique_id
-            for ref in map(Ref.parse, members)
-            if ref.device is not None
+            index[device][ref.key].unique_id for device, ref in map(_member, members)
         ]
         for group, members in settings[GROUPS].items()
     }
+
+
+def _member(text: str) -> tuple[str, Ref]:
+    """A group's member, as device_reference validated it: its device, and the reference."""
+    ref = Ref.parse(text)
+    assert ref.device is not None  # device_reference
+    return ref.device, ref
 
 
 @dataclass(eq=False)
@@ -586,7 +591,7 @@ async def async_step(
 def check(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> Iterator[vol.Invalid]:
-    """Refuse a group's light that isn't a device's, or an alert's group that isn't one (a schema check)."""
+    """Refuse a group's member that isn't a device's light, or an alert's group that isn't one (a schema check)."""
     groups = house[CONF_CONFIG][CONF_ALERTS][CONF_LIGHTS][GROUPS]
     for group, members in groups.items():
         if (
@@ -614,17 +619,30 @@ def check(
 def _group_refused(
     devices: Mapping[str, Any], index: Index, group: str, members: list[str]
 ) -> vol.Invalid | None:
-    """Why this group can't be: a member that isn't a device's light; None when it can."""
+    """Why this group can't be: a member that isn't a device's light, at its path; None when it can.
+
+    A light is a lights entity of its own (not one an aspect would add to
+    lights).
+    """
     where = f"config.alerts.lights.groups: {group}"
-    path: list[Hashable] = [CONF_CONFIG, CONF_ALERTS, CONF_LIGHTS, GROUPS, group]
-    for ref in map(Ref.parse, members):
-        assert ref.device is not None  # device_reference
-        if ref.device not in devices:
-            return vol.Invalid(
-                f"{where}: device {ref.device} is not in devices", path=path
+    for at, (device, ref) in enumerate(map(_member, members)):
+        path: list[Hashable] = [
+            CONF_CONFIG,
+            CONF_ALERTS,
+            CONF_LIGHTS,
+            GROUPS,
+            group,
+            at,
+        ]
+        if device not in devices:
+            hint = entity_id_hint(
+                index, ref, "a group lists <device>.light_<key> of a device's lights"
             )
-        target = find(index, ref.device, ref)
-        if target is None or target.builder != CONF_LIGHTS:
+            return vol.Invalid(
+                f"{where}: device {device} is not in devices{hint}", path=path
+            )
+        target = find(index, device, ref)
+        if target is None or target.builder != CONF_LIGHTS or target.by is not None:
             return vol.Invalid(f"{where}: {ref.text} is not a light", path=path)
     return None
 

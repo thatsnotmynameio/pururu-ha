@@ -73,7 +73,7 @@ def test_a_restored_state_is_no_reading(ha: HomeAssistant) -> None:
 
 
 def test_an_alerts_state_and_a_reactions_to_are_one_condition(ha: HomeAssistant) -> None:
-    """state: 1 in an alert and to: 1 in a reaction hold for the same states."""
+    """state: "1" in an alert and to: "1" in a reaction are one Condition: they hold for the same states."""
     parse = vocabulary(ha).parse
     assert parse({"state": "1"}) == parse({"to": "1", "from": "0"}, "to") == condition(ha, state="1")
     assert parse({"above": 5, "below": 9}) == condition(ha, above=5, below=9)
@@ -118,8 +118,9 @@ def test_hold_becomes_for_as_a_period(ha: HomeAssistant) -> None:
 
 def test_equals_is_refused_by_a_trigger(ha: HomeAssistant) -> None:
     """equals is code's only (no_power): no YAML writes it, no automation compares with it."""
+    no_power = condition(ha, equals=0.0)
     with pytest.raises(ValueError, match="a trigger takes a state or a band, not equals"):
-        trigger(ha, condition(ha, equals=0.0))
+        trigger(ha, no_power)
 
 
 # --- period -------------------------------------------------------------------

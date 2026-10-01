@@ -49,14 +49,16 @@ def state_of(word: str) -> Callable[[Any], str]:
     """`word`'s state as text (`state_text`), a YAML number refused.
 
     A state is compared as text, and pururu can't tell which entity shows 1
-    as 1.0: a number is a reading's (above, below) or a quoted state.
+    as 1.0: a number is a reading's (above, below) or a quoted state. The
+    message shows the value as YAML read it (12:30 is 750, 1.50 is 1.5), not
+    as written: the loader keeps no text.
     """
 
     def validate(value: Any) -> str:
         if not isinstance(value, bool) and isinstance(value, int | float):
             raise vol.Invalid(
-                f"{word}: {value} is a number: compare a reading with above or "
-                'below, or quote the state as the entity shows it ("1.0")'
+                f"{word}: YAML reads it as the number {value}: compare a reading "
+                'with above or below, or quote the state as the entity shows it ("1.0")'
             )
         return state_text(value)
 
