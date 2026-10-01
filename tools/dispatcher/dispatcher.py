@@ -14,8 +14,11 @@ one gets a new worktree from origin/main under .claude/worktrees/ and a headless
 runs every SECONDS (default 300). Labels show where an issue stands: `in progress`,
 then `in review` (a pull request is open) and `ready to merge` (its required checks
 pass), or `needs attention` (the session ended without one), or `paused` (the Claude
-usage limit stopped it). A pause holds every start until a minute past the limit's
-reset, or, with no reset known, until the next poll tries one session. Past the hold,
+usage limit stopped it). Each issue also gets one status comment, edited in place: why
+it waits in the queue, then a checklist of lfg's stages read from the session's log, its
+last sentence and running time, then how it ended. A pause holds every start until a
+minute past the limit's reset, or, with no reset known, until the next poll tries one
+session. Past the hold,
 paused issues resume first, oldest first: the same conversation, in the same worktree.
 Every line it prints carries the time; each poll reports what it found. Logs and the
 lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll
