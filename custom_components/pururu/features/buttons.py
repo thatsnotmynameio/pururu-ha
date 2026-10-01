@@ -4,18 +4,38 @@ A button is HA's button entity: its state is the time of its last press, which
 HA keeps across restarts and reloads. Pressing it in HA and its sensor taking
 its value are the same press. pururu knows nothing of remotes or vendors: the
 configuration names a sensor and the value that counts as a press.
+
+No press nobody made: only a change into the value presses, once HA runs,
+from a real reading (see `pressed`). A value written again never does: a
+sensor that holds its value and is rewritten would press by itself.
 """
 
 from collections.abc import Mapping
+from datetime import timedelta
 import logging
 from typing import Any, override
 
 import voluptuous as vol
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.const import STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import (
+    ATTR_RESTORED,
+    STATE_OFF,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    Platform,
+)
+from homeassistant.core import (
+    Context,
+    CoreState,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    State,
+    callback,
+)
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.event import async_track_state_change_event
 
 # Not `from ..aspects.programs import …`: the package import reaches this module
 # through features/__init__ while aspects.programs is still loading
@@ -30,6 +50,10 @@ _LOGGER = logging.getLogger(__name__)
 
 # What a sensor shows while it has no reading: no person presses it
 NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
+# How long a sensor stays unknown before its first value can be a press: a
+# sensor just set up gets its first (retained) value within milliseconds, a
+# person pressing after a restart well after
+SETTLE = timedelta(seconds=3)
 
 
 def pressed_state(value: Any) -> str:
@@ -38,6 +62,21 @@ def pressed_state(value: Any) -> str:
     if state in NO_READING:
         raise vol.Invalid(f"{state} is not a value a person presses")
     return state
+
+
+def pressed(old: State | None, new: State | None, value: str) -> bool:
+    """Whether this change of the sensor is a press of the button whose value is `value`.
+
+    Only a change into the value, from a real reading: not the sensor
+    appearing (no old state), coming back (unavailable), restored, or written
+    again (attributes alone, force_update); from unknown only once it has been
+    unknown for SETTLE.
+    """
+    if old is None or new is None or new.state != value or old.state == value:
+        return False
+    if old.state == STATE_UNAVAILABLE or old.attributes.get(ATTR_RESTORED):
+        return False
+    return old.state != STATE_UNKNOWN or new.last_changed - old.last_changed >= SETTLE
 
 
 ITEM = vol.Schema(
@@ -69,6 +108,33 @@ class Button(PururuEntity, ButtonEntity):
             None
             if (program := button.get("program")) is None
             else programs.script_id(device.key, program)
+        )
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Watch the sensor: a change into the value presses the button."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, self._entity, self._changed)
+        )
+
+    @callback
+    def _changed(self, event: Event[EventStateChangedData]) -> None:
+        """Press when the sensor took the value, once HA runs.
+
+        Not hass.is_running: it is already true while HA starts, when a value
+        arriving is no person's. The press runs with a context descending from
+        the sensor's write, so the logbook says where it came from.
+        """
+        if self.hass.state is not CoreState.running or not pressed(
+            event.data["old_state"], event.data["new_state"], self._state
+        ):
+            return
+        self.async_set_context(Context(parent_id=event.context.id))
+        if self.platform.config_entry is None:
+            return
+        self.platform.config_entry.async_create_task(
+            self.hass, self._async_press_action(), f"pururu press {self.entity_id}"
         )
 
     @override

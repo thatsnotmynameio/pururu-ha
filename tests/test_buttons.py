@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import patch
 
-from homeassistant.core import Context, HomeAssistant, State
+from homeassistant.core import Context, CoreState, HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from homeassistant.setup import async_setup_component
@@ -123,6 +123,134 @@ async def test_pressing_records_the_time(library: HomeAssistant) -> None:
     await press(library, LER)
     assert state(library, LER) == now()
     assert state(library, EXTRA) == "unknown"
+
+
+# --- pressing on the sensor -------------------------------------------------------
+#
+# Every guard has its own test: a write nobody made with a finger must never press.
+
+
+async def write(hass: HomeAssistant, value: str, attributes: dict[str, Any] | None = None, *,
+                force_update: bool = False, context: Context | None = None) -> None:
+    """The remote's sensor writes `value`."""
+    hass.states.async_set(REMOTE, value, attributes, force_update=force_update, context=context)
+    await settle()
+
+
+async def test_the_sensor_taking_the_value_presses(library: HomeAssistant) -> None:
+    """Covers AE1: the press is recorded, descending from the sensor's write."""
+    context = Context()
+    await write(library, "1_single", context=context)
+    pressed = library.states.get(LER)
+    assert pressed.state == now()
+    assert pressed.context.parent_id == context.id
+    assert state(library, EXTRA) == "unknown"
+
+
+async def test_each_change_into_the_value_is_a_press(library: HomeAssistant, freezer: Any) -> None:
+    await write(library, "1_single")
+    await write(library, "")
+    await tick(library, freezer, 1)
+    await write(library, "1_single")
+    assert state(library, LER) == now()
+
+
+async def test_another_value_is_no_press(library: HomeAssistant) -> None:
+    """Covers AE3."""
+    await write(library, "1_hold")
+    assert state(library, LER) == "unknown"
+
+
+@pytest.mark.parametrize(("attributes", "force_update"), [
+    pytest.param(None, False, id="the same attributes"),
+    pytest.param({"linkquality": 120}, False, id="new attributes"),
+    pytest.param(None, True, id="force_update"),
+])
+async def test_the_value_written_again_is_no_press(
+        library: HomeAssistant, freezer: Any, attributes: dict[str, Any] | None,
+        force_update: bool) -> None:
+    """Covers AE2: a sensor holding its value and rewritten never presses by itself."""
+    await write(library, "1_single")
+    first = state(library, LER)
+    await tick(library, freezer, 1)
+    await write(library, "1_single", attributes, force_update=force_update)
+    assert state(library, LER) == first
+
+
+async def test_from_unavailable_is_no_press(library: HomeAssistant) -> None:
+    """Covers AE4: the sensor coming back with the value."""
+    await write(library, "unavailable")
+    await write(library, "1_single")
+    assert state(library, LER) == "unknown"
+
+
+async def test_a_sensor_appearing_with_the_value_is_no_press(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    assert await setup(ha, DEVICES)
+    await write(ha, "1_single")
+    assert state(ha, LER) == "unknown"
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+async def test_from_a_restored_state_is_no_press(ha: HomeAssistant) -> None:
+    await fake(ha, REMOTE, "", {"restored": True})
+    assert await setup(ha, DEVICES)
+    await write(ha, "1_single")
+    assert state(ha, LER) == "unknown"
+
+
+@pytest.mark.parametrize("before", ["", "1_hold", "unknown"])
+async def test_nothing_presses_while_ha_starts(library: HomeAssistant, freezer: Any, before: str) -> None:
+    """Covers AE9: a value arriving as HA starts is no press, from any reading."""
+    await write(library, before)
+    await tick(library, freezer, 5)
+    library.set_state(CoreState.starting)
+    await write(library, "1_single")
+    assert state(library, LER) == "unknown"
+    library.set_state(CoreState.running)
+    await write(library, "")
+    await write(library, "1_single")
+    assert state(library, LER) == now()
+
+
+async def test_from_unknown_held_a_while_is_a_press(library: HomeAssistant, freezer: Any) -> None:
+    """Covers AE10: the first press after a restart counts."""
+    await write(library, "unknown")
+    await tick(library, freezer, 5)
+    await write(library, "1_single")
+    assert state(library, LER) == now()
+
+
+async def test_from_unknown_at_once_is_no_press(library: HomeAssistant, freezer: Any) -> None:
+    """Covers AE11: a sensor just set up receiving its first value."""
+    await write(library, "unknown")
+    await tick(library, freezer, 1)
+    await write(library, "1_single")
+    assert state(library, LER) == "unknown"
+
+
+async def test_a_restart_with_the_sensor_at_the_value_presses_nothing(greenhouse_remote_at_value: Any) -> None:
+    """Covers AE5."""
+    hass, calls = greenhouse_remote_at_value
+    assert state(hass, CLEAN_BUTTON) == PRESSED
+    assert started(calls) == []
+
+
+async def test_a_reload_with_the_sensor_at_the_value_presses_nothing(library: HomeAssistant) -> None:
+    await write(library, "1_single")
+    pressed = state(library, LER)
+    await reload(library, DEVICES)
+    assert state(library, LER) == pressed
+
+
+async def test_a_sensor_press_starts_the_program(greenhouse: HomeAssistant) -> None:
+    """Covers AE1: the remote's press runs the program."""
+    calls = capture(greenhouse, "call_service")
+    greenhouse.states.async_set(GREENHOUSE_REMOTE, "1_single")
+    await settle()
+    assert state(greenhouse, CLEAN_BUTTON) == now()
+    assert started(calls) == [CLEAN]
+    assert sprinkled(calls) == ["turn_on"]
 
 
 # --- availability, restarts, reloads -----------------------------------------------
@@ -315,3 +443,14 @@ async def test_the_program_runs_with_the_press_context(greenhouse: HomeAssistant
     real = [event for event in calls if REAL_SPRINKLER in _ids(event.data["service_data"].get("entity_id"))]
     assert real
     assert all(context.id in (event.context.id, event.context.parent_id) for event in real)
+
+
+@pytest.fixture
+async def greenhouse_remote_at_value(scripts: HomeAssistant) -> Any:
+    """A restart while the greenhouse's remote shows its clean button's value."""
+    calls = capture(scripts, "call_service")
+    await fake(scripts, REAL_SPRINKLER, "off")
+    await fake(scripts, GREENHOUSE_REMOTE, "1_single")
+    await restart(scripts, GREENHOUSE_DEVICES, (State(CLEAN_BUTTON, PRESSED), {}))
+    await settle()
+    return scripts, calls
