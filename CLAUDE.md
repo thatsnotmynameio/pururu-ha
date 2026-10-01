@@ -9,18 +9,22 @@ pururu is a Home Assistant custom integration (`custom_components/pururu/`). It 
 Run all commands from the repo root with `uv`. Home Assistant is pinned through `pytest-homeassistant-custom-component` in `pyproject.toml`, which pins `homeassistant==2026.9.3`.
 
 ```sh
-uv run pytest                                   # all tests plus ruff, ruff format, mypy, hassfest, quality scale (tests/test_code.py)
+uv run pytest                                   # all tests but the docs tests, plus ruff, ruff format, mypy, hassfest, quality scale (tests/test_code.py)
+uv run pytest -m docs                           # the docs tests (tests/docs/): the tests that read docs/
 uv run pytest tests/test_places.py -n 0 -q      # one file, single process
 uv run pytest "tests/test_places.py::test_name[param id]" -n 0
+PURURU_SHARD=1/3 uv run pytest --ignore=tests/test_code.py   # one of CI's three test shards
 uv run ruff check --fix custom_components/pururu
 uv run ruff format custom_components/pururu
 uv run mypy custom_components/pururu
 python3 release.py check                        # the manifest version must be semver and not below the latest release
+git diff --name-only origin/main... | python3 changes.py pull_request   # the checks CI runs for these changes: build, docs, hacs true|false
 ```
 
 - **Running single-process:** `pyproject.toml` addopts already pass `-n 4 --dist loadfile`, so use `-n 0` to run in one process. `-p no:xdist` breaks the run.
 - **Lint and type scope:** ruff and mypy run only on `custom_components/pururu`, with core's settings (`ruff.toml`, `mypy.ini`, strict). Tests are not linted.
 - **hassfest:** it is downloaded once into `.hassfest/` (`fetch_hassfest.py`).
+- **Docs tests:** the tests that read `docs/` live in `tests/docs/`, marked `docs` by `tests/conftest.py`; `addopts`' `-m "not docs"` keeps them out of `uv run pytest`, and `uv run pytest -m docs` runs them. A guard in `tests/test_code.py` fails when a test outside `tests/docs/` names `docs/` (allowed: `tests/conftest.py`, `tests/test_changes.py`).
 - **Current working directory:** never leave the shell's cwd inside `.venv/.../homeassistant/helpers/`. That folder contains an `importlib.py` that shadows the stdlib, so any Python started there (hooks included) crashes.
 
 ## Architecture
@@ -84,6 +88,7 @@ python3 release.py check                        # the manifest version must be s
   - `tick` and `fake` drive time and real-entity states.
   - `device_of` and `held` inspect the registries.
   - `snapshot(since, *, since_energy, until, **phases)` is the carrier's restored extra data: a program run from `since`, and phases' runs by key.
+- **Docs tests and shards:** a test that reads `docs/` goes in `tests/docs/` (see Commands). `PURURU_SHARD=i/N` (`tests/sharding.py`, applied in `tests/conftest.py`) keeps one of N sets of whole test files, stable for the same selection, as CI's three test jobs do (without `tests/test_code.py`, which Build's lint job runs: see Commands); a wrong value is a usage error.
 
 ## Docs
 
@@ -94,12 +99,12 @@ python3 release.py check                        # the manifest version must be s
 - **Two tabs:** `Guide` (`/`) for users (getting started, concepts, one page per feature in `FEATURES`, configuration reference, troubleshooting) and `Develop` (`/develop`) for contributors.
 - **Keep it true:** a change in behaviour, configuration, entities or log messages updates the matching pages in the same PR. A new feature gets `docs/features/<feature>.mdx` and a sidebar entry.
 - **MDX:** `{` and `<` outside code are JSX, so keep them in backticks or code blocks.
-- **Check:** `pnpm install` once, then `pnpm docs:check` (broken links; the Docs workflow runs it on every PR) and `pnpm docs:preview` (live preview). Use pnpm, never npm: `package.json` pins the docs.page CLI and pnpm itself (`packageManager`), and `pnpm-lock.yaml` pins them by hash.
+- **Check:** `pnpm install` once, then `pnpm docs:check` (broken links; the Docs workflow runs it, beside the docs tests, on PRs that change docs or code) and `pnpm docs:preview` (live preview). Use pnpm, never npm: `package.json` pins the docs.page CLI and pnpm itself (`packageManager`), and `pnpm-lock.yaml` pins them by hash.
 
 ## Releases and CI
 
 - **Releases:** the version is `version` in `custom_components/pururu/manifest.json`. A PR that changes it is a release. After it merges to `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release, which HACS offers.
-- **CI:** GitHub Actions are pinned by SHA, Python packages by hash (`uv.lock`), pnpm packages by hash (`pnpm-lock.yaml`). SonarQube Cloud and the docs.page check run on PRs.
+- **CI:** on every PR, `ci.yml` classifies the changed files (`changes.py`) and calls only the workflows they need: Build (`build.yml`: a lint job with `release.py check` and `tests/test_code.py`, three test shards, then SonarQube on the combined coverage, waiting for the quality gate on PRs) for code or workflows, Docs (`docs.yml`: docs.page check and docs tests) for docs, code or workflows, Validate (`validate.yml`, HACS) for `hacs.json`, the manifest, `README.md` or workflows; agent and planning files run none, a file in no group runs all. "CI ok" is the only required Actions check. Build, Docs and Validate have no `pull_request` trigger of their own; Release on `main` calls Build and Validate in full. CodeQL (default setup) analyses every PR. GitHub Actions are pinned by SHA, Python packages by hash (`uv.lock`), pnpm packages by hash (`pnpm-lock.yaml`).
 - **Issues:** GitHub Issues track the work (`project_tracker: github`).
 - **Sonar suppressions:** a Sonar finding that conflicts with HA's required signatures or conventions is suppressed in `sonar-project.properties` (`sonar.issue.ignore.multicriteria`), with a comment giving the reason, not in code.
 

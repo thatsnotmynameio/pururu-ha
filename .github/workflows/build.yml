@@ -1,26 +1,89 @@
-# The integration's tests and core's checks (ruff, format, mypy, hassfest,
-# quality scale) at the Home Assistant version pyproject.toml pins, then
-# SonarQube Cloud's analysis with the tests' coverage report. On main, Release
-# runs it before publishing.
+# The integration's tests and core's checks at the Home Assistant version
+# pyproject.toml pins, in three stages. Lint: release.py check, then
+# tests/test_code.py (ruff, format, mypy, hassfest, quality scale, the layer
+# table, the docs guard), and outside pull requests (where Docs runs them) the
+# docs tests, tests/docs. Tests: the rest of the suite split by file into three
+# parallel jobs (PURURU_SHARD), each keeping its coverage data. SonarQube: the
+# three combined into coverage.xml, then SonarQube Cloud's analysis, which on a
+# pull request waits for the quality gate and fails with it. CI calls it on pull
+# requests that change code or workflows; on main, Release runs it before
+# publishing.
 name: Build
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build:
-    name: Tests and SonarQube
+  lint:
+    name: Lint, types and hassfest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # release.py reads the existing v* tags
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-python: true
+      # The manifest's version is MAJOR.MINOR.PATCH and not below the latest release
+      - run: python3 release.py check
+      # hassfest from HA's source archive (~29 MB), keyed on the pinned version and
+      # sha256: every pytest run fetches it at session start unless it is here
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .hassfest
+          key: hassfest-${{ hashFiles('fetch_hassfest.py') }}
+      # --locked: fail if uv.lock is out of date (every package pinned by hash). Not
+      # --no-build: mock-open, a dependency of the HA test plugin, ships only as sdist.
+      - run: uv run --locked pytest tests/test_code.py
+      # The docs tests (addopts deselects them): on pull requests Docs runs them; on
+      # main and manual starts Build does, so Release still publishes only after them
+      - if: github.event_name != 'pull_request'
+        run: uv run --locked pytest -m docs tests/docs -n 0
+
+  tests:
+    name: Tests (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-python: true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .hassfest
+          key: hassfest-${{ hashFiles('fetch_hassfest.py') }}
+      - run: uv run --locked pytest --cov --ignore=tests/test_code.py
+        env:
+          PURURU_SHARD: ${{ matrix.shard }}/3
+      # Each job's data under its own name: the three land in one folder, and
+      # `coverage combine` picks up .coverage.* only
+      - run: mv .coverage .coverage.${{ matrix.shard }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ matrix.shard }}
+          path: .coverage.${{ matrix.shard }}
+          include-hidden-files: true  # .coverage.* starts with a dot
+          if-no-files-found: error
+          retention-days: 1
+
+  sonar:
+    name: SonarQube
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,17 +93,18 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
           cache-python: true
-      # The manifest's version is MAJOR.MINOR.PATCH and not below the latest release
-      - run: python3 release.py check
-      # hassfest from HA's source archive (~29 MB), keyed on the pinned version and sha256
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: .hassfest
-          key: hassfest-${{ hashFiles('fetch_hassfest.py') }}
-      # --locked: fail if uv.lock is out of date (every package pinned by hash). Not
-      # --no-build: mock-open, a dependency of the HA test plugin, ships only as sdist.
-      - run: uv run --locked pytest --cov --cov-report=xml
+          pattern: coverage-*
+          merge-multiple: true
+      - run: uv run --locked coverage combine
+      - run: uv run --locked coverage xml
+      # On a pull request the scan waits for the quality gate and fails with it: our
+      # job, not the Sonar app's check, is what the ruleset requires. On main the
+      # gate is not waited for, so a red gate never stops a release.
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: ${{ github.event_name == 'pull_request' && '-Dsonar.qualitygate.wait=true' || '' }}
