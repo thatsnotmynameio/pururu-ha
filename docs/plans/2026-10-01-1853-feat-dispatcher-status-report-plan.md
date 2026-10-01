@@ -15,7 +15,7 @@ execution: code
 - **Objective:** the author opens any issue the dispatcher handles and sees, in one comment, where it stands: queued and why it waits, which lfg stage its session is in and what the session last did, or how it ended. No need to open the session log on the Mac.
 - **Means:** the dispatcher keeps one status comment per issue, finds it again by a hidden marker (KTD1) that also stores the checklist (KTD2), and fills the checklist from the session's log (KTD3).
 - **Product authority:** the Product Contract below. It builds on `docs/plans/2026-10-01-1758-feat-dispatcher-usage-limit-plan.md` (the `paused` label, its hold and its pause marker), whose behavior it does not change.
-- **Open blockers:** the usage-limit work (pull request #88, branch `worktree-improve-dispatcher`) must be merged to `main` first; this plan's units assume its `paused` label, `Hold`, `Sessions._events`, `local_time` and its test file at `tools/dispatcher/tests/test_dispatcher.py`.
+- **Open blockers:** none. The usage-limit work (pull request #88) is on `main`; this plan's units build on its `paused` label, `Hold`, `Sessions._events`, `local_time` and its test file at `tools/dispatcher/tests/test_dispatcher.py`.
 - **Stop conditions:** stop and report when the usage-limit work is not on `main`, or when `gh api` cannot list, create or edit an issue comment as KTD1 relies on.
 - **Execution profile:** Standard depth, five units in dependency order, each one commit; `tools/dispatcher/dispatcher.py` stays one stdlib-only script.
 - **Who finishes:** ce-work implements the units and runs the Verification Contract; lfg ships the pull request. Nothing here is a release: `custom_components/pururu/manifest.json` keeps its version.
@@ -102,7 +102,7 @@ Seeing only that a pull request opened is not enough.
 - The session log is `claude -p`'s stream-json output: each skill lfg invokes appears as a `Skill` tool call inside an `assistant` event, and each narration line as a `text` block. Events from sub-agents carry a non-null `parent_tool_use_id`; the main thread's carry `null`. Checked on `tools/dispatcher/.state/logs/issue-77.log` and `issue-75.log` (Claude Code 2.1.287).
 - The stage checklist depends on lfg's skill names and order (compound-engineering 3.30.1, `skills/lfg/SKILL.md` steps 1–10); a rename in lfg breaks the stage mapping (KTD3) until the dispatcher follows it.
 - The repository is public. The session's last sentence is posted as written and may contain local paths, as the needs-attention comment's worktree and log paths already do.
-- The usage-limit work is merged first (Goal Capsule, Open blockers).
+- The usage-limit work is on `main` (pull request #88).
 
 ### Sources / Research
 
@@ -121,7 +121,7 @@ Seeing only that a pull request opened is not enough.
 - KTD2. **The marker's JSON holds the checklist's marks, and nothing else holds them.** The marks are one of `done`, `current`, `pending`, `skipped`, `failed`, `paused` per stage. A resume, a restart's orphans and a later `in review` or `ready to merge` read the marks from the comment rather than from a state file. A marker that is missing or unreadable reads as all pending. Rationale: the usage-limit plan already rules out a state file and keeps its durable record on GitHub (its KTD3, KTD8). Governs R1, R9, R11.
 - KTD3. **Stages come from the main thread's `Skill` calls, mapped by skill name, and never move back.** Only `assistant` events whose `parent_tool_use_id` is null count, so a sub-agent's skills do not move the checklist. The name is matched after its plugin prefix (`compound-engineering:ce-plan` → `ce-plan`). The mapping, for lfg 3.30.1: plan ← `ce-plan`, `ce-brainstorm`; plan review ← `ce-doc-review`; implementation ← `ce-work`, `ce-debug`; code review ← `ce-simplify-code`, `ce-code-review`; pull request ← `ce-commit-push-pr`; CI ← `ce-babysit-pr`. Other skills (`ce-compound`, `ce-test-browser`, `ce-noslop`…) move nothing. The furthest stage entered is current, stages before it that were entered are done and the others skipped, and stages after it are pending. Before any mapped skill, plan is current. A resumed session's slice starts from the marks the comment holds (KTD2), its `paused` stage back to current. Governs R6, R7, R11.
 - KTD4. **The last sentence is the main thread's last `text` block, on one line, at most 200 characters, inside a fenced `text` block.** Whitespace collapses to single spaces and a longer text is cut with an ellipsis. The fence is one backtick longer than the longest backtick run in the text, so nothing in it renders as Markdown: an `@mention`, an issue reference or a link in the session's words notifies no one. No sentence yet shows no block. Governs R5.
-- KTD5. **A status write is an action, `Report`, applied after the label move it follows; it is retried only where nothing would recompute it.** A `Report` carries the issue, the target state and its details, and either explicit marks (running reports and `judge`'s final reports, whose marks come from the log) or a transition to apply to the comment's stored marks (ready to merge: CI done; in review, edit only: unchanged; orphan at start: stopped). The board resolves stored marks from its cached or listed comment inside `Dispatcher.apply`, so `tick`, `orphans` and `judge` stay pure and a comment read never happens in `snapshot()` or outside `apply` in `start()`. Running and queued reports are recomputed every poll, so a failed one is only logged (`dispatcher: #N status: <error>`). The final report of an ended session (in review, needs attention, paused) joins the move in `judge`'s actions, so a failed one rides the existing `pending` retry; needs-attention and paused issues are not re-read by later polls, so nothing else would correct a stale "running" comment. A status write never blocks a label move: it comes after it, and its failure is caught like any `GhError`. Governs R4, R8, R9, R11.
+- KTD5. **A status write is an action, `Report`, applied after the label move it follows; it is retried only where nothing would recompute it.** A `Report` carries the issue, the target state and its details, and either explicit marks (running reports and `judge`'s final reports, whose marks come from the log) or a transition to apply to the comment's stored marks (ready to merge: CI done; in review, edit only: unchanged; orphan at start: stopped). The board resolves stored marks from its cached or listed comment inside `Dispatcher.apply`, so `tick`, `orphans` and `judge` stay pure and a comment read never happens in `snapshot()` or outside `apply` in `start()`. Running and queued reports are recomputed every poll, so a failed one is only logged (`dispatcher: #N status: <error>`). The final report of an ended session (in review, needs attention, paused) joins the move in `judge`'s actions, so a failed one rides the existing `pending` retry; needs-attention and paused issues are not re-read by later polls, so nothing else would correct a stale "running" comment. For the same reason a failed ready-to-merge report (from `tick`; `snapshot()` never reads `ready to merge` issues) and a failed needs-attention report from `dispatch` or `resume` (could not start) also join `pending`. A status write never blocks a label move: it comes after it, and its failure is caught like any `GhError`; the board raises unparseable `gh api` output (`ValueError`, `KeyError`) as `GhError`, since `apply` catches only `GhError` and anything else escapes `poll`, where `serve` stops every session. Governs R4, R8, R9, R11.
 - KTD6. **"The text changes" means the body without its `Updated` line.** The dispatcher renders the body, strips that line, and compares it with the cached body (or the listed one after a restart) stripped the same way; equal bodies are not written. A running session's minutes change every poll, so a running comment is written every poll as R5 asks. Governs R4, R5.
 - KTD7. **Times use the usage-limit work's `local_time`; the running time is whole minutes since `Running.started` (since the resume, for a resumed session).** Governs R3, R5, R11.
 
@@ -171,7 +171,7 @@ A queued comment has no checklist, only the reason (R3); a paused one adds the r
 
 ### Assumptions
 
-- `gh api --paginate` on the comments list returns every page; how its pages are merged into one list (`--slurp` or reading concatenated arrays) is settled while implementing U3.
+- `gh api --paginate --slurp` on the comments list returns every page as one array of pages (gh 2.99 has `--slurp`; without it, pages print as concatenated arrays that `json.loads` rejects).
 - An issue's status comment is written by the same `gh` login across runs, as the pause marker already assumes.
 
 ---
@@ -191,7 +191,7 @@ A queued comment has no checklist, only the reason (R3); a paused one adds the r
 **Approach:**
 1. Add the stage list and the skill-to-stage mapping (KTD3) as module constants next to the labels.
 2. Add a pure `progress_of(events, start_marks)` beside `reason_of` and `limit_of`, returning the new marks and the last sentence; it reads only main-thread `assistant` events.
-3. Have `Sessions.ending` return the progress with the reason and the limit, so an ended session's log is still read once, and carry it on `Ended`.
+3. Have `Sessions.ending` return the progress with the reason and the limit, so an ended session's log is read once, and carry it on `Ended`. `Dispatcher.read` calls `ending` today only when the branch has no open pull request; it now calls it for every ended session, since the in-review report needs the log's marks too (`judge` already ignores the limit when a pull request is open).
 4. Add `Sessions.progress(running, start_marks)` over `_events(running)` for the per-poll running reports only; `Running` carries the starting marks a resume seeded (U4).
 
 **Patterns to follow:** the usage-limit work's pure `reason_of` and `limit_of`, read together by `Sessions.ending` (structured events only, slice from `since`); the pure `judge`/`tick` style with tests that build events by hand.
@@ -249,10 +249,11 @@ A queued comment has no checklist, only the reason (R3); a paused one adds the r
 **Files:** `tools/dispatcher/dispatcher.py`, `tools/dispatcher/tests/test_dispatcher.py`.
 
 **Approach:**
-1. `GitHub.status_comment(issue)`: list the comments, keep the `gh` login's with a `dispatcher-status` marker, return the newest one's `id` and body, or None.
+1. `GitHub.status_comment(issue)`: list the comments (`gh api --paginate --slurp`), keep the `gh` login's with a `dispatcher-status` marker, return the newest one's `id` and body, or None.
 2. `GitHub.post_status(issue, body)` returning the new `id`, and `GitHub.edit_status(id, body)`.
 3. A small `Board` owning the cache (issue → `id`, last body) with one `report(issue, status, now, create)`: look up once, skip when the stripped bodies match, edit when a comment exists, create only when `create` is true, otherwise skip (R12).
 4. After a failed edit, drop the issue's cache entry, so the next report lists the comments again; a comment the author deleted then no longer fails every retry of a final report in `pending` (KTD5).
+5. Raise unparseable `gh api` output (`ValueError`, `KeyError`) as `GhError` (KTD5).
 
 **Patterns to follow:** `GitHub.marker` from the usage-limit work (login filter, newest wins), `FakeGh` scripted replies in the tests.
 
@@ -261,7 +262,7 @@ A queued comment has no checklist, only the reason (R3); a paused one adds the r
 - Covers AE5. After a restart (empty cache), a report finds the existing comment by its marker and edits it; nothing is posted.
 - Covers AE8. A report that may not create, for an issue without a status comment, makes no write.
 - Another user's comment carrying the marker is ignored; of two of the user's own, the newest is edited.
-- A failing `gh` list or create raises `GhError` with its stderr, and leaves the cache unchanged so the next report tries again.
+- A failing `gh` list or create raises `GhError` with its stderr, and leaves the cache unchanged so the next report tries again; a list whose output is not valid JSON raises `GhError` too.
 - An edit that fails by the cached `id` (the comment was deleted) drops the entry; the next report lists the comments again and, with none left and creation not allowed, writes nothing and succeeds.
 
 **Verification:** with a fake `gh`, every write the board makes is the one the scenario expects, and none otherwise.
@@ -279,9 +280,9 @@ A queued comment has no checklist, only the reason (R3); a paused one adds the r
 **Approach:**
 1. Add the `Report` action (KTD5) and apply it through the board in `Dispatcher.apply`, which resolves a transition against the comment's stored marks; failures are logged as `dispatcher: #N status: <error>`.
 2. `judge` returns, after each move, the final report (in review, needs attention, paused) with explicit marks from the ended session's progress on `Ended` (U1), so failed ones join `pending` (KTD5).
-3. `tick` adds a ready-to-merge report (transition: CI done) after each promotion; each poll also reports in-review issues (edit only, transition: unchanged).
-4. Each poll reports each running session (marks and sentence from `Sessions.progress`), then each ready issue not picked, with its reason from the same logic as `queue_lines` plus the hold (R3). Queued reports may create. A running report may create only for a session this run dispatched (R12's dispatching: it retries a dispatch-time create that failed); a resumed session's report edits only.
-5. `dispatch` reports running right after the session starts (create allowed), or needs attention with plan failed when it cannot start. `resume` reads the comment's stored marks through the board inside `apply`, seeds the session's starting marks with them (paused → current) and reports running; a resume that cannot start reports needs attention with the stopped transition.
+3. `tick` adds a ready-to-merge report (transition: CI done) after each promotion; a failed one joins `pending` (KTD5). Each poll also reports the in-review issues not promoted this poll (edit only, transition: unchanged), so a promoted issue's comment is not set back to CI current.
+4. Each poll reports each running session (marks and sentence from `Sessions.progress`), then each ready issue `pick` could take that was not picked: no `in progress` or `paused` label and not running, so a paused issue the author also marked `ready` keeps its paused comment (R11). Its reason comes from the same logic as `queue_lines` plus the hold (R3). Queued reports may create. A running report may create only for a session this run dispatched (R12's dispatching: it retries a dispatch-time create that failed); a resumed session's report edits only.
+5. `dispatch` reports running right after the session starts (create allowed), or needs attention with plan failed when it cannot start. `resume` reads the comment's stored marks through the board inside `apply`, seeds the session's starting marks with them (paused → current) and reports running; a resume that cannot start reports needs attention with the stopped transition. A failed needs-attention report from either joins `pending` (KTD5).
 6. `orphans` at start reports needs attention with the stopped transition on the comment's stored marks; `stop` reports it with the live session's marks (KTD2, R9).
 
 **Patterns to follow:** `needs_attention`, `judge`, `tick` and the `FakeGitHub` dispatcher tests, which assert the sequence of moves.
@@ -290,7 +291,9 @@ A queued comment has no checklist, only the reason (R3); a paused one adds the r
 - Covers AE1. A poll with a blocked ready issue reports it queued with its blocker count; when a slot is free and it is picked, it is reported running instead.
 - Covers AE2. A poll with a running session whose log holds the AE2 events reports running with those marks and that sentence.
 - Covers AE4. Stopping with a live session in implementation reports implementation failed after the needs-attention move, whose comment is still posted.
-- Covers AE6. An ended session with an open pull request reports pull request done and CI current; a later poll with its checks passing reports CI done after the move to `ready to merge`.
+- Covers AE6. An ended session with an open pull request, whose log called `ce-plan`, `ce-doc-review` and `ce-work`, reports plan, plan review and implementation done, pull request done and CI current; a later poll with its checks passing reports CI done after the move to `ready to merge`, and no in-review report follows it in that poll.
+- A ready-to-merge report that fails is written at the next poll.
+- A paused issue that also carries `ready`, polled while the hold lasts, gets no queued report: its paused comment stays.
 - Covers AE7. A limit ending reports paused with the reset after the pause move; the resume reports running from the stored marks.
 - A failing final report is retried at the next poll; a failing running report is only logged and the poll goes on.
 - A failing status write never stops the label move before it, nor the other issues' reports.
