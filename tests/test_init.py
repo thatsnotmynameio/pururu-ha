@@ -133,7 +133,6 @@ async def test_device_holds_what_its_features_create(ha: HomeAssistant) -> None:
 
 @pytest.mark.parametrize("device", [
     pytest.param({"gauge": GAUGE}, id="no name"),
-    pytest.param({**GIZMO, "name": " "}, id="a blank name"),
     pytest.param({"name": "Gizmo"}, id="no feature"),
     pytest.param({**GIZMO, "colour": "red"}, id="unknown key"),
     pytest.param({**GIZMO, "area": ["despensa"]}, id="area a list"),
@@ -144,6 +143,13 @@ async def test_device_holds_what_its_features_create(ha: HomeAssistant) -> None:
 async def test_invalid_device_is_refused(ha: HomeAssistant, device: dict[str, Any]) -> None:
     assert not await setup(ha, {"dummy_gizmo": device})
     assert device_of(ha, "dummy_gizmo") is None
+
+
+async def test_a_blank_device_name_is_refused_at_its_path(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    device = {**GIZMO, "name": " "}
+    assert not await setup(ha, {"dummy_gizmo": device})
+    assert "length of value must be at least 1 for dictionary value 'pururu->devices->dummy_gizmo->name'" in caplog.text
 
 
 async def test_a_configured_feature_creates_an_entity_per_key(ha: HomeAssistant) -> None:

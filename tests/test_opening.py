@@ -378,12 +378,19 @@ async def enclosure(ha: HomeAssistant, kind: str) -> HomeAssistant:
                  id="unknown key"),
     pytest.param({"event_entities": [{"types": ACCESS_TYPES}]}, id="no entity"),
     pytest.param({"match": "soon"}, id="match not a period"),
-    pytest.param({"events": [{"entity": ACCESS, "types": ACCESS_TYPES}]},
-                 id="events, as before 0.2.1"),
 ])
 async def test_invalid_events_are_refused(ha: HomeAssistant, kind: str,
                                           block: dict[str, Any]) -> None:
     assert not await setup(ha, devices(kind, **block))
+
+
+async def test_the_old_events_key_is_refused_at_its_path(
+        ha: HomeAssistant, kind: str, caplog: pytest.LogCaptureFixture) -> None:
+    """A door's or window's events: is event_entities: since 0.2.1."""
+    config = devices(kind, events=[{"entity": ACCESS, "types": ACCESS_TYPES}])
+    assert not await setup(ha, config)
+    assert (f"'events' is an invalid option for 'pururu', check: pururu->devices->{KEY}->{kind}->events"
+            in caplog.text)
 
 
 async def test_entry_by_pin_describes_the_opening(enclosure: HomeAssistant, kind: str,

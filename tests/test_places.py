@@ -275,8 +275,6 @@ async def test_a_reload_without_anything_deletes_them_all(ha: HomeAssistant) -> 
 @pytest.mark.parametrize(("floors", "areas"), [
     pytest.param({}, {"atelie": ATELIE}, id="area on a floor not in floors"),
     pytest.param({"terreo": {"level": 0}}, {}, id="floor without a name"),
-    pytest.param({"terreo": {**TERREO, "name": " "}}, {}, id="floor with a blank name"),
-    pytest.param({}, {"patio": {"name": ""}}, id="area with an empty name"),
     pytest.param({"terreo": {**TERREO, "level": "mezzanine"}}, {}, id="level not an integer"),
     pytest.param({"terreo": {**TERREO, "level": True}}, {}, id="level a boolean"),
     pytest.param({"terreo": {**TERREO, "level": 1.5}}, {}, id="level a float"),
@@ -289,6 +287,17 @@ async def test_invalid_floors_and_areas_are_refused(
     assert not await setup(ha, {}, floors=floors, areas=areas)
     assert not ha.config_entries.async_entries(DOMAIN)
     assert not list(fr.async_get(ha).async_list_floors())
+
+
+@pytest.mark.parametrize(("floors", "areas", "path"), [
+    pytest.param({"terreo": {**TERREO, "name": " "}}, {}, "pururu->floors->terreo->name", id="a floor"),
+    pytest.param({}, {"patio": {"name": ""}}, "pururu->areas->patio->name", id="an area"),
+])
+async def test_a_blank_place_name_is_refused_at_its_path(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+        floors: dict[str, Any], areas: dict[str, Any], path: str) -> None:
+    assert not await setup(ha, {}, floors=floors, areas=areas)
+    assert f"length of value must be at least 1 for dictionary value '{path}'" in caplog.text
 
 
 async def test_an_unknown_key_under_pururu_is_refused_and_deletes_nothing(ha: HomeAssistant) -> None:
