@@ -13,7 +13,7 @@ import yaml
 
 from helpers import module, setup
 
-PAGE = Path(__file__).resolve().parents[1] / "docs/getting-started/updating-to-0.2.1.mdx"
+PAGE = Path(__file__).resolve().parents[2] / "docs/getting-started/updating-to-0.2.1.mdx"
 BEFORE = "0.1.23"
 AFTER = "0.2.1"
 WHOLE = ": configuration.yaml"

@@ -1,7 +1,6 @@
 """Alert2's alerts: pururu writes one per alert with texts, for a made-up washer."""
 
 from pathlib import Path
-import re
 from typing import Any
 from unittest.mock import patch
 
@@ -339,15 +338,3 @@ async def test_a_failed_reload_at_removal_is_retried_when_pururu_comes_back(
     assert written(ha) == []
     assert alert2.reloads == 2
     assert ha.states.get(ALERT2) is None
-
-
-# --- the docs ----------------------------------------------------------------------------
-
-ALERTS_PAGE = Path(__file__).resolve().parents[1] / "docs/concepts/alerts.mdx"
-
-
-def test_the_documented_include_is_the_one_pururu_asks_for(ha: HomeAssistant) -> None:
-    block = re.search(r"```yaml[^\n]*\n(alert2:\n.*?)```", ALERTS_PAGE.read_text(), re.DOTALL)
-    assert block is not None, "no alert2: block on the alerts page"
-    assert f"  {module('outputs.alert2_alerts').INCLUDE}\n" in block[1]
-    assert "generator" not in block[1]

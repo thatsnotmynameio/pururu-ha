@@ -1,0 +1,83 @@
+# Every pull request's checks, each run only when the pull request changes
+# something it checks. changes.py reads the changed files: code (the
+# integration, tests, the Python and Sonar settings) runs Build and Docs; docs
+# pages run Docs; hacs.json, the manifest or README.md run Validate (HACS);
+# agent and planning files (.claude/, CLAUDE.md, docs/plans/...) run nothing;
+# a workflow, or any file in no group, runs everything, as changes.py itself
+# does, decided here without running it. A check is skipped by its job's own
+# condition, never by a path filter: a skipped job counts as passed, a skipped
+# workflow would leave a required check pending. "CI ok" is the one check the
+# ruleset requires: it fails when a check that ran failed or was cancelled.
+# CodeQL runs apart, on GitHub's default setup.
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The only concurrency on the pull-request path: inside a called workflow
+# github.workflow is this one's name, so a group there would deadlock with this one
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.classify.outputs.build }}
+      docs: ${{ steps.classify.outputs.docs }}
+      hacs: ${{ steps.classify.outputs.hacs }}
+    steps:
+      # The pull request's merge commit: its first parent is the current base
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: classify
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD)
+            # changes.py never judges its own change: a broken fallback would skip the tests that catch it
+            if grep -qxF changes.py <<< "$files"; then
+              printf 'build=true\ndocs=true\nhacs=true\n' >> "$GITHUB_OUTPUT"
+            else
+              printf '%s\n' "$files" | python3 changes.py pull_request >> "$GITHUB_OUTPUT"
+            fi
+          else
+            python3 changes.py "$GITHUB_EVENT_NAME" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    uses: ./.github/workflows/docs.yml
+
+  validate:
+    needs: changes
+    if: needs.changes.outputs.hacs == 'true'
+    uses: ./.github/workflows/validate.yml
+
+  ok:
+    name: CI ok
+    needs: [changes, build, docs, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every check that ran passed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

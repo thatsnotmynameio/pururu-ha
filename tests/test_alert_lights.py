@@ -2,8 +2,6 @@
 
 import asyncio
 from datetime import timedelta
-from pathlib import Path
-import re
 from typing import Any
 
 from homeassistant.const import Platform
@@ -11,7 +9,6 @@ from homeassistant.core import Context, Event, HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 import pytest
-import yaml
 
 from helpers import capture, fake, module, reload, restart, settle, setup, tick
 
@@ -944,25 +941,3 @@ async def test_disabling_a_borrowed_light_leaves_it_alone(
     await tick(house, freezer, 30)
     assert calls(events, LANTERN) == []
     assert "while it is disabled" not in caplog.text
-
-
-# --- the docs ----------------------------------------------------------------------------
-
-PAGE = Path(__file__).resolve().parents[1] / "docs/concepts/alert-lights.mdx"
-
-
-def yaml_blocks() -> list[Any]:
-    return [yaml.safe_load(block)
-            for block in re.findall(r"```yaml[^\n]*\n(.*?)```", PAGE.read_text(), re.DOTALL)]
-
-
-async def test_the_pages_example_is_valid(ha: HomeAssistant) -> None:
-    example = yaml_blocks()[0]["pururu"]
-    assert await setup(ha, example["devices"], config=example["config"])
-
-
-def test_the_documented_defaults_are_the_defaults(ha: HomeAssistant) -> None:
-    [defaults] = [block["pururu"]["config"]["alerts"]["lights"] for block in yaml_blocks()
-                  if "pururu" in block and "high" in block["pururu"]["config"]["alerts"]["lights"]]
-    schema = module("outputs.alert_lights").SCHEMA
-    assert schema(defaults) == schema({})

@@ -2,8 +2,6 @@
 
 from collections.abc import AsyncIterator
 from datetime import timedelta
-from pathlib import Path
-import re
 from typing import Any
 from unittest.mock import patch
 
@@ -13,7 +11,7 @@ from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import async_mock_service
 
-from helpers import capture, fake, generated, module, reload, settle, setup, tick
+from helpers import capture, fake, generated, reload, settle, setup, tick
 
 KEY = "washer"
 POWER = "sensor.dummy_plug_power"
@@ -308,17 +306,3 @@ async def test_removing_the_entry_empties_the_file(ha: HomeAssistant) -> None:
     await ha.config_entries.async_remove(entry.entry_id)
     await ha.async_block_till_done()
     assert generated(ha) == []
-
-
-# --- the docs ----------------------------------------------------------------------------
-
-PAGE = Path(__file__).resolve().parents[1] / "docs/concepts/notifications.mdx"
-
-
-def test_the_page_lists_every_ready_made_notification(ha: HomeAssistant) -> None:
-    page = PAGE.read_text(encoding="utf-8")
-    section = re.search(r"## Ready-made notifications\n(.*?)\n## ", page, re.DOTALL)
-    assert section is not None, "no Ready-made notifications section"
-    for name, feature in module("features").FEATURES.items():
-        for notification in module("core.feature").happenings_of(feature):
-            assert f"`{name}: notifications: {notification}`" in section[1], notification

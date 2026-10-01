@@ -1,21 +1,19 @@
-# docs.page's own check of the docs site (docs.json and docs/**/*.mdx): broken
-# internal links, missing pages, invalid MDX. pnpm's version is package.json's
-# packageManager; the CLI and every package under it are pinned by
-# pnpm-lock.yaml's integrity hashes, and --frozen-lockfile fails if the lock is
-# out of date.
+# The docs site's checks, two jobs in parallel. docs.page check: docs.page's
+# own check of docs.json and docs/**/*.mdx (broken internal links, missing
+# pages, invalid MDX); pnpm's version is package.json's packageManager, the CLI
+# and every package under it are pinned by pnpm-lock.yaml's integrity hashes,
+# and --frozen-lockfile fails if the lock is out of date. Docs tests: the tests
+# that read docs/ (tests/docs, pytest -m docs), which compare the pages with
+# the code's features. CI calls it on pull requests that change docs or code;
+# it has no trigger of its own besides a manual start.
 name: Docs
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   check:
@@ -31,3 +29,25 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm docs:check
+
+  tests:
+    name: Docs tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-python: true
+      # hassfest from HA's source archive (~29 MB), keyed on the pinned version and
+      # sha256: every pytest run fetches it at session start unless it is here
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .hassfest
+          key: hassfest-${{ hashFiles('fetch_hassfest.py') }}
+      # --locked: fail if uv.lock is out of date (every package pinned by hash). Not
+      # --no-build: mock-open, a dependency of the HA test plugin, ships only as sdist.
+      # Only tests/docs/ collected, in one process: 43 quick tests need no workers
+      - run: uv run --locked pytest -m docs tests/docs -n 0

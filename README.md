@@ -34,7 +34,8 @@ This creates the device **Lava-louças**, with `binary_sensor.pururu_dishwasher_
 ## Develop
 
 ```sh
-uv run pytest    # the tests, plus ruff, ruff format, mypy, hassfest and the quality scale
+uv run pytest            # the tests, plus ruff, ruff format, mypy, hassfest and the quality scale
+uv run pytest -m docs    # the docs tests: the tests that read docs/
 ```
 
 The [Develop](https://docs.page/thatsnotmynameio/pururu-ha/develop) tab covers the architecture, writing a feature, testing and releases.
