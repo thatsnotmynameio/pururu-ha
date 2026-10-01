@@ -94,7 +94,7 @@ class Source:
 
     @classmethod
     def of(cls, config: Mapping[str, Any]) -> Self:
-        """From a validated item of `events`."""
+        """From a validated item of `event_entities`."""
         return cls(
             entity=config["entity"], types=config["types"], fields=config["fields"]
         )

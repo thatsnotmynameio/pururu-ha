@@ -35,7 +35,7 @@ CONF_EXECUTABLE: Final = "executable"
 CONF_DETECTED: Final = "detected"
 # The key of the entry's data holding the IDs of the scripts it generated
 CONF_SCRIPTS: Final = "scripts"
-# Alert2 (HACS) delivers what an alert's notify says
+# Alert2 (HACS) delivers an alert's texts, message and done_message
 ALERT2: Final = "alert2"
 # Every entity ID is <platform>.pururu_<device key>_<namespace>_<entity key>
 ENTITY_PREFIX: Final = "pururu"
