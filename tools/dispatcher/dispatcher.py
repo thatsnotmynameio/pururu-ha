@@ -25,7 +25,7 @@ stay paused, and the next start resumes them from GitHub alone.
 
 import argparse
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
 from pathlib import Path
@@ -221,7 +221,7 @@ class Resume:
     issue: int
 
 
-type Action = Move | Link | Dispatch | Resume
+type Action = Move | Link | Dispatch | Resume | Report
 
 
 def local_time(epoch: float) -> str:
@@ -250,16 +250,24 @@ def pause(session: Ended, limit: Marker) -> Move:
 
 
 def judge(session: Ended) -> list[Action]:
-    """A session ended: in review with an open pull request, paused at the limit, else attention."""
+    """A session ended: in review with an open pull request, paused at the limit, else attention.
+
+    Each move is followed by its final report, from the marks the session's log left (KTD5).
+    """
+    marks = session.progress.marks
     if not session.prs and session.limit:
-        return [pause(session, session.limit)]
+        return [pause(session, session.limit),
+                Report(session.issue, Status(PAUSED, marks_paused(marks),
+                                             reset=session.limit.reset))]
     if not session.prs:
         return [needs_attention(session.issue, "the session ended without a pull request.",
                                 f"Reason: {session.reason}", f"Worktree: `{session.worktree}`",
-                                f"Log: `{session.log}`")]
+                                f"Log: `{session.log}`"),
+                Report(session.issue, Status(NEEDS_ATTENTION, marks_stopped(marks)))]
     pr = session.prs[0]
     actions: list[Action] = [Move(session.issue, (IN_PROGRESS,), (IN_REVIEW,),
-                                  f"Dispatcher: pull request {pr.url} is open.")]
+                                  f"Dispatcher: pull request {pr.url} is open."),
+                             Report(session.issue, Status(IN_REVIEW, marks_opened(marks)))]
     if pr.number not in session.linked:
         actions.append(Link(pr.number, session.issue))
     return actions
@@ -280,10 +288,17 @@ def tick(snapshot: Snapshot, running: set[int], sessions: int, now: float = 0.0,
     `running` holds the issues whose sessions still run, the ended ones already out of it.
     The verdicts (`judge`) are applied apart, as a failed one is retried at the next poll.
     No session starts while `hold` holds; past it, paused issues resume before ready ones go,
-    blockers notwithstanding, and a probe starts one session only.
+    blockers notwithstanding, and a probe starts one session only. A promotion is reported ready
+    to merge on the comment's marks; the other reviews in review as their comments stand (edit
+    only), so a promoted issue's comment never goes back to CI current.
     """
-    actions: list[Action] = [Move(review.issue, (IN_REVIEW,), (READY_TO_MERGE,))
-                             for review in snapshot.reviews if review.passing]
+    actions: list[Action] = []
+    for review in snapshot.reviews:
+        if review.passing:
+            actions += [Move(review.issue, (IN_REVIEW,), (READY_TO_MERGE,)),
+                        Report(review.issue, Status(READY_TO_MERGE), marks_passed)]
+        else:
+            actions.append(Report(review.issue, Status(IN_REVIEW), marks_kept))
     if hold.holds(now):
         return actions
     free = max(sessions - len(running), 0)
@@ -325,12 +340,20 @@ def queue_lines(ready: Iterable[Issue], running: set[int], picked: list[int],
     return lines
 
 
-def orphans(in_progress: Iterable[Issue], worktrees: Mapping[int, list[str]]) -> list[Move]:
-    """At start no session runs, so every issue in progress lost its session: it needs attention."""
-    return [needs_attention(issue.number, "this issue was in progress with no session running "
-                            "(the dispatcher was stopped or crashed).",
-                            *(f"Worktree: `{path}`" for path in worktrees.get(issue.number, [])))
-            for issue in in_progress]
+def orphans(in_progress: Iterable[Issue],
+            worktrees: Mapping[int, list[str]]) -> list[Move | Report]:
+    """At start no session runs, so every issue in progress lost its session: it needs attention.
+
+    Its comment's stage fails where the comment left it.
+    """
+    actions: list[Move | Report] = []
+    for issue in in_progress:
+        actions += [needs_attention(issue.number, "this issue was in progress with no session "
+                                    "running (the dispatcher was stopped or crashed).",
+                                    *(f"Worktree: `{path}`"
+                                      for path in worktrees.get(issue.number, []))),
+                    Report(issue.number, Status(NEEDS_ATTENTION), marks_stopped)]
+    return actions
 
 
 # The status comment
@@ -440,9 +463,31 @@ def marks_paused(marks: tuple[str, ...]) -> tuple[str, ...]:
     return tuple("paused" if mark == "current" else mark for mark in marks)
 
 
+def marks_kept(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """Nothing new: the marks as they are."""
+    return marks
+
+
 def marks_resumed(marks: tuple[str, ...]) -> tuple[str, ...]:
     """The session resumed: the paused stage current again."""
     return tuple("current" if mark == "paused" else mark for mark in marks)
+
+
+type Change = Callable[[tuple[str, ...]], tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class Report:
+    """Show `status` on the issue's status comment, posting the comment only if `create` (R12).
+
+    With `change`, the marks are `change` of the ones the comment holds (all pending without a
+    readable marker, KTD2), not the status's own.
+    """
+
+    issue: int
+    status: Status
+    change: Change | None = None
+    create: bool = False
 
 
 # GitHub, through `gh`
@@ -945,6 +990,7 @@ class Dispatcher:
                  clock: Callable[[], float] = time.time) -> None:
         """Up to `slots` sessions; progress lines through `say`; the wall clock through `clock`."""
         self.gh = gh
+        self.board = Board(gh)  # each issue's status comment
         self.sessions = sessions
         self.slots = slots
         self.say = say
@@ -952,13 +998,14 @@ class Dispatcher:
         self.hold = Hold()  # starts wait while the usage limit is spent
         self.running: dict[int, Running] = {}
         self.branches: dict[int, str] = {}  # issues in review: the branch their session pushed
-        self.pending: list[Action] = []  # ended sessions' verdicts that failed: the next poll's
+        self.pending: list[Action] = []  # failed actions no later poll would redo: the next's
 
     def start(self) -> None:
         """Say what it watches, create the missing labels, mark the issues left in progress.
 
-        The hold comes back from the paused issues' markers; one without a valid marker is left
-        to the first resume, which moves it to needs attention.
+        Each one's status comment fails the stage it held; a failure to read or write it is
+        reported and the start goes on. The hold comes back from the paused issues' markers; one
+        without a valid marker is left to the first resume, which moves it to needs attention.
         """
         self.say(f"dispatcher: watching the open issues {self.gh.login()} opened and labelled "
                  f"`ready`, up to {self.slots} sessions at once")
@@ -972,8 +1019,8 @@ class Dispatcher:
         for issue in stranded:
             self.say(f"dispatcher: #{issue.number} was left in progress with no session running:"
                      " it needs attention")
-        for move in orphans(stranded, self.sessions.worktrees() if stranded else {}):
-            self.apply(move)
+        for action in orphans(stranded, self.sessions.worktrees() if stranded else {}):
+            self.apply(action)
         now = self.clock()
         markers = [marker for issue, _ in self.gh.issues(PAUSED)
                    if (marker := self.gh.marker(issue.number))]
@@ -1010,10 +1057,12 @@ class Dispatcher:
         return session
 
     def poll(self) -> None:
-        """One poll: retry the failed verdicts, read, hold at the limit, decide, apply.
+        """One poll: retry the failed verdicts, read, hold at the limit, decide, apply, report.
 
         A failed read skips the rest of the poll: ended sessions wait for the next one. The
         clock is read once: an unknown reset holds until this `now`, so this poll's tick too.
+        After the moves, each session still running and each ready issue left waiting is
+        reported; the next poll reports them again, so a failed report is only said.
         """
         now = self.clock()
         self.say("dispatcher: poll: reading GitHub...")
@@ -1048,11 +1097,24 @@ class Dispatcher:
         self.settle(snapshot.ended)
         actions = tick(snapshot, set(self.running), self.slots, now, self.hold)
         picked = [action.issue for action in actions if isinstance(action, Dispatch | Resume)]
-        for line in queue_lines(snapshot.ready, set(self.running), picked, self.slots,
-                                self.hold.holds(now)):
+        held = self.hold.holds(now)
+        for line in queue_lines(snapshot.ready, set(self.running), picked, self.slots, held):
             self.say(f"dispatcher: {line}")
         for action in actions:
-            self.apply(action)
+            if isinstance(action, Report) and action.status.state == READY_TO_MERGE:
+                self.final(action)  # no later poll reads an issue ready to merge
+            else:
+                self.apply(action)
+        for running in list(self.running.values()):
+            if running.issue not in picked:
+                self.apply(self.running_report(running))
+        until = None if self.hold.probe else self.hold.until
+        for issue in snapshot.ready:
+            if (READY in issue.labels and not issue.labels & {IN_PROGRESS, PAUSED}
+                    and issue.number not in self.running and issue.number not in picked):
+                self.apply(Report(issue.number,
+                                  Status(QUEUED, reason=waiting(issue.blocked, held, until)),
+                                  create=True))
         if not self.hold.holds(now):
             self.hold = Hold()
 
@@ -1069,7 +1131,13 @@ class Dispatcher:
     def settle(self, ended: Iterable[Ended]) -> None:
         """Apply the ended sessions' verdicts: no later poll judges them, so a failed one waits."""
         for session in ended:
-            self.pending += [action for action in judge(session) if not self.apply(action)]
+            for action in judge(session):
+                self.final(action)
+
+    def final(self, action: Action) -> None:
+        """Apply an action no later poll would redo: a failed one waits in `pending`."""
+        if not self.apply(action):
+            self.pending.append(action)
 
     def apply(self, action: Action) -> bool:
         """One action, and whether it went; a failed `gh` call is reported, the others still run."""
@@ -1084,15 +1152,38 @@ class Dispatcher:
                     self.dispatch(action.issue)
                 case Resume():
                     self.resume(action.issue)
+                case Report():
+                    status = action.status
+                    if action.change is not None:
+                        stored = self.board.marks(action.issue) or UNSTARTED
+                        status = replace(status, marks=action.change(stored))
+                    self.board.report(action.issue, status, self.clock(), action.create)
         except GhError as error:
-            self.say(f"dispatcher: {action}: {error}")
+            subject = f"#{action.issue} status" if isinstance(action, Report) else action
+            self.say(f"dispatcher: {subject}: {error}")
             return False
         return True
 
+    def running_report(self, running: Running) -> Report:
+        """A live session's running report, from its log.
+
+        Only a session this run dispatched may post the comment: a resumed one is edited (R12).
+        """
+        progress = self.sessions.progress(running, running.start_marks)
+        return Report(running.issue, Status(RUNNING, progress.marks, latest=progress.latest,
+                                            started=running.started),
+                      create=running.resumed is None)
+
+    def stopped_report(self, running: Running) -> Report:
+        """A session the dispatcher stopped: the stage its log reached fails (R9)."""
+        marks = self.sessions.progress(running, running.start_marks).marks
+        return Report(running.issue, Status(NEEDS_ATTENTION, marks_stopped(marks)))
+
     def dispatch(self, issue: int) -> None:
-        """In progress, then a session; one that cannot start needs attention.
+        """In progress, then a session, reported running; one that cannot start needs attention.
 
         A failed label swap raises before the session: the issue stays `ready` for the next poll.
+        Dispatching may post the status comment (R12).
         """
         self.gh.move(Move(issue, (READY, NEEDS_ATTENTION), (IN_PROGRESS,)))
         self.say(f"dispatcher: #{issue} -> {IN_PROGRESS}")
@@ -1104,38 +1195,48 @@ class Dispatcher:
                       and error.stderr else error)
             self.apply(needs_attention(issue,
                                        f"the session could not start: {str(detail).strip()}"))
+            self.final(Report(issue, Status(NEEDS_ATTENTION, marks_stopped(UNSTARTED)),
+                              create=True))
             return
         self.running[issue] = running
         pid = getattr(running.process, "pid", "?")
         self.say(f"dispatcher: #{issue}: claude started (PID {pid}) in {running.worktree}, "
                  f"log {running.log}")
+        self.apply(self.running_report(running))
 
     def resume(self, issue: int) -> None:
         """In progress, then the paused conversation; one that cannot resume needs attention.
 
-        Without a valid marker there is nothing to resume. A failed read or label swap raises
-        before the session: the issue stays `paused` for the next poll.
+        Without a valid marker there is nothing to resume. The checklist continues from the
+        status comment's marks (KTD2). A failed read or label swap raises before the session:
+        the issue stays `paused` for the next poll.
         """
         marker = self.gh.marker(issue)
         if marker is None:
             self.apply(needs_attention(issue, "this issue is paused, but no pause record was "
                                        "found in its comments, so its session cannot resume.",
                                        remove=PAUSED))
+            self.final(Report(issue, Status(NEEDS_ATTENTION), marks_stopped))
             return
+        stored = self.board.marks(issue) or UNSTARTED
         self.gh.move(Move(issue, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,)))
         self.say(f"dispatcher: #{issue} -> {IN_PROGRESS}")
         try:
             running = self.sessions.resume(issue, marker)
         except OSError as error:
             self.apply(needs_attention(issue, f"the paused session could not resume: {error}"))
+            self.final(Report(issue, Status(NEEDS_ATTENTION), marks_stopped))
             return
+        running = replace(running, start_marks=marks_resumed(stored))
         self.running[issue] = running
         self.say(f"dispatcher: #{issue} resumed in {running.worktree}, log {running.log}")
+        self.apply(self.running_report(running))
 
     def stop(self) -> None:
         """Judge the sessions that already ended, as a poll would; end the others and mark them.
 
-        The verdicts that failed at earlier polls get one last try: no poll follows.
+        The verdicts that failed at earlier polls get one last try: no poll follows. A stopped
+        session's status comment fails the stage its log reached.
         """
         self.pending = [action for action in self.pending if not self.apply(action)]
         live: list[Running] = []
@@ -1151,11 +1252,13 @@ class Dispatcher:
                                            f"was stopped before GitHub could be read: {error}",
                                            f"Worktree: `{running.worktree}`",
                                            f"Log: `{running.log}`"))
+                self.apply(self.stopped_report(running))
         self.sessions.end(live)
         for running in live:
             self.apply(needs_attention(running.issue,
                                        "the dispatcher was stopped while the session ran.",
                                        f"Worktree: `{running.worktree}`", f"Log: `{running.log}`"))
+            self.apply(self.stopped_report(running))
 
 
 def alive(pid: int) -> bool:
