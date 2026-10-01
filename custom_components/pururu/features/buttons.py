@@ -46,14 +46,13 @@ from ..core.feature import TEXT, Device, Feature, state_text
 from ..core.generated import SCRIPTS
 from ..core.resolve import Index
 from ..core.roles import Configured
+from ..core.vocabulary import NO_READING
 from . import standing
 
 _LOGGER = logging.getLogger(__name__)
 
 # The feature's key in a device's configuration
 CONF_BUTTONS = "buttons"
-# What a sensor shows while it has no reading: no person presses it
-NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 # How long a sensor stays unknown before its first value can be a press: a
 # sensor just set up gets its first (retained) value within milliseconds, a
 # person pressing after a restart well after
@@ -130,14 +129,17 @@ class Button(PururuEntity, ButtonEntity):
         arriving is no person's. The press runs with a context descending from
         the sensor's write, so the logbook says where it came from.
         """
-        if self.hass.state is not CoreState.running or not pressed(
-            event.data["old_state"], event.data["new_state"], self._state
+        entry = self.platform.config_entry
+        if (
+            entry is None
+            or self.hass.state is not CoreState.running
+            or not pressed(
+                event.data["old_state"], event.data["new_state"], self._state
+            )
         ):
             return
         self.async_set_context(Context(parent_id=event.context.id))
-        if self.platform.config_entry is None:
-            return
-        self.platform.config_entry.async_create_task(
+        entry.async_create_task(
             self.hass, self._async_press_action(), f"pururu press {self.entity_id}"
         )
 
