@@ -1,4 +1,4 @@
-"""Features `door` and `window`: the owner's enclosure doors (UniFi Access), replayed."""
+"""Features `door` and `window`: an enclosure's two doors and an access controller's events."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -190,7 +190,7 @@ async def test_before_the_first_opening_everything_is_unknown(door: HomeAssistan
 
 
 async def test_an_opening_is_recorded(door: HomeAssistant, kind: str, freezer: Any) -> None:
-    """Entry by the front door, 2026-09-27 22:22:46: open for about 6 s."""
+    """Entry by the front door: open for about 6 s."""
     await opening(door, freezer, 6)
     assert seconds_from(door, kind, "last_opened") == pytest.approx(6, abs=1)
     assert seconds_from(door, kind, "last_closed") < 1
@@ -334,7 +334,7 @@ EVENTS = [
     {"entity": ACCESS, "types": ACCESS_TYPES, "fields": ACCESS_FIELDS},
     {"entity": DOORBELL, "types": {"ring": "ring"}},
 ]
-# What UniFi Access sent on 2026-09-27
+# What an access controller sends
 ENTRY = {"actor": "Alex Doe", "authentication": "PIN_CODE", "direction": "entry",
          "result": "ACCESS"}
 EXIT = {"actor": "N/A", "authentication": "REX", "direction": "exit", "result": "ACCESS"}
@@ -398,7 +398,7 @@ async def test_the_old_events_key_is_refused_at_its_path(
 
 async def test_entry_by_pin_describes_the_opening(enclosure: HomeAssistant, kind: str,
                                                   freezer: Any) -> None:
-    """2026-09-27 22:22:46: the contact opens, the access event comes 0.9 s later."""
+    """The contact opens, the access event comes 0.9 s later."""
     await contact(enclosure, "on")
     assert fields(enclosure, kind) == ("unknown", "unknown", "unknown")
     await tick(enclosure, freezer, 0.9)

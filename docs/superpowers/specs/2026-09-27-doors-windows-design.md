@@ -34,9 +34,9 @@ pururu:
 # → binary_sensor.pururu_janela_quarto_window_open              "Janela do quarto Aberta"
 ```
 
-## What the real hardware shows
+## What such hardware shows
 
-The owner's two enclosure doors (UniFi Access), history of 2026-09-26 and 27:
+An example: an enclosure's two doors, each with a contact and an access controller's `event.*`:
 
 | Situation | Contact | Event |
 |---|---|---|
