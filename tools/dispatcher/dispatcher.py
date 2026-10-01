@@ -18,8 +18,8 @@ usage limit stopped it). Each issue also gets one status comment, edited in plac
 it waits in the queue, then a checklist of lfg's stages read from the session's log, its
 last sentence and running time, then how it ended. A pause holds every start until a
 minute past the limit's reset, or, with no reset known, until the next poll tries one
-session. Past the hold,
-paused issues resume first, oldest first: the same conversation, in the same worktree.
+session. Past the hold, paused issues resume first, oldest first: the same conversation,
+in the same worktree.
 Every line it prints carries the time; each poll reports what it found. Logs and the
 lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll
 would, then stops the others and marks their issues `needs attention`; paused issues
@@ -102,18 +102,24 @@ MARKER_LINE = re.compile(rf"<!-- {MARKER} (\{{.*\}}) -->")
 SESSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
+def hidden(body: str, line: re.Pattern[str]) -> dict[str, Any] | None:
+    """The JSON object a comment's last line holds when it is a hidden marker `line` matches."""
+    lines = body.strip().splitlines()
+    found = line.fullmatch(lines[-1].strip()) if lines else None
+    try:
+        record = json.loads(found[1]) if found else None
+    except ValueError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
 def marker_of(body: str, issue: int) -> Marker | None:
     """The marker on a comment's last line, if its session is a UUID and its branch this issue's.
 
     The session becomes a `claude --resume` argument, and the branch a folder's name.
     """
-    lines = body.strip().splitlines()
-    found = MARKER_LINE.fullmatch(lines[-1].strip()) if lines else None
-    try:
-        record = json.loads(found[1]) if found else None
-    except ValueError:
-        return None
-    if not isinstance(record, dict):
+    record = hidden(body, MARKER_LINE)
+    if record is None:
         return None
     session, branch, reset = record.get("session"), record.get("branch"), record.get("reset")
     if (isinstance(session, str) and SESSION_ID.fullmatch(session)
@@ -255,7 +261,7 @@ def pause(session: Ended, limit: Marker) -> Move:
 def judge(session: Ended) -> list[Action]:
     """A session ended: in review with an open pull request, paused at the limit, else attention.
 
-    Each move is followed by its final report, from the marks the session's log left (KTD5).
+    Each move is followed by its final report, from the marks the session's log left.
     """
     marks = session.progress.marks
     if not session.prs and session.limit:
@@ -419,13 +425,8 @@ def waiting(blocked: int = 0, held: bool = False, until: float | None = None) ->
 
 def status_marks(body: str) -> tuple[str, ...] | None:
     """The marks in a status comment's marker, if its last line is one holding a mark per stage."""
-    lines = body.strip().splitlines()
-    found = STATUS_LINE.fullmatch(lines[-1].strip()) if lines else None
-    try:
-        record = json.loads(found[1]) if found else None
-    except ValueError:
-        return None
-    stages = record.get("stages") if isinstance(record, dict) else None
+    record = hidden(body, STATUS_LINE)
+    stages = record.get("stages") if record is not None else None
     if (isinstance(stages, list) and len(stages) == len(STAGES)
             and all(isinstance(mark, str) and mark in MARK_SIGNS for mark in stages)):
         return tuple(stages)
@@ -481,10 +482,10 @@ type Change = Callable[[tuple[str, ...]], tuple[str, ...]]
 
 @dataclass(frozen=True)
 class Report:
-    """Show `status` on the issue's status comment, posting the comment only if `create` (R12).
+    """Show `status` on the issue's status comment, posting the comment only if `create`.
 
     With `change`, the marks are `change` of the ones the comment holds (all pending without a
-    readable marker, KTD2), not the status's own.
+    readable marker), not the status's own.
     """
 
     issue: int
@@ -715,7 +716,7 @@ class Board:
         return status_marks(comment[1]) if comment else None
 
     def report(self, issue: int, status: Status, now: float, create: bool) -> None:
-        """Show `status` on the issue: edit its comment, or, only if `create`, post one (R12).
+        """Show `status` on the issue: edit its comment, or, only if `create`, post one.
 
         A failed write forgets the comment, so the next report lists the comments again: the
         author may have deleted it, or a create whose reply was lost may have landed.
@@ -1170,7 +1171,7 @@ class Dispatcher:
     def running_report(self, running: Running) -> Report:
         """A live session's running report, from its log.
 
-        Only a session this run dispatched may post the comment: a resumed one is edited (R12).
+        Only a session this run dispatched may post the comment: a resumed one is edited.
         """
         progress = self.sessions.progress(running, running.start_marks)
         return Report(running.issue, Status(RUNNING, progress.marks, latest=progress.latest,
@@ -1178,7 +1179,7 @@ class Dispatcher:
                       create=running.resumed is None)
 
     def stopped_report(self, running: Running) -> Report:
-        """A session the dispatcher stopped: the stage its log reached fails (R9)."""
+        """A session the dispatcher stopped: the stage its log reached fails."""
         marks = self.sessions.progress(running, running.start_marks).marks
         return Report(running.issue, Status(NEEDS_ATTENTION, marks_stopped(marks)))
 
@@ -1186,7 +1187,7 @@ class Dispatcher:
         """In progress, then a session, reported running; one that cannot start needs attention.
 
         A failed label swap raises before the session: the issue stays `ready` for the next poll.
-        Dispatching may post the status comment (R12).
+        Dispatching may post the status comment.
         """
         self.gh.move(Move(issue, (READY, NEEDS_ATTENTION), (IN_PROGRESS,)))
         self.say(f"dispatcher: #{issue} -> {IN_PROGRESS}")
@@ -1211,7 +1212,7 @@ class Dispatcher:
         """In progress, then the paused conversation; one that cannot resume needs attention.
 
         Without a valid marker there is nothing to resume. The checklist continues from the
-        status comment's marks (KTD2). A failed read or label swap raises before the session:
+        status comment's marks. A failed read or label swap raises before the session:
         the issue stays `paused` for the next poll.
         """
         marker = self.gh.marker(issue)
