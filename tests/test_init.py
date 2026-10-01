@@ -65,9 +65,9 @@ def dummy(ha: HomeAssistant) -> Iterator[None]:
             self._attr_native_value = entity_key
 
     class Seen(entity.PururuEntity, SensorEntity):
-        def __init__(self, device: Any, of: str, watched: str, *, here: bool) -> None:
+        def __init__(self, device: Any, of: str, watched: str) -> None:
             self._identify(device, Platform.SENSOR, "seen")
-            self.follows = (of,) if here else ()
+            self.follows = (of,)
             self._attr_native_value = watched
 
     resolve = module("core.resolve")
@@ -97,10 +97,9 @@ def dummy(ha: HomeAssistant) -> Iterator[None]:
             namespace="watch",
             entity_keys={"seen": Platform.SENSOR},
             build=lambda hass, device, config, inputs: [
-                Seen(device, config["of"], inputs[config["of"]],
-                     here=resolve.Ref.parse(config["of"]).owner == "here")],
+                Seen(device, config["of"], inputs[config["of"]])],
             example={"of": "gauge.level"},
-            roles=(roles.Refers(lambda config: [(("of",), resolve.Ref.parse(config["of"]))], others=True),),
+            roles=(roles.Refers(lambda config: [(("of",), resolve.Ref.parse(config["of"]))]),),
         ),
     }
     features.update(added)
@@ -183,11 +182,13 @@ async def test_a_feature_gets_the_entity_key_it_refers_to(ha: HomeAssistant) -> 
     assert held(ha, "dummy_gizmo") == {LEVEL, ACTIVE, SEEN}
 
 
-async def test_a_reference_to_another_device_gets_that_devices_entity(ha: HomeAssistant) -> None:
-    """A Ref with a device resolves on that device, not on the referrer's own."""
+async def test_a_reference_to_another_device_is_refused_at_its_field(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """A feature's Refers names only its own device's entities."""
     gizmo = {**GIZMO, "watch": {"of": "device.dummy_panel.gauge.active"}}
-    assert await setup(ha, {"dummy_gizmo": gizmo, "dummy_panel": PANEL})
-    assert ha.states.get(SEEN).state == "binary_sensor.pururu_dummy_panel_gauge_active"
+    assert not await setup(ha, {"dummy_gizmo": gizmo, "dummy_panel": PANEL})
+    assert "watch: device.dummy_panel.gauge.active is not of this device" in caplog.text
+    assert "pururu->devices->dummy_gizmo->watch->of" in caplog.text
 
 
 async def test_a_device_key_without_generates_builds(ha: HomeAssistant) -> None:

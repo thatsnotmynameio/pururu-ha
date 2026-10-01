@@ -112,12 +112,11 @@ class Refers:
     (("stuck", "when"), appliance.running_program). Validated against the
     device, refused at the field (checks.references); build() gets their
     current entity IDs in `inputs`, by each reference as written (Ref.text).
-    `others`: whether it may name another device's (device.<device>.…); a
-    Home Assistant entity is never one.
+    Only this device's: another device's (device.<device>.…) and a Home
+    Assistant entity are refused.
     """
 
     of: Callable[[Any], Iterable[tuple[Path, Ref]]]
-    others: bool = False
 
 
 @dataclass(frozen=True)

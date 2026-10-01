@@ -212,20 +212,15 @@ def running(devices: Mapping[str, Any], here: str, ref: Ref) -> bool:
 
 
 def reach(
-    index: Index,
-    devices: Mapping[str, Any],
-    here: str,
-    ref: Ref,
-    *,
-    others: bool = False,
+    index: Index, devices: Mapping[str, Any], here: str, ref: Ref
 ) -> Target | str:
     """What `ref`, written in device `here`, names within a field's reach; else why it can't, after the field's place.
 
-    A field reaches its own device's entities, and another device's with
-    `others`; never Home Assistant's, nor an executable program (RUNNING).
+    A field reaches its own device's entities only: never another device's,
+    nor Home Assistant's, nor an executable program (RUNNING).
     """
     if ref.owner is Owner.HOME_ASSISTANT or (
-        ref.owner is Owner.DEVICE and ref.device != here and not others
+        ref.owner is Owner.DEVICE and ref.device != here
     ):
         return f"{ref.text} is not of this device"
     if running(devices, here, ref):

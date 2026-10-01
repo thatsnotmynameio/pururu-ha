@@ -54,7 +54,7 @@ def _refused_refs(
     """Builder `name`'s references on device `key` that it can't have: one refusal each, at its field."""
     for where, ref in refers.of(devices[key][name]):
         path: list[Hashable] = [CONF_DEVICES, key, name, *where]
-        found = programs.reach(index, devices, key, ref, others=refers.others)
+        found = programs.reach(index, devices, key, ref)
         if isinstance(found, str):
             yield vol.Invalid(f"{name}: {found}", path=path)
         elif found.builder == name:
