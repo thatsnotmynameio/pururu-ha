@@ -1,0 +1,29 @@
+# The tests of the repo's own tools (tools/, such as the issue dispatcher), which
+# share nothing with the integration: no Home Assistant, no hassfest, no docs.
+# CI calls it on pull requests that change tools/, pyproject.toml, uv.lock or the
+# workflows; it has no trigger of its own besides a manual start. Release doesn't
+# run it: the tools ship with nothing.
+name: Tools
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tools tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-python: true
+      # --locked: fail if uv.lock is out of date (every package pinned by hash). Not
+      # --no-build: mock-open, a dependency of the HA test plugin, ships only as sdist.
+      - run: uv run --locked pytest tools -n 0

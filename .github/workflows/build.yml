@@ -2,7 +2,8 @@
 # pyproject.toml pins, in three stages. Lint: release.py check, then
 # tests/test_code.py (ruff, format, mypy, hassfest, quality scale, the layer
 # table, the docs guard), and outside pull requests (where Docs runs them) the
-# docs tests, tests/docs. Tests: the rest of the suite split by file into three
+# docs tests, tests/docs. Tests: the rest of the suite (tools/ aside: tools.yml)
+# split by file into three
 # parallel jobs (PURURU_SHARD), each keeping its coverage data. SonarQube: the
 # three combined into coverage.xml, then SonarQube Cloud's analysis, which on a
 # pull request waits for the quality gate and fails with it. CI calls it on pull
@@ -65,7 +66,8 @@ jobs:
         with:
           path: .hassfest
           key: hassfest-${{ hashFiles('fetch_hassfest.py') }}
-      - run: uv run --locked pytest --cov --ignore=tests/test_code.py
+      # tools/ has its own workflow (tools.yml)
+      - run: uv run --locked pytest tests --cov --ignore=tests/test_code.py
         env:
           PURURU_SHARD: ${{ matrix.shard }}/3
       # Each job's data under its own name: the three land in one folder, and
