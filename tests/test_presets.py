@@ -2,7 +2,6 @@
 
 from datetime import timedelta
 from pathlib import Path
-import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant, State
@@ -10,7 +9,7 @@ from homeassistant.util import dt as dt_util
 import pytest
 import yaml
 
-from helpers import capture, fake, held, module, reload, restart, setup, snapshot, tick
+from helpers import capture, fake, held, reload, restart, setup, snapshot, tick
 
 KEY = "dummy_washer"
 POWER = "sensor.dummy_plug_power"
@@ -359,16 +358,3 @@ async def test_ones_own_texts_without_alert2_are_an_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, name: str, settings: Any) -> None:
     assert await setup(ha, devices({name: settings}))
     assert f"{alert(name)} {ALERT2_ERROR}" in caplog.text
-
-
-# --- the docs ----------------------------------------------------------------------------
-
-APPLIANCE_PAGE = Path(__file__).resolve().parents[1] / "docs/features/appliance.mdx"
-
-
-def test_the_appliance_page_lists_every_ready_made_alert(ha: HomeAssistant) -> None:
-    page = APPLIANCE_PAGE.read_text(encoding="utf-8")
-    section = re.search(r"## Ready-made alerts\n(.*?)\n## ", page, re.DOTALL)
-    assert section is not None, "no Ready-made alerts section"
-    for name in module("core.feature").presets_of(module("features").FEATURES["appliance"]):
-        assert f"`{name}`" in section[1], name

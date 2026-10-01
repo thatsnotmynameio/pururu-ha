@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: como o pururu referencia as coisas</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1f2328; --muted: #57606a; --line: #d8dee4;
+    --accent: #0b5cad; --accent-soft: #e7f0fa; --accent-text: #0a4a8a;
+    --warn-soft: #fbf1e3; --warn-text: #7a4a00;
+    --ok-soft: #e8f5ec; --ok-text: #1f6b3a;
+    --card: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c; --fg: #e6e8eb; --muted: #a3acb6; --line: #2e353d;
+      --accent: #6cb0ff; --accent-soft: #1b2a3b; --accent-text: #a9d0ff;
+      --warn-soft: #33281a; --warn-text: #f0c68a;
+      --ok-soft: #1a2e22; --ok-text: #9edbb2;
+      --card: #1b1f24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 900px; margin-inline: auto; padding: 2.5rem 1.25rem 4rem; }
+  p, li, dd { max-width: 72ch; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0.2rem 0 0.8rem; }
+  h2 { font-size: 1.4rem; margin: 2.8rem 0 1rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+  h4 { font-size: 0.95rem; margin: 1.2rem 0 0.4rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  strong { color: inherit; }
+  code { font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--accent-soft); color: var(--accent-text); padding: 0.05em 0.35em; border-radius: 4px; }
+  a { color: var(--accent); }
+  .eyebrow { font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .meta { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.5rem 0 1.5rem; font-size: 0.92rem; }
+  .meta dt { color: var(--muted); }
+  .meta dd { margin: 0; }
+  .stats { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0 0; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.9rem; font-size: 0.9rem; }
+  .stat b { font-size: 1.2rem; display: block; }
+  .jump { columns: 2; padding-left: 1.2rem; font-size: 0.95rem; }
+  article.idea { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.3rem 1.4rem; margin: 1.2rem 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.8rem; }
+  .chip { font-size: 0.78rem; padding: 0.15rem 0.6rem; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  .chip.id { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+  article.idea dl { margin: 0; }
+  article.idea dt { font-weight: 600; margin-top: 0.8rem; font-size: 0.9rem; }
+  article.idea dd { margin: 0.2rem 0 0; }
+  .callout { background: var(--warn-soft); color: var(--warn-text); border-radius: 8px; padding: 0.8rem 1rem; margin: 1rem 0; }
+  .callout p { margin: 0; color: var(--warn-text); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin: 0.8rem 0; }
+  th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
+  th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  figure { margin: 1rem 0 0.4rem; }
+  figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .svg-box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+  .svg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .svg-t { fill: var(--fg); font-size: 13px; }
+  .svg-s { fill: var(--muted); font-size: 11px; }
+  .svg-at { fill: var(--accent-text); font-size: 13px; font-weight: 600; }
+  .svg-line { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  .svg-tick { stroke: var(--accent); stroke-width: 2.5; }
+  .svg-wait { fill: var(--warn-soft); stroke: none; }
+  footer.composition-signal { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+  pre { font: 0.86em/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--accent-soft); color: var(--accent-text); padding: 0.8rem 1rem; border-radius: 8px; overflow-x: auto; margin: 0.6rem 0; }
+  pre code { background: none; padding: 0; color: inherit; font-size: 1em; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+  .cols h5 { margin: 0.4rem 0 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  @media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+  td code, th code { white-space: nowrap; }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">Ideação · pururu</div>
+  <h1>Ideation: como o pururu referencia as coisas</h1>
+  <dl class="meta">
+    <dt>date</dt><dd><time datetime="2026-10-01">2026-10-01</time></dd>
+    <dt>topic</dt><dd>references</dd>
+    <dt>focus</dt><dd>Como referenciar as coisas no pururu, olhando como grandes frameworks fazem e o próprio Home Assistant</dd>
+    <dt>mode</dt><dd>repo-grounded</dd>
+  </dl>
+  <div class="stats">
+    <div class="stat"><b>46</b>ideias brutas</div>
+    <div class="stat"><b>18 + 3</b>após juntar duplicatas, mais combinações</div>
+    <div class="stat"><b>5</b>sobreviventes</div>
+    <div class="stat"><b>5 de 5</b>eixos cobertos</div>
+  </div>
+</header>
+
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+<h3>Codebase Context</h3>
+<ul>
+  <li>Cada feature cria entidades <code>&lt;platform&gt;.pururu_&lt;device&gt;_&lt;namespace&gt;_&lt;chave&gt;</code>. Uma referência hoje é a chave "qualificada", o fim do entity ID depois da chave do device: <code>appliance_running</code>, <code>switch_sprinkler</code>. Não existe parser: cada schema valida a string (<code>cv.slug</code>, <code>cv.entity_id</code>) e o código monta um <code>Ref(device, chave)</code> que <code>find</code> procura no índice (<code>core/resolve.py</code>).</li>
+  <li>Na 0.2.1 (depois do PR C), uma referência é a chave qualificada no próprio device (<code>when: appliance_running</code>, <code>turn_on: switch_sprinkler</code>), <code>device.chave</code> para outro device (<code>when: clothes_washer.appliance_running</code>; o próprio device escrito por extenso vale igual), <code>entity:</code> para uma entidade do HA, e os grupos de luz são listas dessas referências (<code>default: [greenhouse.light_lantern]</code>).</li>
+  <li>O <code>_</code> aparece dentro dos nomes e também entre os níveis, então a fronteira não se vê: <code>appliance_cotton_phase_other_energy_month</code> é appliance / programa detectado <code>cotton</code> / fase <code>other</code> / medidor <code>energy_month</code>.</li>
+  <li>Entidades reais do HA ficam em chaves próprias (<code>power</code>, <code>energy</code>, <code>contact</code>, <code>entity</code>). O pururu segue o rename das próprias entidades, mas não o das entidades do HA que ele lê.</li>
+  <li>Fronteiras (D5, "listen anywhere, act only on yourself"): o <code>when</code> de um alerta escrito à mão vigia só o próprio device; um passo de programa age só no próprio device; uma reação escuta o próprio device, outro device ou qualquer entidade do HA.</li>
+  <li>O PR C (#63, 0.2.1) implementou o D7 do spec <code>docs/superpowers/specs/2026-09-29-yaml-contract-coherence-design.md</code>: <code>chave</code> no mesmo device, <code>device.chave</code> em outro, <code>entity:</code> para o real. O spec rejeitou <code>appliance.running</code> (C6) porque "reads like an entity ID" e deixa de bater com o fim do ID.</li>
+  <li>O <code>event_name</code> dos eventos do barramento já é <code>&lt;device&gt;.&lt;chave&gt;</code> (<code>clothes_washer.appliance_last_cycle_end</code>).</li>
+</ul>
+<h3>Restrições do usuário</h3>
+<ul>
+  <li>Tudo o que é do Home Assistant leva <code>homeassistant.</code>, inclusive campos que só aceitam entidade real: <code>power: homeassistant.sensor.washer_plug_power</code>.</li>
+  <li>O <code>when</code> tem que ser ridiculamente fácil de escrever.</li>
+  <li>O esquema com <code>self.</code> em toda referência interna e ponto em todo nível (<code>self.appliance.cotton.phase.current</code>) foi recusado por ser pesado demais.</li>
+  <li>Um usuário só: sem compatibilidade, aliases ou migração.</li>
+</ul>
+<h3>External Context</h3>
+<p>Os frameworks convergem num padrão de três degraus: o nome nu é o escopo mais próximo, um qualificador alcança o vizinho, e um marcador explícito indica o dono de fora. Bazel usa <code>:t</code>, <code>//pkg:t</code> e <code>@repo//pkg:t</code>; Terraform deixa o recurso gerenciado sem prefixo e marca o externo com <code>data.</code>; no dbt, <code>ref()</code> é do projeto e <code>source()</code> é de fora, e um <code>ref</code> ambíguo é erro, não palpite. O HA põe o tipo do referente na chave (<code>target: {entity_id, device_id, area_id}</code>), e o ESPHome usa <code>id:</code> local nu e <code>platform: homeassistant</code> para importar uma entidade do HA. Um resolvedor que tenta vários escopos em cascata (o <code>ndots</code> do DNS do Kubernetes) surpreende e precisa de um jeito de desligar.</p>
+<h3>Past Learnings</h3>
+<p>Nenhum: o repositório não tem <code>docs/solutions/</code>.</p>
+</section>
+
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<ol>
+  <li>O <code>when</code> dentro do device: referências ao próprio device, o caso que tem de ser ridiculamente fácil.</li>
+  <li>Atravessar fronteiras: entidades de outro device e agrupamentos da casa (reações entre devices, grupos de luz, áreas, andares).</li>
+  <li>Coisas do Home Assistant: todo referente do HA sob <code>homeassistant.</code>.</li>
+  <li>Descobrir e errar: como achar a referência válida e o que acontece quando ela está errada.</li>
+  <li>Um nome em todo lugar: o nome da mesma coisa na referência, no entity ID, no <code>event_name</code>, nos itens gerados.</li>
+</ol>
+</section>
+
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+<ol class="jump">
+  <li><a href="#i1">A referência é o caminho no YAML</a></li>
+  <li><a href="#i2"><code>homeassistant.</code> como promessa verificada e seguida</a></li>
+  <li><a href="#i3">Reagir ao acontecimento que o device publica</a></li>
+  <li><a href="#i4">Erro de referência que diz o que escrever</a></li>
+  <li><a href="#i5">Uma forma canônica, impressa em todo lugar</a></li>
+</ol>
+
+<article class="idea" id="i1">
+  <div class="chips"><span class="chip id">1.</span><span class="chip">Eixo 1</span><span class="chip">Confiança 85%</span><span class="chip">Complexidade alta</span></div>
+  <h3>1. A referência é o caminho no YAML</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>Decidido com o autor em 2026-10-01. Quem escreve o YAML chega à entidade pelo que escreveu, mais convenções; não precisa saber como a entidade gerada se chama. Esta decisão substitui a forma de referência da 0.2.1 (o D7 do spec de coerência, implementado no PR C) e derruba a recusa do C6. É uma nova mudança de quebra depois da 0.2.1: o YAML migra da forma da 0.2.1 para esta. As regras:</p>
+      <ol>
+        <li><strong>Externo é sempre explícito.</strong> Tudo o que é do HA leva <code>homeassistant.</code>, em qualquer campo, mesmo nos que só aceitam entidade do HA: <code>power: homeassistant.sensor.washer_plug_power</code>, <code>contact:</code>, o <code>entity:</code> de switches, luzes e botões, <code>when: homeassistant.binary_sensor.porta_despensa</code>, <code>notify: homeassistant.notify.mobile_app_phone</code>. O <code>entity:</code> das reações some: entra no <code>when</code>.</li>
+        <li><strong>Outro device é sempre explícito:</strong> <code>device.clothes_washer.appliance.running_program</code>. Dentro do próprio device se escreve direto (<code>appliance.running_program</code>); escrever <code>device.clothes_washer.…</code> dentro de <code>clothes_washer</code> é recusado, com o erro dizendo o que escrever. Assim, um device copiado com outra chave continua apontando para si mesmo. Hoje (0.2.1) o próprio device escrito por extenso vale igual (<code>laundry_lights.light_teto</code> é <code>light_teto</code>); isso muda.</li>
+        <li><strong>Campo que só aceita um tipo de coisa interna recebe só a chave</strong>, porque o nome do campo já diz o que é: <code>area: despensa</code>, <code>floor: terreo</code>, <code>then: blink</code>, <code>program: ler</code> (botão), <code>lights: externas</code> (alerta). <code>lights: default</code> nomeia o grupo <code>default</code>, que precisa estar declarado; o <code>lights: true</code> já saiu na 0.2.1.</li>
+        <li><strong>Campo que aceita coisas internas diferentes recebe o caminho completo no YAML, com pontos</strong>, começando na chave do bloco dentro do device: <code>when: appliance.running_program</code>, <code>turn_on: switches.sprinkler</code>, <code>appliance.programs.detected.cotton.other.statistics.energy.month</code>. Sempre completo, por enquanto, mesmo quando a referência está escrita dentro de <code>appliance:</code>.</li>
+        <li><strong>O que o pururu cria sem você escrever fica embaixo do nó onde nasce, e o nó de uma coisa é a própria coisa.</strong> Um switch, uma luz, um botão, um alerta, um programa ou uma fase é a própria entidade (<code>switches.sprinkler</code>, <code>appliance.running_program</code> é a lavadora ligada, <code>appliance.programs.detected.cotton</code> é o Algodão ligado). O resto entra com o nome que a documentação usa: <code>appliance.running_program.last_cycle_end</code>, <code>appliance.running_program.phase_current</code>, <code>door.open</code>, <code>programs.executable.clean.cycles_total</code>, <code>reactions.washer_done.triggered_total</code>.</li>
+        <li><strong>O <code>event_name</code> é a referência de fora:</strong> <code>device.clothes_washer.appliance.running_program.last_cycle_end</code>. O campo <code>key</code> do evento e as chaves de <code>states</code> são o caminho dentro do device (<code>appliance.running_program.last_cycle_end</code>); num template, <code>{{ event.states['appliance.running_program'] }}</code>.</li>
+        <li><strong>Grupos de luz dos alertas</strong> continuam em <code>config: alerts: lights: groups</code>, e cada membro é uma referência completa: <code>default: [device.biblioteca.lights.teto]</code>.</li>
+        <li><strong>Cada entidade mostra a própria referência.</strong> Um atributo em cada entidade do pururu, fora do recorder, traz o caminho como se escreve no YAML: <code>appliance.running_program.last_cycle_end</code> dentro do device e <code>device.clothes_washer.appliance.running_program.last_cycle_end</code> de fora. É a ponte de quem está olhando uma entidade no HA até o que escrever, e sai junto com as regras acima (a parte da ideia 5 que entra agora).</li>
+      </ol>
+      <p>A primeira palavra de um caminho diz de quem é: <code>homeassistant</code>, <code>device</code> ou uma chave de bloco do próprio device. Nenhuma chave de bloco se chama <code>device</code> ou <code>homeassistant</code>, então a leitura nunca é ambígua, e os pontos depois dela ficam livres para o caminho.</p>
+      <p>Os casos, hoje (0.2.1) e com a decisão:</p>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Caso</th><th>Hoje (0.2.1)</th><th>Decidido</th></tr></thead>
+        <tbody>
+          <tr><td>(a) alerta da lavadora quando ela está ligada</td><td><code>when: appliance_running</code></td><td><code>when: appliance.running_program</code></td></tr>
+          <tr><td>(b) reação da biblioteca na lavadora ligada</td><td><code>when: clothes_washer.appliance_running</code></td><td><code>when: device.clothes_washer.appliance.running_program</code></td></tr>
+          <tr><td>(c) reação da biblioteca na porta da despensa (HA)</td><td><code>entity: binary_sensor.porta_despensa</code></td><td><code>when: homeassistant.binary_sensor.porta_despensa</code></td></tr>
+          <tr><td>(d) passo que liga o irrigador da estufa</td><td><code>turn_on: switch_sprinkler</code></td><td><code>turn_on: switches.sprinkler</code></td></tr>
+          <tr><td>(e) energia do mês da fase <code>other</code> do programa <code>cotton</code></td><td><code>when: appliance_cotton_phase_other_energy_month</code></td><td><code>when: appliance.programs.detected.cotton.other.statistics.energy.month</code></td></tr>
+          <tr><td>programa que a reação inicia</td><td><code>then: blink</code></td><td><code>then: blink</code></td></tr>
+          <tr><td>área do device</td><td><code>area: despensa</code></td><td><code>area: despensa</code></td></tr>
+          <tr><td>tomada da lavadora</td><td><code>power: sensor.washer_plug_power</code></td><td><code>power: homeassistant.sensor.washer_plug_power</code></td></tr>
+          <tr><td>para onde vão as mensagens</td><td><code>notify: notify.mobile_app_phone</code></td><td><code>notify: homeassistant.notify.mobile_app_phone</code></td></tr>
+          <tr><td>membro de grupo de luz</td><td><code>default: [biblioteca.light_teto]</code></td><td><code>default: [device.biblioteca.lights.teto]</code></td></tr>
+          <tr><td><code>event_name</code></td><td><code>clothes_washer.appliance_last_cycle_end</code></td><td><code>device.clothes_washer.appliance.running_program.last_cycle_end</code></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>O mesmo padrão em outros sistemas:</p>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>De quem é</th><th>pururu</th><th>Bazel</th><th>Terraform</th><th>dbt</th></tr></thead>
+        <tbody>
+          <tr><td>Daqui</td><td><code>switches.sprinkler</code></td><td><code>:t</code></td><td><code>aws_instance.web</code></td><td><code>ref('model')</code></td></tr>
+          <tr><td>Do vizinho</td><td><code>device.clothes_washer.appliance.running_program</code></td><td><code>//pkg:t</code></td><td><code>module.net.vpc_id</code></td><td><code>ref('pkg', 'model')</code></td></tr>
+          <tr><td>De outro dono</td><td><code>homeassistant.binary_sensor.porta_despensa</code></td><td><code>@repo//pkg:t</code></td><td><code>data.aws_ami.x</code></td><td><code>source('src', 'table')</code></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Para depois, de propósito:</p>
+      <ul>
+        <li>uma forma curta que pule as palavras de estrutura (<code>appliance.cotton.other.energy.month</code>);</li>
+        <li>o caminho a partir de onde você está (<code>running_program</code> dentro de <code>appliance:</code>). Quando vier, precisa decidir o que vale quando ele e o caminho completo apontam para coisas diferentes, e se a busca sobe pelos níveis acima;</li>
+        <li>a luz poder declarar ou sobrescrever, de dentro do device, os grupos de luz a que pertence (a ideia 6 desta lista, como override do <code>config:</code>).</li>
+      </ul>
+    </dd>
+    <dt>Axis</dt>
+    <dd>1. O <code>when</code> dentro do device</dd>
+    <dt>Basis</dt>
+    <dd>
+      <ul>
+        <li><code>direct:</code> hoje a referência é o fim do entity ID, então o usuário precisa conhecer a entidade gerada: <code>docs/reference/troubleshooting.mdx:29</code> ensina "Write it as the entity ID ends after the device key, with its namespace (<code>appliance_power</code>, not <code>power</code>)".</li>
+        <li><code>direct:</code> o entity ID tem palavras que o usuário nunca escreveu: "Its entities' keys begin with <code>phase_other</code>" (<code>docs/concepts/programs.mdx:185</code>), embora no YAML o <code>other:</code> fique direto sob o programa, sem nenhum <code>phase</code>.</li>
+        <li><code>direct:</code> três campos já recebem só a chave porque o campo implica o tipo: <code>then</code> (<code>device_keys/reactions.py:181</code>), o <code>program</code> dos botões (<code>features/buttons.py:90</code>) e <code>area</code> (<code>setup/schema.py:41</code>).</li>
+        <li><code>direct:</code> <code>device_keys/reactions.py:131</code>, "a reaction's device goes with when": dois campos formam uma referência só.</li>
+        <li><code>reasoned:</code> toda chave é <code>cv.slug</code>, sem ponto, e a primeira palavra vem de um conjunto fechado (<code>homeassistant</code>, <code>device</code>, as chaves de bloco), então cada ponto é uma fronteira de nível. O <code>_</code> não consegue isso: o docstring de <code>setup/checks.py:121</code> cita o caso <code>greenhouse</code> mais <code>greenhouse_switch</code>.</li>
+        <li><code>external:</code> labels do Bazel, referências do Terraform (<code>data.</code> para o que é de fora), <code>ref</code> e <code>source</code> do dbt; e o caminho pelo próprio documento, como em <code>yq '.appliance.programs.detected.cotton'</code>.</li>
+      </ul>
+    </dd>
+    <dt>Rationale</dt>
+    <dd>Quem escreve o YAML chega à entidade pelo que tem na tela: o caminho é o próprio arquivo, e o externo e o vizinho sempre se anunciam. A chave do bloco no caminho tira a ambiguidade (<code>switches.sprinkler</code> e <code>lights.sprinkler</code> são coisas diferentes) e diz o que é cada coisa. Onde o campo só aceita uma coisa, a chave basta e o YAML fica curto. E as três raízes (bloco, <code>device.</code>, <code>homeassistant.</code>) seguem o padrão em que os frameworks convergem.</dd>
+    <dt>Downsides</dt>
+    <dd>
+      <ul>
+        <li>Os casos profundos ficam longos: (e) tem oito níveis.</li>
+        <li>A referência espelha a estrutura do YAML: se um bloco muda de lugar no schema, todas as referências a ele mudam. Com um usuário só e sem compatibilidade, isso é aceitável, mas pesa em cada mudança de schema.</li>
+        <li>A referência deixa de bater com o fim do entity ID (o segundo motivo do C6). O HA continua mostrando entity IDs em dashboards, no histórico, nas automações do usuário e no <code>entity_id</code> dos eventos; o atributo da regra 8 é a ponte do entity ID para o caminho.</li>
+        <li>O que é criado sem ser escrito depende de uma convenção por feature, que precisa estar documentada e ser fácil de achar.</li>
+        <li>Quem consome os eventos muda: <code>event_name</code>, <code>key</code> e as chaves de <code>states</code> mudam, e um template passa a usar colchetes (<code>event.states['appliance.running_program']</code>).</li>
+        <li>O pururu indexa <code>inputs</code> "by each reference as written (Ref.text)" (<code>core/roles.py:94</code>). O caminho precisa resolver para o alvo uma vez, ao ler, e virar uma só chave (ideia 5).</li>
+        <li><code>homeassistant</code> já é domínio de serviço do HA (<code>homeassistant.turn_on</code>), e <code>homeassistant.notify.mobile_app_phone</code> pode ser lido como uma ação desse domínio.</li>
+      </ul>
+    </dd>
+    <dt>Confidence</dt><dd>85%</dd>
+    <dt>Complexity</dt><dd>High</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i2">
+  <div class="chips"><span class="chip id">2.</span><span class="chip">Eixo 3</span><span class="chip">Confiança 70%</span><span class="chip">Complexidade média</span></div>
+  <h3>2. <code>homeassistant.</code> como promessa verificada e seguida</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>Com o prefixo obrigatório, o pururu sabe exatamente o que lê do HA sem conhecer cada campo. A ideia usa isso para três coisas:</p>
+      <ol>
+        <li>Um validador só para todo referente do HA (<code>power</code>, <code>energy</code>, <code>contact</code>, as entidades <code>event</code>, o <code>when</code> das reações), que guarda o caminho no YAML de cada um.</li>
+        <li>Depois que o HA termina de subir, um issue em Repairs para cada referência que o HA não conhece, com os IDs parecidos do mesmo domínio. O issue some quando a entidade aparece.</li>
+        <li>Quando o usuário renomeia na UI uma entidade do HA que o pururu lê, o listener reage como já faz com as entidades do pururu: um Repairs com o caminho no YAML e o ID novo para escrever.</li>
+      </ol>
+      <p>Opcional: avisar quando o <code>device_class</code> não combina com o campo, como um <code>power:</code> que aponta para um sensor sem classe <code>power</code>.</p>
+    </dd>
+    <dt>Axis</dt>
+    <dd>3. Coisas do Home Assistant</dd>
+    <dt>Basis</dt>
+    <dd>
+      <ul>
+        <li><code>direct:</code> <code>setup/listener.py:80-83</code>: <code>ours = registered.config_entry_id == entry_id</code> e <code>return "renamed" if ours or generated_item else None</code>. Renomear <code>sensor.washer_plug_power</code> não dispara nada.</li>
+        <li><code>direct:</code> <code>features/appliance/__init__.py:43</code>, <code>vol.Required("power"): cv.entity_id</code>: qualquer domínio, nenhuma checagem de existência.</li>
+        <li><code>direct:</code> o único <code>ir.async_create_issue</code> do código é o de arquivo gerado não incluído (<code>core/generated.py:306</code>).</li>
+        <li><code>external:</code> <code>external: true</code> do Docker Compose ("não é meu; é erro se faltar"); o "These IDs look similar" do ESPHome; o <code>source()</code> do dbt, que existe para linhagem e frescor do que é de fora.</li>
+      </ul>
+    </dd>
+    <dt>Rationale</dt>
+    <dd>É a única falha de referência que hoje é silenciosa: renomear a tomada deixa a lavadora sem leitura, e nenhuma mensagem diz por quê. Com isso, o prefixo que o usuário exigiu deixa de ser só convenção de escrita: o pururu consegue verificar e seguir tudo o que o leva.</dd>
+    <dt>Downsides</dt>
+    <dd>
+      <ul>
+        <li>O HA sobe as integrações em paralelo, então a checagem de existência só pode rodar depois do início, como aviso, nunca na validação do YAML.</li>
+        <li>O YAML continua sendo a verdade: o pururu avisa, não reescreve o arquivo.</li>
+        <li>O <code>notify:</code> também leva o prefixo (ideia 1, regra 1), mas é uma ação (<code>notify.mobile_app_x</code>), não uma entidade, e <code>homeassistant.notify.x</code> pode ser lido como um serviço do domínio <code>homeassistant</code>.</li>
+        <li>Ficou de fora recusar <code>homeassistant.&lt;x&gt;</code> quando uma feature do pururu já representa <code>&lt;x&gt;</code>: o usuário pode querer o estado real mesmo quando o espelho do pururu não foi criado.</li>
+      </ul>
+    </dd>
+    <dt>Confidence</dt><dd>70%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i3">
+  <div class="chips"><span class="chip id">3.</span><span class="chip">Eixo 2</span><span class="chip">Confiança 60%</span><span class="chip">Complexidade média</span></div>
+  <h3>3. Reagir ao acontecimento que o device publica</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>Uma reação pode citar um acontecimento nomeado de uma feature em vez de uma entidade mais a transição. O dono da feature define a transição certa, e quem escuta só cita o nome. O acontecimento fica embaixo do nó que o faz nascer, como toda coisa criada pelo pururu: no próprio device, <code>when: appliance.running_program.finished</code>; em outro, <code>when: device.clothes_washer.appliance.running_program.finished</code>.</p>
+      <div class="cols">
+        <div><h5>Hoje</h5>
+<pre><code>washer_done:
+  name: Lavadora terminou
+  when: clothes_washer.appliance_running
+  from: "on"
+  to: "off"
+  then: blink</code></pre></div>
+        <div><h5>Com a ideia</h5>
+<pre><code>washer_done:
+  name: Lavadora terminou
+  when: device.clothes_washer.appliance.running_program.finished
+  then: blink</code></pre></div>
+      </div>
+    </dd>
+    <dt>Axis</dt>
+    <dd>2. Atravessar fronteiras</dd>
+    <dt>Basis</dt>
+    <dd>
+      <ul>
+        <li><code>direct:</code> <code>features/appliance/notifications.py:10</code>, <code>"finished": Happening(watches="running", from_=STATE_ON, to=STATE_OFF)</code>, com o comentário "from on, so a plug reconnecting (unavailable → off) or a reload tells nobody".</li>
+        <li><code>direct:</code> o exemplo <code>washer_done</code> de <code>docs/concepts/reactions.mdx</code> reescreve essa transição à mão.</li>
+        <li><code>direct:</code> o docstring de <code>Happening</code> em <code>core/feature.py</code> já o define como "what happens, as a reaction's trigger".</li>
+        <li><code>external:</code> de fora de um módulo do Terraform só se alcançam os <code>output</code>s dele.</li>
+      </ul>
+    </dd>
+    <dt>Rationale</dt>
+    <dd>A reação entre devices mais comum cai de quatro campos para um. Some também o erro de esquecer <code>from: "on"</code>, que faz a reação disparar quando a tomada reconecta.</dd>
+    <dt>Downsides</dt>
+    <dd>
+      <ul>
+        <li>Hoje existe um só acontecimento (<code>finished</code>). O ganho cresce junto com um vocabulário (<code>started</code>, <code>opened</code>) que ainda não existe.</li>
+        <li>É o primeiro referente que não é entidade, então o índice e as mensagens de erro passam a ter dois tipos de alvo.</li>
+        <li>O nome de um acontecimento pode colidir com uma chave local, e essa colisão precisa ser recusada.</li>
+      </ul>
+    </dd>
+    <dt>Confidence</dt><dd>60%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i4">
+  <div class="chips"><span class="chip id">4.</span><span class="chip">Eixo 4</span><span class="chip">Confiança 75%</span><span class="chip">Complexidade baixa</span></div>
+  <h3>4. Erro de referência que diz o que escrever</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>Uma função só monta todas as recusas de referência e calcula a correção a partir do índice:</p>
+      <ul>
+        <li>a mesma chave em outro bloco (<code>turn_on: sprinkler</code> → <code>switches.sprinkler</code>);</li>
+        <li>o caminho em outro device ("<code>clothes_washer</code> has it: <code>device.clothes_washer.appliance.running_program</code>");</li>
+        <li>a mais próxima por distância de edição entre as que o campo aceita ("did you mean <code>switches.sprinkler</code>?");</li>
+        <li>um entity ID colado ("write it as <code>appliance.running_program</code>");</li>
+        <li>com a regra nova, o <code>homeassistant.</code> esquecido (<code>power: sensor.washer_plug_power</code> → "write <code>homeassistant.sensor.washer_plug_power</code>").</li>
+      </ul>
+      <p>As mensagens novas também aparecem no Check configuration do próprio HA (Ferramentas de desenvolvedor → YAML, o diálogo de reiniciar, e <code>hass --script check_config</code> sem o HA rodando). Ele roda o <code>CONFIG_SCHEMA</code> do pururu e, com ele, todas as verificações de referência; nenhuma ferramenta nova.</p>
+    </dd>
+    <dt>Axis</dt>
+    <dd>4. Descobrir e errar</dd>
+    <dt>Basis</dt>
+    <dd>
+      <ul>
+        <li><code>direct:</code> nenhum "did you mean" nem <code>difflib</code> no código.</li>
+        <li><code>direct:</code> <code>find</code> deixa a mensagem para quem chama ("The caller says why, in its own words", <code>core/resolve.py</code>), e a mesma falha tem três redações (<code>device_keys/reactions.py:465</code> e <code>:476</code>, <code>setup/checks.py:51</code>).</li>
+        <li><code>direct:</code> <code>docs/reference/troubleshooting.mdx:29</code>, <code>:36</code> e <code>:47</code> ensinam à mão a correção que o erro não dá.</li>
+        <li><code>external:</code> ESPHome, "Couldn't find ID 'relay2'... These IDs look similar: 'relay1'".</li>
+      </ul>
+    </dd>
+    <dt>Rationale</dt>
+    <dd>Sem migração nem aliases (um usuário só), quem paga a troca de gramática é o primeiro reload com o YAML antigo. Um erro que já traz a linha certa torna a troca barata e ensina a gramática nova no lugar onde o usuário está.</dd>
+    <dt>Downsides</dt>
+    <dd>
+      <ul>
+        <li>Explicar "o medidor não existe porque o <code>statistics:</code> não pediu esse período" não sai de <code>Counted.needs</code>, que cobre só settings como <code>energy</code>. Essa causa precisaria de outro dado.</li>
+      </ul>
+    </dd>
+    <dt>Confidence</dt><dd>75%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i5">
+  <div class="chips"><span class="chip id">5.</span><span class="chip">Eixo 5</span><span class="chip">Confiança 70%</span><span class="chip">Complexidade baixa</span></div>
+  <h3>5. Uma forma canônica, impressa em todo lugar</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>Cada alvo tem um endereço canônico, o caminho da ideia 1 visto de fora (<code>device.clothes_washer.appliance.running_program</code>), já decidido como o <code>event_name</code>. Dentro do próprio device, o mesmo alvo se escreve sem o <code>device.clothes_washer.</code> (<code>appliance.running_program</code>). Uma função única de endereço alimenta:</p>
+      <ul>
+        <li>o <code>event_name</code> e as chaves de <code>states</code> (decididos na ideia 1);</li>
+        <li>a <code>description</code> dos scripts e automações gerados, que hoje é <code>pururu: biblioteca, washer_done</code> e não diz o que a reação escuta;</li>
+        <li>os logs e os Repairs;</li>
+        <li>um atributo em cada entidade (já decidido junto com a ideia 1, regra 8), fora do recorder, com as duas formas (<code>appliance.running_program</code> dentro do device, <code>device.clothes_washer.appliance.running_program</code> de fora). Ele responde "como escrevo isto no YAML?" mesmo depois de um rename na UI.</li>
+      </ul>
+      <p>Um teste garante que toda forma impressa resolve de volta ao mesmo alvo.</p>
+    </dd>
+    <dt>Axis</dt>
+    <dd>5. Um nome em todo lugar</dd>
+    <dt>Basis</dt>
+    <dd>
+      <ul>
+        <li><code>direct:</code> <code>outputs/events.py:121</code>, <code>"event_name": f"{device.key}.{key}"</code>, e <code>Ref.text</code> em <code>core/resolve.py</code> montam a mesma string em dois lugares.</li>
+        <li><code>direct:</code> <code>device_keys/reactions.py:316</code> e <code>aspects/programs.py:208</code> descrevem só <code>pururu: {device_key}, {reaction_key}</code>.</li>
+        <li><code>direct:</code> <code>core/roles.py:94</code> indexa <code>inputs</code> "by each reference as written (Ref.text)".</li>
+        <li><code>external:</code> o Bazel normaliza <code>:t</code> para o label canônico e imprime esse label em todo erro.</li>
+      </ul>
+    </dd>
+    <dt>Rationale</dt>
+    <dd>É a peça que impede a ideia 1 de criar duas grafias para o mesmo alvo. E dá ao usuário uma ida e volta: o nome que ele vê num evento, num Repair ou num atributo é o que ele cola no YAML.</dd>
+    <dt>Downsides</dt>
+    <dd>
+      <ul>
+        <li>O atributo sai com a ideia 1; o resto (descrições, logs, Repairs, o teste de ida e volta) não muda o que o usuário escreve e pode vir depois.</li>
+        <li>Mudar a <code>description</code> muda o texto que aparece no rastro das automações.</li>
+      </ul>
+    </dd>
+    <dt>Confidence</dt><dd>70%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+</article>
+</section>
+
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+<table>
+  <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Chave local nua, com a qualificada como escape</td><td>Recusada pelo autor: <code>running</code> sozinho não diz o que é, e <code>sprinkler</code> fica ambíguo entre um switch e uma luz. A ideia 1 põe a chave do bloco no caminho.</td></tr>
+    <tr><td>2</td><td>Um valor carrega o nível; <code>device:</code> e <code>entity:</code> somem</td><td>Entrou na ideia 1.</td></tr>
+    <tr><td>3</td><td>Ponto entre namespace e chave (<code>switch.sprinkler</code>), seguindo o entity ID</td><td>Substituída pela ideia 1: o autor escolheu a chave do bloco no YAML (<code>switches</code>), não o namespace do entity ID (<code>switch</code>), para não precisar conhecer a entidade gerada.</td></tr>
+    <tr><td>4</td><td>Referência profunda feita das palavras do autor (<code>cotton.other.energy_month</code> ou <code>cotton other energy month</code>)</td><td>O autor escolheu começar pelo caminho literal (ideia 1). A forma que pula palavras de estrutura ficou em aberto para depois. A variante com espaços resolve por busca, o que surpreende e falha de jeitos difíceis de depurar.</td></tr>
+    <tr><td>5</td><td>O alerta mora no lugar que vigia</td><td><code>alerts:</code> dentro do bloco de uma feature já é a lista dos alertas prontos; a mesma chave teria dois vocabulários. O ganho fica restrito aos medidores profundos.</td></tr>
+    <tr><td>6</td><td>O entity ID do pururu, colado da UI, sempre vale</td><td>O verificador achou a base sólida, mas a ideia cria uma segunda grafia para o mesmo alvo e falha justo quando o usuário renomeou a entidade na UI. O atributo da ideia 5 resolve a mesma tradução.</td></tr>
+    <tr><td>7</td><td>Seletores de casa (<code>area:</code>, <code>floor:</code>) como tipo de referente</td><td>Saiu junto com os grupos com o rótulo na luz (abaixo).</td></tr>
+    <tr><td>8</td><td>JSON Schema da casa publicado para o editor</td><td>Escrito no setup, fica velho em relação ao YAML que está sendo editado. Validar fora do HA já existe: o Check configuration do HA roda as verificações do pururu (ideia 4).</td></tr>
+    <tr><td>9</td><td><code>Slot</code>: cada lugar que aceita referência declarado como dado</td><td>Refatoração interna que decorre de qualquer gramática escolhida. Pertence ao plano, não à escolha da gramática.</td></tr>
+    <tr><td>10</td><td>Grafo de referências (impacto, ciclos)</td><td>Um ciclo estático não vê <code>to</code>/<code>from</code>/<code>for</code> e daria falso positivo; programas agem só no próprio device. Fora do assunto.</td></tr>
+    <tr><td>11</td><td>Lista de ingredientes: o device declara o que ouve de fora (<code>ouve:</code>)</td><td>Declarar antes de usar põe uma indireção em todo <code>when</code> entre devices, o contrário de "ridiculamente fácil".</td></tr>
+    <tr><td>12</td><td>Regra da planilha como teste de contrato</td><td>Os exemplos das features não se auto-qualificam, então o teste não pegaria o caso. A regra em si (recusar <code>device.&lt;o próprio device&gt;.</code> de dentro dele) entrou na ideia 1.</td></tr>
+    <tr><td>13</td><td>O nome do device aponta a entidade principal (<code>when: clothes_washer</code>)</td><td>Switches, luzes e botões não têm entidade principal, um device com várias features tem várias, e a referência da ideia 1 sempre nomeia o bloco.</td></tr>
+    <tr><td>14</td><td>Quem declara é o dono: áreas e <code>notify</code> com prefixo (<code>homeassistant.area.garagem</code>)</td><td>O <code>notify</code> com prefixo entrou na ideia 1 (regra 1). Áreas do HA não declaradas (<code>homeassistant.area.garagem</code>) ficaram de fora: uma área do HA já pode ser adotada declarando-a em <code>areas:</code>.</td></tr>
+    <tr><td>15</td><td>Um catálogo, três saídas: erro, schema, docs</td><td>Duplica as ideias 4 e 8.</td></tr>
+    <tr><td>16</td><td><code>homeassistant.</code> como contrato de posse</td><td>Duplica a ideia 2 e a 14, e herda os problemas da 14.</td></tr>
+    <tr><td>17</td><td>Recusar <code>homeassistant.&lt;x&gt;</code> quando o pururu já representa <code>&lt;x&gt;</code></td><td>O usuário pode querer o estado real mesmo quando o espelho do pururu não foi criado. Registrado nos downsides da ideia 2.</td></tr>
+    <tr><td>18</td><td>Grupos de luz com o rótulo na luz (a luz declara os grupos)</td><td>O autor manteve os grupos em <code>config:</code>, com referências completas, para ver o grupo inteiro num lugar só. Fica anotado para evoluir: a luz poder declarar ou sobrescrever os grupos de dentro do device.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<footer class="composition-signal">Composed <time datetime="2026-10-01T13:43Z">2026-10-01T13:43Z</time> by ce-ideate from the prompt "Como referenciar as coisas. Ver como grandes frameworks fazem. Além do próprio home assistant pra ajudar a entender.", grounded in <a href="https://github.com/thatsnotmynameio/pururu-ha">thatsnotmynameio/pururu-ha</a>.</footer>
+</main>
+</body>
+</html>

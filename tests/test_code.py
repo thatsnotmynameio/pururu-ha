@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import fetch_hassfest
+import pytest
 import yaml
 
 RULE = re.compile(r'Rule\("([a-z-]+)"')
@@ -212,20 +213,79 @@ def test_no_module_is_named_after_a_platform_ha_preloads() -> None:
     assert not (ours & set(BASE_PRELOAD_PLATFORMS)) - {"config_flow"}
 
 
-BLOCK = re.compile(r'```python title="([\w/]+\.py)"\n(.*?)```', re.DOTALL)
-RELATIVE = re.compile(r"^from (\.+)([\w.]*) import ", re.MULTILINE)
+TESTS = PROJECT / "tests"
 
 
-def test_the_develop_docs_examples_import_what_exists() -> None:
-    """A relative import in a titled example resolves to a module of the package, or to another example."""
-    pages = sorted((PROJECT / "docs" / "develop").glob("*.mdx"))
-    blocks = [match.groups() for page in pages for match in BLOCK.finditer(page.read_text())]
-    examples = {title.removesuffix(".py").replace("/", ".") for title, _ in blocks}
-    for title, code in blocks:
-        package = title.removesuffix(".py").split("/")[:-1]
-        for dots, name in RELATIVE.findall(code):
-            base = package[:len(package) - (len(dots) - 1)]
-            target = ".".join([*base, *name.split(".")]) if name else ".".join(base)
-            path = PROJECT / CODE / target.replace(".", "/")
-            assert (target in examples or path.with_suffix(".py").exists()
-                    or (path / "__init__.py").exists()), f"{title}: from {dots}{name}"
+# The modules outside tests/docs/ that may name docs/, from the tests folder: conftest.py
+# marks tests/docs/, test_changes.py holds paths as data to classify and reads no file
+DOCS_ALLOWED = {Path("conftest.py"), Path("test_changes.py")}
+DOCSTRING_HOLDERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def docs_named_in(path: Path) -> list[str]:
+    """The string constants of a file that are `docs` or start with `docs/`, its docstrings aside."""
+    tree = ast.parse(path.read_text())
+    docstrings = {
+        id(node.body[0].value) for node in ast.walk(tree)
+        if isinstance(node, DOCSTRING_HOLDERS) and node.body
+        and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant)
+    }
+    return [node.value for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            and id(node) not in docstrings
+            and (node.value == "docs" or node.value.startswith("docs/"))]
+
+
+def reading_docs(folder: Path) -> list[str]:
+    """Each module of a tests folder, outside its docs/, naming docs/: its path and what it names."""
+    found = []
+    for path in sorted(folder.rglob("*.py")):
+        module = path.relative_to(folder)
+        # test_code.py itself: the guard's own samples name docs/
+        if module.parts[0] == "docs" or module in DOCS_ALLOWED or module == Path("test_code.py"):
+            continue
+        if named := docs_named_in(path):
+            found.append(f"{module}: {', '.join(named)}")
+    return found
+
+
+def test_no_test_outside_tests_docs_reads_docs() -> None:
+    """A test reading docs/ sits in tests/docs/, run by `pytest -m docs` and never by the default run."""
+    found = reading_docs(TESTS)
+    assert not found, "\n".join(found)
+
+
+def guarded(folder: Path, modules: dict[str, str]) -> list[str]:
+    """What the guard finds in a tests folder holding `modules` (path from the folder: code)."""
+    for name, code in modules.items():
+        (folder / name).parent.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_text(code)
+    return reading_docs(folder)
+
+
+@pytest.mark.parametrize("code", [
+    pytest.param('PAGE = PROJECT / "docs/features/door.mdx"\n', id="a page's path"),
+    pytest.param('PAGES = PROJECT / "docs" / "develop"\n', id="a path built from segments"),
+])
+def test_the_guard_names_a_module_naming_docs(tmp_path: Path, code: str) -> None:
+    [found] = guarded(tmp_path, {"test_door.py": code})
+    assert found.startswith("test_door.py"), found
+
+
+def test_the_guard_ignores_a_docstring(tmp_path: Path) -> None:
+    """test_events.py names docs/concepts/events.mdx in a test's docstring only."""
+    assert guarded(tmp_path, {"test_events.py": (TESTS / "test_events.py").read_text()}) == []
+
+
+def test_the_guard_ignores_tests_docs(tmp_path: Path) -> None:
+    assert guarded(tmp_path, {"docs/test_door.py": 'PAGE = "docs/features/door.mdx"\n'}) == []
+
+
+def test_the_guard_allows_conftest_and_test_changes_alone(tmp_path: Path) -> None:
+    """conftest.py marks tests/docs/; test_changes.py holds paths as data and reads no file."""
+    paths = 'CHANGED = ["docs/features/door.mdx", "docs"]\n'
+    assert guarded(tmp_path, {"conftest.py": (TESTS / "conftest.py").read_text(),
+                              "test_changes.py": paths}) == []
+    [found] = guarded(tmp_path, {"test_other.py": paths})
+    assert found.startswith("test_other.py"), found
+    assert DOCS_ALLOWED == {Path("conftest.py"), Path("test_changes.py")}
