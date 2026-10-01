@@ -6,6 +6,8 @@ config:
       groups:
         default: [biblioteca.light_teto]
         externas: [biblioteca.light_teto, biblioteca.light_abajur]
+      high: {turn_on: {color_name: red, effect: breathe}, repeat: "00:00:15"}
+      resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}
 floors:
   terreo: {name: Térreo, level: 0}
 areas:

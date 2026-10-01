@@ -22,7 +22,7 @@ CONF_MESSAGE: Final = "message"
 CONF_NOTIFY: Final = "notify"
 # A device's ready-made notifications: feature key -> name -> settings
 CONF_NOTIFICATIONS: Final = "notifications"
-# A device's alerts: the feature whose alerts with notify Alert2 delivers
+# A device's alerts: the device key of the hand-written alerts (those with texts go to Alert2)
 CONF_ALERTS: Final = "alerts"
 # The key of the entry's data holding the IDs of the automations it generated
 CONF_AUTOMATIONS: Final = "automations"
