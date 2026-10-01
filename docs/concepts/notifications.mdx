@@ -65,7 +65,7 @@ A feature may offer notifications for what happens to it. Enable one with one ke
 
 | Notification | Told when | Name | Default message |
 |---|---|---|---|
-| `appliance: notifications: finished` | a cycle ends (`appliance_running` goes from `on` to `off`) | Finished / Terminou | The cycle finished. / O ciclo terminou. |
+| `appliance: notifications: finished` | a cycle ends (`appliance.running_program` goes from `on` to `off`) | Finished / Terminou | The cycle finished. / O ciclo terminou. |
 
 Each one takes `message`, which replaces its text, and `notify`, which replaces `config.notify`. `finished:` alone, with nothing after it, is every default.
 

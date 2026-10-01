@@ -26,8 +26,8 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
-        energy: sensor.washer_plug_energy
+        power: homeassistant.sensor.washer_plug_power
+        energy: homeassistant.sensor.washer_plug_energy
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -41,15 +41,17 @@ pururu:
 
 and you get a device called **Tanquinho** with these entities:
 
-| Entity | What it tells you |
-|---|---|
-| `binary_sensor.pururu_clothes_washer_appliance_running` | Whether the washer is running a cycle right now |
-| `sensor.pururu_clothes_washer_appliance_phase_current` | `idle`, `warming`, `wringing` or `other` |
-| `sensor.pururu_clothes_washer_appliance_last_cycle_end` | When the last wash finished: trigger your "laundry is done" automation on it |
-| `sensor.pururu_clothes_washer_appliance_last_cycle_duration` | How long it took, in minutes |
-| `sensor.pururu_clothes_washer_appliance_last_cycle_energy` | How much energy it used, in kWh |
-| `sensor.pururu_clothes_washer_appliance_cycles_month` | How many washes this month |
-| … | [and more](/features/appliance#entities) |
+| Entity | Path | What it tells you |
+|---|---|---|
+| `binary_sensor.pururu_clothes_washer_appliance_running` | `appliance.running_program` | Whether the washer is running a cycle right now |
+| `sensor.pururu_clothes_washer_appliance_phase_current` | `appliance.running_program.phase_current` | `idle`, `warming`, `wringing` or `other` |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_end` | `appliance.running_program.last_cycle_end` | When the last wash finished: trigger your "laundry is done" automation on it |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_duration` | `appliance.running_program.last_cycle_duration` | How long it took, in minutes |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_energy` | `appliance.running_program.last_cycle_energy` | How much energy it used, in kWh |
+| `sensor.pururu_clothes_washer_appliance_cycles_month` | `appliance.running_program.statistics.cycles.month` | How many washes this month |
+| … | | [and more](/features/appliance#entities) |
+
+The path is how the YAML names an entity, in an alert or a reaction: the keys you wrote, from the device down, each separated by a dot. See [References](/concepts/entity-ids#references).
 
 Change the YAML, reload, and the device follows.
 
@@ -57,7 +59,7 @@ Change the YAML, reload, and the device follows.
 
 - **Floors and areas**, with the IDs you choose. See [Floors and areas](/concepts/floors-and-areas).
 - **Devices**, each one a name plus one or more **features**. A feature is a ready-made piece of behaviour, such as [`appliance`](/features/appliance) (an appliance on a power-measuring plug, its phases part of it), [`door`](/features/door) or [`window`](/features/window) (from a contact sensor), [`switches`](/features/switches) (real switches inside the device), [`lights`](/features/lights) (real lights inside the device) or [`buttons`](/features/buttons) (a remote's keys, as buttons that start programs). See [Devices and features](/concepts/devices-and-features).
-- **Entities** inside each device, with predictable IDs. See [Entity IDs](/concepts/entity-ids).
+- **Entities** inside each device, with predictable IDs, each named in the YAML by its path. See [Entity IDs](/concepts/entity-ids).
 - **A dashboard** in the sidebar that lists what pururu manages. See [Dashboard](/concepts/dashboard).
 
 ## What pururu doesn't do

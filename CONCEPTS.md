@@ -2,6 +2,23 @@
 
 > Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all.
 
+## References
+
+### Reference
+How the `pururu:` YAML names an entity, written by reading only that YAML: its first word says whose it is. A block of this device starts a path (`appliance.running_program`), `device.` another device's (`device.clothes_washer.appliance.running_program`), `homeassistant.` anything Home Assistant owns (`homeassistant.sensor.washer_plug_power`).
+*Avoid:* entity key (for what the YAML writes), entity reference
+
+A field that names one kind of thing (an area, a floor, a program to start, a group of alert lights) takes that thing's key alone instead, never a reference.
+
+### Path
+An entity's way down through its device's YAML, from the block key the author wrote under the device, every written level a segment, a dot between levels: `appliance.programs.detected.cotton.other.statistics.energy.month`. A declared thing's path is that thing's own entity (`switches.sprinkler`, `appliance.running_program`); what pururu creates unwritten sits under the node it is born under (`appliance.running_program.last_cycle_end`); a period is the last segment of its meter's.
+
+### Entity key
+The part of an entity ID after the device key and the namespace (`running`, `phase_warming_cycles_total`): how pururu names the entity in Home Assistant, not how the YAML writes it. Its path and its entity key differ wherever a YAML level isn't in the ID. Renaming an entity in the UI changes its ID, never its path.
+
+### Inside and outside form
+An entity's reference as its own device writes it (inside: the path, `appliance.running_program`) and as any other device writes it (outside: `device.clothes_washer.appliance.running_program`). Every entity shows both in its `reference` attribute; a bus event's `key` and `states` keys are the inside form, its `event_name` the outside form.
+
 ## Buttons
 
 ### Button

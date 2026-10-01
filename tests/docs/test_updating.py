@@ -101,11 +101,13 @@ APPLIANCE = [*WASHER, "appliance"]
 DOOR = ["devices", "biblioteca", "door"]
 TETO = ["devices", "biblioteca", "lights", "teto"]
 PANTRY = ["devices", "biblioteca", "reactions", "pantry"]
+BUTTON = ["devices", "greenhouse", "buttons", "clean"]
+EVENT = ["devices", "biblioteca", "door", "event_entities", 0]
 NOT_HOME_ASSISTANTS = "{} is not a Home Assistant entity: homeassistant.<domain>.<object_id>"
 NOT_A_PATH = "{} is not a path: write it from its block, <block>.<key>"
 
 
-def was(*path: str) -> Any:
+def was(*path: str | int) -> Any:
     """The value at `path` of 0.2.1's whole block, as the page writes it."""
     at: Any = WAS
     for step in path:
@@ -113,22 +115,22 @@ def was(*path: str) -> Any:
     return deepcopy(at)
 
 
-def where(*path: str) -> str:
+def where(*path: str | int) -> str:
     """A refusal's place, as Home Assistant writes it."""
-    return "->".join(("pururu", *path))
+    return "->".join(("pururu", *map(str, path)))
 
 
-def value(message: str, *path: str) -> str:
+def value(message: str, *path: str | int) -> str:
     """A value a validator refuses, at its place."""
     return f"{message} for dictionary value '{where(*path)}'"
 
 
-def check(message: str, *path: str) -> str:
+def check(message: str, *path: str | int) -> str:
     """A refusal at its place, as Home Assistant writes one a rule over the house or a list's item gives."""
     return f"{message} '{where(*path)}'"
 
 
-def old(why: str, path: list[str], key: str, form: Any, refusal: str, quote: str | None = None) -> Any:
+def old(why: str, path: list[str | int], key: str, form: Any, refusal: str, quote: str | None = None) -> Any:
     """An old form: `form` at `key` of `path`, refused with `refusal`, of which the page quotes `quote`."""
     return pytest.param(path, key, form, refusal, quote, id=f"{why}, as before 0.2.2")
 
@@ -142,6 +144,9 @@ ENTITY = "'entity' is an invalid option for 'pururu', check: pururu->devices->bi
 NOTIFY = "notify.mobile_app_phone is not a notify action: homeassistant.notify.<name>"
 
 OLDS = [
+    old("the washer's alert while it runs, the table's appliance_running", STUCK, "when", "appliance_running",
+        value(NOT_A_PATH.format("appliance_running"), *STUCK, "when"),
+        value(NOT_A_PATH.format("appliance_running"), *STUCK, "when")),
     old("an entity key in an alert's when", STUCK, "when", was(*STUCK, "when"),
         value(NOT_A_PATH.format("appliance_phase_current"), *STUCK, "when"),
         NOT_A_PATH.format("appliance_phase_current")),
@@ -159,6 +164,10 @@ OLDS = [
         value(NOT_HOME_ASSISTANTS.format("binary_sensor.porta_biblioteca"), *DOOR, "contact")),
     old("a bare entity", TETO, "entity", was(*TETO, "entity"),
         value(NOT_HOME_ASSISTANTS.format("light.biblioteca_teto"), *TETO, "entity")),
+    old("a button's bare entity", BUTTON, "entity", was(*BUTTON, "entity"),
+        value(NOT_HOME_ASSISTANTS.format("sensor.controle_estufa_action"), *BUTTON, "entity")),
+    old("an event entity's bare entity", EVENT, "entity", was(*EVENT, "entity"),
+        value(NOT_HOME_ASSISTANTS.format("event.porta_biblioteca_access"), *EVENT, "entity")),
     old("a bare notify", ["config"], "notify", was("config", "notify"),
         check(NOTIFY, "config", "notify", "0"), NOTIFY),
     old("a reaction's entity", PANTRY, "entity", was(*PANTRY, "entity"), ENTITY, ENTITY),
@@ -166,13 +175,21 @@ OLDS = [
 
 
 def test_the_table_gives_an_old_reference_its_path() -> None:
-    """The washer's alert while it runs: appliance_running is appliance.running_program."""
+    """AE8: the washer's alert while it runs, appliance_running, is appliance.running_program; refused as OLDS' first case."""
     assert "| `appliance_running` | `appliance.running_program` |" in PAGE.read_text()
+
+
+def test_the_outside_consumers_read_states_by_path() -> None:
+    """The events step: event_name and key by path, states read with brackets, never expanded."""
+    page = PAGE.read_text()
+    assert "`clothes_washer.appliance_last_cycle_end` → `device.clothes_washer.appliance.running_program.last_cycle_end`" in page
+    assert "`appliance_running` → `appliance.running_program`" in page
+    assert "trigger.event.data.states['appliance.running_program.last_cycle_energy']" in page
 
 
 @pytest.mark.parametrize(("path", "key", "form", "refusal", "quote"), OLDS)
 def test_the_whole_example_is_refused_with_any_old_form(
-    ha: HomeAssistant, path: list[str], key: str, form: Any, refusal: str, quote: str | None
+    ha: HomeAssistant, path: list[str | int], key: str, form: Any, refusal: str, quote: str | None
 ) -> None:
     """Each 0.2.1 form the steps rewrite, put back in the whole example, is refused at its place, as the page quotes it."""
     house = deepcopy(whole(AFTER)["pururu"])

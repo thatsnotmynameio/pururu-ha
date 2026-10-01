@@ -12,8 +12,8 @@ pururu:
       name: Estufa
       area: estufa
       switches:
-        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
-        heater: {entity: switch.greenhouse_heater, name: Aquecedor}
+        sprinkler: {entity: homeassistant.switch.greenhouse_sprinkler, name: Irrigador}
+        heater: {entity: homeassistant.switch.greenhouse_heater, name: Aquecedor}
 ```
 
 This creates `switch.pururu_greenhouse_switch_sprinkler`, shown as **Estufa Irrigador**, and `switch.pururu_greenhouse_switch_heater`, shown as **Estufa Aquecedor**.
@@ -22,8 +22,8 @@ This creates `switch.pururu_greenhouse_switch_sprinkler`, shown as **Estufa Irri
 
 `switches` is a map of **entity key → switch**, with at least one switch. The key is a slug, and it ends the entity ID, after the namespace `switch`: `sprinkler` → `switch.pururu_greenhouse_switch_sprinkler`.
 
-<Property name="entity" type="entity ID" required>
-  The real switch. It must be a `switch.*` entity, and not one of pururu's own switches, even one you renamed in the UI. A renamed one is caught when pururu builds the device: that switch isn't created, and the log says so.
+<Property name="entity" type="homeassistant.switch.*" required>
+  The real switch, written with `homeassistant.` before its entity ID, as everything Home Assistant owns: `homeassistant.switch.greenhouse_sprinkler`. It must be a `switch.*` entity, and not one of pururu's own switches, even one you renamed in the UI. A renamed one is caught when pururu builds the device: that switch isn't created, and the log says so.
 </Property>
 
 ---
@@ -35,6 +35,12 @@ This creates `switch.pururu_greenhouse_switch_sprinkler`, shown as **Estufa Irri
 A switch's key can be one another feature uses, such as `power` next to `appliance`: each feature has its own [namespace](/concepts/entity-ids#the-pattern), so `switch.pururu_greenhouse_switch_power` and `sensor.pururu_greenhouse_appliance_power` are two entities.
 
 ## Entity
+
+| Entity | Path |
+|---|---|
+| `switch.pururu_<key>_switch_<entity key>` | `switches.<entity key>` |
+
+The path is how the YAML names it: a [program](/concepts/programs#steps)'s step turns it on with `turn_on: switches.sprinkler`, an alert or a reaction watches it with `when: switches.sprinkler`, and another device's reaction with `when: device.greenhouse.switches.sprinkler`.
 
 | The real switch | `switch.pururu_<key>_switch_<entity key>` |
 |---|---|

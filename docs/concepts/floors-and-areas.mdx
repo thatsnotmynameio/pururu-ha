@@ -63,7 +63,7 @@ The rest of the configuration is still applied. [Troubleshooting](/reference/tro
 
 ## A device in an area
 
-A device's `area` must be a key under `areas:`. Anything else is a configuration error, and the reload changes nothing.
+A device's `area` must be a key under `areas:`, written alone: `area: despensa`, never a path such as `areas.despensa` (`area is its area's key alone: despensa`). Anything else is a configuration error, and the reload changes nothing. An area's `floor` is a key of `floors:` the same way.
 
 ```yaml
 pururu:
@@ -74,7 +74,7 @@ pururu:
       name: Tanquinho
       area: despensa
       appliance:
-        power: sensor.washer_plug_power
+        power: homeassistant.sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
 ```
 

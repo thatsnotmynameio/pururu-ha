@@ -19,7 +19,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A phase without `name`, keyed `idle` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
 - A phase keyed `other` or `other_…`, the built-in phase's, whether `other:` is written yet or not: its meters would be the phase's entities once it is (`other_cycles_today is reserved for the built-in phase other (other, other_…): name the phase otherwise`). Pick a key that doesn't begin with `other_`.
 - `other:` without `phases` (`other is the program outside every phase: it needs phases`).
-- A `modes:` or `phases:` feature, as before 0.2.1 (`'modes' is an invalid option`, `'phases' is an invalid option`): their bands are `running_program: phases:`, as [Updating to 0.2.1](https://github.com/thatsnotmynameio/pururu-ha/blob/v0.2.1/docs/getting-started/updating-to-0.2.1.mdx) shows. A phase's `for` (`'for' is an invalid option`) is `on_delay`, and `running_program`'s `threshold` (`'threshold' is an invalid option`) is `above`. A phase's `sensor` or `cycle_from` goes: every phase compares the appliance's `power`.
+- A `modes:` or `phases:` feature, as before 0.2.1 (`'modes' is an invalid option`, `'phases' is an invalid option`): their bands are `running_program: phases:`, as [Updating to 0.2.1](https://github.com/thatsnotmynameio/pururu-ha/blob/v0.2.1/docs/getting-started/updating-to-0.2.1.mdx) shows; then follow [Updating to 0.2.2](/getting-started/updating-to-0.2.2), which rewrites the references. A phase's `for` (`'for' is an invalid option`) is `on_delay`, and `running_program`'s `threshold` (`'threshold' is an invalid option`) is `above`. A phase's `sensor` or `cycle_from` goes: every phase compares the appliance's `power`.
 - Two entities of one device with one unique ID, such as a phase's key and another phase's meter (`device clothes_washer: pururu_clothes_washer_appliance_phase_resfriar_cycles_today would be two entities`).
 - `statistics.energy` on a phase or a detected program without the appliance's `energy` (`statistics.energy needs energy`).
 - A Home Assistant entity written without `homeassistant.` in `power`, `energy`, `contact`, an event entity's `entity`, or the `entity` of a switch, a light or a button, as before 0.2.2: `sensor.washer_plug_power is not a Home Assistant entity: homeassistant.<domain>.<object_id>`. Write `homeassistant.` before its entity ID: see [Updating to 0.2.2](/getting-started/updating-to-0.2.2).
@@ -41,7 +41,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A message that goes nowhere: `device clothes_washer: reactions: door_open: message needs notify, here or in config.notify`. Add `config.notify`, or a `notify` to that reaction or notification. A reaction's `notify` without `message` is refused too, and so is a `notify` that isn't `homeassistant.notify.<name>` (`notify.mobile_app_phone is not a notify action: homeassistant.notify.<name>`, as before 0.2.2).
 - An alert whose `when` is a ready-made alert: `alerts: appliance.alerts.offline is an alert: an alert can't watch another`. An alert or a program step on another device or on Home Assistant's: `alerts: device.biblioteca.lights.teto is not of this device`. An alert or a program step on an executable program: `alerts: programs.executable.clean is an executable program: only a reaction's when follows it` (a program step's starts with `programs:`). A reaction's `when` follows a program running.
 - A program step naming something that isn't an entity of another feature of the device: `programs: switches.greenhouse_sprinkler is not an entity of this device`. Write its path from its block (`switches.sprinkler`), not an entity ID.
-- A program step whose entity doesn't take the action: `programs: appliance_power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
+- A program step whose entity doesn't take the action: `programs: appliance.power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
 - A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`. An executable program takes no `phases` yet (`'phases' is an invalid option`), nor a band (`'above' is an invalid option`).
 - A device's `programs:` written as a flat map, as before 0.2.1, or with no group: `a device's programs sit under executable: (programs: executable: <key>: …) for dictionary value 'pururu->devices->greenhouse->programs'`. Indent its programs under `executable:`.
 - `detected:` in a device's `programs:` (`a device's programs are executable: a detected program sits in the block of the feature whose reading it reads`): move it into the appliance's block. `executable:` in a feature's `programs:` (`a feature's programs are detected: executable programs are the device's`): move it to the device.
@@ -52,7 +52,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A detected program keyed as phases' keys begin, whether those phases exist yet or not: `phase` or `phase_…` (the running program's phases: `phase_warming is reserved for the running program's phases (phase, phase_…): name the program otherwise`), or `cotton_phase` or `cotton_phase_…` beside a detected program `cotton` (`cotton_phase_warming is reserved for detected program cotton's phases (cotton_phase, cotton_phase_…): name the program otherwise`). Pick a key no phase could take.
 - A reaction with no source or two (`a reaction needs one source: when, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`. A `retry` on a reaction to an entity (`a reaction's retry goes with at or sun`), with `times × every` over 12 hours (`a reaction's retries must end within 12 hours`), with `every` under a minute or not in whole seconds (`a reaction's retry every must be whole seconds`), or with `times` not a whole number (`a reaction's retry times must be a whole number`).
 - A reaction whose `when` isn't an entity of its device (`reactions: door: appliance.power: appliance is not a block of this device`: write `device.<device>.appliance.power` for another device's), or of the device it names (`reactions: washer_done: device.clothes_washer.lights.teto: lights is not a block of device clothes_washer`), or whose device isn't a device (`… device.dryer.appliance.power: device dryer is not in devices`). A `when` written as an entity ID reads as a path from a block the device doesn't have (`… binary_sensor.porta_despensa: binary_sensor is not a block of this device`): a Home Assistant entity is `homeassistant.binary_sensor.porta_despensa`. A reaction's `entity:`, as before 0.2.2, is refused (`'entity' is an invalid option`): write the entity in `when`, with `homeassistant.`. An entity, a program's script or an automation pururu creates, written as Home Assistant's, is refused with its path (`… homeassistant.binary_sensor.pururu_clothes_washer_appliance_running is pururu's: write device.clothes_washer.appliance.running_program`); a ready-made notification's automation can't be watched (`… is a ready-made notification: a reaction can't watch it`). A `pururu_` entity pururu doesn't create, such as a helper of yours, is Home Assistant's. A device naming itself with `device.` is refused with the form to write (`… device.clothes_washer.appliance.running_program is this device's: write appliance.running_program`). A reaction can't watch a reaction (`… reactions.morning is a reaction: watch reactions.morning.triggered_total`), but it can follow an executable program, its script running (`programs.executable.clean`, `device.greenhouse.programs.executable.clean`): one the device doesn't have is refused (`… programs.executable.wash is not an executable program of this device`, `… of device greenhouse`). `device:` with `when:`, as before 0.2.1, is refused (`'device' is an invalid option`).
-- A light group's member that isn't a light of a device's `lights`: `config.alerts.lights.groups: porch: device.varanda.lights.teto is not a light`; a member without `device.<device>.`: `varanda.light_rele needs its device: device.<device>.lights.<key>`; a group written as a map of devices, as 0.1.23 wrote it: `expected a list`.
+- A light group's member that isn't a light of a device's `lights`: `config.alerts.lights.groups: porch: device.varanda.lights.teto is not a light`; a member without `device.<device>.`, as before 0.2.2: `varanda.light_rele needs its device: device.<device>.lights.<key>`; a group written as a map of devices, as 0.1.23 wrote it: `expected a list`.
 - An alert's `lights: true` or `false`, as before 0.2.1: `lights names a group of config.alerts.lights.groups, such as default; absent, the alert borrows none`.
 - `resolved`'s `for`, as before 0.2.1 (`'for' is an invalid option`): write `lasts`. A `repeat` or `lasts` under a second: `value must be at least 0:00:01`.
 - A reaction's `then`, a button's `program`, a device's `area`, an area's `floor` or an alert's `lights` written as a path: each takes its key alone (`then is its program's key alone: clean`). Any of them left empty (`""`): `<field> can't be empty`, such as `then can't be empty`; an alert's `when`, a program step, a reaction's `when` or a light group's member left empty: `a path can't be empty`.
@@ -142,7 +142,7 @@ A [reaction](/concepts/reactions#starting-a-program)'s `then` (`runs`), or its `
 binary_sensor.pururu_clothes_washer_alert_month watches sensor.pururu_clothes_washer_appliance_runtime_month, which this device's settings don't create (turn it on, or watch another entity); not creating it
 ```
 
-An [alert](/concepts/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance_runtime_month` without `month` in `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is.
+An [alert](/concepts/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance.running_program.statistics.runtime.month` without `month` in `running_program`'s `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is.
 
 **Fix:** turn on the setting that creates the entity, or point `when` at another entity, then reload pururu.
 
@@ -188,9 +188,9 @@ switch.aquecedor is a pururu switch: name the real one; not creating switch.puru
 light.teto is a pururu light: name the real one; not creating light.pururu_biblioteca_light_abajur
 ```
 
-A switch's or a light's `entity:` names one of pururu's own entities that you renamed in the UI, so it no longer starts with `switch.pururu_` or `light.pururu_`. A [switch](/features/switches) or a [light](/features/lights) stands for a real one.
+A switch's or a light's `entity:` names one of pururu's own entities that you renamed in the UI: its ID no longer starts with `pururu_`, so the configuration took it as Home Assistant's (`homeassistant.switch.aquecedor`). The log names it by its entity ID, without `homeassistant.`. A [switch](/features/switches) or a [light](/features/lights) stands for a real one.
 
-**Fix:** point `entity:` at the real switch or light, then reload pururu.
+**Fix:** point `entity:` at the real switch or light (`homeassistant.<domain>.<object_id>`), then reload pururu.
 
 ### `… is a pururu sensor: name the real one; not creating …`
 
@@ -198,9 +198,9 @@ A switch's or a light's `entity:` names one of pururu's own entities that you re
 sensor.potencia is a pururu sensor: name the real one; not creating button.pururu_biblioteca_button_ler
 ```
 
-A button's `entity:` names one of pururu's own sensors that you renamed in the UI, so it no longer starts with `sensor.pururu_`. A [button](/features/buttons) reads a real sensor.
+A button's `entity:` names one of pururu's own sensors that you renamed in the UI: its ID no longer starts with `pururu_`, so the configuration took it as Home Assistant's (`homeassistant.sensor.potencia`). A [button](/features/buttons) reads a real sensor.
 
-**Fix:** point `entity:` at the real sensor, then reload pururu.
+**Fix:** point `entity:` at the real sensor (`homeassistant.sensor.<object_id>`), then reload pururu.
 
 ### `… is this switch itself: name the real one` (or light)
 
@@ -219,9 +219,9 @@ You renamed a pururu switch or light in the UI to the entity its own `entity:` n
 binary_sensor.lavadora_rodando is a pururu binary sensor: name the real contact; binary_sensor.pururu_porta_frente_door_open stands for nothing
 ```
 
-A door's or window's `contact:` names one of pururu's own binary sensors that you renamed in the UI, so it no longer starts with `binary_sensor.pururu_`. The door is kept, but its `open` is `unavailable` and it records no openings.
+A door's or window's `contact:` names one of pururu's own binary sensors that you renamed in the UI: its ID no longer starts with `pururu_`, so the configuration took it as Home Assistant's (`homeassistant.binary_sensor.lavadora_rodando`). The door is kept, but its `open` is `unavailable` and it records no openings.
 
-**Fix:** point `contact:` at the real contact sensor, then reload pururu.
+**Fix:** point `contact:` at the real contact sensor (`homeassistant.binary_sensor.<object_id>`), then reload pururu.
 
 ### `…: Already running`
 

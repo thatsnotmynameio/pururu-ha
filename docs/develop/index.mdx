@@ -52,8 +52,8 @@ custom_components/pururu/     the integration
     runtime.py                PururuConfigEntry, Built, Step: what the entry carries
     feature.py                Device and Feature: the contract every feature fulfils
     roles.py                  the roles a Feature declares (Configured, Items, Refers…)
-    resolve.py                Ref, Target, Index, find, resolve; the reference forms: path, key_alone, Ref.parse
-    entity.py                 PururuEntity (the base of every entity), reading() and as_time()
+    resolve.py                Ref, Owner, Target, Index, find, resolve; the reference forms: path, key_alone, homeassistant_entity, Ref.parse
+    entity.py                 PururuEntity (the base of every entity: its path, its reference attribute), reading() and as_time()
     vocabulary.py             Condition, parse, band, trigger, period: what makes a watched state hold, and its trigger; a period as HA reads it.
     texts.py                  the translations' common texts
     messages.py               a message's notify actions

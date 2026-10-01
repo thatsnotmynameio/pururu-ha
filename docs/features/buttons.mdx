@@ -12,16 +12,16 @@ pururu:
       name: Biblioteca
       area: biblioteca
       lights:
-        teto: {entity: light.biblioteca_teto, name: Teto}
+        teto: {entity: homeassistant.light.biblioteca_teto, name: Teto}
       programs:
         executable:
           ler:
             name: Ler
             sequence:
-              - turn_on: light_teto
+              - turn_on: lights.teto
       buttons:
-        ler: {entity: sensor.controle_biblioteca_action, state: 1_single, name: Ler, program: ler}
-        extra: {entity: sensor.controle_biblioteca_action, state: 2_single, name: Extra}
+        ler: {entity: homeassistant.sensor.controle_biblioteca_action, state: 1_single, name: Ler, program: ler}
+        extra: {entity: homeassistant.sensor.controle_biblioteca_action, state: 2_single, name: Extra}
 ```
 
 This creates `button.pururu_biblioteca_button_ler`, shown as **Biblioteca Ler**, and `button.pururu_biblioteca_button_extra`, shown as **Biblioteca Extra**. When the remote's sensor becomes `1_single`, **Ler** is pressed and the program `ler` turns the ceiling light on.
@@ -32,8 +32,8 @@ pururu knows nothing about remotes, integrations or vendors. You name a sensor a
 
 `buttons` is a map of **entity key → button**, with at least one button. The key is a slug, and it ends the entity ID, after the namespace `button`: `ler` → `button.pururu_biblioteca_button_ler`.
 
-<Property name="entity" type="entity ID" required>
-  The real sensor. It must be a `sensor.*` entity, and not one of pururu's own sensors, even one you renamed in the UI. A renamed one is caught when pururu builds the device: that button isn't created, and the log says so.
+<Property name="entity" type="homeassistant.sensor.*" required>
+  The real sensor, written with `homeassistant.` before its entity ID, as everything Home Assistant owns: `homeassistant.sensor.controle_biblioteca_action`. It must be a `sensor.*` entity, and not one of pururu's own sensors, even one you renamed in the UI. A renamed one is caught when pururu builds the device: that button isn't created, and the log says so.
 </Property>
 
 ---
@@ -51,7 +51,7 @@ pururu knows nothing about remotes, integrations or vendors. You name a sensor a
 ---
 
 <Property name="program" type="string">
-  One of the device's [executable programs](/concepts/programs#executable-programs), by its key. A button starts its own device's programs only: another device's, with a dot, is refused (`estufa.regar must be of this device: its entity key, without <device>. or <domain>.`). Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button, as [Reacting to a press](#reacting-to-a-press) says.
+  One of the device's [executable programs](/concepts/programs#executable-programs), by its key alone: `program: ler`. A button starts its own device's programs only, so a path, such as `programs.executable.ler` or another device's `device.estufa.programs.executable.regar`, is refused, naming the key to write (`program is its program's key alone: regar`); a key that isn't one of the device's executable programs is refused too (`buttons: ler: regar is not an executable program of this device`). Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button, as [Reacting to a press](#reacting-to-a-press) says.
 </Property>
 
 <Property name="statistics" type="map">
@@ -62,7 +62,12 @@ Several buttons can read one sensor, each with its own value. Two buttons of one
 
 ## Entity
 
-`button.pururu_<key>_button_<entity key>`'s state is the time of its last press, or `unknown` before the first one. Each button also has its presses' total, `sensor.pururu_<key>_button_<entity key>_triggered_total` (see [Statistics](#statistics)).
+| Entity | Path | What it is |
+|---|---|---|
+| `button.pururu_<key>_button_<entity key>` | `buttons.<entity key>` | The button: its state is the time of its last press, or `unknown` before the first one |
+| `sensor.pururu_<key>_button_<entity key>_triggered_total` | `buttons.<entity key>.triggered_total` | Its presses, all time (see [Statistics](#statistics)) |
+| `sensor.pururu_<key>_button_<entity key>_triggered_<period>` | `buttons.<entity key>.statistics.triggered.<period>` | Its presses this period, one per `statistics.triggered` entry |
+
 
 - **Pressing it in Home Assistant** is the same press as the remote's: it records the time and starts the program. The logbook names whoever pressed it.
 - **It keeps its last press** across restarts and reloads, and it stays available while its sensor is unavailable or missing: you can still press it.
@@ -99,7 +104,7 @@ Every button counts its presses, with no setting: `sensor.pururu_<key>_button_<e
 ```yaml
 buttons:
   ler:
-    entity: sensor.controle_biblioteca_action
+    entity: homeassistant.sensor.controle_biblioteca_action
     state: 1_single
     name: Ler
     statistics:
@@ -111,7 +116,7 @@ This adds `sensor.pururu_biblioteca_button_ler_triggered_today` (**Biblioteca Le
 - **Every press counts**: the remote's and one in Home Assistant, including one whose program was already running and so didn't start, and one an automation or script makes with `button.press`.
 - **Only presses count.** What [When the sensor presses](#when-the-sensor-presses) doesn't count as a press, the total doesn't count either.
 - **A disabled button** follows no sensor, so it counts nothing.
-- **An alert or a reaction can watch it**, as any entity key: `when: button_ler_triggered_total` on the same device, `when: biblioteca.button_ler_triggered_total` from another device's reaction.
+- **An alert or a reaction can watch it**, by its path: `when: buttons.ler.triggered_total` on the same device, `when: device.biblioteca.buttons.ler.triggered_total` from another device's reaction.
 - **A button that isn't created** (its sensor is one of pururu's, or another integration holds its ID) has no total and no statistics either, and the log says why.
 - **A button's key can't be another button's total or statistic**: `ler_triggered_total`, or `ler_triggered_today` beside a button `ler`, whether or not `ler` asks for `today`. The configuration is refused: `… would be two entities`.
 

@@ -14,7 +14,7 @@ Every entity pururu creates has the ID
 - **platform**: `sensor`, `binary_sensor`, `switch` or `light`.
 - **device key**: the device's key under `devices:`.
 - **namespace**: the feature or device key that creates the entity. Each has its own, so two features never give two entities one ID.
-- **entity key**: which of the feature's entities it is. Each feature's page lists its entity keys. An entity key counted per period ends with that period, as in `runtime_month`.
+- **entity key**: which of the feature's entities it is. Each feature's page lists its entity keys. An entity key counted per period ends with that period, as in `runtime_month`. The YAML doesn't name an entity by its entity key, but by its path: see [References](#references).
 
 | Feature or device key | Namespace | Example |
 |---|---|---|
@@ -35,6 +35,67 @@ So the `running` entity of the device `clothes_washer` is always `binary_sensor.
 A [detected program](/concepts/programs#more-detected-programs)'s key is an entity key of the appliance's namespace (`cotton` → `binary_sensor.pururu_clothes_washer_appliance_cotton`), so it can't be one the appliance already creates, such as `running` or `cycles_total`, nor one a phase could take later (`phase_…`, or `cotton_phase_…` beside a program `cotton`): that's a configuration error, told at once.
 
 The entity's **unique ID** is the same text without the platform: `pururu_clothes_washer_appliance_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
+
+## References
+
+The entity ID is how Home Assistant names an entity. The `pururu:` YAML names it another way, by its **reference**: what you wrote, read from the YAML itself, without knowing how pururu builds its IDs. A reference's first word says whose the entity is:
+
+| First word | Whose | Reference |
+|---|---|---|
+| a block of this device (`appliance`, `switches`, `alerts`…) | this device's | its path: `appliance.running_program` |
+| `device` | another device's | `device.`, its device key, then the path as that device writes it: `device.clothes_washer.appliance.running_program` |
+| `homeassistant` | Home Assistant's | `homeassistant.`, then its entity ID: `homeassistant.binary_sensor.porta_despensa` |
+
+Anything else is refused, with its place in the YAML.
+
+### The path
+
+An entity's **path** is the way down through its device's YAML to it, from the block you wrote under the device, each level separated by a dot:
+
+- **Every level you wrote is in it**, the words that only give the YAML its shape too: the cotton program's `other` phase is `appliance.programs.detected.cotton.other`.
+- **What you declared is its own entity**: a switch `switches.sprinkler`, a light `lights.teto`, a button `buttons.ler`, an alert `alerts.long_cycle`, a ready-made one `appliance.alerts.offline`, a phase `appliance.running_program.phases.warming`. `appliance.running_program` is the appliance running, and `appliance.programs.detected.cotton` the cotton program running. `power` and `energy` name the entity made from them: `appliance.power`, `appliance.energy`.
+- **What pururu creates on its own sits under what it belongs to**, by the name its feature's page gives it: the running program's last cycle is `appliance.running_program.last_cycle_end`, a door's `open` is `door.open`, a program's runs `programs.executable.clean.cycles_total`, a reaction's triggers `reactions.washer_done.triggered_total`.
+- **A period of `statistics:` is the last word**: `cycles: [month]` in the cotton program is `appliance.programs.detected.cotton.statistics.cycles.month`.
+
+The path is written in full, always: no level is skipped, and a dot separates levels, never the words of one key (`last_cycle_end` is one key).
+
+### Path and entity key
+
+The entity ID's **entity key** (`running`, `phase_warming_cycles_total`) is how pururu names the entity inside its namespace; the **path** is how you write it in the YAML. They differ wherever the YAML's levels aren't in the ID:
+
+| Entity ID | Path |
+|---|---|
+| `binary_sensor.pururu_clothes_washer_appliance_running` | `appliance.running_program` |
+| `sensor.pururu_clothes_washer_appliance_phase_warming_cycles_total` | `appliance.running_program.phases.warming.cycles_total` |
+| `sensor.pururu_clothes_washer_appliance_cotton_phase_other_energy_month` | `appliance.programs.detected.cotton.other.statistics.energy.month` |
+| `switch.pururu_greenhouse_switch_sprinkler` | `switches.sprinkler` |
+| `sensor.pururu_greenhouse_program_executable_clean_cycles_total` | `programs.executable.clean.cycles_total` |
+
+Each feature's page gives every entity's path next to its ID. Renaming an entity in the UI changes its ID, never its path.
+
+### Which form each field takes
+
+| Field | Takes | Example |
+|---|---|---|
+| An [alert](/concepts/alerts)'s `when`, a [program](/concepts/programs#steps)'s steps | a path of this device | `when: appliance.running_program` |
+| A [reaction](/concepts/reactions)'s `when` | any reference, or an [executable program](/concepts/reactions#an-executable-program) running | `when: device.clothes_washer.appliance.running_program`, `when: programs.executable.clean` |
+| A group of [alert lights](/concepts/alert-lights) | a light, as from another device | `default: [device.biblioteca.lights.teto]` |
+| `power`, `energy`, `contact`, the `entity` of a switch, a light, a button or an event entity, `notify` | Home Assistant's, only | `power: homeassistant.sensor.washer_plug_power`, `notify: homeassistant.notify.mobile_app_phone` |
+| A device's `area`, an area's `floor`, a reaction's `then`, a button's `program`, an alert's `lights` | one kind of thing, so its key alone | `area: despensa`, `then: clean`, `lights: default` |
+
+Inside a device, `device.` names another device only: a device naming itself that way is refused with the form to write (`alerts: device.clothes_washer.appliance.running_program is this device's: write appliance.running_program`). An entity pururu creates is never written as Home Assistant's: in a reaction's `when`, `homeassistant.binary_sensor.pururu_clothes_washer_appliance_running` is refused, saying to write `device.clothes_washer.appliance.running_program`.
+
+### The `reference` attribute
+
+Every entity pururu creates shows its reference in its `reference` attribute, in both forms: `inside`, its path, as its own device writes it, and `outside`, as another device writes it.
+
+```yaml
+reference:
+  inside: appliance.running_program.last_cycle_end
+  outside: device.clothes_washer.appliance.running_program.last_cycle_end
+```
+
+So an entity seen in Home Assistant, in its details or in **Developer tools → States**, tells you what to write. It's there even while the entity is `unavailable`, when you're most likely to write an alert on it. It never changes, so Home Assistant's history doesn't record it. The [events](/concepts/events) pururu fires carry the same two forms, as `key` and `event_name`.
 
 ## Names
 

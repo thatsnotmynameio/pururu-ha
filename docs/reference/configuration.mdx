@@ -6,12 +6,12 @@ description: Every key of the pururu block on one page.
 ```yaml title="configuration.yaml"
 pururu:
   config:
-    notify: notify.mobile_app_phone     # where every message goes
+    notify: homeassistant.notify.mobile_app_phone     # where every message goes
     events: [state_changed, reading]    # see events
     alerts:
       lights:
         groups:
-          default: [biblioteca.light_teto]
+          default: [device.biblioteca.lights.teto]
   floors:
     terreo:
       name: Térreo
@@ -28,8 +28,8 @@ pururu:
       name: Tanquinho
       area: despensa
       appliance:
-        power: sensor.washer_plug_power
-        energy: sensor.washer_plug_energy
+        power: homeassistant.sensor.washer_plug_power
+        energy: homeassistant.sensor.washer_plug_energy
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -50,7 +50,7 @@ pururu:
       alerts:
         long_cycle:
           name: Ciclo longo
-          when: appliance_running
+          when: appliance.running_program
           state: "on"
           for: {hours: 3}
           priority: medium
@@ -60,25 +60,27 @@ pururu:
     greenhouse:
       name: Estufa
       switches:
-        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+        sprinkler: {entity: homeassistant.switch.greenhouse_sprinkler, name: Irrigador}
       programs:
         executable:
           clean:
             name: Limpar
             sequence:
-              - turn_on: switch_sprinkler
+              - turn_on: switches.sprinkler
               - delay: {hours: 2}
-              - turn_off: switch_sprinkler
+              - turn_off: switches.sprinkler
             statistics: {runtime: [month], cycles: [month]}
       reactions:
         morning: {name: Manhã, at: "08:00", then: clean, statistics: {triggered: [month]}}
     biblioteca:
       name: Biblioteca
       lights:
-        teto: {entity: light.biblioteca_teto, name: Teto}
-        abajur: {entity: switch.sonoff_abajur, name: Abajur}
+        teto: {entity: homeassistant.light.biblioteca_teto, name: Teto}
+        abajur: {entity: homeassistant.switch.sonoff_abajur, name: Abajur}
       reactions:
-        washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off"}
+        washer_done: {name: Lavadora terminou, when: device.clothes_washer.appliance.running_program, from: "on", to: "off"}
+        pantry: {name: Despensa abriu, when: homeassistant.binary_sensor.porta_despensa, to: "on"}
+        cleaned: {name: Estufa limpa, when: device.greenhouse.programs.executable.clean, from: "on", to: "off"}
         night: {name: Noite, at: "22:00", message: Hora de apagar as luzes.}
 
 automation pururu: !include_dir_merge_list pururu/automations
@@ -95,11 +97,13 @@ alert2:                          # alerts with texts: see alerts
 - A feature's own `alerts` enables its ready-made alerts, one key each: see [Ready-made alerts](/concepts/alerts#ready-made-alerts). The device's `alerts` is for alerts you write.
 - A feature's own `notifications` enables its ready-made notifications the same way: see [Notifications](/concepts/notifications#ready-made-notifications).
 - A `statistics` counts one of the block's totals per period: in a feature's own block (`appliance`, `door`, `window`), in an appliance's `running_program`, in each of its phases and `other`, in each detected program (and its phases and `other`), or inside each executable program, reaction or button. See [Statistics](/concepts/statistics).
-- A reference to an entity is its entity key on the same device (`appliance_running`), `<device>.<key>` on another (`clothes_washer.appliance_running`: a reaction's `when`, a light group's member), or `entity:` for a real entity (a reaction's source). An alert's `when`, a program's steps and a reaction's `then` are always of their own device.
-- An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_sprinkler`). See [alerts](/concepts/alerts#settings).
-- An executable program's steps name entity keys of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/concepts/programs#steps).
+- A reference names an entity by its path in the YAML, from the block it's in, every level written: `appliance.running_program`, `switches.sprinkler`, `appliance.running_program.statistics.cycles.month`. Another device's starts with `device.` and its key (`device.clothes_washer.appliance.running_program`: a reaction's `when`, a light group's member), and anything Home Assistant owns with `homeassistant.` (`homeassistant.sensor.washer_plug_power`, `homeassistant.notify.mobile_app_phone`), in every field that names it. See [References](/concepts/entity-ids#references).
+- An alert's `when` names an entity of another block of the same device by its path (`appliance.running_program`, `switches.sprinkler`). See [alerts](/concepts/alerts#settings).
+- An executable program's steps name entities of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/concepts/programs#steps).
+- A reaction's `when` names an entity of its device, of another device, or of Home Assistant's, or an executable program running (`programs.executable.clean`). See [reactions](/concepts/reactions#an-entity).
+- A field that names one kind of thing takes its key alone: a device's `area`, an area's `floor`, a reaction's `then`, a button's `program`, an alert's `lights` (`then: clean`, not `programs.executable.clean`).
 - No two devices give an entity the same ID. Device `greenhouse` with the switch `switch_sprinkler` and device `greenhouse_switch` with the switch `sprinkler` would both have `switch.pururu_greenhouse_switch_switch_sprinkler`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `greenhouse` with the switch `appliance_energy_total` is refused next to a device `greenhouse_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
-- In one device, a real entity is in one of `switches` and `lights` at most: `switches: switch.sonoff_abajur is already in lights`. Two devices can each use it their own way.
+- In one device, a real entity is in one of `switches` and `lights` at most: `switches: homeassistant.switch.sonoff_abajur is already in lights`. Two devices can each use it their own way.
 - An unknown key anywhere is a configuration error. When the configuration is invalid, Home Assistant logs why, and a reload **changes nothing**.
 - The blocks can be split across [packages](/getting-started/install#packages).
 
@@ -108,7 +112,7 @@ alert2:                          # alerts with texts: see alerts
 Settings of the whole house, not of a device.
 
 <Property name="notify" type="notify action or list" optional>
-  Where every message goes, a reaction's or a ready-made notification's, unless its own `notify` says: `notify.mobile_app_phone`, or a list of them. See [Notifications](/concepts/notifications#where-a-message-goes).
+  Where every message goes, a reaction's or a ready-made notification's, unless its own `notify` says: `homeassistant.notify.mobile_app_phone`, or a list of them. See [Notifications](/concepts/notifications#where-a-message-goes).
 </Property>
 
 ---
