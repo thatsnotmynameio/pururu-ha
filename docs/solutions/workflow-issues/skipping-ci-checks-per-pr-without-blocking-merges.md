@@ -95,7 +95,7 @@ The code scanning rule doesn't wait for a check name. It waits for an uploaded C
 
 Also, while default setup is on, GitHub rejects uploads from an advanced CodeQL workflow (https://docs.github.com/en/code-security/code-scanning/troubleshooting-sarif-uploads/default-setup-enabled). A repo workflow can't take over CodeQL without first turning default setup off.
 
-The owner kept the rule and left CodeQL on default setup for every PR, so nothing in the repo runs CodeQL (`ci.yml`, `docs/develop/releases.mdx:61`, `:86`; plan `:46`, `:88`). The cost: every PR waits for CodeQL before it can merge, an estimated 1 to 1.5 minutes (plan estimate from step timings, not yet measured), even when every other check is skipped.
+The owner kept the rule and left CodeQL on default setup for every PR, so nothing in the repo runs CodeQL (`ci.yml`, `docs/develop/releases.mdx`; plan `:46`, `:88`). The cost: every PR waits for CodeQL before it can merge, an estimated 1 to 1.5 minutes (plan estimate from step timings, not yet measured), even when every other check is skipped.
 
 The alternative was to gate CodeQL in our own job and drop the code scanning rule. It was considered and rejected (plan `:46`).
 

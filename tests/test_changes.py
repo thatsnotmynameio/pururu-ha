@@ -1,6 +1,8 @@
 """.github/scripts/changes.py: the changed files decide which checks a pull request runs."""
 
 import io
+from pathlib import Path
+import re
 
 import pytest
 
@@ -69,3 +71,10 @@ def test_main_skips_blank_lines(monkeypatch: pytest.MonkeyPatch,
 def test_main_needs_an_event(capsys: pytest.CaptureFixture[str]) -> None:
     assert changes.main(["changes.py"]) == 2
     assert "Usage:" in capsys.readouterr().out
+
+
+def test_ci_lists_every_check_when_the_classifier_changes() -> None:
+    """ci.yml marks every check true without running changes.py when it changes: none may be left out."""
+    ci = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text()
+    [listed] = re.findall(r"printf '((?:\w+=true\\n)+)'", ci)
+    assert [line.removesuffix("=true") for line in listed.split("\\n") if line] == list(changes.NEEDS)
