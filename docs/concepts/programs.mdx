@@ -370,7 +370,3 @@ They're named after the program: **Estufa Limpar cycles**.
 - **Renaming the script** in the UI is followed: pururu reloads and watches its new ID.
 - **A script ID someone else holds** (one of your scripts, another integration's entity): the program isn't generated, and its statistics count nothing. They never count an entity pururu doesn't manage.
 - A reaction can watch them: `when: program_executable_clean_last_cycle_end`.
-
-### From 0.1.14 and before
-
-Programs were buttons, `button.pururu_<key>_program_<program key>`, pressed with `button.press`. The first start of 0.1.15 removes them. Change what pressed one to `script.turn_on` on its script, and add the include above.

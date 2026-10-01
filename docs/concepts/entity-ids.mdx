@@ -35,10 +35,6 @@ A [detected program](/concepts/programs#more-detected-programs)'s key is an enti
 
 The entity's **unique ID** is the same text without the platform: `pururu_clothes_washer_appliance_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
 
-<Info>
-  Before pururu 0.1.5, IDs had no namespace (`binary_sensor.pururu_clothes_washer_running`, `switch.pururu_greenhouse_sprinkler`). Updating removes those entities, with their history, and creates the new ones: counters such as `cycles_total` and `runtime_total` start again from 0, and renames you made in the UI are lost. Update the automations and dashboards that name them.
-</Info>
-
 ## Names
 
 An entity's name comes from its entity key, in Home Assistant's language: English and Portuguese are translated. It's shown after the device's name, so `running` on **Tanquinho** is **Tanquinho Running**, or **Tanquinho Em funcionamento** in Portuguese. You can rename any entity in the UI as usual.
