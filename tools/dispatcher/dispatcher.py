@@ -13,9 +13,10 @@ one gets a new worktree from origin/main under .claude/worktrees/ and a headless
 `claude -p` session running lfg; at most N run at once (default 2), and the poll
 runs every SECONDS (default 300). Labels show where an issue stands: `in progress`,
 then `in review` (a pull request is open) and `ready to merge` (its required checks
-pass), or `needs attention` (the session ended without one). Logs and the lock are
-in tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll would, then stops the others
-and marks their issues `needs attention`.
+pass), or `needs attention` (the session ended without one). Every line it prints
+carries the time; each poll reports what it found. Logs and the lock are in
+tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll would,
+then stops the others and marks their issues `needs attention`.
 """
 
 import argparse
@@ -433,11 +434,16 @@ SESSIONS = 2
 EVERY = 300
 
 
+def stamp(line: str) -> None:
+    """Print a progress line with the time, at once: someone may be watching the terminal."""
+    print(f"{time.strftime('%H:%M:%S')} {line}", flush=True)
+
+
 class Dispatcher:
     """Applies each poll's actions through GitHub and the sessions; owns the running sessions."""
 
     def __init__(self, gh: GitHub, sessions: Sessions, slots: int,
-                 say: Callable[[str], None] = print) -> None:
+                 say: Callable[[str], None] = stamp) -> None:
         """Up to `slots` sessions; progress lines through `say`."""
         self.gh = gh
         self.sessions = sessions
@@ -448,7 +454,9 @@ class Dispatcher:
         self.pending: list[Action] = []  # ended sessions' verdicts that failed: the next poll's
 
     def start(self) -> None:
-        """Create the missing labels; the issues left in progress need attention."""
+        """Say what it watches, create the missing labels, mark the issues left in progress."""
+        self.say(f"dispatcher: watching the open issues {self.gh.login()} opened and labelled "
+                 f"`ready`, up to {self.slots} sessions at once")
         self.gh.ensure_labels()
         stranded = [issue for issue, _ in self.gh.issues(IN_PROGRESS)]
         for move in orphans(stranded, self.sessions.worktrees() if stranded else {}):
@@ -489,6 +497,9 @@ class Dispatcher:
             return
         for running in over:
             del self.running[running.issue]
+        blocked = sum(1 for issue in snapshot.ready if issue.blocked)
+        self.say(f"dispatcher: poll: {len(snapshot.ready)} ready ({blocked} blocked), "
+                 f"{len(self.running)} running, {len(snapshot.reviews)} in review")
         self.settle(snapshot.ended)
         for action in tick(snapshot, set(self.running), self.slots):
             self.apply(action)
@@ -601,6 +612,7 @@ def serve(boss: Dispatcher, every: float) -> None:
     signal.signal(signal.SIGTERM, stop)
     try:
         boss.start()
+        boss.say(f"dispatcher: a poll every {every:g}s; Ctrl-C stops")
         while not stopping.is_set():
             boss.poll()
             stopping.wait(every)

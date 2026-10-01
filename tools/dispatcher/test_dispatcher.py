@@ -1,9 +1,10 @@
-"""tools/dispatcher/dispatcher.py: the author's ready issues become pull requests through lfg sessions."""
+"""tools/dispatcher/dispatcher.py: the author's ready issues become pull requests."""
 
 from collections.abc import Callable, Iterator
 import dataclasses
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -24,7 +25,8 @@ def ready(number: int, *, blocked: int = 0, also: tuple[str, ...] = ()) -> Issue
 
 def ended(issue: int, *, prs: tuple[PullRequest, ...] = (), linked: frozenset[int] = frozenset(),
           reason: str = "lfg stopped: no work source") -> Ended:
-    return Ended(issue, f"/repo/.claude/worktrees/issue-{issue}", "/repo/tools/dispatcher/.state/logs/x.log",
+    return Ended(issue, f"/repo/.claude/worktrees/issue-{issue}",
+                 "/repo/tools/dispatcher/.state/logs/x.log",
                  reason, prs, linked)
 
 
@@ -415,6 +417,9 @@ class FakeGitHub:
     def ensure_labels(self) -> None:
         self.writes.append("labels")
 
+    def login(self) -> str:
+        return "me"
+
     def issues(self, label: str) -> list[tuple[Issue, tuple[PullRequest, ...]]]:
         return self.answers.get(label, [])
 
@@ -673,7 +678,8 @@ def test_a_signal_ends_the_loop_and_stops_the_sessions() -> None:
     """KTD9: Ctrl-C during a poll ends the loop, then the sessions."""
     boss = Boss(lambda: signal.raise_signal(signal.SIGINT))
     dispatcher.serve(boss, 0)  # type: ignore[arg-type]
-    assert boss.calls == ["start", "poll", "dispatcher: stopping", "stop"]
+    assert boss.calls == ["start", "dispatcher: a poll every 0s; Ctrl-C stops", "poll",
+                          "dispatcher: stopping", "stop"]
 
 
 @pytest.mark.usefixtures("handlers")
@@ -717,3 +723,49 @@ def test_the_lock_is_released_when_serving_fails(tmp_path: Path,
     with pytest.raises(RuntimeError, match="a bug"):
         dispatcher.main(["dispatcher.py", "run", "--every", "0"])
     assert not lock.exists()
+
+
+# What it says (the command's output)
+
+def test_start_says_what_it_watches(tmp_path: Path) -> None:
+    """Started with nothing to do, it still says it runs, for whom and with how many sessions."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    lines: list[str] = []
+    dispatcher.Dispatcher(FakeGitHub(), runner, 3, say=lines.append).start()
+    assert lines
+    assert "me" in lines[0]
+    assert "`ready`" in lines[0]
+    assert "3 sessions" in lines[0]
+
+
+def test_every_poll_says_what_it_found(tmp_path: Path) -> None:
+    """A poll with nothing to dispatch still reports the queue, the sessions and the reviews."""
+    gh = FakeGitHub({READY: [(ready(70), ()), (ready(72, blocked=1), ())],
+                     IN_REVIEW: [(Issue(69, frozenset({IN_REVIEW})), ())]})
+    runner, _ = sessions(tmp_path, FakeGit())
+    lines: list[str] = []
+    dispatcher.Dispatcher(gh, runner, 0, say=lines.append).poll()
+    summary, = [line for line in lines if "poll" in line]
+    assert "2 ready (1 blocked)" in summary
+    assert "0 running" in summary
+    assert "1 in review" in summary
+
+
+def test_an_empty_poll_is_not_silent(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    lines: list[str] = []
+    dispatcher.Dispatcher(FakeGitHub(), runner, 2, say=lines.append).poll()
+    assert any("0 ready" in line for line in lines)
+
+
+def test_lines_carry_the_time_and_are_flushed(capsys: pytest.CaptureFixture[str]) -> None:
+    dispatcher.stamp("dispatcher: hello")
+    out = capsys.readouterr().out
+    assert re.fullmatch(r"\d\d:\d\d:\d\d dispatcher: hello\n", out)
+
+
+@pytest.mark.usefixtures("handlers")
+def test_serve_says_how_often_it_polls() -> None:
+    boss = Boss(lambda: signal.raise_signal(signal.SIGINT))
+    dispatcher.serve(boss, 0)  # type: ignore[arg-type]
+    assert any("every 0s" in call for call in boss.calls)
