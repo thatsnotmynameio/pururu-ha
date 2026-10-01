@@ -51,7 +51,7 @@ from ..core.resolve import (
     Ref,
     Target,
     entity_id_hint,
-    find,
+    find_key,
     local_key,
     reference,
 )
@@ -69,7 +69,7 @@ PER_REACTION: dict[str, Platform] = {"triggered_total": Platform.SENSOR}
 
 
 def _item(key: str, reaction: Mapping[str, Any]) -> Item:
-    return Item(slug=key, name=reaction[CONF_NAME])
+    return Item(slug=key, name=reaction[CONF_NAME], path=(key,))
 
 
 def _item_at(block: Any, path: Path) -> Item:
@@ -458,7 +458,7 @@ def _refused(
     """Why this reaction can't be, the first reason; None when it can."""
     path: list[Hashable] = [CONF_DEVICES, key, CONF_REACTIONS, reaction_key]
     ref = Ref.parse(reaction["when"]) if "when" in reaction else None
-    target = None if ref is None else find(index, key, ref)
+    target = None if ref is None else find_key(index, key, ref)
     if ref is not None and _own_statistic(target, key, reaction_key):
         return vol.Invalid(
             f"reactions: {reaction_key}: {ref.key} is its own statistic", path=path
@@ -553,7 +553,7 @@ def _watched(
     """
     if (when := reaction.get("when")) is None:
         return True, reaction.get("entity")
-    target = find(index, key, Ref.parse(when))
+    target = find_key(index, key, Ref.parse(when))
     assert target is not None  # the schema checked it (check)
     if target.unique_id not in created:
         _LOGGER.error(

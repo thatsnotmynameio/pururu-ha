@@ -1,10 +1,10 @@
 """What a device and a feature are: the contract every module in features/ fulfils."""
 
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import voluptuous as vol
 
@@ -93,6 +93,10 @@ class Item:
 
     slug: str
     name: str
+    # Where it sits in its builder's block (Path), its keys under it:
+    # (executable, clean) for executable_clean; () for an item no Items role
+    # lists (a phase: program.keys_of gives its keys' paths)
+    path: tuple[str, ...] = ()
 
     def key(self, suffix: str) -> str:
         """The entity key of `suffix` for this item."""
@@ -230,6 +234,19 @@ type Path = tuple[str, ...]
 EACH = "*"
 
 
+class Born(NamedTuple):
+    """An entity key where it is born: its platform, and its node's path.
+
+    The path is the keys from where the key is listed (a builder's block, an
+    aspect's value) to the node the author reads it at: a declared thing's own
+    (running_program, phases, warming), or the node an unwritten key is born
+    under, then its name (running_program, phase_current).
+    """
+
+    platform: Platform
+    path: Path
+
+
 def walk(value: Any, path: Path, where: Path = ()) -> Iterator[tuple[Path, Any]]:
     """Each container `path` names in `value`, with its own path (EACH made each key).
 
@@ -279,11 +296,15 @@ class Place:
     # The item a container there is (ItemOf): its keys are the item's
     # (<slug>_<key>); None: the builder's own
     item: ItemOf | None = None
+    # Each of `keys`' path from the aspect's value in a container, the leaf:
+    # alert_<name>'s (<name>,), <counter>_<period>'s (<counter>, <period>)
+    leaves: Mapping[str, Path] = field(default_factory=dict)
     # The local keys a container's validated value of the aspect adds beyond
     # `keys`, the builder's own and no item's (a detected program's, its
-    # phases'): they vary with the value, as Derived's with a block. Pairs, not
-    # a map: a key two of them add comes twice, for checks.keys_distinct
-    derived: Callable[[Any], Iterable[tuple[str, Platform]]] | None = None
+    # phases'), each born at a path from that value: they vary with the value,
+    # as Derived's with a block. Pairs, not a map: a key two of them add comes
+    # twice, for checks.keys_distinct
+    derived: Callable[[Any], Iterable[tuple[str, Born]]] | None = None
     # Refuses (vol.Invalid) what it can't be once validated, given the
     # builder's whole block and the container, its value put back
     check: Callable[[Mapping[str, Any], Mapping[str, Any]], None] | None = None

@@ -12,7 +12,7 @@ from homeassistant.helpers.entity import Entity
 from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
 from ..core.feature import Device
-from ..core.resolve import Index, find
+from ..core.resolve import Index, by_key, find_key
 from ..core.roles import Generates, Refers
 from ..core.texts import Texts
 from . import catalogue
@@ -39,7 +39,7 @@ def build(
     are the entity IDs of the scripts and automations the entry generates, by
     ID.
     """
-    found = index[key]
+    found = by_key(index[key])
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
     for name, feature in catalogue.builders().items():
@@ -86,7 +86,7 @@ def _inputs(
     inputs: dict[str, str] = {}
     refers = feature.role(Refers)
     for ref in refers.of(config[name]) if refers else ():
-        target = find(index, key, ref)
+        target = find_key(index, key, ref)
         assert target is not None  # the schema checked it (checks.references)
         inputs[ref.text] = target.current_entity_id(hass)
     return inputs

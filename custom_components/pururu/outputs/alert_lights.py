@@ -56,7 +56,14 @@ from ..const import (
     EVENT_ALERT_LIGHTS_RELEASED,
 )
 from ..core.feature import ALERTS_KEY, PRIORITIES, Feature, presets_of
-from ..core.resolve import Index, Ref, device_reference, entity_id_hint, find
+from ..core.resolve import (
+    Index,
+    Ref,
+    by_key,
+    device_reference,
+    entity_id_hint,
+    find_key,
+)
 from ..core.runtime import Built, PururuConfigEntry
 from ..core.vocabulary import NO_READING
 from ..features.lights import Borrowable
@@ -150,7 +157,8 @@ def light_ids(settings: Mapping[str, Any], index: Index) -> dict[str, list[str]]
     """Each group's lights, by unique ID (pururu_<device>_light_<key>): check() found each in `index`."""
     return {
         group: [
-            index[device][ref.key].unique_id for device, ref in map(_member, members)
+            by_key(index[device])[ref.key].unique_id
+            for device, ref in map(_member, members)
         ]
         for group, members in settings[GROUPS].items()
     }
@@ -638,7 +646,7 @@ def _group_refused(
             return vol.Invalid(
                 f"{where}: device {device} is not in devices{hint}", path=path
             )
-        target = find(index, device, ref)
+        target = find_key(index, device, ref)
         if target is None or target.builder != CONF_LIGHTS or target.by is not None:
             return vol.Invalid(f"{where}: {ref.text} is not a light", path=path)
     return None

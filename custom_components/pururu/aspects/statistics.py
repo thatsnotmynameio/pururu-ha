@@ -174,6 +174,12 @@ def _place(counted: Counted) -> Place:
             for counter in counted.needs
             for period in PERIODS
         },
+        # Each where its period is listed: statistics.<counter>.<period>
+        leaves={
+            f"{counter}_{period}": (counter, period)
+            for counter in counted.needs
+            for period in PERIODS
+        },
         named=partial(_named, counted),
         example=_example(counted),
         item=counted.item,

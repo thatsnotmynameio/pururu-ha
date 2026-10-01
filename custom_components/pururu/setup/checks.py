@@ -25,7 +25,7 @@ from ..const import (
 )
 from ..core import generated
 from ..core.feature import Device, Feature
-from ..core.resolve import Index, Ref, find
+from ..core.resolve import Index, Ref, find_key
 from ..core.roles import Configured, Generates, Refers
 from . import catalogue
 
@@ -45,7 +45,7 @@ def _refused_refs(
 ) -> Iterator[vol.Invalid]:
     """Builder `name`'s references on device `key` that it can't have: one refusal each."""
     for ref in refs:
-        target = find(index, key, ref)
+        target = find_key(index, key, ref)
         if target is None or target.builder == name:
             yield vol.Invalid(
                 f"{name}: {ref.key} is not an entity key of another feature "

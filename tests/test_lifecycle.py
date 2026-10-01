@@ -35,7 +35,7 @@ async def test_the_steps_read_the_builders_and_one_index(ha: HomeAssistant) -> N
         assert await setup(ha, {"greenhouse": SWITCH, "lights": LIGHT})
     [built] = seen
     assert set(built.index) == {"greenhouse", "lights"}
-    assert built.index["greenhouse"]["switch_sprinkler"].builder == "switches"
+    assert built.index["greenhouse"]["switches.sprinkler"].builder == "switches"
     assert built.builders == module("setup.catalogue").builders()
 
 

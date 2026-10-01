@@ -225,10 +225,10 @@ def test_only_a_lights_own_key_is_a_light(ha: HomeAssistant, by: str | None, ref
     """lights offers no aspect today: should it gain one, the keys it adds aren't lights."""
     resolve = module("core.resolve")
     device = module("core.feature").Device(key="varanda", name="Varanda", namespace="light")
-    target = resolve.Target(device=device, key="light_alert_x", platform=Platform.LIGHT, builder="lights",
-                            by=by, item=None, actions=())
+    target = resolve.Target(device=device, key="light_alert_x", path="lights.alerts.x", platform=Platform.LIGHT,
+                            builder="lights", by=by, item=None, actions=())
     why = module("outputs.alert_lights")._group_refused(
-        {"varanda": {}}, {"varanda": {"light_alert_x": target}}, "porch", ["varanda.light_alert_x"])
+        {"varanda": {}}, {"varanda": {"lights.alerts.x": target}}, "porch", ["varanda.light_alert_x"])
     assert (why is not None) is refused
     if refused:
         assert (why.msg, why.path) == ("config.alerts.lights.groups: porch: varanda.light_alert_x is not a light",

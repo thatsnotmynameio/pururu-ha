@@ -112,7 +112,7 @@ PER_BUTTON: dict[str, Platform] = {"triggered_total": Platform.SENSOR}
 
 
 def _item(key: str, button: Mapping[str, Any]) -> Item:
-    return Item(slug=key, name=button["name"])
+    return Item(slug=key, name=button["name"], path=(key,))
 
 
 def _item_at(block: Any, path: Path) -> Item:

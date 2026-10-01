@@ -45,6 +45,7 @@ from ..core.entity import PururuEntity
 from ..core.feature import (
     EACH,
     Aspect,
+    Born,
     Device,
     Feature,
     Item,
@@ -54,7 +55,7 @@ from ..core.feature import (
     qualified,
 )
 from ..core.generated import SCRIPTS, Planned
-from ..core.resolve import Index, Ref, Target, find, local_key
+from ..core.resolve import Index, Ref, Target, by_key, find_key, local_key
 from ..core.roles import Counted, Counters, Generates, Items, Programs
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
@@ -100,7 +101,7 @@ def slug(program_key: str) -> str:
 
 
 def _item(key: str, program: Mapping[str, Any]) -> Item:
-    return Item(slug=slug(key), name=program[CONF_NAME])
+    return Item(slug=slug(key), name=program[CONF_NAME], path=(CONF_EXECUTABLE, key))
 
 
 def _item_at(block: Any, path: Path) -> Item:
@@ -317,7 +318,7 @@ def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Inval
                 program_key,
             ]
             for action, entity_key in targets(program):
-                target = find(index, key, Ref(None, entity_key))
+                target = find_key(index, key, Ref(None, entity_key))
                 if target is None:
                     yield vol.Invalid(
                         f"programs: {entity_key} is not an entity key of another "
@@ -350,7 +351,9 @@ def plan(
     for key, config in devices.items():
         for program_key, program in executable(config).items():
             unique_id = script_id(key, program_key)
-            entity_ids = _acted_on(hass, index[key], unique_id, program, created)
+            entity_ids = _acted_on(
+                hass, by_key(index[key]), unique_id, program, created
+            )
             if entity_ids is None:
                 continue
             if _disabled(registry, unique_id, entity_ids.values()):
@@ -451,14 +454,14 @@ DETECTED_BLOCK = vol.All(
 )
 
 
-def _derived(value: Mapping[str, Any]) -> Iterator[tuple[str, Platform]]:
-    """Every entity key the detected programs of a validated `programs:` create.
+def _derived(value: Mapping[str, Any]) -> Iterator[tuple[str, Born]]:
+    """Every entity key the detected programs of a validated `programs:` create, each under its program's node (detected.<key>).
 
     A key two of them create comes twice: checks.keys_distinct refuses it
     (cotton's cotton_cycles_total beside a program keyed cotton_cycles_total).
     """
     for key, config in value[CONF_DETECTED].items():
-        yield from detected_keys(key, config).items()
+        yield from detected_keys(key, config, node=(CONF_DETECTED, key)).items()
 
 
 # A detected program with a phase and other: the programs aspect's example

@@ -31,7 +31,7 @@ from ..core.feature import (
     presets_of,
     qualified,
 )
-from ..core.resolve import Index, Ref, find
+from ..core.resolve import Index, Ref, find_key
 from ..core.roles import Configured, Refers
 from ..core.texts import Texts
 from .elapsed import ElapsedAlert
@@ -75,7 +75,7 @@ def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Inval
     """
     for key, device in house[CONF_DEVICES].items():
         for ref in _refers(device.get(CONF_ALERTS, {})):
-            target = find(index, key, ref)
+            target = find_key(index, key, ref)
             if (
                 target is not None
                 and target.builder != CONF_ALERTS
@@ -161,6 +161,8 @@ def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
         Place(
             schema=settings_schema(presets),
             keys={f"alert_{name}": Platform.BINARY_SENSOR for name in presets},
+            # Each where it is enabled: alerts.<name>
+            leaves={f"alert_{name}": (name,) for name in presets},
             named=partial(qualified, builder.namespace),
             example=_example(presets),
         ),

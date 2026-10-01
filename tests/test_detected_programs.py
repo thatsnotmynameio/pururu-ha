@@ -326,7 +326,7 @@ async def test_detected_programs_may_not_take_each_others_keys(ha: HomeAssistant
     block = catalogue.mount(catalogue.builders()["appliance"], "appliance",
                             appliance(programs={"detected": {"cotton": cotton}}))
     items = {"cotton", "cotton_phase_warming", "cotton_phase_other"}
-    meters = {key for _, key, _, by, item in catalogue.keys({"appliance": block})
+    meters = {key for _, key, _, by, item, _ in catalogue.keys({"appliance": block})
               if by == "statistics" and item in items}
     assert len(meters) == len(items) * len(program.PHASE_COUNTERS) * len(periods)
     derived = set(program.detected_keys("cotton", cotton))
@@ -344,11 +344,13 @@ def test_its_keys_are_in_the_index(ha: HomeAssistant) -> None:
     """By the programs aspect, in the appliance's namespace."""
     catalogue = module("setup.catalogue")
     appliance_ = catalogue.builders()["appliance"]
-    rows = {key: (platform, by) for _, key, platform, by, _ in catalogue.keys(
+    rows = {key: (platform, by, path) for _, key, platform, by, _, path in catalogue.keys(
         {"appliance": catalogue.mount(appliance_, "appliance", appliance())})}
-    assert rows["cotton"] == (Platform.BINARY_SENSOR, "programs")
-    assert rows["cotton_cycles_total"] == (Platform.SENSOR, "programs")
-    assert rows["cotton_cycles_today"] == (Platform.SENSOR, "statistics")
+    assert rows["cotton"] == (Platform.BINARY_SENSOR, "programs", "appliance.programs.detected.cotton")
+    assert rows["cotton_cycles_total"] == (
+        Platform.SENSOR, "programs", "appliance.programs.detected.cotton.cycles_total")
+    assert rows["cotton_cycles_today"] == (
+        Platform.SENSOR, "statistics", "appliance.programs.detected.cotton.statistics.cycles.today")
 
 
 # --- keys a later setting would create ----------------------------------------------

@@ -262,11 +262,51 @@ def test_a_derived_key_is_in_the_index(ha: HomeAssistant, features: dict[str, An
         derived = role(feature, "Derived").of(block)
         assert derived, f"{name}'s example derives no key"
         assert not set(derived) & set(feature.entity_keys), name
-        listed = {entity_key for _, entity_key, _, _, _ in catalogue.keys({name: block})}
+        listed = {entity_key for _, entity_key, _, _, _, _ in catalogue.keys({name: block})}
         assert set(derived) <= listed, name
         device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
         built = {entity.key for entity in feature.build(ha, device, block, {})}
         assert built <= {device.qualified(key) for key in listed}, name
+
+
+def written(block: Any, segments: list[str]) -> tuple[bool, Any]:
+    """Whether the example writes `segments` (a map's key at each level), and what."""
+    for segment in segments:
+        if not isinstance(block, dict) or segment not in block:
+            return False, None
+        block = block[segment]
+    return True, block
+
+
+def test_every_listed_key_has_one_path(features: dict[str, Any]) -> None:
+    """Each key catalogue.keys lists for the full example has one path, distinct, from the builder's key.
+
+    A path is dotted slugs. One written in the example names a declared thing
+    (a map, or null: a switch, a phase, an enabled alert) or the entity a
+    written entity ID becomes (power): never a setting's value (a number, a
+    duration, a text), so no key pururu creates takes a key the author writes
+    at its node. Every key a place lists has its leaf there, and a builder's
+    nodes are its own keys'.
+    """
+    catalogue = module("setup.catalogue")
+    for name, feature in features.items():
+        if (nodes := role(feature, "Nodes")) is not None:
+            assert set(nodes.of) <= set(feature.entity_keys), name
+        for aspect in catalogue.aspects_of(feature):
+            for place in aspect.places(feature, name):
+                assert set(place.leaves) == set(place.keys), (name, aspect.key)
+        block = catalogue.mount(feature, name, full(name, feature))
+        rows = [(key, path) for _, key, *_, path in catalogue.keys({name: block})]
+        paths = dict(rows)
+        assert len(paths) == len(rows), f"{name}: a key listed twice"
+        assert len(set(paths.values())) == len(paths), f"{name}: two keys at one path"
+        for key, path in rows:
+            head, *segments = path.split(".")
+            assert head == name, (name, key, path)
+            assert segments and all(cv.slug(each) == each for each in segments), (name, key, path)
+            found, value = written(block, segments)
+            if found and not (value is None or isinstance(value, dict)):
+                assert cv.entity_id(value) == value, f"{name}: {key} at {path}, a setting"
 
 
 async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, features: dict[str, Any]) -> None:
@@ -293,6 +333,9 @@ def test_items_have_suffixes_and_slugs(features: dict[str, Any]) -> None:
             assert items.keys, name
             for item in items.of(feature.schema(dict(feature.example))):
                 assert cv.slug(item.slug) == item.slug, name
+                # Its keys' paths sit under it (catalogue.keys)
+                assert item.path, name
+                assert all(cv.slug(segment) == segment for segment in item.path), name
 
 
 def test_every_per_item_name_has_its_placeholder(features: dict[str, Any]) -> None:
@@ -321,7 +364,7 @@ def test_ready_made_alerts_line_up(features: dict[str, Any]) -> None:
         ready_made = {f"alert_{alert}" for alert in presets}
         assert set(aspect_keys(aspect, name, feature)) == ready_made, name
         assert not ready_made & set(feature.entity_keys), name
-        by = {entity_key: by for _, entity_key, _, by, _ in catalogue.keys({name: feature.example})}
+        by = {entity_key: by for _, entity_key, _, by, _, _ in catalogue.keys({name: feature.example})}
         assert {key: by[key] for key in ready_made} == dict.fromkeys(ready_made, "alerts"), name
         settings = {}
         for alert, preset in presets.items():
@@ -514,7 +557,7 @@ def test_an_offered_aspect_validates_and_builds(
         block = catalogue.mount(feature, name, full(name, feature))
         device = device_cls(key="dev", name="Dev", namespace=feature.namespace)
         listed = {device.qualified(entity_key)
-                  for _, entity_key, _, by, _ in catalogue.keys({name: block}) if by == aspect.key}
+                  for _, entity_key, _, by, _, _ in catalogue.keys({name: block}) if by == aspect.key}
         # The common texts: a ready-made alert's default messages are read from them
         built = aspect.build(ha, device, feature, block, load("translations/en.json")["common"])
         assert bool(built) == bool(listed), name
@@ -724,7 +767,7 @@ def test_a_counter_is_totalled(features: dict[str, Any]) -> None:
     for name in counting:
         feature = features[name]
         block = catalogue.mount(feature, name, full(name, feature))
-        own = {entity_key for _, entity_key, _, by, _ in catalogue.keys({name: block}) if by != "statistics"}
+        own = {entity_key for _, entity_key, _, by, _, _ in catalogue.keys({name: block}) if by != "statistics"}
         for counted in role(feature, "Counters").places:
             containers = list(feature_module.walk(block, counted.at))
             assert containers, (name, counted.at)

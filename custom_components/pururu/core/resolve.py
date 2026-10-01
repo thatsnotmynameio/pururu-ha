@@ -47,6 +47,8 @@ class Target:
     device: Device
     # Qualified: appliance_running
     key: str
+    # Its node in the device's YAML, from the builder's key: appliance.running_program
+    path: str
     platform: Platform
     # The builder's key in the device: appliance, switches, programs
     builder: str
@@ -77,16 +79,35 @@ class Target:
         return self.device.current_entity_id(hass, self.platform, self.local)
 
 
-# Device key -> qualified entity key -> what it is
+# Device key -> path -> what it is
 type Index = Mapping[str, Mapping[str, Target]]
 
 
 def find(index: Index, here: str, ref: Ref) -> Target | None:
-    """What `ref`, written in device `here`, names; None when that device can't create it.
+    """What `ref`, a path written in device `here`, names; None when that device can't create it.
 
-    The caller says why, in its own words.
+    `ref.key` is read as the path (appliance.running_program). The caller
+    says why, in its own words.
     """
     return index.get(here if ref.device is None else ref.device, {}).get(ref.key)
+
+
+# --- bridge: 0.2.1's qualified keys, until references are paths (U2 removes it)
+
+
+def by_key(targets: Mapping[str, Target]) -> dict[str, Target]:
+    """A device's targets by qualified key, as 0.2.1's references name them.
+
+    A key listed twice keeps its last target, as the index by key did:
+    checks.keys_distinct refuses that configuration.
+    """
+    return {target.key: target for target in targets.values()}
+
+
+def find_key(index: Index, here: str, ref: Ref) -> Target | None:
+    """What `ref`, a qualified key written in device `here` (appliance_running), names; None when that device can't create it."""
+    targets = index.get(here if ref.device is None else ref.device, {})
+    return by_key(targets).get(ref.key)
 
 
 # The domains an entity ID begins with, to tell one from <device>.<key>: HA's
