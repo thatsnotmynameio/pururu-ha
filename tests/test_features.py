@@ -620,14 +620,14 @@ def test_mount_refuses_a_block_or_item_that_isnt_a_map(
 
 
 def test_the_aspects_each_builder_offers(features: dict[str, Any]) -> None:
-    """Statistics where a builder counts, ready-made alerts and notifications where it offers them: appliance all three."""
+    """Statistics where a builder counts, ready-made alerts and notifications where it offers them: appliance all three, door and window counts and alerts."""
     aspects_of = module("setup.catalogue").aspects_of
     offering = {name: {aspect.key for aspect in aspects_of(feature)}
                 for name, feature in features.items() if aspects_of(feature)}
     assert offering == {
         "appliance": {"statistics", "alerts", "notifications", "programs"},
-        "door": {"statistics"},
-        "window": {"statistics"},
+        "door": {"statistics", "alerts"},
+        "window": {"statistics", "alerts"},
         "programs": {"statistics"},
         "reactions": {"statistics"},
     }

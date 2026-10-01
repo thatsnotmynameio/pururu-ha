@@ -112,6 +112,9 @@ devices:
           fields: {who: actor, how: authentication, direction: direction}
         - entity: event.porta_frente_doorbell
           types: {ring: ring}
+      alerts:
+        long_opening: {for: {minutes: 10}}
+        no_opening: {for: {days: 1}}
   janela_quarto:
     name: Janela do quarto
     window:
@@ -119,6 +122,9 @@ devices:
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
+      alerts:
+        long_opening: {for: {hours: 2}}
+        no_opening: {for: {days: 2}}
   greenhouse:
     name: Estufa
     switches:

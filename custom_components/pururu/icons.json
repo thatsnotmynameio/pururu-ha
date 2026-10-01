@@ -11,6 +11,10 @@
       "appliance_alert_no_cycle": {"default": "mdi:sleep"},
       "door_open": {"default": "mdi:door-closed", "state": {"on": "mdi:door-open"}},
       "window_open": {"default": "mdi:window-closed", "state": {"on": "mdi:window-open"}},
+      "door_alert_long_opening": {"default": "mdi:door-open"},
+      "door_alert_no_opening": {"default": "mdi:sleep"},
+      "window_alert_long_opening": {"default": "mdi:window-open"},
+      "window_alert_no_opening": {"default": "mdi:sleep"},
       "phase_other": {"default": "mdi:progress-question"},
       "detected_phase_other": {"default": "mdi:progress-question"}
     },
