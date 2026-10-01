@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: button a partir de um sensor de action</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1f2328; --muted: #57606a; --line: #d8dee4;
+    --accent: #0b5cad; --accent-soft: #e7f0fa; --accent-text: #0a4a8a;
+    --warn-soft: #fbf1e3; --warn-text: #7a4a00;
+    --ok-soft: #e8f5ec; --ok-text: #1f6b3a;
+    --card: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c; --fg: #e6e8eb; --muted: #a3acb6; --line: #2e353d;
+      --accent: #6cb0ff; --accent-soft: #1b2a3b; --accent-text: #a9d0ff;
+      --warn-soft: #33281a; --warn-text: #f0c68a;
+      --ok-soft: #1a2e22; --ok-text: #9edbb2;
+      --card: #1b1f24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 900px; margin-inline: auto; padding: 2.5rem 1.25rem 4rem; }
+  p, li, dd { max-width: 72ch; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0.2rem 0 0.8rem; }
+  h2 { font-size: 1.4rem; margin: 2.8rem 0 1rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+  h4 { font-size: 0.95rem; margin: 1.2rem 0 0.4rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  strong { color: inherit; }
+  code { font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--accent-soft); color: var(--accent-text); padding: 0.05em 0.35em; border-radius: 4px; }
+  a { color: var(--accent); }
+  .eyebrow { font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .meta { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.5rem 0 1.5rem; font-size: 0.92rem; }
+  .meta dt { color: var(--muted); }
+  .meta dd { margin: 0; }
+  .stats { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0 0; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.9rem; font-size: 0.9rem; }
+  .stat b { font-size: 1.2rem; display: block; }
+  .jump { columns: 2; padding-left: 1.2rem; font-size: 0.95rem; }
+  article.idea { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.3rem 1.4rem; margin: 1.2rem 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.8rem; }
+  .chip { font-size: 0.78rem; padding: 0.15rem 0.6rem; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  .chip.id { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+  article.idea dl { margin: 0; }
+  article.idea dt { font-weight: 600; margin-top: 0.8rem; font-size: 0.9rem; }
+  article.idea dd { margin: 0.2rem 0 0; }
+  .callout { background: var(--warn-soft); color: var(--warn-text); border-radius: 8px; padding: 0.8rem 1rem; margin: 1rem 0; }
+  .callout p { margin: 0; color: var(--warn-text); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin: 0.8rem 0; }
+  th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
+  th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  figure { margin: 1rem 0 0.4rem; }
+  figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .svg-box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+  .svg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .svg-t { fill: var(--fg); font-size: 13px; }
+  .svg-s { fill: var(--muted); font-size: 11px; }
+  .svg-at { fill: var(--accent-text); font-size: 13px; font-weight: 600; }
+  .svg-line { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  .svg-tick { stroke: var(--accent); stroke-width: 2.5; }
+  .svg-wait { fill: var(--warn-soft); stroke: none; }
+  footer.composition-signal { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="eyebrow">Ideação · pururu</div>
+  <h1>Ideation: <code>button</code> a partir de um sensor que tem action e uma string nela</h1>
+  <dl class="meta">
+    <dt>date</dt><dd><time datetime="2026-09-30">2026-09-30</time></dd>
+    <dt>topic</dt><dd>button-action-sensor</dd>
+    <dt>focus</dt><dd>button a partir de um sensor que tem action e uma string nela</dd>
+    <dt>mode</dt><dd>repo-grounded</dd>
+  </dl>
+  <div class="stats">
+    <div class="stat"><b>46</b>ideias brutas</div>
+    <div class="stat"><b>19 + 3</b>após juntar duplicatas, mais combinações</div>
+    <div class="stat"><b>7</b>sobreviventes</div>
+    <div class="stat"><b>5 de 5</b>eixos cobertos</div>
+  </div>
+</header>
+
+<section id="grounding-context">
+  <h2>Grounding Context</h2>
+  <h4>Codebase Context</h4>
+  <ul>
+    <li><strong>Features hoje:</strong> <code>appliance</code>, <code>door</code>, <code>window</code>, <code>lights</code>, <code>switches</code> (<code>FEATURES</code>). Cada uma tem schema, namespace, <code>entity_keys</code>, <code>build()</code>, exemplo e papéis (<code>Configured</code>, <code>Items</code>, <code>Counters</code>, <code>Happenings</code> e outros).</li>
+    <li><strong>O precedente mais próximo é a <code>door</code>.</strong> Ela aceita entidades <code>event.*</code> e mapeia <code>types: {event_type: meaning}</code> (<code>opening</code>, <code>denied</code>, <code>ring</code>), com uma janela <code>match</code> de 5 s. Um tipo não mapeado é ignorado sem aviso, e um estado repetido também (<code>fired()</code>: "The same state again (attributes only) … is no new event").</li>
+    <li><strong>Reações:</strong> fontes <code>when</code>, <code>entity</code>, <code>at</code> e <code>sun</code>, com <code>device:</code> para outro dispositivo e <code>to</code>/<code>above</code>/<code>below</code>. Geram automações, e <code>trigger()</code> acrescenta <code>not_from: [unavailable, unknown]</code>.</li>
+    <li><strong>Aspects:</strong> estatísticas (<code>Counters</code>/<code>Counted</code>, medidores por período), alertas prontos (<code>Alert</code>, <code>ElapsedAlert</code> com <code>since_key</code>) e notificações prontas (<code>Happening</code>, que observa uma entity key da feature).</li>
+    <li><strong>Plataformas:</strong> <code>PLATFORMS</code> tem só <code>binary_sensor</code>, <code>light</code>, <code>sensor</code> e <code>switch</code>. Não há plataforma <code>event</code>.</li>
+    <li><strong>Histórico do nome:</strong> programas já foram entidades <code>button.pururu_&lt;key&gt;_program_&lt;program&gt;</code>, removidas na 0.1.15 (<code>docs/concepts/programs.mdx:123</code>). No HA, <code>button</code> é um aperto que sai; o assunto aqui é um aperto que chega do controle remoto.</li>
+    <li><strong>Estratégia:</strong> compor integrações existentes em vez de reconstruir, YAML como contrato ("Code first"), e o HA como camada de observação. O pururu não tem conceito de ack nem de snooze: o Alert2 é quem avisa.</li>
+  </ul>
+  <h4>External context</h4>
+  <ul>
+    <li><strong>Depreciação no Zigbee2MQTT 2.0:</strong> <code>sensor.*_action</code> vem desativado por padrão, e <code>legacy_action_sensor</code> também está depreciado. A preferência passou a ser device triggers e entidades <code>event.*</code> experimentais. Há relatos de controles que quebraram depois de atualizar.</li>
+    <li><strong>Contrato da entidade <code>event</code> no HA:</strong> <code>event_types</code> é obrigatório, o estado é o horário do último evento, e o device class <code>button</code> tem tipos padrão (<code>press_start</code> … <code>multi_press_end</code>, com <code>multi_press_count</code>).</li>
+    <li><strong>ControllerX:</strong> tabelas por fabricante que levam a um vocabulário comum. O single só espera <code>multiple_click_delay</code> (500 ms) quando existe um double mapeado.</li>
+    <li><strong>Blueprints universais:</strong> repetem o trabalho para cada modelo de controle.</li>
+    <li><strong>Queixa recorrente:</strong> cada fabricante escreve os apertos de um jeito, e o controle quebra ao migrar entre Z2M e ZHA.</li>
+    <li><strong>Analogias:</strong> tap-hold do QMK com termo por tecla, e <code>to_if_alone</code>/<code>to_if_held_down</code> do Karabiner.</li>
+  </ul>
+  <h4>Verificação</h4>
+  <p>As citações diretas dos sobreviventes foram conferidas no repositório por um verificador independente. Nem todos os geradores gastaram suas leituras de verificação, então essa conferência é o que sustenta as bases <code>direct:</code>. A prior art externa vem da pesquisa web e não foi conferida de novo.</p>
+</section>
+
+<section id="topic-axes">
+  <h2>Topic Axes</h2>
+  <ol>
+    <li><strong>Fontes de entrada:</strong> <code>sensor.*_action</code> legado, <code>event.*</code>, vocabulários de fabricante e a migração do Z2M.</li>
+    <li><strong>Semântica do aperto:</strong> normalização, apertos repetidos, multi-press, hold/release e tempo.</li>
+    <li><strong>O que o botão expõe:</strong> entidades, contagens, estado restaurado e estatísticas.</li>
+    <li><strong>O que os apertos acionam:</strong> reações, programas, notificações e alertas.</li>
+    <li><strong>Configuração e lado do usuário:</strong> formato do YAML, validação, diagnóstico e docs.</li>
+  </ol>
+</section>
+
+<section id="ranked-ideas">
+  <h2>Ranked Ideas</h2>
+  <ul class="jump">
+    <li><a href="#i1">1. O contrato de ocorrência</a></li>
+    <li><a href="#i2">2. Entidade <code>event</code> e um nome que não seja <code>button</code></a></li>
+    <li><a href="#i3">3. Totais por significado (hodômetro)</a></li>
+    <li><a href="#i4">4. Reações pelo <code>when</code> existente</a></li>
+    <li><a href="#i5">5. O botão como marco: "não apertado há X dias"</a></li>
+    <li><a href="#i6">6. Mostrar as strings que o mapa não conhece</a></li>
+    <li><a href="#i7">7. Multi-press e hold com janela por botão</a></li>
+  </ul>
+
+  <article class="idea" id="i1">
+    <div class="chips"><span class="chip id">1.</span><span class="chip">Fontes de entrada</span><span class="chip">Confiança 85%</span><span class="chip">Complexidade Média</span></div>
+    <h3>1. O contrato de ocorrência: um aperto é uma ocorrência de um significado, lida de qualquer fonte</h3>
+    <dl>
+      <dt>Description</dt>
+      <dd>Esta ideia junta três. O bloco do botão tem <code>entity:</code>, que aceita um <code>sensor.*_action</code> (o estado é a string) ou um <code>event.*</code> (o atributo <code>event_type</code>), e um mapa da string do fabricante para um vocabulário pequeno do pururu (<code>press</code>, <code>double</code>, <code>hold</code>, <code>release</code>, mais nomes do usuário), como a <code>door</code> faz com <code>types</code>. O botão lê <em>ocorrências</em>, não valores: dois <code>single</code> seguidos contam como dois apertos. No sensor, a ocorrência é a saída do estado de repouso ou um <code>state_reported</code> repetido; no <code>event.*</code>, é o novo horário. Tudo o que vem depois só vê significados, então trocar o sensor legado pelo <code>event.*</code>, ou o Z2M pelo ZHA, é mudar uma linha.</dd>
+      <dt>Basis</dt>
+      <dd><code>direct:</code> <code>features/opening/events.py</code>: <code>vol.Required("types"): vol.All(vol.Schema({cv.string: vol.In(MEANINGS)}), vol.Length(min=1))</code>, e o mesmo arquivo já lê <code>new.attributes.get("event_type")</code>. <code>direct:</code> <code>fired()</code> descarta "the same state again", ou seja, copiar a <code>door</code> por reflexo perderia o segundo aperto igual. <code>external:</code> o Z2M 2.0 depreciou <code>sensor.*_action</code>; o ControllerX usa tabelas por fabricante; o bit de alternância do RC-5 distingue "a mesma tecla de novo" de "tecla segurada". <code>reasoned:</code> o <code>state_changed</code> não dispara para um estado idêntico, mas o HA emite <code>state_reported</code> (<code>last_reported</code>), e um listener do pururu pode ouvi-lo; um trigger <code>state</code> escrito pelo usuário não pode.</dd>
+      <dt>Rationale</dt>
+      <dd>É a decisão da qual todas as outras dependem. As duas dores mais fortes da pesquisa, o aperto repetido perdido e a migração do Z2M quebrando controles, têm uma solução só, e ela reaproveita um padrão que o pururu já tem e já testa. Esconder a fonte é o que o pururu pode oferecer a mais que os blueprints.</dd>
+      <dt>Downsides</dt>
+      <dd>Aceitar dois domínios num só <code>entity:</code> é novo para as features. <code>state_reported</code> depende de o MQTT republicar a mensagem, o que precisa ser testado com o Z2M real. Deduplicar as duas fontes de um mesmo controle dentro de uma janela é a parte especulativa e fica de fora do primeiro corte.</dd>
+      <dt>Confidence</dt><dd>85%</dd>
+      <dt>Complexity</dt><dd>Medium</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 820 190" width="100%" role="img" aria-label="Duas fontes passam por um mapa e viram ocorrências de significados, que alimentam entidades e reações">
+        <rect x="10" y="30" width="190" height="50" rx="8" class="svg-box"/>
+        <text x="105" y="52" text-anchor="middle" class="svg-t">sensor.*_action</text>
+        <text x="105" y="69" text-anchor="middle" class="svg-s">estado = "1_single"</text>
+        <rect x="10" y="110" width="190" height="50" rx="8" class="svg-box"/>
+        <text x="105" y="132" text-anchor="middle" class="svg-t">event.*</text>
+        <text x="105" y="149" text-anchor="middle" class="svg-s">event_type = "press"</text>
+        <path d="M200 55 L285 90" class="svg-line"/>
+        <path d="M200 135 L285 100" class="svg-line"/>
+        <rect x="285" y="65" width="200" height="60" rx="8" class="svg-accent"/>
+        <text x="385" y="90" text-anchor="middle" class="svg-at">mapa → significado</text>
+        <text x="385" y="108" text-anchor="middle" class="svg-s">cada ocorrência conta</text>
+        <path d="M485 95 L570 55" class="svg-line"/>
+        <path d="M485 95 L570 135" class="svg-line"/>
+        <rect x="570" y="30" width="240" height="50" rx="8" class="svg-box"/>
+        <text x="690" y="52" text-anchor="middle" class="svg-t">entidades do botão</text>
+        <text x="690" y="69" text-anchor="middle" class="svg-s">totais, último aperto</text>
+        <rect x="570" y="110" width="240" height="50" rx="8" class="svg-box"/>
+        <text x="690" y="132" text-anchor="middle" class="svg-t">reações, alertas, notificações</text>
+        <text x="690" y="149" text-anchor="middle" class="svg-s">só veem "press", "double"…</text>
+      </svg>
+      <figcaption>A fonte e a grafia do fabricante ficam à esquerda do mapa; nada à direita muda quando elas mudam.</figcaption>
+    </figure>
+  </article>
+
+  <article class="idea" id="i2">
+    <div class="chips"><span class="chip id">2.</span><span class="chip">O que o botão expõe</span><span class="chip">Confiança 65%</span><span class="chip">Complexidade Média</span></div>
+    <h3>2. Expor os apertos como uma entidade <code>event</code> do HA, e escolher um nome que não seja <code>button</code></h3>
+    <dl>
+      <dt>Description</dt>
+      <dd>A feature cria uma <code>event.pururu_&lt;device&gt;_&lt;namespace&gt;_&lt;key&gt;</code> com <code>event_types</code> = os significados mapeados e device class <code>button</code>. Ela lê o sensor legado e publica o contrato moderno, então o usuário ganha a entidade para a qual o Z2M quer migrá-lo mesmo enquanto a ponte ainda expõe só o sensor. A chave da feature no YAML pode ser <code>remote</code> ou <code>presses</code>, para não repetir <code>button</code>, que no HA é um aperto de saída e que o pururu já usou e removeu.</dd>
+      <dt>Basis</dt>
+      <dd><code>direct:</code> <code>docs/concepts/programs.mdx:123</code>: "Programs were buttons, <code>button.pururu_&lt;key&gt;_program_&lt;program key&gt;</code> … The first start of 0.1.15 removes them." <code>direct:</code> <code>const.py</code> <code>PLATFORMS</code> não tem <code>event</code>. <code>external:</code> contrato da entidade <code>event</code> (<code>event_types</code> obrigatório, tipos padrão do device class <code>button</code>) e a preferência do Z2M 2.0 por <code>event.*</code>.</dd>
+      <dt>Rationale</dt>
+      <dd>A chave da feature, a plataforma e o nome que o usuário escreve custam caro para renomear depois da release. O pururu já caiu uma vez na armadilha do domínio <code>button</code>.</dd>
+      <dt>Downsides</dt>
+      <dd>Uma plataforma nova (<code>event.py</code>, <code>PLATFORMS</code>, teste de contrato, supressões no Sonar). O estado de uma <code>event</code> é um horário, o que não serve diretamente para <code>to:</code> nas reações; por isso esta ideia anda junto com a 3 e a 4.</dd>
+      <dt>Confidence</dt><dd>65%</dd>
+      <dt>Complexity</dt><dd>Medium</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i3">
+    <div class="chips"><span class="chip id">3.</span><span class="chip">O que o botão expõe</span><span class="chip">Confiança 80%</span><span class="chip">Complexidade Baixa</span></div>
+    <h3>3. Totais por significado, como um hodômetro, com estatísticas por período</h3>
+    <dl>
+      <dt>Description</dt>
+      <dd>Um <code>&lt;significado&gt;_total</code> por significado (<code>TOTAL_INCREASING</code>, restaurado), e o botão declara <code>Counters</code> para que o aspect de estatísticas meça cada um por dia, semana, mês e ano. Todo aperto, inclusive o segundo igual, muda o estado de alguma entidade. Assim reações, eventos (<code>pururu_reading</code>) e o Alert2 funcionam sobre apertos sem caso especial para strings momentâneas.</dd>
+      <dt>Basis</dt>
+      <dd><code>direct:</code> <code>core/roles.py</code> <code>Counters</code>: "Totals it builds, at each of its places (Counted); the statistics aspect meters them per period." <code>direct:</code> os totais de ciclo já são <code>SensorStateClass.TOTAL_INCREASING</code>. <code>external:</code> contadores do Prometheus e do SNMP, que não perdem um evento mesmo quando o consumidor perde uma amostra.</dd>
+      <dt>Rationale</dt>
+      <dd>O sensor bruto fica vazio quase o tempo todo, e o histórico não mostra nada. Os totais tornam o controle observável (qual botão é usado, qual controle parou) usando uma máquina que já existe.</dd>
+      <dt>Downsides</dt>
+      <dd>Muitas entidades num controle de 8 botões com 4 gestos. É preciso decidir se todo significado ganha total ou só os que o usuário lista.</dd>
+      <dt>Confidence</dt><dd>80%</dd>
+      <dt>Complexity</dt><dd>Low</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i4">
+    <div class="chips"><span class="chip id">4.</span><span class="chip">O que os apertos acionam</span><span class="chip">Confiança 80%</span><span class="chip">Complexidade Baixa</span></div>
+    <h3>4. Reações consomem apertos pelo <code>when</code> existente, sem tipo de trigger novo</h3>
+    <dl>
+      <dt>Description</dt>
+      <dd><code>reactions: {cinema: {when: remote_double, then: cinema}}</code> no próprio controle, ou <code>device: bedside_remote, when: …</code> em outro dispositivo. Um botão de "boa noite" no criado-mudo dispara programas de vários dispositivos sem nenhum bloco no nível da casa. A única coisa nova é o check de que <code>when</code> nomeia um significado real, e docs mostrando esse uso.</dd>
+      <dt>Basis</dt>
+      <dd><code>direct:</code> <code>device_keys/reactions.py</code>: o schema tem <code>device</code>, <code>when</code> e <code>then</code>. <code>docs/concepts/reactions.mdx</code> já documenta "an entity of another device". <code>direct:</code> <code>core/vocabulary.py</code> <code>trigger()</code> acrescenta <code>not_from</code> só quando há <code>to</code> sem <code>from</code>.</dd>
+      <dt>Rationale</dt>
+      <dd>O botão é útil no dia em que existir: programas, retry, mensagem e <code>triggered_total</code> passam a valer para controles remotos sem nenhum motor de trigger próprio. Também evita um <code>config: buttons:</code> no nível da casa que duplicaria as reações.</dd>
+      <dt>Downsides</dt>
+      <dd>Depende da ideia 1 (ocorrências confiáveis) e da 3 ou da 2 (uma entidade cujo estado muda a cada aperto). Uma parte já existe hoje, então a novidade é pequena, e é justamente por isso que ela é barata.</dd>
+      <dt>Confidence</dt><dd>80%</dd>
+      <dt>Complexity</dt><dd>Low</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i5">
+    <div class="chips"><span class="chip id">5.</span><span class="chip">O que os apertos acionam</span><span class="chip">Confiança 75%</span><span class="chip">Complexidade Baixa</span></div>
+    <h3>5. O botão como marco: "não apertado há X dias" como alerta pronto</h3>
+    <dl>
+      <dt>Description</dt>
+      <dd>Um <code>last_pressed_&lt;significado&gt;</code> (datetime, restaurado) mais um preset <code>ElapsedAlert</code> cujo marco é esse horário. Exemplos: um botão colado no purificador, apertado ao trocar o filtro, alerta depois de 90 dias; ou um botão de "gato alimentado" alerta se ninguém apertou até as 20 h. Um botão Zigbee barato vira registro de manutenção e de tarefas, com prioridade, notify e luzes de alerta, sem <code>input_datetime</code> nem automação.</dd>
+      <dt>Basis</dt>
+      <dd><code>direct:</code> <code>aspects/elapsed.py</code>: "An alert on the time since a milestone: a cycle's start or end, or its own creation." <code>direct:</code> <code>Elapsed</code> recebe <code>since_key</code>, uma entity key datetime da própria feature, que é exatamente o que <code>last_pressed_&lt;significado&gt;</code> seria. <code>external:</code> dispositivos de vigilância ferroviária (dead man's switch).</dd>
+      <dt>Rationale</dt>
+      <dd>É um uso que ninguém desenha partindo de "controle remoto", e ele reaproveita um primitivo do pururu quase sem mudança. Encaixa no catálogo de alertas e frequência da estratégia.</dd>
+      <dt>Downsides</dt>
+      <dd>Precisa de uma entity key datetime por significado com alerta. O caso "até as 20 h" (horário do dia) não é o que o <code>ElapsedAlert</code> faz hoje; o encaixe direto é "há X tempo".</dd>
+      <dt>Confidence</dt><dd>75%</dd>
+      <dt>Complexity</dt><dd>Low</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i6">
+    <div class="chips"><span class="chip id">6.</span><span class="chip">Configuração e lado do usuário</span><span class="chip">Confiança 70%</span><span class="chip">Complexidade Baixa</span></div>
+    <h3>6. Mostrar as strings que o mapa não conhece, em vez de ignorá-las sem aviso</h3>
+    <dl>
+      <dt>Description</dt>
+      <dd>Quando chega uma string que o mapa não cobre, o botão a registra num atributo (strings não mapeadas já vistas) e loga uma vez por string, já com a linha de YAML pronta para colar. Quando a fonte é um <code>event.*</code>, as chaves do mapa são conferidas contra o <code>event_types</code> dela, e um <code>doubel</code> digitado errado vira erro em vez de um botão morto. O usuário descobre <code>brightness_move_up</code> apertando o botão, não lendo a página de exposes do Z2M.</dd>
+      <dt>Basis</dt>
+      <dd><code>direct:</code> <code>fired()</code> em <code>features/opening/events.py</code> descarta tipos não mapeados sem aviso. <code>direct:</code> STRATEGY.md: "Code first: no configuration UI while other users aren't a target", por isso é log e atributo, não um painel. <code>external:</code> MIDI learn e a implementation chart dos aparelhos MIDI.</dd>
+      <dt>Rationale</dt>
+      <dd>Ignorar strings desconhecidas protege contra updates de firmware mas esconde erros de digitação. Avisar uma vez mantém as duas coisas, e o primeiro minuto com um controle novo vira "aperte cada botão, copie do log".</dd>
+      <dt>Downsides</dt>
+      <dd>Abre um precedente que a <code>door</code> talvez queira seguir. Uma issue no Repairs com o bloco YAML seria exagero para o primeiro corte.</dd>
+      <dt>Confidence</dt><dd>70%</dd>
+      <dt>Complexity</dt><dd>Low</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i7">
+    <div class="chips"><span class="chip id">7.</span><span class="chip">Semântica do aperto</span><span class="chip">Confiança 60%</span><span class="chip">Complexidade Alta</span></div>
+    <h3>7. Multi-press e hold com janela por botão; o single só espera quando existe um double</h3>
+    <dl>
+      <dt>Description</dt>
+      <dd>Quando a fonte só manda <code>single</code>, o botão conta apertos dentro de uma janela por botão e emite <code>double</code> e <code>triple</code>. O single espera a janela só se aquele botão tem um double mapeado; senão sai na hora. O hold vira um estado (<code>held</code> ligado do hold ao release, ou até um timeout se o release não vier), e repetições dentro de um hold contam como uma ocorrência só. A lógica fica num detector puro, no estilo do <code>Detector</code> dos programas, testado com tempo congelado.</dd>
+      <dt>Basis</dt>
+      <dd><code>external:</code> ControllerX, <code>multiple_click_delay</code> de 500 ms, com o single atrasado só quando há double; <code>TAPPING_TERM</code> por tecla do QMK; laços com <code>wait_for_trigger</code> e contador mais timer, feitos à mão, nos fóruns. <code>direct:</code> <code>features/cycle/program/detector.py</code> <code>_Track</code> com <code>starting</code>, <code>armed</code> e <code>ending</code>, "each delay at its own time".</dd>
+      <dt>Rationale</dt>
+      <dd>Multi-press é a automação mais duplicada da comunidade HA, e um atraso global deixa todo aperto lento. Resolver uma vez, bem testado, é o ganho concreto sobre os blueprints.</dd>
+      <dt>Downsides</dt>
+      <dd>Muitos controles e o <code>event.*</code> já entregam <code>double</code> e <code>hold</code> prontos, então o pururu pode estar refazendo o trabalho do fabricante ("compose, don't rebuild"). Latência e restauração no meio de uma janela são decisões de produto. Esta ideia fica melhor depois que a 1 estiver entregue.</dd>
+      <dt>Confidence</dt><dd>60%</dd>
+      <dt>Complexity</dt><dd>High</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 820 150" width="100%" role="img" aria-label="Linha do tempo: com double mapeado o single espera a janela; sem double ele sai na hora">
+        <text x="10" y="40" class="svg-t">com double mapeado</text>
+        <line x1="180" y1="35" x2="800" y2="35" class="svg-line"/>
+        <rect x="240" y="22" width="180" height="26" class="svg-wait"/>
+        <line x1="240" y1="20" x2="240" y2="50" class="svg-tick"/>
+        <text x="330" y="16" text-anchor="middle" class="svg-s">janela (ex. 500 ms)</text>
+        <text x="430" y="40" class="svg-at">→ single sai aqui</text>
+        <text x="10" y="110" class="svg-t">sem double mapeado</text>
+        <line x1="180" y1="105" x2="800" y2="105" class="svg-line"/>
+        <line x1="240" y1="90" x2="240" y2="120" class="svg-tick"/>
+        <text x="252" y="110" class="svg-at">→ single sai na hora</text>
+      </svg>
+      <figcaption>A espera só aparece quando existe um double que pode vir depois.</figcaption>
+    </figure>
+  </article>
+</section>
+
+<section id="rejection-summary">
+  <h2>Rejection Summary</h2>
+  <table>
+    <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Padrões de apertos com timeout entre dígitos (digit maps), sequências entre botões</td><td>Generalização especulativa sem necessidade de usuário na base; se um dia fizer sentido, entra como extensão da ideia 7.</td></tr>
+      <tr><td>2</td><td><code>binary_sensor</code> de pulso por significado</td><td>Inventa uma duração de pulso, cria duas entidades para uma ocorrência e corre risco com restauração e <code>not_from</code>; as ideias 2 e 3 servem melhor aos triggers.</td></tr>
+      <tr><td>3</td><td>Ack e snooze físicos para alertas (ISA-18.2)</td><td>O pururu não tem conceito de ack; exigiria chamadas de serviço novas ao Alert2, um passo de saída novo e uma regra de "qual alerta o aperto atinge", o que rompe o limite "Alert2 does the telling". Vale como pergunta de estratégia, não como ideia de curto prazo.</td></tr>
+      <tr><td>4</td><td>Apertar de novo para parar um programa em execução (botão de elevador)</td><td>Parar um script deixa o estado no meio do caminho e esbarra na cláusula de segurança da estratégia; hoje já dá para fazer com uma reação mais uma automação do usuário.</td></tr>
+      <tr><td>5</td><td>Mapear apertos direto na luz ou no switch controlado</td><td>Duplica o que as reações fazem e mistura o controle remoto dentro de <code>lights</code>/<code>switches</code>, quebrando o padrão de uma feature standing por domínio.</td></tr>
+      <tr><td>6</td><td>Botão como fonte <code>ring</code> da <code>door</code></td><td>Os eventos da <code>door</code> exigem um <code>event.*</code> real; ligar uma feature a outra exige <code>Refers</code> e um tipo de fonte novo, para uma história de usuário sem base.</td></tr>
+      <tr><td>7</td><td>Schema de botões × gestos com o papel <code>Items</code></td><td>É uma questão de formato que depende das ideias 1 e 7; <code>Items</code> foi feito para programas, e esticá-lo não justifica uma conversa própria agora.</td></tr>
+      <tr><td>8</td><td>Perfis por modelo distribuídos com o pururu (estilo OpenXR)</td><td>Manter tabelas de fabricante é justamente o que o mapa do usuário evita; contraria "compose, don't rebuild" e tem só base argumentada.</td></tr>
+      <tr><td>9</td><td>Botão de uma ação só, só como Happening e sem entidade</td><td>Refutada: um <code>Happening</code> observa uma entity key da feature, então não existe sem uma entidade de aperto.</td></tr>
+      <tr><td>10</td><td>Hold como ciclo (<code>CycleSource</code>)</td><td>Incorporada à ideia 7 como o estado <code>held</code>; como ciclo completo, depende de um release que muitos sensores de action não mandam.</td></tr>
+      <tr><td>11</td><td>Combinação: pulso + hodômetro</td><td>Depende do pulso, que foi rejeitado; a ideia 3 fica sozinha.</td></tr>
+      <tr><td>12</td><td>Combinação: o lado humano dos alertas (ack + marco)</td><td>Depende do ack, que foi rejeitado; a metade do marco sobrevive como ideia 5.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer class="composition-signal">Composed <time datetime="2026-09-30T22:42Z">2026-09-30T22:42Z</time> by ce-ideate from the prompt "button a partir de um sensor que tem action e uma string nela", grounded in <a href="https://github.com/thatsnotmynameio/pururu-ha">thatsnotmynameio/pururu-ha</a>.</footer>
+</main>
+</body>
+</html>

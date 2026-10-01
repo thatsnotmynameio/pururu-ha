@@ -21,7 +21,7 @@ pururu:
 
 | Class | Event type | Which changes |
 |---|---|---|
-| `state_changed` | `pururu_state_changed` | Entities **without** a `state_class`: facts such as `running`, a phase, an alert, a door, `last_opened_by`, the last cycle's values, switches, lights. |
+| `state_changed` | `pururu_state_changed` | Entities **without** a `state_class`: facts such as `running`, a phase, an alert, a door, `last_opened_by`, the last cycle's values, switches, lights, buttons (each press: its time). |
 | `reading` | `pururu_reading` | Entities **with** a `state_class`: series such as the power and energy mirrors, totals and per-period meters. They can change every few seconds. |
 
 `events` lists the classes to fire, each once. Leave it out (the default) and pururu fires nothing. A class you don't list is never fired. **Developer tools → YAML → Pururu** applies a change.

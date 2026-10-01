@@ -93,6 +93,14 @@
    "pururu_water_station_appliance_running"
   ],
   [
+   "button",
+   "pururu_greenhouse_button_bell"
+  ],
+  [
+   "button",
+   "pururu_greenhouse_button_clean"
+  ],
+  [
    "light",
    "pururu_biblioteca_light_abajur"
   ],

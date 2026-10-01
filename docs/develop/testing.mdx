@@ -80,6 +80,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_program_entities.py` | The detector's entities (`build`), through the appliance's `running_program`: IDs, states, the current phase's `name`, the handover, late timers, restarts, reloads, names, what refers to a phase, the phases' meters |
 | `test_programs.py` | Executable programs (`programs: executable:`, `script.pururu_<device>_program_executable_<key>`): the block and its refusals, the scripts file, running, stopping, held and dropped targets, reloads, renames, taken IDs, runs as cycles and their statistics |
 | `test_appliance.py` | `running_program`, cycles, energy, runtime, meters, restores |
+| `test_buttons.py` | A sensor's value as a button: refused blocks, pressing in HA, starting the program (running, not generated, renamed), every press guard (repeats, startup, unavailable, appearing, restored, unknown), restarts, reloads, renames, taken IDs, `buttons.check` |
 | `test_switches.py` | Following the real switch, passing commands on, refused blocks, taken IDs, renames, reloads |
 | `test_lights.py` | Following the real light or switch, what it offers, passing commands on, refused blocks, one feature per real entity, taken IDs, renames, reloads |
 | `test_places.py` | Floors and areas: creation, adoption, deletion, refused names |
@@ -113,13 +114,14 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `__init__.py` | `setup.`, `const` |
 | `config_flow.py` | `const` |
 | `const.py` | nothing of pururu |
-| `sensor.py`, `binary_sensor.py`, `switch.py`, `light.py` | `core.runtime` |
+| `sensor.py`, `binary_sensor.py`, `button.py`, `switch.py`, `light.py` | `core.runtime` |
 
-Four named allowances, for one module each, not their whole folder (`ALSO` in `tests/test_code.py`):
+Five named allowances, for one module each, not their whole folder (`ALSO` in `tests/test_code.py`):
 
 - `features/__init__` → every `features.` package: it lists `FEATURES`.
 - `device_keys/__init__` → `aspects.alerts` and `aspects.programs`: the hand-written alerts' and the executable programs' device keys.
 - `device_keys/reactions` → `aspects.programs`: a reaction's `then` names an executable program (`programs.executable`) and starts its script (`programs.script_id`).
+- `features/buttons` → `aspects.programs`: a button's `program` names an executable program and starts its script. It imports the module (`from ..aspects import programs`) and reads it only inside functions: the package import reaches `features/` while `aspects.programs` is still loading, so importing its names fails.
 - `__init__` → `core.runtime`, directly, not through `setup.`: Home Assistant's entry points and the platforms take the typed entry, and hassfest's strict-typing check wants it named `*ConfigEntry` — `PururuConfigEntry`, in `core/runtime.py`.
 
 Only `aspects/statistics.py` imports Home Assistant's `utility_meter` (`test_only_the_statistics_aspect_imports_utility_meter`): the meters are written once.

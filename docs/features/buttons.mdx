@@ -1,0 +1,108 @@
+---
+title: buttons
+description: A value of a real sensor as a button of the device. Pressing it, on a remote or in Home Assistant, records the time and can start one of the device's programs.
+---
+
+`buttons` turns a value of a real sensor into a button of a device. A remote's key, a wall button or anything else that shows a press as a sensor's value becomes a button you can see and press in Home Assistant. A press, on the remote or in the UI, records its time and can start one of the device's [executable programs](/concepts/programs#executable-programs).
+
+```yaml
+pururu:
+  devices:
+    biblioteca:
+      name: Biblioteca
+      area: biblioteca
+      lights:
+        teto: {entity: light.biblioteca_teto, name: Teto}
+      programs:
+        executable:
+          ler:
+            name: Ler
+            sequence:
+              - turn_on: light_teto
+      buttons:
+        ler: {entity: sensor.controle_biblioteca_action, state: 1_single, name: Ler, program: ler}
+        extra: {entity: sensor.controle_biblioteca_action, state: 2_single, name: Extra}
+```
+
+This creates `button.pururu_biblioteca_button_ler`, shown as **Biblioteca Ler**, and `button.pururu_biblioteca_button_extra`, shown as **Biblioteca Extra**. When the remote's sensor becomes `1_single`, **Ler** is pressed and the program `ler` turns the ceiling light on.
+
+pururu knows nothing about remotes, integrations or vendors. You name a sensor and the value that counts as a press: whatever your sensor shows, `1_single`, `on`, `pressed` or `toggle`.
+
+## Settings
+
+`buttons` is a map of **entity key → button**, with at least one button. The key is a slug, and it ends the entity ID, after the namespace `button`: `ler` → `button.pururu_biblioteca_button_ler`.
+
+<Property name="entity" type="entity ID" required>
+  The real sensor. It must be a `sensor.*` entity, and not one of pururu's own sensors, even one you renamed in the UI. A renamed one is caught when pururu builds the device: that button isn't created, and the log says so.
+</Property>
+
+---
+
+<Property name="state" type="string" required>
+  The sensor's value that counts as a press. It can't be empty, `unavailable` or `unknown`: those mean the sensor has no reading, and nobody presses them. An unquoted `on` is the state `on`.
+</Property>
+
+---
+
+<Property name="name" type="string" required>
+  The name shown after the device's name. It can't be empty. It's the same in every language: like a switch's, a button's name isn't translated.
+</Property>
+
+---
+
+<Property name="program" type="string">
+  One of the device's [executable programs](/concepts/programs#executable-programs), by its key. Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button, as [Reacting to a press](#reacting-to-a-press) says.
+</Property>
+
+Several buttons can read one sensor, each with its own value. Two buttons of one device with the same `entity` and `state` are refused: one press would press both.
+
+## Entity
+
+`button.pururu_<key>_button_<entity key>`'s state is the time of its last press, or `unknown` before the first one.
+
+- **Pressing it in Home Assistant** is the same press as the remote's: it records the time and starts the program. The logbook names whoever pressed it.
+- **It keeps its last press** across restarts and reloads, and it stays available while its sensor is unavailable or missing: you can still press it.
+- **A press while its program runs** records the time and starts nothing. The running program goes on.
+- **A program that isn't generated** starts nothing either, such as one whose target is disabled. The press is still recorded.
+
+### Reacting to a press
+
+A reload (`pururu.reload`, or one pururu does after a rename or after you disable an entity it follows) and a restart remove the button and add it back with its last press. For a moment its state goes from the time to `unavailable` and back to the time. Nobody pressed it.
+
+Home Assistant's "pressed" trigger on the device page is a plain state trigger with no `from` or `to`, so it fires on that change too. For an automation of yours, use the `button.pressed` trigger, which ignores a change from `unavailable`, or a state trigger that leaves out `unavailable` and `unknown`:
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: button.pururu_biblioteca_button_extra
+    not_from: [unavailable]
+    not_to: [unavailable, unknown]
+```
+
+The `button.pressed` trigger takes the button in its `target`:
+
+```yaml
+triggers:
+  - trigger: button.pressed
+    target:
+      entity_id: button.pururu_biblioteca_button_extra
+```
+
+## When the sensor presses
+
+A press is the sensor **changing to** the button's value. pururu never presses a button for a value nobody pressed, so these are not presses:
+
+- **The same value written again**, with or without new attributes. Most remotes go back to an empty value between presses, so each press is a change. One that doesn't loses the second identical press in a row.
+- **Anything while Home Assistant is starting**, such as a value the sensor's integration sends as it loads.
+- **The sensor coming back** from `unavailable` with the value, or **appearing** with it, or a **restored** state.
+- **From `unknown`, right away.** After a restart, a sensor is `unknown` until its first value. A press after it has been `unknown` for 3 seconds counts. A value it gets as it's set up doesn't.
+
+Each press carries the context of the sensor's write, so the logbook shows where it came from.
+
+## Good to know
+
+- **Zigbee2MQTT 2.x** no longer creates `sensor.<remote>_action` by default. It exists with `homeassistant: legacy_action_sensor: true` in Zigbee2MQTT's configuration, which is deprecated. pururu reads `sensor.*` only for now; `event.*` entities are not supported yet.
+- **These are not the program buttons of 0.1.14 and before.** Those were `button.pururu_<key>_program_<program key>` and are gone since 0.1.15 (see [Programs](/concepts/programs)). A button now stands for a press of something real.
+- **The same sensor and value in two devices** is fine: each device's button is pressed, and each starts its own program.
+- **Renaming the real sensor.** Update `entity:` in the YAML and reload. Until then, the button can only be pressed in the UI.
+- **Renaming the button** in the UI works as for any entity. See [Renaming an entity ID](/concepts/entity-ids#renaming-an-entity-id).

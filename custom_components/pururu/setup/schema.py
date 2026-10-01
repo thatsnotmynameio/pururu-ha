@@ -25,7 +25,7 @@ from ..core import messages
 from ..core.feature import Feature
 from ..core.resolve import Index
 from ..device_keys import reactions
-from ..features import FEATURES
+from ..features import FEATURES, buttons
 from ..outputs import alert_lights, events, places
 from . import catalogue, checks
 
@@ -64,6 +64,7 @@ CHECKS: tuple[Check, ...] = (
     checks.real_entities_distinct,
     reactions.check,
     programs.check,
+    buttons.check,
     places.floors_exist,
     checks.areas_exist,
     checks.generated_ids_distinct,

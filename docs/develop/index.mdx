@@ -43,7 +43,7 @@ custom_components/pururu/     the integration
   __init__.py                 HA's entry points only, each calling setup/lifecycle.py
   config_flow.py              the import-only flow that creates the single entry
   const.py                    names shared by the modules
-  sensor.py, binary_sensor.py, switch.py, light.py
+  sensor.py, binary_sensor.py, button.py, switch.py, light.py
                               the platforms: they only add what the entry built
   core/                       the contracts and shared helpers; imports only core/ and const
     runtime.py                PururuConfigEntry, Built, Step: what the entry carries
@@ -56,6 +56,7 @@ custom_components/pururu/     the integration
     generated.py              a Kind per generated domain: sync, include check, removal
   features/                   one module or package per feature, and FEATURES
     appliance/                running_program, mirrors, alerts, notifications
+    buttons.py                a sensor's value as a button: its press guards, its program, buttons.check
     cycle/                    the cycle machinery: CycleSource, last cycle, totals, energy
       program/                the detector of detected programs (running_program, programs: detected:): schema, detector, entities
     lights.py
