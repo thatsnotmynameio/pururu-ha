@@ -58,10 +58,13 @@ def texts_together(alert: dict[str, Any]) -> dict[str, Any]:
     return alert
 
 
-def lights_group(value: Any) -> str | None:
-    """An alert's alert lights group (alert_lights.py): true is the default group, false none."""
+def lights_group(value: Any) -> str:
+    """An alert's alert lights group (alert_lights.py), by its name: default is the group default."""
     if isinstance(value, bool):
-        return DEFAULT_ALERT_LIGHTS if value else None
+        raise vol.Invalid(
+            f"lights names a group of config.alerts.lights.groups, such as "
+            f"{DEFAULT_ALERT_LIGHTS}; absent, the alert borrows none"
+        )
     return str(cv.slug(value))
 
 

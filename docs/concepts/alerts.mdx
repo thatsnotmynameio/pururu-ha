@@ -85,8 +85,8 @@ This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **
 
 ---
 
-<Property name="lights" type="true | group" optional>
-  Lights that show the alert while it's on: `true` for the group `default`, or a group's name, from `config: alerts: lights: groups`. See [Alert lights](/concepts/alert-lights).
+<Property name="lights" type="group" optional>
+  Lights that show the alert while it's on: a group's name from `config: alerts: lights: groups`, such as `default`. See [Alert lights](/concepts/alert-lights).
 </Property>
 
 An alert needs **either** `state` **or** `above`/`below`, not both.

@@ -30,7 +30,7 @@ pururu:
         power: sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
         alerts:
-          long_cycle: {for: {hours: 3}, lights: true}
+          long_cycle: {for: {hours: 3}, lights: default}
       alerts:
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, priority: high, lights: externas}
 ```
@@ -41,8 +41,8 @@ pururu:
 
 ### An alert's `lights`
 
-<Property name="lights" type="true | group" optional>
-  In an alert you write, or in a feature's ready-made one. `true` borrows the group `default`; a group's name borrows that group. Without it, or with `false`, the alert borrows nothing.
+<Property name="lights" type="group" optional>
+  In an alert you write, or in a feature's ready-made one: the name of a group of `config: alerts: lights: groups`, such as `default`. Without it, the alert borrows nothing.
 </Property>
 
 ### `config: alerts: lights:`
@@ -59,7 +59,7 @@ Every key is optional.
   What a light shows while its most serious alert on has this priority:
 
   - `turn_on`: the data of Home Assistant's [`light.turn_on`](https://www.home-assistant.io/integrations/light/#action-lightturn_on), under its own names (`color_name`, `rgb_color`, `brightness_pct`, `effect`, `flash`, `transition`…). No `entity_id`: the light is the group's. `{}` just turns it on.
-  - `repeat`: optional, `{seconds: N}`. The same `turn_on` again every N seconds while the priority lasts, for a one-shot effect such as Zigbee2MQTT's `breathe`.
+  - `repeat`: optional, a [time period](/features/appliance#settings) of at least a second (`{seconds: 15}`): the same `turn_on` again that often while the priority lasts, for a one-shot effect such as Zigbee2MQTT's `breathe`.
 
   Writing a priority replaces its default whole: `high: {turn_on: {color_name: purple}}` sends no `breathe` and doesn't repeat.
 </Property>
@@ -67,7 +67,7 @@ Every key is optional.
 ---
 
 <Property name="resolved" type="map" optional>
-  What a light shows once its last alert ended: `turn_on`, as above, and `for: {seconds: N}`, how long before it's turned off and handed back. Both are required.
+  What a light shows once its last alert ended: `turn_on`, as above, and `lasts`, a time period of at least a second: how long before it's turned off and handed back. Both are required.
 </Property>
 
 The defaults, which today's configurations get without writing anything:
@@ -80,7 +80,7 @@ pururu:
         high: {turn_on: {color_name: red, brightness_pct: 100, effect: breathe}, repeat: {seconds: 15}}
         medium: {turn_on: {color_name: orange, brightness_pct: 100, effect: breathe}, repeat: {seconds: 15}}
         low: {turn_on: {color_name: blue, brightness_pct: 100, effect: breathe}, repeat: {seconds: 15}}
-        resolved: {turn_on: {color_name: green, brightness_pct: 50}, for: {seconds: 120}}
+        resolved: {turn_on: {color_name: green, brightness_pct: 50}, lasts: {minutes: 2}}
 ```
 
 ## Each light uses what it has
@@ -93,9 +93,9 @@ pururu only calls the light's `turn_on` and `turn_off`. The light takes what it 
 |---|---|
 | One of its alerts turns on | `turn_on` of that alert's priority, again every `repeat` |
 | Another of its alerts turns on or off | the highest priority among its alerts on; nothing sent if it didn't change |
-| The last of its alerts turns off | `turn_on` of `resolved`, for its `for` |
+| The last of its alerts turns off | `turn_on` of `resolved`, for its `lasts` |
 | One of its alerts turns on during `resolved` | taken again: that priority's `turn_on` |
-| `resolved`'s `for` ends | `turn_off`, then the event `pururu_alert_lights_released` |
+| `resolved`'s `lasts` ends | `turn_off`, then the event `pururu_alert_lights_released` |
 
 - **Only its own alerts hold it.** An alert that doesn't use a light never keeps it: the lantern is handed back once its alerts are off, whatever else is on.
 - **Its attributes say what it's doing:** `alert` (`high`, `medium`, `low` or `resolved`) and `alerts`, the entity IDs of its alerts that are on. Both are gone once it's free.
@@ -105,7 +105,7 @@ pururu only calls the light's `turn_on` and `turn_off`. The light takes what it 
 
 - **During an alert**, pururu puts the light back at once: an automation or a person turning it off, or to another colour, doesn't hide the alert. Only the alert ending frees the light.
 - **During `resolved`**, a person (in the UI, by voice) or an automation or script changing the light took it back on purpose: pururu hands it back at once, without turning it off, and fires the event. A change neither made, such as the bulb's own late report or a wall switch, shows `resolved` again.
-- **A light going `unavailable`** isn't taken by anyone, and pururu doesn't call it while it can't answer: it shows what it should once the light is back. If `resolved`'s `for` ended meanwhile, the light is turned off then, and handed back. A person or an automation changing it as it comes back still takes it back, untouched.
+- **A light going `unavailable`** isn't taken by anyone, and pururu doesn't call it while it can't answer: it shows what it should once the light is back. If `resolved`'s `lasts` ended meanwhile, the light is turned off then, and handed back. A person or an automation changing it as it comes back still takes it back, untouched.
 - pururu knows its own changes by their context: a bulb reporting what pururu asked is never "put back".
 - Its commands reach a light in the order it gives them: a slow `turn_off` never lands after the next alert's `turn_on`. A command still waiting behind a slow one is dropped for the newer one.
 

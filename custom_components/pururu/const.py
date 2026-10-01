@@ -51,7 +51,7 @@ DATA_CONFIG: HassKey[dict[str, Any]] = HassKey(DOMAIN)
 CONF_CONFIG: Final = "config"
 # A device's lights, config: alerts: lights:, and an alert's lights
 CONF_LIGHTS: Final = "lights"
-# The alert lights group of an alert's `lights: true`
+# The alert lights group an alert's `lights: default` names, and the first to write
 DEFAULT_ALERT_LIGHTS: Final = "default"
 # Fired when the alert lights hand a light back: {"entity_id": the pururu light}
 EVENT_ALERT_LIGHTS_RELEASED: Final = "pururu_alert_lights_released"

@@ -2,7 +2,7 @@
 
 An alert with `lights` names a group of `config: alerts: lights: groups`.
 While one of a light's alerts is on, the light shows the highest priority's
-`turn_on`; once none is, `resolved`'s for its `for`, then it is turned off and
+`turn_on`; once none is, `resolved`'s for its `lasts`, then it is turned off and
 pururu_alert_lights_released says it is free. Only the light's turn_on and
 turn_off are called: the light uses what it has.
 """
@@ -66,7 +66,7 @@ _LOGGER = logging.getLogger(__name__)
 GROUPS = "groups"
 TURN_ON = "turn_on"
 REPEAT = "repeat"
-FOR = "for"
+LASTS = "lasts"
 # What a light shows between its last alert's end and its release
 RESOLVED = "resolved"
 
@@ -85,11 +85,8 @@ def _known_colour(params: dict[str, Any]) -> dict[str, Any]:
 
 # light.turn_on's data under its own names; the light is the group's, never given here
 TURN_ON_SCHEMA = vol.All(vol.Schema(LIGHT_TURN_ON_SCHEMA), _known_colour)
-# A whole number of seconds, written {seconds: N}
-SECONDS = vol.All(
-    vol.Schema({vol.Required("seconds"): vol.All(int, vol.Range(min=1))}),
-    lambda value: timedelta(seconds=value["seconds"]),
-)
+# Any HA time period, at least a second: 0 would make repeat a busy loop
+PERIOD = vol.All(cv.positive_time_period, vol.Range(min=timedelta(seconds=1)))
 
 
 def _distinct(lights: list[str]) -> list[str]:
@@ -101,10 +98,10 @@ def _distinct(lights: list[str]) -> list[str]:
 # Its lights, each <device>.light_<key>; check() checks them against the devices
 GROUP = vol.All([device_reference], vol.Length(min=1), _distinct)
 PRIORITY = vol.Schema(
-    {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Optional(REPEAT): SECONDS}
+    {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Optional(REPEAT): PERIOD}
 )
 RESOLVED_SCHEMA = vol.Schema(
-    {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Required(FOR): SECONDS}
+    {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Required(LASTS): PERIOD}
 )
 
 
@@ -123,7 +120,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "low": _breathe("blue"),
     RESOLVED: {
         TURN_ON: {"color_name": "green", "brightness_pct": 50},
-        FOR: {"seconds": 120},
+        LASTS: {"minutes": 2},
     },
 }
 
@@ -179,7 +176,7 @@ class _Light:
     recent: deque[str] = field(default_factory=lambda: deque(maxlen=RECENT))
     repeating: CALLBACK_TYPE | None = None
     resolving: CALLBACK_TYPE | None = None
-    # Resolved's `for` ended while it had no reading: turned off once it's back
+    # Resolved's `lasts` ended while it had no reading: turned off once it's back
     overdue: bool = False
     # Its commands run one at a time, in the order given: a slow turn_off must
     # never land after the next alert's turn_on
@@ -205,7 +202,7 @@ class _Light:
             self.repeating = None
 
     def stop_resolving(self) -> None:
-        """Stop counting resolved's `for`."""
+        """Stop counting resolved's `lasts`."""
         if self.resolving is not None:
             self.resolving()
             self.resolving = None
@@ -298,7 +295,7 @@ class AlertLights:
         without a reading was taken by nobody. During resolved only a person
         or an automation takes it back, even as it comes back from no reading;
         a change neither made (the bulb back online, its own late report)
-        shows resolved again, its `for` running on, or turns it off if that
+        shows resolved again, its `lasts` running on, or turns it off if that
         ended meanwhile.
         """
         light = self._by_id[event.data["entity_id"]]
@@ -354,13 +351,13 @@ class AlertLights:
 
     @callback
     def _resolve(self, light: _Light) -> None:
-        """Show resolved for its `for`, then hand the light back."""
+        """Show resolved for its `lasts`, then hand the light back."""
         light.stop_repeating()
         light.stop_resolving()
         light.overdue = False
         self._apply(light, RESOLVED)
         light.resolving = async_call_later(
-            self._hass, self._settings[RESOLVED][FOR], partial(self._resolved, light)
+            self._hass, self._settings[RESOLVED][LASTS], partial(self._resolved, light)
         )
 
     @callback

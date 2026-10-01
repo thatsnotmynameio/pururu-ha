@@ -57,7 +57,7 @@ devices:
       alerts:
         offline:
         no_power:
-        long_cycle: {for: {hours: 3}, lights: true}
+        long_cycle: {for: {hours: 3}, lights: default}
         no_cycle: {for: {days: 2}}
       notifications:
         finished:
