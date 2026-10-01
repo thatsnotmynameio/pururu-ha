@@ -11,32 +11,32 @@ pururu knows nothing of any integration. The user names the entities, says what 
 ```yaml
 pururu:
   devices:
-    porta_cercado_frente:
-      name: Cercado frente
+    porta_frente:
+      name: Porta da frente
       area: entrada
       door:
-        contact: binary_sensor.cercado_frente
+        contact: binary_sensor.porta_frente
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
         events:
-          - entity: event.cercado_frente_access
+          - entity: event.porta_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
-          - entity: event.cercado_frente_doorbell
+          - entity: event.porta_frente_doorbell
             types: {ring: ring}
     janela_quarto:
       name: Janela do quarto
       window:
         contact: binary_sensor.janela_quarto_contact
-# → binary_sensor.pururu_porta_cercado_frente_door_open        "Cercado frente Aberta"
-# → sensor.pururu_porta_cercado_frente_door_last_opened_by     "Alex Doe"
+# → binary_sensor.pururu_porta_frente_door_open        "Porta da frente Aberta"
+# → sensor.pururu_porta_frente_door_last_opened_by     "Alex Doe"
 # → binary_sensor.pururu_janela_quarto_window_open              "Janela do quarto Aberta"
 ```
 
 ## What such hardware shows
 
-An example: an enclosure's two doors, each with a contact and an access controller's `event.*`:
+An example: two doors, each with a contact and an access controller's `event.*`:
 
 | Situation | Contact | Event |
 |---|---|---|
@@ -135,7 +135,7 @@ Created only when some event of the block gives that meaning or field:
   - `denied` with its attributes; `ring`;
   - `cycle_from: door` feeding `phases`;
   - validation: every refused configuration above.
-- The event scenarios replay the enclosure sequences: entry by PIN 0.9 s after the contact, exit by REX, exit by the front door with no event.
+- The event scenarios replay the front door's sequences: entry by PIN 0.9 s after the contact, exit by REX, exit by the front door with no event.
 
 ## Docs and release
 

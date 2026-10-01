@@ -38,20 +38,11 @@ Still on 0.1.23 (or 0.2.0):
   <Step title="Download 0.2.1, but don't restart yet">
     In HACS, open **Pururu** and download 0.2.1 (or copy the new `custom_components/pururu/` by hand). Don't restart and don't reload pururu until the `pururu:` block below is rewritten: the old version refuses the new keys, and the new one the old keys. A refused reload loses nothing (pururu keeps everything as it was), but it's confusing.
   </Step>
-  <Step title="Delete the old automation files">
-    In the folder of `configuration.yaml` (`/config` on Home Assistant OS):
-
-    ```sh
-    rm -f pururu/automations/reactions.yaml pururu/automations/notifications.yaml
-    ```
-
-    0.2.1 writes both kinds to `pururu/automations/automations.yaml`. Home Assistant loads every file in the folder, so the old two would repeat its IDs.
-  </Step>
 </Steps>
 
 ## Rewrite the `pururu:` block
 
-Home Assistant validates the whole block at once: make every change below before you restart. Each step shows 0.1.23, then 0.2.1.
+Home Assistant validates the whole block at once: make every change below before you restart. Each change shows 0.1.23, then 0.2.1; the last two steps delete the old automation files and restart.
 
 <Steps>
   <Step title="The appliance's running becomes running_program">
@@ -285,6 +276,16 @@ Home Assistant validates the whole block at once: make every change below before
         notify: notify.mobile_app_phone
         events: [state_changed, reading]
     ```
+  </Step>
+
+  <Step title="Delete the old automation files">
+    Last, just before the restart: until then the old version still runs, and whatever reloads pururu (`pururu.reload`, an entity renamed in the UI) writes `reactions.yaml` back. In the folder of `configuration.yaml` (`/config` on Home Assistant OS):
+
+    ```sh
+    rm -f pururu/automations/reactions.yaml pururu/automations/notifications.yaml
+    ```
+
+    0.2.1 writes both kinds to `pururu/automations/automations.yaml`. Home Assistant loads every file in the folder, so the old two would repeat its IDs. If `reactions.yaml` came back before the restart, delete it again.
   </Step>
 
   <Step title="Restart Home Assistant">

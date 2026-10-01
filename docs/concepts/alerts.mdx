@@ -133,7 +133,7 @@ An alert needs the entity it watches. If that entity isn't created (its ID is al
 
 ## Getting notified
 
-pururu sends nothing itself. [Alert2](https://github.com/redstone99/hass-alert2) delivers the alerts that have `message` and `done_message`. pururu writes an Alert2 alert for each of them to `pururu/alert2/alerts.yaml`, next to `configuration.yaml`, and Alert2 reads that folder through **one line** you add once, as the `alerts` of your `alert2:` block:
+pururu sends nothing itself. [Alert2](https://github.com/redstone99/hass-alert2) delivers the alerts that have texts: `message` and `done_message`, or a ready-made alert's own. pururu writes an Alert2 alert for each of them to `pururu/alert2/alerts.yaml`, next to `configuration.yaml`, and Alert2 reads that folder through **one line** you add once, as the `alerts` of your `alert2:` block:
 
 ```yaml title="configuration.yaml"
 alert2:
@@ -160,7 +160,7 @@ For the `long_cycle` alert above, pururu writes:
 
 - **What each alert says** comes from its `message` and `done_message`. **How** it's told is the same for every alert, in Alert2's `defaults`: who is told, reminders, acknowledging. See Alert2's documentation.
 - Each Alert2 alert is named after the rest of the pururu alert's ID: `binary_sensor.pururu_clothes_washer_alert_long_cycle` becomes `alert2.pururu_clothes_washer_alert_long_cycle`, even after you rename the pururu alert.
-- Only the alerts with texts are written, and only those that are created.
+- Only the alerts with texts are written, a ready-made alert always among them, and only those that are created.
 - A message or name with `{` is shown as you wrote it, not as a template.
 - `condition_on` and `condition_off`, rather than one `condition`, keep the Alert2 alert as it is while the pururu alert is briefly `unavailable`, as during a pururu reload.
 - Until the line is there, **Settings → Repairs** shows **Alert2 doesn't run pururu's alerts**, with the line to add. See [Troubleshooting](/reference/troubleshooting#alert2-doesnt-run-pururus-alerts).

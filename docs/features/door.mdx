@@ -10,23 +10,23 @@ description: A door from its contact sensor. It records each opening, counts the
 ```yaml
 pururu:
   devices:
-    porta_cercado_frente:
-      name: Cercado frente
+    porta_frente:
+      name: Porta da frente
       area: entrada
       door:
-        contact: binary_sensor.cercado_frente
+        contact: binary_sensor.porta_frente
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
         event_entities:
-          - entity: event.cercado_frente_access
+          - entity: event.porta_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
-          - entity: event.cercado_frente_doorbell
+          - entity: event.porta_frente_doorbell
             types: {ring: ring}
 ```
 
-This creates `binary_sensor.pururu_porta_cercado_frente_door_open`, shown as **Cercado frente Open**, and the entities below.
+This creates `binary_sensor.pururu_porta_frente_door_open`, shown as **Porta da frente Open**, and the entities below.
 
 ## Settings
 
@@ -113,7 +113,7 @@ A door offers alerts for an opening that lasts too long and for one that doesn't
 
 ```yaml
 door:
-  contact: binary_sensor.cercado_frente
+  contact: binary_sensor.porta_frente
   alerts:
     long_opening: {for: {minutes: 10}}
     no_opening: {for: {days: 1}}
@@ -124,11 +124,11 @@ door:
 | `long_opening` | it has been open for longer than `for` | it closes | `for` required, `medium` |
 | `no_opening` | it has been closed for longer than `for` | it opens | `for` required, `medium` |
 
-- Each one takes `for`, `priority`, [`notify`](/concepts/alerts#settings), which replaces its texts, and [`lights`](/concepts/alert-lights). Anything else is a configuration error.
+- Each one takes `for`, `priority`, [`message` and `done_message`](/concepts/alerts#settings), which replace its texts, and [`lights`](/concepts/alert-lights). Anything else is a configuration error.
 - Without Alert2, they still work as binary sensors, for a [reaction](/concepts/reactions) or your own automations, and their own texts log nothing.
 - `long_opening` counts from the opening's start, and `no_opening` from the last closing, so a restart in between starts nothing over. Until a first closing, `no_opening` counts from when you enabled it.
 - `no_opening` is for a door that should open every so often, such as a mailbox or a pet door.
-- Each one is `binary_sensor.pururu_<key>_door_alert_<alert>`, device class `problem`, shown as **Cercado frente Aberta há muito tempo** and so on, with the attributes of any [alert](/concepts/alerts#entity). A [reaction](/concepts/reactions) can react to one (`when: door_alert_long_opening`); another alert can't watch it.
+- Each one is `binary_sensor.pururu_<key>_door_alert_<alert>`, device class `problem`, shown as **Porta da frente Aberta há muito tempo** and so on, with the attributes of any [alert](/concepts/alerts#entity). A [reaction](/concepts/reactions) can react to one (`when: door_alert_long_opening`); another alert can't watch it.
 
 | Alert | Default message | Default done message |
 |---|---|---|
