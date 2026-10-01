@@ -1,6 +1,6 @@
 # YAML contract coherence and code architecture — design
 
-**Status:** agreed, not started. **Base:** `main` at 7b5fb5c (0.1.23), which already has [a reaction's retry](2026-09-29-reaction-retry-design.md) (0.1.22) and [notifications](2026-09-29-notifications-design.md) (0.1.23). **Branch:** `worktree-peaceful-bubbling-bee`.
+**Status:** done, released as 0.2.1. **Base:** `main` at 7b5fb5c (0.1.23), which already has [a reaction's retry](2026-09-29-reaction-retry-design.md) (0.1.22) and [notifications](2026-09-29-notifications-design.md) (0.1.23). **Branch:** `worktree-peaceful-bubbling-bee`.
 
 **For:** whoever implements it, person or agent. It says what changes, why, in which PR, and what stays on purpose. Read the Summary and the Glossary first; Parts 1–4 are the detail, and [The whole contract](#the-whole-contract-020) shows the result; PRs says the order. Everything in the Summary is decided; [Open decisions](#open-decisions) lists what isn't, none of which blocks the seven PRs. All seven together are **0.2.0**.
 

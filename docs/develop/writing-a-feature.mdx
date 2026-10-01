@@ -217,7 +217,7 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 | `test_every_per_item_name_has_its_placeholder` | Every suffix's name has the `{<namespace>}` placeholder, in both languages |
 | `test_ready_made_alerts_line_up` | Every ready-made alert's key is the alerts aspect's, not the builder's own (`entity_keys` lacks it, `by == "alerts"`), it watches (and counts from) its own feature's entity keys, has both default texts in both languages, and its settings validate |
 | `test_ready_made_are_offered_only_with_one` | The alerts aspect is offered only for at least one ready-made alert (the rule `presets_of` gives `alert_lights`), the notifications aspect only for at least one `Happening`: an empty `Presets` or `Happenings` offers nothing |
-| `test_every_alert_takes_the_shared_keys` | The hand-written alert's schema and every ready-made alert's settings take `problem.shared`'s keys (`priority`, `notify`, `lights`); a ready-made alert adds only `for`, and only the default priority differs |
+| `test_every_alert_takes_the_shared_keys` | The hand-written alert's schema and every ready-made alert's settings take `problem.shared`'s keys (`priority`, `message`, `done_message`, `lights`); a ready-made alert adds only `for`, and only the default priority differs |
 | `test_alerts_is_a_device_key_not_a_feature` | `alerts` is in `DEVICE_KEYS`, not in `FEATURES`: it never counts as a device's feature |
 | `test_ready_made_notifications_line_up` | Every ready-made notification watches its own feature's entity key, has its name and message in both languages, and validates through the notifications aspect, which adds no entity key |
 | `test_each_role_at_most_once` | No role twice in `roles` |

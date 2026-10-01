@@ -29,9 +29,9 @@ An autouse fixture, `no_step_failed` in `tests/conftest.py`, fails any test in w
 
 | Helper | What it does |
 |---|---|
-| `setup(hass, devices, *, floors=, areas=)` | Sets pururu up from a `pururu:` block. Returns `False` when Home Assistant refuses the configuration. |
-| `reload(hass, devices, *, floors=, areas=)` | Calls `pururu.reload` with a `configuration.yaml` that holds this block. |
-| `restart(hass, devices, *saved)` | Starts as after a restart. `saved` is what `.storage` held, as `(State, extra data)` pairs. |
+| `setup(hass, devices, *, floors=, areas=, events=, config=)` | Sets pururu up from a `pururu:` block: `events=` is `config: events:`, `config=` the rest of `config:`. Returns `False` when Home Assistant refuses the configuration. |
+| `reload(hass, devices, *, floors=, areas=, events=, config=)` | Calls `pururu.reload` with a `configuration.yaml` that holds this block (`events=` and `config=` as for `setup`). |
+| `restart(hass, devices, *saved, config=)` | Starts as after a restart. `saved` is what `.storage` held, as `(State, extra data)` pairs. |
 | `fake(hass, entity_id, state, attributes=None)` | Plays a real device: sets its state and lets pururu react. |
 | `tick(hass, freezer, seconds)` | Moves the clock forward and runs whatever became due. |
 | `settle()` | Lets every ready callback run. |
@@ -87,6 +87,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_events.py` | The two classes of events, their data, what isn't fired, renames and reloads |
 | `test_entity.py` | `reading()`, `as_time()` |
 | `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale; the root holds only what HA looks up; the core and the platforms import only what their layer allows, and no folder imports a later layer (`features` then `aspects` then `device_keys` and `outputs`, neither of those two importing the other, then `setup`); only the statistics aspect imports HA's `utility_meter`; no module named after a platform HA preloads; the Develop pages' examples import modules that exist |
+| `test_updating.py` | The Guide's update page (`getting-started/updating-to-0.2.1.mdx`): its examples, old and new: each step shows both versions, the whole example sets up, and each old form put back in it is refused, with the message the page quotes |
 | `test_release.py`, `test_fetch_hassfest.py` | The release and hassfest scripts |
 
 ## `test_code.py`: core's checks
