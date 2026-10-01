@@ -8,6 +8,9 @@ on its own: the change of an entity with a state_class is a reading
 (a series: power, totals, meters), any other a change (a fact: running, a phase,
 the last cycle's end). Each event carries its device's states when it is fired:
 a cycle's end (last_cycle_end, written last) comes with that cycle's values.
+An entity is named by its path in its device's YAML, and its event by its
+reference from another device (device.<device>.<path>): what a device's YAML
+writes to name it.
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -34,7 +37,8 @@ from homeassistant.util.json import json_loads_object
 from homeassistant.util.ulid import ulid_now
 
 from ..const import CONF_CONFIG, CONF_DEVICES, DOMAIN
-from ..core.entity import PururuEntity
+from ..core.entity import REFERENCE, PururuEntity
+from ..core.resolve import DEVICE
 from ..core.runtime import Built, PururuConfigEntry
 
 CONF_EVENTS: Final = "events"
@@ -60,7 +64,7 @@ SCHEMA = vol.All(cv.ensure_list, [vol.In(CLASSES)], _distinct)
 
 @dataclass(frozen=True, kw_only=True)
 class Watched:
-    """A device whose entities' changes are fired: its key, its name, its created entities (entity ID → key)."""
+    """A device whose entities' changes are fired: its key, its name, its created entities (entity ID → path)."""
 
     key: str
     name: str
@@ -111,28 +115,33 @@ def async_setup(
 def _data(
     hass: HomeAssistant, device: Watched, event_class: str, old: State, new: State
 ) -> dict[str, Any]:
-    """The event's data, JSON's own: the change, and every state of its device now.
+    """The event's data, JSON's own: the change, and every state of its device now, by path.
 
     The attributes as HA's JSON reads them back: their keys may be enums and
     their values datetimes (running's cycle_start), which a template (as a
-    rest_command's `{{ event | tojson }}`) renders as Python's repr.
+    rest_command's `{{ event | tojson }}`) renders as Python's repr. Not the
+    reference: event_name and key carry both its forms.
     """
-    key = device.entities[new.entity_id]
+    path = device.entities[new.entity_id]
+    attributes = {
+        key: value for key, value in new.attributes.items() if key != REFERENCE
+    }
     return {
         "event_id": ulid_now(),
-        "event_name": f"{device.key}.{key}",
+        "event_name": f"{DEVICE}.{device.key}.{path}",
         "event_class": event_class,
         "entity_id": new.entity_id,
         "device": device.key,
         "device_name": device.name,
-        "key": key,
+        "key": path,
         "old": old.state,
         "new": new.state,
         "time": new.last_changed.isoformat(),
-        "attributes": json_loads_object(json_bytes(new.attributes)),
+        "attributes": json_loads_object(json_bytes(attributes)),
+        # Flat: one entity's path can be the start of another's
         "states": {
-            entity_key: state.state
-            for entity_id, entity_key in device.entities.items()
+            entity_path: state.state
+            for entity_id, entity_path in device.entities.items()
             if (state := hass.states.get(entity_id)) is not None
         },
     }
@@ -141,13 +150,13 @@ def _data(
 def watched(
     devices: Mapping[str, Mapping[str, Any]], created_by: Mapping[str, Sequence[Entity]]
 ) -> list[Watched]:
-    """Each device with its created entities: current entity ID → key, its unique ID after pururu_<device>_."""
+    """Each device with its created entities: current entity ID → path, as build stamped it."""
     return [
         Watched(
             key=key,
             name=devices[key][CONF_NAME],
             entities={
-                entity.entity_id: entity.key
+                entity.entity_id: entity.path
                 for entity in created
                 if isinstance(entity, PururuEntity)
             },

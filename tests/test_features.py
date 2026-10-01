@@ -13,7 +13,7 @@ from homeassistant.setup import async_setup_component
 import pytest
 import voluptuous as vol
 
-from helpers import DOMAIN, module
+from helpers import DOMAIN, module, setup
 
 # A configured feature's block, valid on its own: for devices that need a feature besides
 # the one under test (a non-map programs/appliance block still needs at least one feature)
@@ -310,6 +310,41 @@ def test_every_listed_key_has_one_path(features: dict[str, Any]) -> None:
             found, value = written(block, segments)
             if found and not (value is None or isinstance(value, dict)):
                 assert cv.entity_id(value) == value, f"{name}: {key} at {path}, a setting"
+
+
+async def test_every_built_entity_carries_its_path(ha: HomeAssistant, features: dict[str, Any]) -> None:
+    """Each builder's full example, set up as a device: every entity has the path build stamped from the index.
+
+    The path resolves back to the entity's key in its device, and the entity
+    shows it in its reference, from inside and from another device, on every
+    platform. A builder that refers to another's key gets the appliance beside
+    it, another device key a switch.
+    """
+    catalogue = module("setup.catalogue")
+    devices: dict[str, Any] = {}
+    for name, feature in features.items():
+        device = {"name": name.title(), name: full(name, feature)}
+        if role(feature, "Refers") is not None:  # the example watches the appliance
+            device["appliance"] = full("appliance", features["appliance"])
+        elif name not in module("features").FEATURES:  # a device key needs a feature beside it
+            device["switches"] = SWITCHES
+        devices[f"dev_{name}"] = device
+    # The ready-made notifications' recipient
+    assert await setup(ha, devices, config={"notify": "homeassistant.notify.phone"})
+    index = catalogue.index({key: {"name": device["name"], **{
+        name: catalogue.mount(features[name], name, block) for name, block in device.items()
+        if name != "name"}} for key, device in devices.items()})
+    [entry] = ha.config_entries.async_entries(DOMAIN)
+    platforms = set()
+    for platform, entities in entry.runtime_data.items():
+        for entity in entities:
+            [(_, key)] = entity.device_info["identifiers"]
+            target = index[key][entity.path]
+            assert (target.key, target.unique_id) == (entity.key, entity.unique_id), entity.entity_id
+            assert ha.states.get(entity.entity_id).attributes["reference"] == {
+                "inside": entity.path, "outside": f"device.{key}.{entity.path}"}, entity.entity_id
+            platforms.add(platform)
+    assert platforms == set(module("const").PLATFORMS)
 
 
 async def test_every_action_is_a_service_of_its_platform(ha: HomeAssistant, features: dict[str, Any]) -> None:

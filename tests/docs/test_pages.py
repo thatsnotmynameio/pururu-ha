@@ -5,9 +5,11 @@ import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
+import pytest
 import yaml
 
-from helpers import module, setup
+from helpers import capture, fake, module, setup, tick
 
 PROJECT = Path(__file__).resolve().parents[2]
 CODE = "custom_components/pururu"
@@ -112,3 +114,66 @@ def test_the_appliance_page_lists_every_ready_made_alert(ha: HomeAssistant) -> N
     listed = section(APPLIANCE_PAGE, "Ready-made alerts")
     for name in module("core.feature").presets_of(module("features").FEATURES["appliance"]):
         assert f"`{name}`" in listed, name
+
+
+# The events page's washer: its events name entities by path, its automation reads states with brackets
+EVENT_TYPES = ("pururu_state_changed", "pururu_reading")
+W = {"unit_of_measurement": "W", "device_class": "power", "state_class": "measurement"}
+KWH = {"unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total_increasing"}
+EVENTS_PAGE = PROJECT / "docs/concepts/events.mdx"
+WASHER_END = "sensor.pururu_clothes_washer_appliance_last_cycle_end"
+
+
+def documented(containing: str) -> dict[str, Any]:
+    """The page's YAML block holding `containing`, as configuration.yaml reads it."""
+    blocks = re.findall(r"```yaml[^\n]*\n(.*?)```", EVENTS_PAGE.read_text(encoding="utf-8"), re.DOTALL)
+    [block] = [block for block in blocks if containing in block]
+    return yaml.safe_load(block)
+
+
+@pytest.fixture
+async def clothes_washer(ha: HomeAssistant, freezer: Any) -> HomeAssistant:
+    """The page's washer, idle long enough to count as not running."""
+    block = documented("clothes_washer:")["pururu"]
+    assert await setup(ha, block["devices"], events=block["config"]["events"])
+    await fake(ha, "sensor.washer_plug_energy", "100.0", KWH)
+    await fake(ha, "sensor.washer_plug_power", "1.4", W)
+    await tick(ha, freezer, 125)
+    return ha
+
+
+async def washer_cycle(hass: HomeAssistant, freezer: Any) -> None:
+    """One cycle of the page's washer, 0.42 kWh."""
+    await fake(hass, "sensor.washer_plug_power", "120", W)
+    await tick(hass, freezer, 65)
+    await tick(hass, freezer, 30 * 60)
+    await fake(hass, "sensor.washer_plug_energy", "100.42", KWH)
+    await fake(hass, "sensor.washer_plug_power", "1.4", W)
+    await tick(hass, freezer, 125)
+
+
+async def test_a_cycle_end_is_named_by_its_path(clothes_washer: HomeAssistant, freezer: Any) -> None:
+    """AE7: the event names the entity as another device's YAML writes it, and the sensor shows both forms."""
+    captured = capture(clothes_washer, *EVENT_TYPES)
+    await washer_cycle(clothes_washer, freezer)
+    [event] = [event for event in captured if event.data["entity_id"] == WASHER_END]
+    assert event.data["event_name"] == "device.clothes_washer.appliance.running_program.last_cycle_end"
+    assert event.data["key"] == "appliance.running_program.last_cycle_end"
+    assert event.data["states"]["appliance.running_program.last_cycle_end"] == event.data["new"]
+    assert "reference" not in event.data["attributes"]
+    assert clothes_washer.states.get(WASHER_END).attributes["reference"] == {
+        "inside": "appliance.running_program.last_cycle_end",
+        "outside": "device.clothes_washer.appliance.running_program.last_cycle_end",
+    }
+
+
+async def test_the_documented_automation_reads_states_with_brackets(
+        clothes_washer: HomeAssistant, freezer: Any) -> None:
+    """docs/concepts/events.mdx: matched on event_name, a value of states read by its whole path."""
+    assert await async_setup_component(clothes_washer, "persistent_notification", {})
+    assert await async_setup_component(clothes_washer, "automation", documented("Washer done"))
+    calls = capture(clothes_washer, "call_service")
+    await washer_cycle(clothes_washer, freezer)
+    await clothes_washer.async_block_till_done()
+    [call] = [event.data for event in calls if event.data["domain"] == "persistent_notification"]
+    assert call["service_data"]["message"] == "Done: 0.42 kWh"

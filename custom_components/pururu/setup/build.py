@@ -31,7 +31,8 @@ def build(
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
     A builder's own entities, then those of the aspects it offers (its
-    ready-made alerts, the meters of its totals), all in its namespace.
+    ready-made alerts, the meters of its totals), all in its namespace, each
+    stamped with its path from the index, where its key is born.
     Each feature sees the device in its own namespace; what it refers to is
     in the owning feature's. Also the entity ID of each entity some entity
     watches (`follows`), by unique ID: the settings may never build it, and
@@ -40,6 +41,7 @@ def build(
     ID.
     """
     found = index[key]
+    paths = {target.key: path for path, target in found.items()}
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
     for name, feature in catalogue.builders().items():
@@ -53,6 +55,7 @@ def build(
             for entity in aspect.build(hass, device, feature, config[name], texts)
         )
         for entity in (*feature.build(hass, device, config[name], inputs), *aspects):
+            entity.path, entity.device_key = paths[entity.key], key
             follows = set()
             for path in entity.follows:
                 target = found[path]

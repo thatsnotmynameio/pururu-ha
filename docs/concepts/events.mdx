@@ -40,23 +40,23 @@ A change is fired when the state itself changes. pururu doesn't fire:
 ```json
 {
   "event_id": "01J8Z3K4QW6N5V2XK0M7T9R8YB",
-  "event_name": "clothes_washer.appliance_last_cycle_end",
+  "event_name": "device.clothes_washer.appliance.running_program.last_cycle_end",
   "event_class": "state_changed",
   "entity_id": "sensor.pururu_clothes_washer_appliance_last_cycle_end",
   "device": "clothes_washer",
   "device_name": "Tanquinho",
-  "key": "appliance_last_cycle_end",
+  "key": "appliance.running_program.last_cycle_end",
   "old": "2026-09-27T20:10:00+00:00",
   "new": "2026-09-28T09:52:00+00:00",
   "time": "2026-09-28T09:52:00.123456+00:00",
   "attributes": {"device_class": "timestamp", "friendly_name": "Tanquinho Fim do último ciclo"},
   "states": {
-    "appliance_running": "off",
-    "appliance_last_cycle_start": "2026-09-28T09:00:00+00:00",
-    "appliance_last_cycle_duration": "52.0",
-    "appliance_last_cycle_energy": "0.42",
-    "appliance_last_cycle_end": "2026-09-28T09:52:00+00:00",
-    "appliance_cycles_total": "12"
+    "appliance.running_program": "off",
+    "appliance.running_program.last_cycle_start": "2026-09-28T09:00:00+00:00",
+    "appliance.running_program.last_cycle_duration": "52.0",
+    "appliance.running_program.last_cycle_energy": "0.42",
+    "appliance.running_program.last_cycle_end": "2026-09-28T09:52:00+00:00",
+    "appliance.running_program.cycles_total": "12"
   }
 }
 ```
@@ -64,17 +64,38 @@ A change is fired when the state itself changes. pururu doesn't fire:
 | Field | What |
 |---|---|
 | `event_id` | A new ID per event (a ULID: unique, sorted by time). Use it to drop duplicates. |
-| `event_name` | `<device>.<key>`. It doesn't change when you rename the entity in the UI. |
+| `event_name` | The entity's reference from another device, `device.<device>.<path>`: what another device's YAML writes to name it. It doesn't change when you rename the entity in the UI. |
 | `event_class` | `state_changed` or `reading`, since a webhook gets the data without the event type. |
 | `entity_id` | The entity's current ID. |
 | `device`, `device_name` | The device's key and its `name`. |
-| `key` | The entity key, as it ends the entity ID pururu creates: `appliance_running`, `appliance_phase_warming_cycles_total`. It stays the same when you rename the entity. |
+| `key` | The entity's path in its device's YAML, its reference from inside the device: `appliance.running_program`, `appliance.running_program.phases.warming.cycles_total`. It stays the same when you rename the entity. |
 | `old`, `new` | The states, as Home Assistant's text. |
 | `time` | When the state changed. |
-| `attributes` | The new state's attributes, as JSON: a time is ISO text. |
-| `states` | Every entity of the device that has a state (a disabled one has none), by `key`, when the event was fired. |
+| `attributes` | The new state's attributes, as JSON: a time is ISO text. The entity's `reference` attribute is left out: `event_name` and `key` already carry both its forms. |
+| `states` | Every entity of the device that has a state (a disabled one has none), by its path (`key`), when the event was fired. |
 
 A finished cycle comes in one event: `last_cycle_end` is written last, so when it changes, `states` already holds that cycle's start, duration, energy and count.
+
+Every pururu entity shows the same two forms in its `reference` attribute (`inside`, as `key`; `outside`, as `event_name`), so an entity seen in Home Assistant tells you the name its events carry. A path follows the YAML: should a later version of pururu move a block, the events and `states` keys of its entities take the new path, with no error.
+
+### Reading `states`
+
+The keys of `states` are flat strings, each one entity's whole path. `appliance.running_program` and `appliance.running_program.last_cycle_end` are two keys side by side, not one inside the other. Read them with brackets: in a template, `trigger.event.data.states.appliance` is undefined, with no error. A receiver must never expand the dots into nested objects: `appliance.running_program` holds `off`, so it can't also hold `last_cycle_end`.
+
+```yaml title="configuration.yaml"
+automation:
+  - alias: Washer done
+    triggers:
+      - trigger: event
+        event_type: pururu_state_changed
+        event_data:
+          event_name: device.clothes_washer.appliance.running_program.last_cycle_end
+    actions:
+      - action: persistent_notification.create
+        data:
+          title: Tanquinho
+          message: "Done: {{ trigger.event.data.states['appliance.running_program.last_cycle_energy'] }} kWh"
+```
 
 ## Sending them to a webhook
 
@@ -105,7 +126,7 @@ automation:
 
 To send only some events, add a condition to the automation, such as `{{ trigger.event.data.device == 'clothes_washer' }}`. To send each class to its own webhook, write two automations.
 
-The receiving side takes them as `POST` requests, checks the `X-Webhook-Token` header against the same token, and can route them on `event_class` or `event_name`. For a finished cycle, match `event_name` ending in `.appliance_last_cycle_end` and read the values from `states`.
+The receiving side takes them as `POST` requests, checks the `X-Webhook-Token` header against the same token, and can route them on `event_class` or `event_name`. For a finished cycle, match `key` `appliance.running_program.last_cycle_end` and read the values from `states`, each by its whole path as one flat key.
 
 ## The recorder
 

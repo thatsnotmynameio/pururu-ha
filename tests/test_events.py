@@ -64,16 +64,15 @@ async def end_cycle(hass: HomeAssistant, freezer: Any) -> None:
     assert hass.states.get(RUNNING).state == "off"
 
 
-def of(captured: list, key: str) -> list:
-    """The captured events of one entity key."""
-    return [event for event in captured if event.data["key"] == key]
+def of(captured: list, path: str) -> list:
+    """The captured events of one entity, by its path in its device."""
+    return [event for event in captured if event.data["key"] == path]
 
 
-def keys(hass: HomeAssistant, device: str) -> set[str]:
-    """The keys of the device's entities that have a state."""
-    registry = er.async_get(hass)
-    return {registry.async_get(entity_id).unique_id.removeprefix(f"pururu_{device}_")
-            for entity_id in held(hass, device) if hass.states.get(entity_id) is not None}
+def paths(hass: HomeAssistant, device: str) -> set[str]:
+    """The paths of the device's entities that have a state, as each shows them."""
+    return {state.attributes["reference"]["inside"] for entity_id in held(hass, device)
+            if (state := hass.states.get(entity_id)) is not None}
 
 
 @pytest.fixture
@@ -95,7 +94,7 @@ async def test_off_by_default(ha: HomeAssistant, freezer: Any) -> None:
 async def test_a_change(both: HomeAssistant, freezer: Any) -> None:
     captured = capture(both, *TYPES)
     await start_cycle(both, freezer)
-    [event] = of(captured, "appliance_running")
+    [event] = of(captured, "appliance.running_program")
     state = both.states.get(RUNNING)
     assert event.event_type == "pururu_state_changed"
     assert event.context.id == state.context.id
@@ -103,30 +102,34 @@ async def test_a_change(both: HomeAssistant, freezer: Any) -> None:
     assert ULID.match(data.pop("event_id"))
     states = data.pop("states")
     assert data == {
-        "event_name": f"{KEY}.appliance_running",
+        "event_name": f"device.{KEY}.appliance.running_program",
         "event_class": "state_changed",
         "entity_id": RUNNING,
         "device": KEY,
         "device_name": "Dummy washer",
-        "key": "appliance_running",
+        "key": "appliance.running_program",
         "old": "off",
         "new": "on",
         "time": state.last_changed.isoformat(),
-        # JSON's own: plain keys, the datetime as ISO text
+        # JSON's own: plain keys, the datetime as ISO text; not the reference,
+        # which event_name and key carry
         "attributes": {
             "cycle_start": state.attributes["cycle_start"].isoformat(),
             "device_class": "running",
             "friendly_name": "Dummy washer Running",
         },
     }
-    assert set(states) == keys(both, KEY)
-    assert states["appliance_running"] == "on"
+    assert "reference" in state.attributes
+    # Flat keys, one per entity: a path that is another's prefix is a key of its own
+    assert set(states) == paths(both, KEY)
+    assert states["appliance.running_program"] == "on"
+    assert "appliance.running_program.last_cycle_end" in states
 
 
 async def test_a_reading(both: HomeAssistant) -> None:
     captured = capture(both, *TYPES)
     await watts(both, 250)
-    [event] = of(captured, "appliance_power")
+    [event] = of(captured, "appliance.power")
     assert event.event_type == "pururu_reading"
     assert event.data["event_class"] == "reading"
     assert event.data["entity_id"] == MIRROR
@@ -142,14 +145,14 @@ async def test_a_cycle_end_carries_the_cycle(both: HomeAssistant, freezer: Any) 
     await kwh(both, 100.62)
     captured = capture(both, *TYPES)
     await end_cycle(both, freezer)
-    [event] = of(captured, "appliance_last_cycle_end")
+    [event] = of(captured, "appliance.running_program.last_cycle_end")
     assert event.event_type == "pururu_state_changed"
     states = event.data["states"]
-    assert states["appliance_last_cycle_end"] == event.data["new"]
-    assert float(states["appliance_last_cycle_energy"]) == pytest.approx(0.62)
-    assert states["appliance_last_cycle_duration"] == both.states.get(
+    assert states["appliance.running_program.last_cycle_end"] == event.data["new"]
+    assert float(states["appliance.running_program.last_cycle_energy"]) == pytest.approx(0.62)
+    assert states["appliance.running_program.last_cycle_duration"] == both.states.get(
         sensor("last_cycle_duration")).state
-    assert states["appliance_cycles_total"] == "1"
+    assert states["appliance.running_program.cycles_total"] == "1"
 
 
 @pytest.mark.parametrize("enabled", ["state_changed", "reading"])
@@ -208,13 +211,13 @@ async def test_the_documented_recipe_posts_json(
     captured = capture(both, *TYPES)
     await start_cycle(both, freezer)
     await both.async_block_till_done()
-    [event] = of(captured, "appliance_running")
+    [event] = of(captured, "appliance.running_program")
     assert "cycle_start" in event.data["attributes"]
     posted = [json.loads(body) for _method, _url, body, *_ in aioclient_mock.mock_calls]
     assert len(posted) == len(captured)
     assert all(isinstance(body, dict) for body in posted), posted
     assert [body["event_id"] for body in posted] == [event.data["event_id"] for event in captured]
-    [running] = [body for body in posted if body["key"] == "appliance_running"]
+    [running] = [body for body in posted if body["key"] == "appliance.running_program"]
     assert running == json.loads(json.dumps(dict(event.data)))
 
 
@@ -239,7 +242,7 @@ async def test_attributes_alone_are_not_fired(both: HomeAssistant) -> None:
 async def test_unavailable_is_fired(both: HomeAssistant) -> None:
     captured = capture(both, *TYPES)
     await fake(both, POWER, "unavailable")
-    assert [event.data["new"] for event in of(captured, "appliance_power")] == ["unavailable"]
+    assert [event.data["new"] for event in of(captured, "appliance.power")] == ["unavailable"]
 
 
 async def test_an_entity_not_created_is_not_fired(ha: HomeAssistant, freezer: Any) -> None:
@@ -257,16 +260,16 @@ async def test_an_entity_not_created_is_not_fired(ha: HomeAssistant, freezer: An
 
 
 async def test_a_rename_is_followed(both: HomeAssistant, freezer: Any) -> None:
-    """Renamed in the UI: the entry reloads, silently; the key and name stay."""
+    """Renamed in the UI: the entry reloads, silently; the path and name stay."""
     captured = capture(both, *TYPES)
     er.async_get(both).async_update_entity(RUNNING, new_entity_id="binary_sensor.washer_running")
     await both.async_block_till_done()
     await settle()
-    assert of(captured, "appliance_running") == []
+    assert of(captured, "appliance.running_program") == []
     await start_cycle_renamed(both, freezer)
-    [event] = of(captured, "appliance_running")
+    [event] = of(captured, "appliance.running_program")
     assert event.data["entity_id"] == "binary_sensor.washer_running"
-    assert event.data["event_name"] == f"{KEY}.appliance_running"
+    assert event.data["event_name"] == f"device.{KEY}.appliance.running_program"
 
 
 async def start_cycle_renamed(hass: HomeAssistant, freezer: Any) -> None:
@@ -275,8 +278,8 @@ async def start_cycle_renamed(hass: HomeAssistant, freezer: Any) -> None:
     assert hass.states.get("binary_sensor.washer_running").state == "on"
 
 
-async def test_a_phases_entities_are_named_by_their_keys(ha: HomeAssistant, freezer: Any) -> None:
-    """A phase's entities, its meters too, carry <device>.appliance_phase_<...>: their key in the appliance's namespace."""
+async def test_a_phases_entities_are_named_by_their_paths(ha: HomeAssistant, freezer: Any) -> None:
+    """A phase's entities, its meters too, are named by their path: under the phase, its meters under its statistics."""
     phased = {**APPLIANCE, "running_program": {**APPLIANCE["running_program"], "phases": {
         "warming": {"name": "Warming", "above": 40, "statistics": {"cycles": ["today"]}}}}}
     assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": phased}}, events=BOTH)
@@ -287,23 +290,27 @@ async def test_a_phases_entities_are_named_by_their_keys(ha: HomeAssistant, free
     await start_cycle(ha, freezer)
     await end_cycle(ha, freezer)
     expected = {
-        "sensor.pururu_dummy_washer_appliance_phase_current": ("appliance_phase_current", "state_changed"),
-        "binary_sensor.pururu_dummy_washer_appliance_phase_warming": ("appliance_phase_warming", "state_changed"),
-        sensor("phase_warming_cycles_total"): ("appliance_phase_warming_cycles_total", "reading"),
-        sensor("phase_warming_cycles_today"): ("appliance_phase_warming_cycles_today", "reading"),
+        "sensor.pururu_dummy_washer_appliance_phase_current": (
+            "appliance.running_program.phase_current", "state_changed"),
+        "binary_sensor.pururu_dummy_washer_appliance_phase_warming": (
+            "appliance.running_program.phases.warming", "state_changed"),
+        sensor("phase_warming_cycles_total"): (
+            "appliance.running_program.phases.warming.cycles_total", "reading"),
+        sensor("phase_warming_cycles_today"): (
+            "appliance.running_program.phases.warming.statistics.cycles.today", "reading"),
     }
-    for entity_id, (key, event_class) in expected.items():
+    for entity_id, (path, event_class) in expected.items():
         fired = [event for event in captured if event.data["entity_id"] == entity_id]
         assert fired, entity_id
         for event in fired:
-            assert event.data["event_name"] == f"{KEY}.{key}", entity_id
-            assert event.data["key"] == key, entity_id
+            assert event.data["event_name"] == f"device.{KEY}.{path}", entity_id
+            assert event.data["key"] == path, entity_id
             assert event.data["event_class"] == event_class, entity_id
-            assert event.data["states"][key] == event.data["new"], entity_id
+            assert event.data["states"][path] == event.data["new"], entity_id
 
 
 async def test_devices_sharing_a_prefix(ha: HomeAssistant) -> None:
-    """`greenhouse` and `greenhouse_sprinkler`: each entity's key comes from the device that built it."""
+    """`greenhouse` and `greenhouse_sprinkler`: each entity's path and name come from the device that built it."""
     devices = {
         "greenhouse": {"name": "Greenhouse", "switches": {"sprinkler": {"entity": "homeassistant.switch.a", "name": "A"}}},
         "greenhouse_sprinkler": {"name": "Greenhouse sprinkler", "switches": {"main": {"entity": "homeassistant.switch.b", "name": "B"}}},
@@ -313,9 +320,15 @@ async def test_devices_sharing_a_prefix(ha: HomeAssistant) -> None:
     assert await setup(ha, devices, events=BOTH)
     captured = capture(ha, *TYPES)
     await fake(ha, "switch.b", "on")
-    [event] = [event for event in captured if event.data["entity_id"].startswith("switch.pururu_")]
-    assert (event.data["device"], event.data["key"]) == ("greenhouse_sprinkler", "switch_main")
-    assert event.data["event_name"] == "greenhouse_sprinkler.switch_main"
+    await fake(ha, "switch.a", "on")
+    fired = [(event.data["device"], event.data["key"], event.data["event_name"], set(event.data["states"]))
+             for event in captured if event.data["entity_id"].startswith("switch.pururu_")]
+    assert fired == [
+        ("greenhouse_sprinkler", "switches.main", "device.greenhouse_sprinkler.switches.main",
+         {"switches.main"}),
+        ("greenhouse", "switches.sprinkler", "device.greenhouse.switches.sprinkler",
+         {"switches.sprinkler"}),
+    ]
 
 
 async def test_a_reload_turns_classes_on_and_off(ha: HomeAssistant, freezer: Any) -> None:
@@ -325,7 +338,7 @@ async def test_a_reload_turns_classes_on_and_off(ha: HomeAssistant, freezer: Any
     assert captured == []
     await reload(ha, DEVICES, events=["reading"])
     await watts(ha, 300)
-    assert [event.event_type for event in of(captured, "appliance_power")] == ["pururu_reading"]
+    assert [event.event_type for event in of(captured, "appliance.power")] == ["pururu_reading"]
     await reload(ha, DEVICES, events=[])
     captured.clear()
     await watts(ha, 400)
