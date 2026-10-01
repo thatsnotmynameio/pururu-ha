@@ -38,6 +38,9 @@ IN_PROGRESS = "in progress"
 IN_REVIEW = "in review"
 READY_TO_MERGE = "ready to merge"
 NEEDS_ATTENTION = "needs attention"
+PAUSED = "paused"
+MARGIN = 60  # seconds past a limit's reset before a session starts again
+MARKER = "dispatcher-pause"  # the hidden marker's tag on a pause comment's last line
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,43 @@ class PullRequest:
 
 
 @dataclass(frozen=True)
+class Marker:
+    """What resumes a paused session: its conversation, its branch, its reset (epoch seconds)."""
+
+    session: str
+    branch: str
+    reset: int | None
+
+    def line(self) -> str:
+        """The hidden marker a pause comment ends with."""
+        record = {"session": self.session, "branch": self.branch, "reset": self.reset}
+        return f"<!-- {MARKER} {json.dumps(record)} -->"
+
+
+@dataclass(frozen=True)
+class Hold:
+    """No session starts until `until` (epoch seconds); a probe then starts one, not a slot's worth."""
+
+    until: float | None = None
+    probe: bool = False
+
+    def holds(self, now: float) -> bool:
+        """Whether starts wait at `now`."""
+        return self.until is not None and now <= self.until
+
+    def extend(self, reset: int | None, now: float) -> "Hold":
+        """Fold in a limit ending: a known reset holds a margin past it, never shorter than before.
+
+        An unknown reset holds this poll and probes at the next, unless a later hold is known.
+        """
+        if reset is not None:
+            return Hold(max(self.until or 0.0, reset + MARGIN))
+        if self.until is not None and self.until > now:
+            return self
+        return Hold(now, probe=True)
+
+
+@dataclass(frozen=True)
 class Ended:
     """A session whose process exited, with what GitHub says about its branch and issue."""
 
@@ -67,6 +107,8 @@ class Ended:
     reason: str
     prs: tuple[PullRequest, ...] = ()  # open pull requests from the session's branch
     linked: frozenset[int] = frozenset()  # the pull requests GitHub links to the issue
+    limit: Marker | None = None  # the usage limit stopped it, as its log says
+    resumed: Marker | None = None  # the marker it was resumed from
 
 
 @dataclass(frozen=True)
@@ -79,21 +121,23 @@ class Review:
 
 @dataclass(frozen=True)
 class Snapshot:
-    """What one poll read: ended sessions, issues in review, and the ready queue, oldest first."""
+    """What one poll read: ended sessions, issues in review, the ready and paused ones oldest first."""
 
     ended: tuple[Ended, ...] = ()
     reviews: tuple[Review, ...] = ()
     ready: tuple[Issue, ...] = ()
+    paused: tuple[Issue, ...] = ()
 
 
 @dataclass(frozen=True)
 class Move:
-    """Swap an issue's labels, then comment when there is something to say."""
+    """Swap an issue's labels and comment when there is something to say, the comment first if so."""
 
     issue: int
     remove: tuple[str, ...]
     add: tuple[str, ...]
     comment: str | None = None
+    comment_first: bool = False  # a pause: `paused` never exists without its marker
 
 
 @dataclass(frozen=True)
@@ -111,18 +155,45 @@ class Dispatch:
     issue: int
 
 
-type Action = Move | Link | Dispatch
+@dataclass(frozen=True)
+class Resume:
+    """Mark a paused issue in progress and resume its conversation."""
+
+    issue: int
 
 
-def needs_attention(issue: int, *paragraphs: str) -> Move:
-    """In progress to needs attention, the comment saying why and how to queue it again."""
-    return Move(issue, (IN_PROGRESS,), (NEEDS_ATTENTION,),
+type Action = Move | Link | Dispatch | Resume
+
+
+def local_time(epoch: float) -> str:
+    """An epoch in this machine's local zone, with the zone's name."""
+    return time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(epoch))
+
+
+def needs_attention(issue: int, *paragraphs: str, remove: str = IN_PROGRESS) -> Move:
+    """`remove` to needs attention, the comment saying why and how to queue it again."""
+    return Move(issue, (remove,), (NEEDS_ATTENTION,),
                 "\n\n".join(("Dispatcher: " + paragraphs[0], *paragraphs[1:],
                               "Add `ready` to queue it again.")))
 
 
+def pause(session: Ended, limit: Marker) -> Move:
+    """In progress to paused, the comment first carrying the marker, unless it is the resumed one."""
+    if limit == session.resumed:
+        return Move(session.issue, (IN_PROGRESS,), (PAUSED,))
+    reset = (f"It resets at {local_time(limit.reset)}; the session resumes then."
+             if limit.reset is not None else
+             "The reset time is unknown; the dispatcher tries again at the next poll.")
+    comment = "\n\n".join(("Dispatcher: the Claude usage limit stopped the session.", reset,
+                            f"Session: `{limit.session}`", f"Worktree: `{session.worktree}`",
+                            f"Log: `{session.log}`", limit.line()))
+    return Move(session.issue, (IN_PROGRESS,), (PAUSED,), comment, comment_first=True)
+
+
 def judge(session: Ended) -> list[Action]:
-    """A session ended: in review when its branch has an open pull request, else needs attention."""
+    """A session ended: in review with an open pull request, paused at the limit, else attention."""
+    if not session.prs and session.limit:
+        return [pause(session, session.limit)]
     if not session.prs:
         return [needs_attention(session.issue, "the session ended without a pull request.",
                                 f"Reason: {session.reason}", f"Worktree: `{session.worktree}`",
@@ -136,24 +207,41 @@ def judge(session: Ended) -> list[Action]:
 
 
 def pick(ready: Iterable[Issue], running: set[int], free: int) -> list[int]:
-    """The first `free` ready issues not blocked, not running and not already in progress."""
+    """The first `free` ready issues not blocked, not running, not in progress and not paused."""
     eligible = [issue.number for issue in ready
-                if READY in issue.labels and IN_PROGRESS not in issue.labels
+                if READY in issue.labels and not issue.labels & {IN_PROGRESS, PAUSED}
                 and issue.number not in running and not issue.blocked]
     return eligible[:max(free, 0)]
 
 
-def tick(snapshot: Snapshot, running: set[int], sessions: int) -> list[Action]:
+def tick(snapshot: Snapshot, running: set[int], sessions: int, now: float = 0.0,
+         hold: Hold = Hold()) -> list[Action]:
     """One poll's actions after the ended sessions' verdicts: reviews promoted, slots filled.
 
     `running` holds the issues whose sessions still run, the ended ones already out of it.
     The verdicts (`judge`) are applied apart, as a failed one is retried at the next poll.
+    No session starts while `hold` holds; past it, paused issues resume before ready ones go,
+    blockers notwithstanding, and a probe starts one session only.
     """
     actions: list[Action] = [Move(review.issue, (IN_REVIEW,), (READY_TO_MERGE,))
                              for review in snapshot.reviews if review.passing]
+    if hold.holds(now):
+        return actions
+    free = max(sessions - len(running), 0)
+    cap = min(free, 1) if hold.probe else free
+    resumed = [issue.number for issue in snapshot.paused if issue.number not in running][:cap]
+    actions += [Resume(number) for number in resumed]
     actions += [Dispatch(number)
-                for number in pick(snapshot.ready, running, sessions - len(running))]
+                for number in pick(snapshot.ready, running, cap - len(resumed))]
     return actions
+
+
+def restore(markers: Iterable[Marker], now: float) -> Hold:
+    """At start, the hold the paused issues' markers make: none once every known reset is past."""
+    hold = Hold()
+    for marker in markers:
+        hold = hold.extend(marker.reset, now)
+    return hold if hold.probe or hold.holds(now) else Hold()
 
 
 def orphans(in_progress: Iterable[Issue], worktrees: Mapping[int, list[str]]) -> list[Move]:
@@ -490,7 +578,7 @@ class Dispatcher:
         for running in over:
             del self.running[running.issue]
         self.settle(snapshot.ended)
-        for action in tick(snapshot, set(self.running), self.slots):
+        for action in tick(snapshot, set(self.running), self.slots, time.time(), Hold()):
             self.apply(action)
 
     def settle(self, ended: Iterable[Ended]) -> None:

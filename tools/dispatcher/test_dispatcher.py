@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterator
 import dataclasses
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -12,10 +13,25 @@ from typing import Any
 import pytest
 
 import dispatcher
-from dispatcher import (IN_PROGRESS, IN_REVIEW, NEEDS_ATTENTION, READY, READY_TO_MERGE, Dispatch,
-                        Ended, Issue, Link, Move, PullRequest, Review, Snapshot)
+from dispatcher import (IN_PROGRESS, IN_REVIEW, NEEDS_ATTENTION, PAUSED, READY, READY_TO_MERGE,
+                        Dispatch, Ended, Hold, Issue, Link, Marker, Move, PullRequest, Resume,
+                        Review, Snapshot)
 
 PR = PullRequest(101, "https://github.com/o/r/pull/101")
+SESSION = "3f2a9c1e-8b4d-4e6f-9a0b-1c2d3e4f5a6b"
+
+
+def at(hour: int, minute: int = 0, second: int = 0) -> float:
+    """This machine's local wall clock on the day of the examples, in epoch seconds."""
+    return datetime(2026, 10, 1, hour, minute, second).timestamp()
+
+
+def limit(issue: int, reset: float | None = at(20, 30), session: str = SESSION) -> Marker:
+    return Marker(session, f"issue-{issue}", None if reset is None else int(reset))
+
+
+def paused(number: int, *, blocked: int = 0, also: tuple[str, ...] = ()) -> Issue:
+    return Issue(number, frozenset((PAUSED, *also)), blocked)
 
 
 def ready(number: int, *, blocked: int = 0, also: tuple[str, ...] = ()) -> Issue:
@@ -23,9 +39,10 @@ def ready(number: int, *, blocked: int = 0, also: tuple[str, ...] = ()) -> Issue
 
 
 def ended(issue: int, *, prs: tuple[PullRequest, ...] = (), linked: frozenset[int] = frozenset(),
-          reason: str = "lfg stopped: no work source") -> Ended:
+          reason: str = "lfg stopped: no work source", limit: Marker | None = None,
+          resumed: Marker | None = None) -> Ended:
     return Ended(issue, f"/repo/.claude/worktrees/issue-{issue}", "/repo/tools/dispatcher/.state/logs/x.log",
-                 reason, prs, linked)
+                 reason, prs, linked, limit, resumed)
 
 
 # The queue
@@ -85,6 +102,136 @@ def test_a_session_without_a_pull_request_needs_attention() -> None:
     assert (move.remove, move.add) == ((IN_PROGRESS,), (NEEDS_ATTENTION,))
     assert "lfg stopped: no work source" in (move.comment or "")
     assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
+
+
+# The usage limit
+
+def test_a_session_stopped_by_the_limit_is_paused_with_its_marker() -> None:
+    """AE1: #70 stops at 15:10 with `resets 8:30pm`: paused, the comment first, naming 20:30."""
+    reset = int(at(20, 30))
+    move, = dispatcher.judge(ended(70, limit=limit(70)))
+    assert isinstance(move, Move)
+    assert (move.issue, move.remove, move.add, move.comment_first) == (
+        70, (IN_PROGRESS,), (PAUSED,), True)
+    comment = move.comment or ""
+    assert "usage limit" in comment
+    assert "20:30" in comment
+    assert SESSION in comment
+    assert "/repo/.claude/worktrees/issue-70" in comment
+    assert "/repo/tools/dispatcher/.state/logs/x.log" in comment
+    assert comment.splitlines()[-1] == (
+        '<!-- dispatcher-pause {"session": "3f2a9c1e-8b4d-4e6f-9a0b-1c2d3e4f5a6b", '
+        f'"branch": "issue-70", "reset": {reset}}} -->')
+
+
+def test_a_limit_with_no_reset_says_it_is_tried_again_at_the_next_poll() -> None:
+    """R5: no reset in the message: the comment says so, the marker's reset is null."""
+    move, = dispatcher.judge(ended(70, limit=limit(70, reset=None)))
+    assert isinstance(move, Move)
+    assert move.add == (PAUSED,)
+    comment = move.comment or ""
+    assert "next poll" in comment
+    assert comment.splitlines()[-1].endswith('"branch": "issue-70", "reset": null} -->')
+
+
+def test_a_limit_after_the_pull_request_is_open_is_in_review() -> None:
+    move, = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}), limit=limit(70)))
+    assert isinstance(move, Move)
+    assert move.add == (IN_REVIEW,)
+
+
+def test_a_resumed_session_that_opens_its_pull_request_is_in_review() -> None:
+    """AE3: #70 resumed, then opened its pull request and ended."""
+    move, = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}), resumed=limit(70)))
+    assert isinstance(move, Move)
+    assert (move.remove, move.add) == ((IN_PROGRESS,), (IN_REVIEW,))
+
+
+def test_a_resumed_session_paused_again_comments_only_on_news() -> None:
+    """KTD5: a new reset is news; the same session with the same reset is not."""
+    unknown = limit(70, reset=None)
+    news, = dispatcher.judge(ended(70, limit=limit(70), resumed=unknown))
+    assert isinstance(news, Move)
+    assert news.add == (PAUSED,)
+    assert "20:30" in (news.comment or "")
+    same, = dispatcher.judge(ended(70, limit=limit(70, reset=None), resumed=unknown))
+    assert same == Move(70, (IN_PROGRESS,), (PAUSED,))
+
+
+def test_needs_attention_removes_the_label_it_is_given() -> None:
+    """R9: a resume that cannot start leaves `paused`."""
+    move = dispatcher.needs_attention(70, "the resume could not start.", remove=PAUSED)
+    assert (move.remove, move.add) == ((PAUSED,), (NEEDS_ATTENTION,))
+
+
+def test_no_session_starts_while_the_limit_holds() -> None:
+    """AE1: a free slot and a ready #74, but the hold runs to 20:31; the promotion still goes."""
+    snapshot = Snapshot(reviews=(Review(72, True),), ready=(ready(74),))
+    assert dispatcher.tick(snapshot, set(), 2, at(15, 10), Hold(at(20, 31))) == [
+        Move(72, (IN_REVIEW,), (READY_TO_MERGE,))]
+
+
+def test_the_hold_ends_one_second_after_its_until() -> None:
+    snapshot = Snapshot(ready=(ready(74),))
+    hold = Hold(at(20, 31))
+    assert dispatcher.tick(snapshot, set(), 1, at(20, 31), hold) == []
+    assert dispatcher.tick(snapshot, set(), 1, at(20, 31, 1), hold) == [Dispatch(74)]
+
+
+def test_paused_issues_resume_before_ready_ones() -> None:
+    """AE2: #70 and #72 resume, #72's blocker notwithstanding; #74 waits for a slot."""
+    snapshot = Snapshot(ready=(ready(74),), paused=(paused(70), paused(72, blocked=1)))
+    assert dispatcher.tick(snapshot, set(), 2, at(20, 35), Hold()) == [Resume(70), Resume(72)]
+    assert dispatcher.tick(snapshot, set(), 3, at(20, 35), Hold()) == [
+        Resume(70), Resume(72), Dispatch(74)]
+    assert dispatcher.tick(snapshot, {70}, 3, at(20, 35), Hold()) == [Resume(72), Dispatch(74)]
+    assert dispatcher.tick(snapshot, {70}, 2, at(20, 35), Hold()) == [Resume(72)]
+
+
+def test_a_probe_starts_one_session_a_paused_one_first() -> None:
+    """AE6, KTD4: the tick after an unknown reset starts one session."""
+    probe = Hold(at(15, 10), probe=True)
+    both = Snapshot(ready=(ready(74),), paused=(paused(70), paused(72)))
+    assert dispatcher.tick(both, set(), 2, at(15, 15), probe) == [Resume(70)]
+    queue = Snapshot(ready=(ready(74), ready(75)))
+    assert dispatcher.tick(queue, set(), 2, at(15, 15), probe) == [Dispatch(74)]
+
+
+def test_an_issue_whose_paused_label_was_removed_is_not_resumed() -> None:
+    """AE7: after the reset, #70 is no longer among the paused issues."""
+    assert dispatcher.tick(Snapshot(), set(), 2, at(21), Hold()) == []
+
+
+def test_a_paused_issue_marked_ready_is_resumed_never_dispatched() -> None:
+    """KTD6: `ready` on a paused issue never starts a fresh worktree beside its conversation."""
+    both = paused(70, also=(READY,))
+    assert dispatcher.pick([both], set(), 1) == []
+    assert dispatcher.tick(Snapshot(ready=(both,), paused=(both,)), set(), 2, at(21), Hold()) == [
+        Resume(70)]
+
+
+def test_a_known_reset_holds_until_a_minute_after_it_and_never_shortens() -> None:
+    """KTD2: the later reset wins."""
+    hold = Hold().extend(int(at(20, 30)), at(15, 10))
+    assert hold == Hold(at(20, 31))
+    assert hold.extend(int(at(19)), at(15, 20)) == Hold(at(20, 31))
+    assert hold.extend(int(at(21)), at(15, 20)) == Hold(at(21, 1))
+
+
+def test_an_unknown_reset_probes_unless_a_known_one_holds_longer() -> None:
+    """KTD4: a known future hold is kept as it is; none becomes a probe at `now`."""
+    assert Hold(at(20, 31)).extend(None, at(15, 10)) == Hold(at(20, 31))
+    assert Hold().extend(None, at(15, 10)) == Hold(at(15, 10), probe=True)
+
+
+def test_the_hold_at_start_comes_from_the_paused_markers() -> None:
+    """AE4, KTD8: rebuilt from GitHub alone."""
+    markers = [limit(70, reset=at(20, 30)), limit(72, reset=at(21))]
+    assert dispatcher.restore(markers, at(18)) == Hold(at(21, 1))
+    assert dispatcher.restore([limit(70, reset=at(20, 30)), limit(72, reset=at(20, 45))],
+                              at(21)) == Hold()
+    assert dispatcher.restore([limit(70, reset=None)], at(18)) == Hold(at(18), probe=True)
+    assert dispatcher.restore([], at(18)) == Hold()
 
 
 # Promotion
