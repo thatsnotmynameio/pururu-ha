@@ -12,6 +12,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A typo in a key, such as `floor:` for `floors:` or `running:` for `running_program:` (an old key is `'running' is an invalid option`), or the appliance's `statistics: runtime`/`cycles` still in the block instead of in `running_program` (`'cycles' is an invalid option`).
 - A key that isn't a slug, such as `Laundry Washer:` instead of `clothes_washer:`.
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
+- A device's, floor's or area's empty `name`: `length of value must be at least 1`.
+- A top-level `events:`, as before 0.2.1: `'events' is an invalid option for 'pururu', check: pururu->events`. Move it under `config:`.
 - A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
 - A `running_program` with a `name` (`running_program takes no name: it is the appliance running`), or with neither `above` nor `below` (`a program needs above, below or both`).
 - A phase without `name`, keyed `idle` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
@@ -20,7 +22,8 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - Two entities of one device with one unique ID, such as a phase's key and another phase's meter (`device clothes_washer: pururu_clothes_washer_appliance_phase_resfriar_cycles_today would be two entities`).
 - `statistics.energy` on a phase or a detected program without the appliance's `energy` (`statistics.energy needs energy`).
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
-- A door or window whose `contact` isn't a `binary_sensor.*` entity (`sensor.x is not a binary_sensor`) or is a pururu binary sensor (`binary_sensor.pururu_… is a pururu binary_sensor: name the real one`); an event whose `entity` isn't an `event.*` entity, whose `types` is empty or means something other than `opening`, `denied` or `ring`, or whose `fields` names something other than `who`, `how` or `direction`.
+- A door or window whose `contact` isn't a `binary_sensor.*` entity (`sensor.x is not a binary_sensor`) or is a pururu binary sensor (`binary_sensor.pururu_… is a pururu binary_sensor: name the real one`); an event entity whose `entity` isn't an `event.*` entity, whose `types` is empty or means something other than `opening`, `denied` or `ring`, or whose `fields` names something other than `who`, `how` or `direction`.
+- A door's or window's `events`, as before 0.2.1: `'events' is an invalid option`. Write `event_entities`.
 - A light whose `entity` isn't a `light.*` or `switch.*` entity (`sensor.x is not a light or switch`), is a pururu light or switch, or has no `name` or an empty one.
 - A real entity in both `switches` and `lights` of one device: `switches: switch.sonoff_abajur is already in lights`. Keep it in one of them.
 - An alert whose `when` isn't an entity of another feature of the device: `alerts: appliance_nothing is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key, with its namespace (`appliance_power`, not `power`).

@@ -133,6 +133,7 @@ async def test_device_holds_what_its_features_create(ha: HomeAssistant) -> None:
 
 @pytest.mark.parametrize("device", [
     pytest.param({"gauge": GAUGE}, id="no name"),
+    pytest.param({**GIZMO, "name": " "}, id="a blank name"),
     pytest.param({"name": "Gizmo"}, id="no feature"),
     pytest.param({**GIZMO, "colour": "red"}, id="unknown key"),
     pytest.param({**GIZMO, "area": ["despensa"]}, id="area a list"),

@@ -7,11 +7,11 @@ description: Every key of the pururu block on one page.
 pururu:
   config:
     notify: notify.mobile_app_phone     # where every message goes
+    events: [state_changed, reading]    # see events
     alerts:
       lights:
         groups:
           default: [biblioteca.light_teto]
-  events: [state_changed, reading]   # see events
   floors:
     terreo:
       name: Térreo
@@ -90,7 +90,7 @@ alert2:                          # alerts with texts: see alerts
 
 ## General rules
 
-- `pururu:` has five optional keys: `config`, `floors`, `areas`, `devices` and `events`. Any other key is an error.
+- `pururu:` has four optional keys: `config`, `floors`, `areas` and `devices`. Any other key is an error.
 - Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a detected or executable program, is a **slug**: lowercase letters, digits and `_`.
 - A feature's own `alerts` enables its ready-made alerts, one key each: see [Ready-made alerts](/concepts/alerts#ready-made-alerts). The device's `alerts` is for alerts you write.
 - A feature's own `notifications` enables its ready-made notifications the same way: see [Notifications](/concepts/notifications#ready-made-notifications).
@@ -113,6 +113,12 @@ Settings of the whole house, not of a device.
 
 ---
 
+<Property name="events" type="list" optional>
+  The classes of [events](/concepts/events) pururu fires on Home Assistant's bus: `state_changed`, `reading`, each once. None by default.
+</Property>
+
+---
+
 <Property name="alerts.lights" type="map" optional>
   The alert lights: `groups` of lights that alerts borrow with `lights`, and what a light shows for each priority (`high`, `medium`, `low`) and once its alerts ended (`resolved`). See [Alert lights](/concepts/alert-lights#settings).
 </Property>
@@ -122,7 +128,7 @@ Settings of the whole house, not of a device.
 A map of **floor ID → floor**. See [Floors and areas](/concepts/floors-and-areas).
 
 <Property name="name" type="string" required>
-  The name Home Assistant shows.
+  The name Home Assistant shows. It can't be empty.
 </Property>
 
 ---
@@ -148,7 +154,7 @@ A map of **floor ID → floor**. See [Floors and areas](/concepts/floors-and-are
 A map of **area ID → area**. See [Floors and areas](/concepts/floors-and-areas).
 
 <Property name="name" type="string" required>
-  The name Home Assistant shows.
+  The name Home Assistant shows. It can't be empty.
 </Property>
 
 ---
@@ -169,16 +175,12 @@ A map of **area ID → area**. See [Floors and areas](/concepts/floors-and-areas
   Other names for the area. A single string is allowed too.
 </Property>
 
-## events
-
-A list of the classes of [events](/concepts/events) to fire, each once: `state_changed`, `reading`. Leave it out and pururu fires none.
-
 ## devices
 
 A map of **device key → device**. See [Devices and features](/concepts/devices-and-features).
 
 <Property name="name" type="string" required>
-  The device's name.
+  The device's name. It can't be empty.
 </Property>
 
 ---

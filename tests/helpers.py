@@ -35,10 +35,10 @@ def module(name: str) -> ModuleType:
 def _config(devices: dict[str, Any], floors: dict[str, Any] | None,
             areas: dict[str, Any] | None, events: Any = None,
             config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """A configuration.yaml with this `pururu:` block (`events` and `config` left out when None)."""
+    """A configuration.yaml with this `pururu:` block; `events` is config's (both left out when None)."""
     block: dict[str, Any] = {"devices": devices, "floors": floors or {}, "areas": areas or {}}
     if events is not None:
-        block["events"] = events
+        config = {**(config or {}), "events": events}
     if config is not None:
         block["config"] = config
     return {DOMAIN: block}

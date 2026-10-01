@@ -1,11 +1,11 @@
 config:
   notify: notify.mobile_app_phone
+  events: [state_changed, reading]
   alerts:
     lights:
       groups:
         default: [biblioteca.light_teto]
         externas: [biblioteca.light_teto, biblioteca.light_abajur]
-events: [state_changed, reading]
 floors:
   terreo: {name: Térreo, level: 0}
 areas:
@@ -107,7 +107,7 @@ devices:
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
-      events:
+      event_entities:
         - entity: event.porta_frente_access
           types: {access_granted: opening, access_denied: denied}
           fields: {who: actor, how: authentication, direction: direction}

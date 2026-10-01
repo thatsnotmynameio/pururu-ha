@@ -26,7 +26,7 @@ The keys each floor and area accepts are listed in the [configuration reference]
 
 When you create a floor or an area in the UI, Home Assistant makes its ID from the name. **Térreo** becomes `terreo`, and if you later rename it **Ground floor**, the ID stays `terreo`. You never get to choose the ID.
 
-pururu lets you choose it: the key is the ID. To make that happen, pururu first creates the floor or area named after its key, so that Home Assistant gives it exactly that ID, and then renames it to your `name`. The result is IDs that are stable, readable and known in advance. Use them in automations (`area_id: atelie`), in dashboards, and in a device's `area`.
+pururu lets you choose it: the key is the ID. To make that happen, pururu first creates the floor or area named after its key, so that Home Assistant gives it exactly that ID, and then renames it to your `name`, which can't be empty. The result is IDs that are stable, readable and known in advance. Use them in automations (`area_id: atelie`), in dashboards, and in a device's `area`.
 
 ## YAML wins
 

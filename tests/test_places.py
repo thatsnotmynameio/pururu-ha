@@ -275,6 +275,8 @@ async def test_a_reload_without_anything_deletes_them_all(ha: HomeAssistant) -> 
 @pytest.mark.parametrize(("floors", "areas"), [
     pytest.param({}, {"atelie": ATELIE}, id="area on a floor not in floors"),
     pytest.param({"terreo": {"level": 0}}, {}, id="floor without a name"),
+    pytest.param({"terreo": {**TERREO, "name": " "}}, {}, id="floor with a blank name"),
+    pytest.param({}, {"patio": {"name": ""}}, id="area with an empty name"),
     pytest.param({"terreo": {**TERREO, "level": "mezzanine"}}, {}, id="level not an integer"),
     pytest.param({"terreo": {**TERREO, "level": True}}, {}, id="level a boolean"),
     pytest.param({"terreo": {**TERREO, "level": 1.5}}, {}, id="level a float"),

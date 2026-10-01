@@ -19,6 +19,6 @@ pururu:
 
 This creates `binary_sensor.pururu_janela_quarto_window_open`, shown as **Janela do quarto Open**, `sensor.pururu_janela_quarto_window_last_opened` and the rest of [a door's entities](/features/door#entities), each with `window` for `door`.
 
-A window rarely has events, but it takes them as a door does, with the same meanings: `opening`, `denied` and `ring`. See [`door`](/features/door#settings) for every setting.
+A window rarely has events, but it takes `event_entities` as a door does, with the same meanings: `opening`, `denied` and `ring`. See [`door`](/features/door#settings) for every setting.
 
 A device can be both a door and a window, such as a door with a window of its own: their entities differ by namespace (`door_open`, `window_open`).

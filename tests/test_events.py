@@ -181,6 +181,12 @@ async def test_the_schema_refuses(ha: HomeAssistant, events: Any) -> None:
     assert not await setup(ha, DEVICES, events=events)
 
 
+async def test_events_are_configs(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """config: is the one place for the whole house's settings: a top-level events, as before 0.2.1, is refused."""
+    assert not await async_setup_component(ha, "pururu", {"pururu": {"devices": DEVICES, "events": BOTH}})
+    assert "'events' is an invalid option for 'pururu', check: pururu->events" in caplog.text
+
+
 async def test_the_documented_recipe_posts_json(
         both: HomeAssistant, freezer: Any, aioclient_mock: Any) -> None:
     """docs/concepts/events.mdx's rest_command and automation post each event as a JSON object.

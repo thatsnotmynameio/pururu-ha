@@ -18,7 +18,7 @@ pururu:
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
-        events:
+        event_entities:
           - entity: event.cercado_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
@@ -48,7 +48,7 @@ This creates `binary_sensor.pururu_porta_cercado_frente_door_open`, shown as **C
 
 ---
 
-<Property name="events" type="list" optional>
+<Property name="event_entities" type="list" optional>
   Event entities (`event.*`) that tell pururu more about the door. pururu knows no integration, so you say what each event means for the door and where its details are. Each item has:
 
   - `entity`: required, the `event.*` entity.
@@ -93,7 +93,7 @@ An `opening` event describes the opening whose start is at most `match` from the
 | `sensor.pururu_<key>_door_open_time_total` | h | Hours open, all time, brought up to date every minute |
 | `sensor.pururu_<key>_door_<counter>_<period>` | | `openings` or `open_time` this period, one per entry of `statistics` |
 
-With `events`, only what they give:
+With `event_entities`, only what they give:
 
 | Entity | Created when | What it is |
 |---|---|---|

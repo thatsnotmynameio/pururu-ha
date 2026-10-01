@@ -360,24 +360,26 @@ async def enclosure(ha: HomeAssistant, kind: str) -> HomeAssistant:
     """The front enclosure door with its access and doorbell events; the last access is old."""
     await contact(ha, "off")
     await access(ha, at="2026-09-15T10:00:00.000+00:00", **ENTRY)
-    assert await setup(ha, devices(kind, events=EVENTS))
+    assert await setup(ha, devices(kind, event_entities=EVENTS))
     return ha
 
 
 @pytest.mark.parametrize("block", [
-    pytest.param({"events": []}, id="no event"),
-    pytest.param({"events": [{"entity": "sensor.x", "types": ACCESS_TYPES}]}, id="not an event"),
-    pytest.param({"events": [{"entity": ACCESS, "types": {}}]}, id="no type"),
-    pytest.param({"events": [{"entity": ACCESS, "types": {"access_granted": "opened"}}]},
+    pytest.param({"event_entities": []}, id="no event"),
+    pytest.param({"event_entities": [{"entity": "sensor.x", "types": ACCESS_TYPES}]}, id="not an event"),
+    pytest.param({"event_entities": [{"entity": ACCESS, "types": {}}]}, id="no type"),
+    pytest.param({"event_entities": [{"entity": ACCESS, "types": {"access_granted": "opened"}}]},
                  id="unknown meaning"),
-    pytest.param({"events": [{"entity": ACCESS, "types": ACCESS_TYPES,
-                              "fields": {"user": "actor"}}]}, id="unknown field"),
-    pytest.param({"events": [{"entity": ACCESS, "types": ACCESS_TYPES,
-                              "fields": {"who": " "}}]}, id="blank attribute"),
-    pytest.param({"events": [{"entity": ACCESS, "types": ACCESS_TYPES, "extra": 1}]},
+    pytest.param({"event_entities": [{"entity": ACCESS, "types": ACCESS_TYPES,
+                                      "fields": {"user": "actor"}}]}, id="unknown field"),
+    pytest.param({"event_entities": [{"entity": ACCESS, "types": ACCESS_TYPES,
+                                      "fields": {"who": " "}}]}, id="blank attribute"),
+    pytest.param({"event_entities": [{"entity": ACCESS, "types": ACCESS_TYPES, "extra": 1}]},
                  id="unknown key"),
-    pytest.param({"events": [{"types": ACCESS_TYPES}]}, id="no entity"),
+    pytest.param({"event_entities": [{"types": ACCESS_TYPES}]}, id="no entity"),
     pytest.param({"match": "soon"}, id="match not a period"),
+    pytest.param({"events": [{"entity": ACCESS, "types": ACCESS_TYPES}]},
+                 id="events, as before 0.2.1"),
 ])
 async def test_invalid_events_are_refused(ha: HomeAssistant, kind: str,
                                           block: dict[str, Any]) -> None:
@@ -421,7 +423,7 @@ async def test_an_event_outside_match_is_dropped(enclosure: HomeAssistant, kind:
 
 async def test_match_can_be_set(ha: HomeAssistant, kind: str, freezer: Any) -> None:
     await contact(ha, "off")
-    assert await setup(ha, devices(kind, events=EVENTS, match={"seconds": 10}))
+    assert await setup(ha, devices(kind, event_entities=EVENTS, match={"seconds": 10}))
     await contact(ha, "on")
     await tick(ha, freezer, 8)
     await access(ha, **ENTRY)
@@ -508,7 +510,7 @@ async def test_a_restart_replaying_an_old_event_describes_nothing(ha: HomeAssist
     """After a restart the event entity comes back with its last, old, time."""
     old = (dt_util.utcnow() - timedelta(hours=1)).isoformat(timespec="milliseconds")
     ha.states.async_set(CONTACT, "off")
-    await restart(ha, devices(kind, events=EVENTS))
+    await restart(ha, devices(kind, event_entities=EVENTS))
     await fake(ha, ACCESS, "unavailable")
     await access(ha, at=old, **ENTRY)
     await tick(ha, freezer, 1)
@@ -530,7 +532,7 @@ async def test_denied_records_its_time_and_fields(enclosure: HomeAssistant, kind
 async def test_denied_keeps_its_latest(ha: HomeAssistant, kind: str) -> None:
     """A replayed older denial, after a restart, doesn't replace the restored one."""
     last = dt_util.utcnow().replace(microsecond=0) - timedelta(minutes=5)
-    await restart(ha, devices(kind, events=EVENTS),
+    await restart(ha, devices(kind, event_entities=EVENTS),
                   (State(entity(kind, "last_denied"), last.isoformat(), {"who": "Estranho"}),
                    {"native_value": {"__type": "<class 'datetime.datetime'>",
                                      "isoformat": last.isoformat()},
@@ -559,7 +561,7 @@ async def test_a_ring_never_describes_an_opening(enclosure: HomeAssistant, kind:
 
 async def test_only_what_the_events_give_is_created(ha: HomeAssistant, kind: str) -> None:
     await contact(ha, "off")
-    assert await setup(ha, devices(kind, events=[EVENTS[1]]))
+    assert await setup(ha, devices(kind, event_entities=[EVENTS[1]]))
     assert ha.states.get(entity(kind, "last_ring")) is not None
     for entity_key in (*FIELD_KEYS, "last_denied"):
         assert ha.states.get(entity(kind, entity_key)) is None, entity_key
@@ -572,7 +574,7 @@ async def test_without_events_nothing_of_theirs_is_created(door: HomeAssistant,
 
 
 async def test_the_fields_restore(ha: HomeAssistant, kind: str) -> None:
-    await restart(ha, devices(kind, events=EVENTS),
+    await restart(ha, devices(kind, event_entities=EVENTS),
                   (State(entity(kind, "last_opened_by"), "Alex Doe"),
                    {"native_value": "Alex Doe", "native_unit_of_measurement": None}))
     assert value(ha, kind, "last_opened_by") == "Alex Doe"
@@ -655,7 +657,7 @@ async def test_a_reload_keeps_the_opening_described(enclosure: HomeAssistant, ki
     await contact(enclosure, "on")
     await access(enclosure, **ENTRY)
     await tick(enclosure, freezer, 1)
-    await reload(enclosure, devices(kind, events=EVENTS))
+    await reload(enclosure, devices(kind, event_entities=EVENTS))
     await tick(enclosure, freezer, 0.5)
     await access(enclosure, **EXIT)
     assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
@@ -664,7 +666,7 @@ async def test_a_reload_keeps_the_opening_described(enclosure: HomeAssistant, ki
 async def test_an_event_after_a_reload_still_describes_the_opening(
         enclosure: HomeAssistant, kind: str, freezer: Any) -> None:
     await contact(enclosure, "on")
-    await reload(enclosure, devices(kind, events=EVENTS))
+    await reload(enclosure, devices(kind, event_entities=EVENTS))
     await tick(enclosure, freezer, 0.9)
     await access(enclosure, **ENTRY)
     assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
@@ -674,7 +676,7 @@ async def test_an_opening_saved_before_described_is_restored_undescribed(
         ha: HomeAssistant, kind: str, freezer: Any) -> None:
     """.storage from before `described` was kept: the opening takes its event."""
     ha.states.async_set(CONTACT, "on")
-    await restart(ha, devices(kind, events=EVENTS), saved_open(kind, 1))
+    await restart(ha, devices(kind, event_entities=EVENTS), saved_open(kind, 1))
     await access(ha, **ENTRY)
     assert fields(ha, kind) == ("Alex Doe", "PIN_CODE", "entry")
 
