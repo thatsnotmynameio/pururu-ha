@@ -31,7 +31,6 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "code": (
         "custom_components/",
         "tests/",
-        "tools/",
         "pyproject.toml",
         "uv.lock",
         "ruff.toml",
@@ -44,12 +43,16 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Plus every docs/**/*.mdx outside AGENT's folders (groups()).
     "docs": ("docs.json", "package.json", "pnpm-lock.yaml"),
     "hacs": ("hacs.json", "custom_components/pururu/manifest.json", "README.md"),
+    # The repo's own tools, apart from the integration; the Python environment their tests run in
+    "tools": ("tools/",),
+    "env": ("pyproject.toml", "uv.lock"),
     "agent": AGENT,
 }
 NEEDS: dict[str, frozenset[str]] = {
     "build": frozenset({"code", "workflows"}),
     "docs": frozenset({"code", "docs", "workflows"}),
     "hacs": frozenset({"hacs", "workflows"}),
+    "tools": frozenset({"tools", "env", "workflows"}),
 }
 
 
@@ -59,7 +62,7 @@ def matches(path: str, entry: str) -> bool:
 
 
 def groups(path: str) -> set[str]:
-    """Every group the path is in; the manifest is both code and HACS."""
+    """Every group the path is in; the manifest is code and HACS, pyproject.toml and uv.lock code and env."""
     found = {
         name
         for name, entries in GROUPS.items()

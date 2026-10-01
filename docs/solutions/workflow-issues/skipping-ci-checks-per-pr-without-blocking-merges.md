@@ -34,13 +34,13 @@ GitHub treats the two kinds of skip differently:
 - A required check from a workflow skipped by a path, branch or commit-message filter stays "Pending", and the merge is blocked.
 - A job skipped by its own `if:` reports "Success".
 
-Source: GitHub docs, "Troubleshooting required status checks" (https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks). The repo states the same rule in the `ci.yml` header (`.github/workflows/ci.yml:7-10`).
+Source: GitHub docs, "Troubleshooting required status checks" (https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks). The repo states the same rule in the `ci.yml` header (the `ci.yml` header).
 
-So the layout is one caller workflow, `.github/workflows/ci.yml`, triggered on `pull_request` (and `workflow_dispatch`) (`ci.yml:14-17`):
+So the layout is one caller workflow, `.github/workflows/ci.yml`, triggered on `pull_request` (and `workflow_dispatch`):
 
-- Job `changes` checks out the PR's merge commit with `fetch-depth: 2` and diffs it against its first parent (`ci.yml:38-46`). It pipes the file list into `.github/scripts/changes.py pull_request` and exports `build`, `docs` and `hacs` as job outputs (`ci.yml:33-36`, `:51`).
-- Jobs `build`, `docs` and `validate` call `build.yml`, `docs.yml` and `validate.yml` through `uses:`, each guarded by `if: needs.changes.outputs.<check> == 'true'` (`ci.yml:58-72`).
-- Job "CI ok" has `needs:` on all four jobs and `if: always()`. It fails only when a needed job's result is `failure` or `cancelled`, so skipped jobs pass (`ci.yml:74-83`).
+- Job `changes` checks out the PR's merge commit with `fetch-depth: 2` and diffs it against its first parent. It pipes the file list into `.github/scripts/changes.py pull_request` and exports one output per check (`build`, `docs`, `hacs`, `tools`) (`ci.yml`).
+- Jobs `build`, `docs`, `validate` and `tools` call `build.yml`, `docs.yml`, `validate.yml` and `tools.yml` through `uses:`, each guarded by `if: needs.changes.outputs.<check> == 'true'` (`ci.yml`).
+- Job "CI ok" has `needs:` on every job and `if: always()`. It fails only when a needed job's result is `failure` or `cancelled`, so skipped jobs pass (`ci.yml`).
 
 ```yaml
 ok:
@@ -52,20 +52,20 @@ ok:
       run: exit 1
 ```
 
-"CI ok" is meant to be the only required Actions check (`ci.yml:9-10`, `CLAUDE.md:107`). Because there is one required check, splitting or adding a check never needs a ruleset change. The checks must be reusable workflows called from one file because `needs:` only reaches jobs in the same workflow file; separate workflows can't feed one aggregate job.
+"CI ok" is meant to be the only required Actions check (the `ci.yml` header, `CLAUDE.md`'s Releases and CI). Because there is one required check, splitting or adding a check never needs a ruleset change. The checks must be reusable workflows called from one file because `needs:` only reaches jobs in the same workflow file; separate workflows can't feed one aggregate job.
 
 `changes.py` runs everything unless a rule allows a skip:
 
-- An empty diff runs every check (`.github/scripts/changes.py:74-75`).
-- A file in no group runs every check (`.github/scripts/changes.py:79`).
-- Any event other than `pull_request` runs every check (`.github/scripts/changes.py:97-98`).
-- A change to `.github/workflows/` runs every check (`.github/scripts/changes.py:42`, `:48-52`).
+- An empty diff runs every check (`.github/scripts/changes.py:78-79`).
+- A file in no group runs every check (`.github/scripts/changes.py:83`).
+- Any event other than `pull_request` runs every check (`.github/scripts/changes.py:101-102`).
+- A change to `.github/workflows/` runs every check (`.github/scripts/changes.py:42`, `:51-56`).
 
-`changes.py` never classifies its own change. When `.github/scripts/changes.py` is in the diff, `ci.yml` sets all three outputs to true without running it (`ci.yml:47-50`). Otherwise a broken fallback could skip the very tests that would catch it.
+`changes.py` never classifies its own change. When `.github/scripts/changes.py` is in the diff, `ci.yml` sets every output to true without running it, so a check added to the script is added to that list too (`ci.yml`). Otherwise a broken fallback could skip the very tests that would catch it.
 
 ### 2. Called workflows: no `pull_request` trigger, no workflow-level `concurrency`
 
-- Inside a called workflow, `github.workflow` is the caller's name. A called workflow with `concurrency: group: ${{ github.workflow }}-${{ github.ref }}` therefore lands in the caller's group, and GitHub cancels the run at startup with "deadlock was detected for concurrency group" (plan KTD2, `docs/plans/2026-10-01-1504-chore-ci-runs-what-changed-plan.md:143`). Only the caller declares concurrency (`ci.yml:22-26`). `build.yml`, `docs.yml` and `validate.yml` have none.
+- Inside a called workflow, `github.workflow` is the caller's name. A called workflow with `concurrency: group: ${{ github.workflow }}-${{ github.ref }}` therefore lands in the caller's group, and GitHub cancels the run at startup with "deadlock was detected for concurrency group" (plan KTD2, `docs/plans/2026-10-01-1504-chore-ci-runs-what-changed-plan.md:143`). Only the caller declares concurrency (`ci.yml`). `build.yml`, `docs.yml`, `validate.yml` and `tools.yml` have none.
 - A called workflow that keeps its own `pull_request` trigger runs each check twice per PR. `build.yml` and `docs.yml` trigger only on `workflow_call` and `workflow_dispatch` (`build.yml:12-14`, `docs.yml:11-13`). `validate.yml` adds only its weekly cron (`validate.yml:7-11`).
 - `release.yml` keeps its own `concurrency: group: release` (`release.yml:15-17`). That name is not derived from `github.workflow`, so it doesn't collide when Release calls Build and Validate on every push to `main` (`release.yml:20-25`).
 
@@ -95,7 +95,7 @@ The code scanning rule doesn't wait for a check name. It waits for an uploaded C
 
 Also, while default setup is on, GitHub rejects uploads from an advanced CodeQL workflow (https://docs.github.com/en/code-security/code-scanning/troubleshooting-sarif-uploads/default-setup-enabled). A repo workflow can't take over CodeQL without first turning default setup off.
 
-The owner kept the rule and left CodeQL on default setup for every PR, so nothing in the repo runs CodeQL (`ci.yml:11`, `docs/develop/releases.mdx:61`, `:86`; plan `:46`, `:88`). The cost: every PR waits for CodeQL before it can merge, an estimated 1 to 1.5 minutes (plan estimate from step timings, not yet measured), even when every other check is skipped.
+The owner kept the rule and left CodeQL on default setup for every PR, so nothing in the repo runs CodeQL (`ci.yml`, `docs/develop/releases.mdx`; plan `:46`, `:88`). The cost: every PR waits for CodeQL before it can merge, an estimated 1 to 1.5 minutes (plan estimate from step timings, not yet measured), even when every other check is skipped.
 
 The alternative was to gate CodeQL in our own job and drop the code scanning rule. It was considered and rejected (plan `:46`).
 
@@ -104,20 +104,22 @@ The alternative was to gate CodeQL in our own job and drop the code scanning rul
 Some test modules read `docs/` pages. If they stayed in Build, a docs-only PR (which skips Build) could break `pytest` without anything noticing. They now live in `tests/docs/`:
 
 - `tests/conftest.py` marks them `docs` (`tests/conftest.py:18`, `:49-50`).
-- The default run deselects them with `-m "not docs"` (`pyproject.toml:34-36`).
-- The Docs workflow runs them (`docs.yml:33-53`).
+- The default run deselects them with `-m "not docs"` (`pyproject.toml`'s `addopts`).
+- The Docs workflow runs them (`docs.yml`).
 - An AST guard fails any test outside `tests/docs/` that names `docs/` (`tests/test_code.py:219-255`; `conftest.py` and `test_changes.py` are allowlisted, and `test_code.py` skips itself).
 
-A code review then found that Release, which calls Build rather than Docs, had lost those tests on `main`. Build's lint job now runs them outside pull requests (`build.yml:44-47`):
+A code review then found that Release, which calls Build rather than Docs, had lost those tests on `main`. Build's lint job now runs them outside pull requests (`build.yml`):
 
 ```yaml
 - if: github.event_name != 'pull_request'
   run: uv run --locked pytest -m docs tests/docs -n 0
 ```
 
+The repo's own tools (`tools/`, such as the issue dispatcher) got the same treatment: they share nothing with the integration, so their tests run in their own Tools workflow (`tools.yml`), for changes to `tools/`, `pyproject.toml` or `uv.lock`. Build's shards then run `pytest tests` rather than `pytest --ignore=tools`: `testpaths` passes `tools` to pytest as an explicit path, and pytest never ignores a path it was explicitly given, so `--ignore=tools` silently kept the tools' tests in every shard.
+
 ### 6. The ruleset swap is manual and comes after "CI ok" has run once
 
-The PR that introduces "CI ok" no longer produces "Tests and SonarQube". It stays blocked until the owner edits ruleset 24076959: the three required checks ("Tests and SonarQube", "HACS validation", "SonarCloud Code Analysis") are replaced with "CI ok" (source GitHub Actions), and the code scanning rule stays. This happens after "CI ok" has run on the PR, so GitHub knows the check name (plan KTD12, `:153`). As of this writing the PR and the swap are pending.
+The PR that introduces "CI ok" no longer produces "Tests and SonarQube". It stays blocked until the owner edits ruleset 24076959: the three required checks ("Tests and SonarQube", "HACS validation", "SonarCloud Code Analysis") are replaced with "CI ok" (source GitHub Actions), and the code scanning rule stays. This happens after "CI ok" has run on the PR, so GitHub knows the check name (plan KTD12, `:153`). PR #80 merged on 2026-10-01, right after the swap.
 
 ## Why This Matters
 
@@ -143,9 +145,9 @@ The PR that introduces "CI ok" no longer produces "Tests and SonarQube". It stay
 | `CLAUDE.md` only | all `false` | nothing but `changes` and "CI ok" | "CI ok" passes; CodeQL still about 1 to 1.5 min |
 | `custom_components/pururu/manifest.json` | all `true` (code and hacs) | Build, Docs, Validate | all must pass |
 | `.github/workflows/build.yml` | all `true` | everything | all must pass |
-| `.github/scripts/changes.py` | forced all `true` by `ci.yml:48-49`, the script not run | everything | all must pass |
+| `.github/scripts/changes.py` | forced all `true` by `ci.yml`, the script not run | everything | all must pass |
 
-To preview the checks locally: `git diff --name-only origin/main... | python3 .github/scripts/changes.py pull_request` (`CLAUDE.md:21`, `docs/develop/releases.mdx:57-59`).
+To preview the checks locally: `git diff --name-only origin/main... | python3 .github/scripts/changes.py pull_request` (`CLAUDE.md`'s Commands, `docs/develop/releases.mdx`).
 
 Anti-patterns that were rejected:
 
