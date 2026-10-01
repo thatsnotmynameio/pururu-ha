@@ -19,6 +19,7 @@ uv run ruff format custom_components/pururu
 uv run mypy custom_components/pururu
 python3 release.py check                        # the manifest version must be semver and not below the latest release
 git diff --name-only origin/main... | python3 changes.py pull_request   # the checks CI runs for these changes: build, docs, hacs true|false
+python3 tools/dispatcher/dispatcher.py run      # ready issues become pull requests, one lfg session each
 ```
 
 - **Running single-process:** `pyproject.toml` addopts already pass `-n 4 --dist loadfile`, so use `-n 0` to run in one process. `-p no:xdist` breaks the run.
