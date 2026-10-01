@@ -1,7 +1,6 @@
 """PURURU_SHARD=i/N: whole test files split into N stable bins, for CI's parallel test jobs."""
 
 from collections.abc import Iterable
-import re
 
 import pytest
 
@@ -10,10 +9,10 @@ USAGE = "PURURU_SHARD=i/N expected, with 1 <= i <= N (as 2/3), got {!r}"
 
 def parse(value: str) -> tuple[int, int]:
     """(i, N) from i/N, 1-based; anything else, 0/3 or 4/3 too, a usage error."""
-    match = re.fullmatch(r"(\d+)/(\d+)", value)
-    if not match or not 1 <= int(match[1]) <= int(match[2]):
+    i, slash, n = value.partition("/")
+    if not (slash and i.isdecimal() and n.isdecimal() and 1 <= int(i) <= int(n)):
         raise pytest.UsageError(USAGE.format(value))
-    return int(match[1]), int(match[2])
+    return int(i), int(n)
 
 
 def split(files: Iterable[tuple[str, int]], i: int, n: int) -> list[str]:
