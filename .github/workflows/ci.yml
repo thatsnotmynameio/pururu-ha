@@ -1,5 +1,5 @@
 # Every pull request's checks, each run only when the pull request changes
-# something it checks. changes.py reads the changed files: code (the
+# something it checks. .github/scripts/changes.py reads the changed files: code (the
 # integration, tests, the Python and Sonar settings) runs Build and Docs; docs
 # pages run Docs; hacs.json, the manifest or README.md run Validate (HACS);
 # agent and planning files (.claude/, CLAUDE.md, docs/plans/...) run nothing;
@@ -45,13 +45,13 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             files=$(git diff --name-only --no-renames HEAD^1 HEAD)
             # changes.py never judges its own change: a broken fallback would skip the tests that catch it
-            if grep -qxF changes.py <<< "$files"; then
+            if grep -qxF .github/scripts/changes.py <<< "$files"; then
               printf 'build=true\ndocs=true\nhacs=true\n' >> "$GITHUB_OUTPUT"
             else
-              printf '%s\n' "$files" | python3 changes.py pull_request >> "$GITHUB_OUTPUT"
+              printf '%s\n' "$files" | python3 .github/scripts/changes.py pull_request >> "$GITHUB_OUTPUT"
             fi
           else
-            python3 changes.py "$GITHUB_EVENT_NAME" >> "$GITHUB_OUTPUT"
+            python3 .github/scripts/changes.py "$GITHUB_EVENT_NAME" >> "$GITHUB_OUTPUT"
           fi
           cat "$GITHUB_OUTPUT"
 

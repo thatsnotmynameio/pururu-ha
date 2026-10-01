@@ -5,8 +5,8 @@
 """The checks a pull request's changed files need: everything runs unless a rule skips it.
 
 Usage:
-    git diff --name-only --no-renames HEAD^1 HEAD | python3 changes.py pull_request
-    python3 changes.py <any other event>   # every check, nothing read
+    git diff --name-only --no-renames HEAD^1 HEAD | python3 .github/scripts/changes.py pull_request
+    python3 .github/scripts/changes.py <any other event>   # every check, nothing read
 
 Prints one `<check>=true|false` line per check, for $GITHUB_OUTPUT. A check is
 skipped only when every changed file is in groups it doesn't need; a file in no
