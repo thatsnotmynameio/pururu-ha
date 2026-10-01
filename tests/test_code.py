@@ -63,7 +63,7 @@ def test_quality_scale_covers_every_rule() -> None:
         assert status.get("comment"), f"{rule}: {status['status']} without a comment"
 
 
-PLATFORMS = {"sensor", "binary_sensor", "switch", "light"}
+PLATFORMS = {"sensor", "binary_sensor", "button", "switch", "light"}
 
 
 def imports_of(path: Path) -> set[str]:
