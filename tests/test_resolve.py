@@ -165,8 +165,9 @@ NOT_A_PATH = "{} is not a path: write it from its block, <block>.<key>"
     pytest.param("", "a path can't be empty", id="empty"),
 ])
 def test_a_path_is_refused(ha: HomeAssistant, value: str, message: str) -> None:
+    path = module("core.resolve").path
     with pytest.raises(vol.Invalid, match=re.escape(message)):
-        module("core.resolve").path(value)
+        path(value)
 
 
 @pytest.mark.parametrize(("field", "of", "value"), [
@@ -188,8 +189,9 @@ def test_a_key_alone_is_accepted(ha: HomeAssistant, field: str, of: str, value: 
     pytest.param("then", "program", "", "then can't be empty", id="empty"),
 ])
 def test_a_key_alone_refuses_a_path(ha: HomeAssistant, field: str, of: str, value: str, message: str) -> None:
+    key_alone = module("core.resolve").key_alone(field, of)
     with pytest.raises(vol.Invalid, match=re.escape(message)):
-        module("core.resolve").key_alone(field, of)(value)
+        key_alone(value)
 
 
 @pytest.mark.parametrize(("value", "domains", "entity_id"), [
@@ -212,5 +214,6 @@ def test_a_home_assistant_entity_is_accepted(ha: HomeAssistant, value: str, doma
 ])
 def test_a_home_assistant_entity_is_refused(ha: HomeAssistant, value: str, domains: tuple[str, ...],
                                             message: str) -> None:
+    homeassistant_entity = module("core.resolve").homeassistant_entity(*domains)
     with pytest.raises(vol.Invalid, match=re.escape(message)):
-        module("core.resolve").homeassistant_entity(*domains)(value)
+        homeassistant_entity(value)

@@ -4,10 +4,8 @@ from pathlib import Path
 import re
 from typing import Any
 
-from homeassistant.config import humanize_error
 from homeassistant.core import HomeAssistant
 import pytest
-import voluptuous as vol
 import yaml
 
 from helpers import module
@@ -92,7 +90,4 @@ def test_each_whole_block_is_valid(ha: HomeAssistant, block: dict[str, Any]) -> 
     """
     areas = {device["area"]: {"name": device["area"]} for device in block["devices"].values() if "area" in device}
     config = {"pururu": {**block, "areas": {**areas, **block.get("areas", {})}}}
-    try:
-        module("setup.schema").CONFIG_SCHEMA(config)
-    except vol.Invalid as refused:
-        pytest.fail(humanize_error(ha, refused, "pururu", config, None))
+    module("setup.schema").CONFIG_SCHEMA(config)

@@ -306,7 +306,8 @@ def test_every_listed_key_has_one_path(features: dict[str, Any]) -> None:
         for key, path in rows:
             head, *segments = path.split(".")
             assert head == name, (name, key, path)
-            assert segments and all(cv.slug(each) == each for each in segments), (name, key, path)
+            assert segments, (name, key, path)
+            assert all(cv.slug(each) == each for each in segments), (name, key, path)
             found, value = written(block, segments)
             if found and not (value is None or isinstance(value, dict)):
                 assert cv.entity_id(value) == value, f"{name}: {key} at {path}, a setting"

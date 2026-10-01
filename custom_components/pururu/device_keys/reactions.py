@@ -546,34 +546,59 @@ def plan(
     held: set[str] = set()
     for key, config in devices.items():
         for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
-            unique_id = automation_id(key, reaction_key)
-            watched, entity_id = _watched(
-                hass, registry, index, key, unique_id, reaction, created, scripts
+            item = _planned(
+                hass,
+                registry,
+                index,
+                key,
+                config[CONF_NAME],
+                reaction_key,
+                reaction,
+                created,
+                scripts,
+                notify,
             )
-            if not watched:
-                if _followed(key, reaction) in held_scripts:
-                    held.add(unique_id)
-                continue
-            startable, started = _started(registry, key, unique_id, reaction, scripts)
-            if not startable:
-                if programs.script_id(key, reaction["then"]) in held_scripts:
-                    held.add(unique_id)
-                continue
-            automations.append(
-                generated.Item(
-                    unique_id=unique_id,
-                    config=automation(
-                        key,
-                        config[CONF_NAME],
-                        reaction_key,
-                        reaction,
-                        entity_id,
-                        started,
-                        reaction.get(CONF_NOTIFY, notify),
-                    ),
-                )
-            )
+            if isinstance(item, generated.Item):
+                automations.append(item)
+            elif item in held_scripts:
+                held.add(automation_id(key, reaction_key))
     return Planned(automations, frozenset(held))
+
+
+def _planned(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    index: Index,
+    key: str,
+    name: str,
+    reaction_key: str,
+    reaction: Mapping[str, Any],
+    created: Collection[str],
+    scripts: Collection[str],
+    notify: Sequence[str],
+) -> generated.Item | str | None:
+    """The reaction's automation; when it can't be, the script ID that keeps it out, None when none does."""
+    unique_id = automation_id(key, reaction_key)
+    watched, entity_id = _watched(
+        hass, registry, index, key, unique_id, reaction, created, scripts
+    )
+    if not watched:
+        return _followed(key, reaction)
+    startable, started = _started(registry, key, unique_id, reaction, scripts)
+    if not startable:
+        return programs.script_id(key, reaction["then"])
+    return generated.Item(
+        unique_id=unique_id,
+        config=automation(
+            key,
+            name,
+            reaction_key,
+            reaction,
+            entity_id,
+            started,
+            reaction.get(CONF_NOTIFY, notify),
+        ),
+    )
 
 
 def _followed(key: str, reaction: Mapping[str, Any]) -> str | None:

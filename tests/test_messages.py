@@ -34,9 +34,10 @@ def test_anything_else_is_refused(ha: HomeAssistant, value: Any) -> None:
 
 
 def test_a_refusal_quotes_what_was_written(ha: HomeAssistant) -> None:
+    action = module("core.messages").action
     with pytest.raises(vol.Invalid, match=r"^notify\.mobile_app_phone is not a notify action: "
                        r"homeassistant\.notify\.<name>"):
-        module("core.messages").action("notify.mobile_app_phone")
+        action("notify.mobile_app_phone")
 
 
 @pytest.mark.parametrize("text", [
