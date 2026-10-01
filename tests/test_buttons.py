@@ -661,6 +661,20 @@ async def test_a_key_alike_another_buttons_total_is_refused(
     assert "would be two entities" in caplog.text
 
 
+async def test_a_button_whose_id_is_taken_has_no_statistics(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Its total follows it, and its meters follow the total: none is created, each told."""
+    er.async_get(ha).async_get_or_create(
+        "button", "template", "someone_else", suggested_object_id="pururu_biblioteca_button_ler")
+    await fake(ha, REMOTE, "")
+    buttons = {**BUTTONS, "ler": {**BUTTONS["ler"], "statistics": {"triggered": ["today"]}}}
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": buttons}})
+    meter = "sensor.pururu_biblioteca_button_ler_triggered_today"
+    assert held(ha, KEY) == {EXTRA, EXTRA_TOTAL}
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert f"{meter} follows {LER_TOTAL}, which is not created; not creating it" in errors
+
+
 async def test_a_button_on_a_pururu_sensor_has_no_total(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """Its meters watch a total the build skipped: dropped, and told."""
