@@ -1,6 +1,6 @@
 """What a device and a feature are: the contract every module in features/ fulfils."""
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 import math
@@ -210,14 +210,14 @@ type Path = tuple[str, ...]
 EACH = "*"
 
 
-def walk(value: Any, path: Path, at: Path = ()) -> Iterator[tuple[Path, Any]]:
+def walk(value: Any, path: Path, where: Path = ()) -> Iterator[tuple[Path, Any]]:
     """Each container `path` names in `value`, with its own path (EACH made each key).
 
     A key missing, or a map expected where there's none, names no container:
     nothing is yielded for it. The last container may be anything.
     """
     if not path:
-        yield at, value
+        yield where, value
         return
     if not isinstance(value, Mapping):
         return
@@ -226,7 +226,19 @@ def walk(value: Any, path: Path, at: Path = ()) -> Iterator[tuple[Path, Any]]:
     keys = value if head == EACH else present
     for key in keys:
         # As the builder's schema returns it: cv.slug makes YAML's 1 "1"
-        yield from walk(value[key], tuple(rest), (*at, str(key)))
+        yield from walk(value[key], tuple(rest), (*where, str(key)))
+
+
+def at(block: Any, path: Path) -> Any:
+    """The container at `path` in `block`: a concrete path, as walk yields it."""
+    for key in path:
+        block = block[key]
+    return block
+
+
+# The item the container at a path of the builder's validated block is (a
+# program, a phase): the block and the container's concrete path
+type ItemOf = Callable[[Any, Path], Item]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -244,9 +256,14 @@ class Place:
     named: Callable[[str], str]
     # A valid value, for the contract test
     example: Any
-    # The item a container there is, from its key and the container: its
-    # keys are the item's (<slug>_<key>); None: the builder's own
-    item: Callable[[str, Any], Item] | None = None
+    # The item a container there is (ItemOf): its keys are the item's
+    # (<slug>_<key>); None: the builder's own
+    item: ItemOf | None = None
+    # The local keys a container's validated value of the aspect adds beyond
+    # `keys`, the builder's own and no item's (a detected program's, its
+    # phases'): they vary with the value, as Derived's with a block. Pairs, not
+    # a map: a key two of them add comes twice, for checks.keys_distinct
+    derived: Callable[[Any], Iterable[tuple[str, Platform]]] | None = None
     # Refuses (vol.Invalid) what it can't be once validated, given the
     # builder's whole block and the container, its value put back
     check: Callable[[Mapping[str, Any], Mapping[str, Any]], None] | None = None
@@ -263,14 +280,14 @@ type AspectBuild = Callable[
 class Aspect:
     """A concern written once, mounted at its places in the block of every builder offering it."""
 
-    # The key it mounts: "statistics", "alerts", "notifications"
+    # The key it mounts: "statistics", "alerts", "notifications", "programs"
     key: str
     # Whether this builder offers it: it has what the aspect needs (Counters;
-    # at least one ready-made alert; at least one Happening)
+    # at least one ready-made alert; at least one Happening; the Programs role)
     offered: Callable[[Feature], bool]
     # Where its key sits for this builder, given the builder's key in the
     # device (the notifications' refusals name it): the block, a map's items,
-    # or deeper (a running program, each of its phases)
+    # or deeper (a running program, each of its phases, a detected program)
     places: Callable[[Feature, str], tuple[Place, ...]]
     # Its entities, from the builder's validated block
     build: AspectBuild

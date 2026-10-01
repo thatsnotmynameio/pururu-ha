@@ -51,7 +51,8 @@
       "appliance_alert_no_cycle": {"name": "No cycle"},
       "door_open": {"name": "Open"},
       "window_open": {"name": "Open"},
-      "phase_other": {"name": "Other phase"}
+      "phase_other": {"name": "Other phase"},
+      "detected_phase_other": {"name": "{item} other phase"}
     },
     "sensor": {
       "appliance_power": {"name": "Power"},
@@ -102,6 +103,44 @@
       "phase_cycles_total": {"name": "{item} cycles", "unit_of_measurement": "cycles"},
       "phase_runtime_total": {"name": "{item} runtime"},
       "phase_energy_total": {"name": "{item} energy"},
+      "detected_last_cycle_start": {"name": "{item} last cycle start"},
+      "detected_last_cycle_end": {"name": "{item} last cycle end"},
+      "detected_last_cycle_duration": {"name": "{item} last cycle duration"},
+      "detected_last_cycle_energy": {"name": "{item} last cycle energy"},
+      "detected_cycles_total": {"name": "{item} cycles", "unit_of_measurement": "cycles"},
+      "detected_runtime_total": {"name": "{item} runtime"},
+      "detected_energy_total": {"name": "{item} energy"},
+      "detected_phase_current": {
+        "name": "{item} phase",
+        "state": {
+          "idle": "Idle", "other": "Other"
+        }
+      },
+      "detected_phase_last": {
+        "name": "{item} last phase",
+        "state": {
+          "other": "Other"
+        }
+      },
+      "detected_phase_other_last_cycle_start": {"name": "{item} other phase last cycle start"},
+      "detected_phase_other_last_cycle_end": {"name": "{item} other phase last cycle end"},
+      "detected_phase_other_last_cycle_duration": {"name": "{item} other phase last cycle duration"},
+      "detected_phase_other_last_cycle_energy": {"name": "{item} other phase last cycle energy"},
+      "detected_phase_other_cycles_total": {"name": "{item} other phase cycles", "unit_of_measurement": "cycles"},
+      "detected_phase_other_runtime_total": {"name": "{item} other phase runtime"},
+      "detected_phase_other_energy_total": {"name": "{item} other phase energy"},
+      "detected_phase_other_runtime_today": {"name": "{item} other phase runtime today"},
+      "detected_phase_other_runtime_week": {"name": "{item} other phase runtime this week"},
+      "detected_phase_other_runtime_month": {"name": "{item} other phase runtime this month"},
+      "detected_phase_other_runtime_year": {"name": "{item} other phase runtime this year"},
+      "detected_phase_other_cycles_today": {"name": "{item} other phase cycles today"},
+      "detected_phase_other_cycles_week": {"name": "{item} other phase cycles this week"},
+      "detected_phase_other_cycles_month": {"name": "{item} other phase cycles this month"},
+      "detected_phase_other_cycles_year": {"name": "{item} other phase cycles this year"},
+      "detected_phase_other_energy_today": {"name": "{item} other phase energy today"},
+      "detected_phase_other_energy_week": {"name": "{item} other phase energy this week"},
+      "detected_phase_other_energy_month": {"name": "{item} other phase energy this month"},
+      "detected_phase_other_energy_year": {"name": "{item} other phase energy this year"},
       "phase_other_last_cycle_start": {"name": "Other phase last cycle start"},
       "phase_other_last_cycle_end": {"name": "Other phase last cycle end"},
       "phase_other_last_cycle_duration": {"name": "Other phase last cycle duration"},

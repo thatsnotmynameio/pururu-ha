@@ -14,10 +14,11 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
 - A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
 - A `running_program` with a `name` (`running_program takes no name: it is the appliance running`), or with neither `above` nor `below` (`a program needs above, below or both`).
-- A phase without `name`, keyed `idle` or `other` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's, `other`'s or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
+- A phase without `name`, keyed `idle` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
+- A phase keyed `other` or `other_…`, the built-in phase's, whether `other:` is written yet or not: its meters would be the phase's entities once it is (`other_cycles_today is reserved for the built-in phase other (other, other_…): name the phase otherwise`). Pick a key that doesn't begin with `other_`.
 - `other:` without `phases` (`other is the program outside every phase: it needs phases`).
 - Two entities of one device with one unique ID, such as a phase's key and another phase's meter (`device clothes_washer: pururu_clothes_washer_appliance_phase_resfriar_cycles_today would be two entities`).
-- `statistics.energy` on a phase without the appliance's `energy` (`statistics.energy needs energy`).
+- `statistics.energy` on a phase or a detected program without the appliance's `energy` (`statistics.energy needs energy`).
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
 - A door or window whose `contact` isn't a `binary_sensor.*` entity (`sensor.x is not a binary_sensor`) or is a pururu binary sensor (`binary_sensor.pururu_… is a pururu binary_sensor: name the real one`); an event whose `entity` isn't an `event.*` entity, whose `types` is empty or means something other than `opening`, `denied` or `ring`, or whose `fields` names something other than `who`, `how` or `direction`.
 - A light whose `entity` isn't a `light.*` or `switch.*` entity (`sensor.x is not a light or switch`), is a pururu light or switch, or has no `name` or an empty one.
@@ -31,7 +32,14 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - An alert whose `when` is a ready-made alert: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
 - A program step naming something that isn't an entity of another feature of the device: `programs: switch_greenhouse_sprinkler is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_sprinkler`), not as an entity ID.
 - A program step whose entity doesn't take the action: `programs: appliance_power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
-- A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`.
+- A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`. An executable program takes no `phases` yet (`'phases' is an invalid option`), nor a band (`'above' is an invalid option`).
+- A device's `programs:` written as a flat map, as up to 0.2.0, or with no group: `a device's programs sit under executable: (programs: executable: <key>: …) for dictionary value 'pururu->devices->greenhouse->programs'`. Indent its programs under `executable:`.
+- `detected:` in a device's `programs:` (`a device's programs are executable: a detected program sits in the block of the feature whose reading it reads`): move it into the appliance's block. `executable:` in a feature's `programs:` (`a feature's programs are detected: executable programs are the device's`): move it to the device.
+- A feature's `programs:` without `detected:`, such as `programs: {}` or a flat map: `a feature's programs needs detected`.
+- A detected program without `name`: `a detected program needs a name: it names its entities`.
+- A reaction's `then` naming a detected program, which can't be started: `reactions: <reaction>: cotton is not an executable program of this device`.
+- A detected program keyed as one of the appliance's entities, such as `idle`, `running` or `cycles_total`: `device clothes_washer: pururu_clothes_washer_appliance_idle_energy_total would be two entities`. Pick another key: see [More detected programs](/concepts/programs#more-detected-programs).
+- A detected program keyed as phases' keys begin, whether those phases exist yet or not: `phase` or `phase_…` (the running program's phases: `phase_warming is reserved for the running program's phases (phase, phase_…): name the program otherwise`), or `cotton_phase` or `cotton_phase_…` beside a detected program `cotton` (`cotton_phase_warming is reserved for detected program cotton's phases (cotton_phase, cotton_phase_…): name the program otherwise`). Pick a key no phase could take.
 - A reaction with no source or two (`a reaction needs one source: when, entity, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `device` without `when`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`. A `retry` on a reaction to an entity (`a reaction's retry goes with at or sun`), with `times × every` over 12 hours (`a reaction's retries must end within 12 hours`), with `every` under a minute or not in whole seconds (`a reaction's retry every must be whole seconds`), or with `times` not a whole number (`a reaction's retry times must be a whole number`).
 - A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device clothes_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
 - Two reactions whose automations would share an ID: `device lights_reaction_b: automation.pururu_lights_reaction_b_reaction_c is already a reaction of device lights`. Rename a device key or a reaction key.
@@ -101,12 +109,12 @@ Another integration's entity, or an entity without a unique ID, already has that
 sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it
 ```
 
-This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. A [program](/concepts/programs) acting on a switch that isn't created isn't created either.
+This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. An [executable program](/concepts/programs#executable-programs) acting on a switch that isn't created isn't created either.
 
 ### `automation.… runs script.…, which is not generated; not generating it`
 
 ```
-automation.pururu_greenhouse_reaction_morning runs script.pururu_greenhouse_program_clean, which is not generated; not generating it
+automation.pururu_greenhouse_reaction_morning runs script.pururu_greenhouse_program_executable_clean, which is not generated; not generating it
 ```
 
 A [reaction](/concepts/reactions#starting-a-program)'s `then` names a program whose script isn't generated: an entity it acts on isn't created or is disabled, or its ID is taken. The line logged just before says which. The reaction's automation isn't generated either, since it would start a missing script. When the program is only waiting for a disabled entity, the reaction waits with it and comes back as you left it.
@@ -196,7 +204,7 @@ A door's or window's `contact:` names one of pururu's own binary sensors that yo
 Estufa Limpar: Already running
 ```
 
-A [program](/concepts/programs) was started while it was still running, for example during its `delay`. The start is ignored; the running program goes on. `script.turn_on` returns at once when it starts the program, but not when it's ignored: an automation calling it then stays on that action until the running program's next step or its end, up to its longest `delay` — Home Assistant's behaviour for any single-mode script.
+An [executable program](/concepts/programs#executable-programs) was started while it was still running, for example during its `delay`. The start is ignored; the running program goes on. `script.turn_on` returns at once when it starts the program, but not when it's ignored: an automation calling it then stays on that action until the running program's next step or its end, up to its longest `delay` — Home Assistant's behaviour for any single-mode script.
 
 ### An entity stays `unknown`
 
@@ -311,7 +319,7 @@ Another automation already has the entity ID the reaction's automation would hav
 
 pururu couldn't write the file, usually because of permissions on the configuration folder. The devices keep working; the reactions and the ready-made notifications keep their last written automations.
 
-## Programs
+## Executable programs
 
 ### The programs' scripts aren't loaded
 
@@ -326,7 +334,7 @@ The scripts of pururu's programs are not loaded: add "script pururu: !include_di
 ### `script.… follows …, which is not created; not generating it`
 
 ```
-script.pururu_greenhouse_program_clean follows switch.pururu_greenhouse_switch_sprinkler, which is not created; not generating it
+script.pururu_greenhouse_program_executable_clean follows switch.pururu_greenhouse_switch_sprinkler, which is not created; not generating it
 ```
 
 An entity the program acts on isn't created, usually because its ID is taken. Fix that entity, then reload pururu.
@@ -334,7 +342,7 @@ An entity the program acts on isn't created, usually because its ID is taken. Fi
 ### `script.… acts on …, which is disabled; not generating it`
 
 ```
-script.pururu_greenhouse_program_clean acts on switch.pururu_greenhouse_switch_sprinkler, which is disabled; not generating it
+script.pururu_greenhouse_program_executable_clean acts on switch.pururu_greenhouse_switch_sprinkler, which is disabled; not generating it
 ```
 
 You disabled an entity the program acts on. Until you enable it again, the script is `unavailable` and starting it does nothing. Enable it again and the program comes back, with what you set on its script (disabled, entity ID, area).
@@ -342,7 +350,7 @@ You disabled an entity the program acts on. Until you enable it again, the scrip
 ### `script.… is already taken by …; not generating it`
 
 ```
-script.pururu_greenhouse_program_clean is already taken by script.mine, a script with the same ID; not generating it
+script.pururu_greenhouse_program_executable_clean is already taken by script.mine, a script with the same ID; not generating it
 ```
 
 A script of your own, or of another integration, has the program's ID. pururu never takes it over: rename or remove the other script, or give the program another key.

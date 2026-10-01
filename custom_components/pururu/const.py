@@ -26,8 +26,13 @@ CONF_NOTIFICATIONS: Final = "notifications"
 CONF_ALERTS: Final = "alerts"
 # The key of the entry's data holding the IDs of the automations it generated
 CONF_AUTOMATIONS: Final = "automations"
-# A device's programs: each one a script pururu generates
+# Programs: a device's (executable, each one a script pururu generates) and a
+# feature's (detected, each a band of its reading)
 CONF_PROGRAMS: Final = "programs"
+# The programs pururu runs: a device's, each one a script
+CONF_EXECUTABLE: Final = "executable"
+# The programs pururu tells from a reading: a feature's
+CONF_DETECTED: Final = "detected"
 # The key of the entry's data holding the IDs of the scripts it generated
 CONF_SCRIPTS: Final = "scripts"
 # Alert2 (HACS) delivers what an alert's notify says

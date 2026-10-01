@@ -38,6 +38,20 @@ devices:
         statistics:
           runtime: [today, week, month, year]
           cycles: [today, week, month, year]
+      programs:
+        detected:
+          cotton:
+            name: Algodão
+            above: 1500
+            on_delay: {minutes: 5}
+            statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+            phases:
+              warming:
+                name: Aquecendo
+                above: 1800
+                statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
+            other:
+              statistics: {runtime: [today, week, month, year], cycles: [today, week, month, year], energy: [today, week, month, year]}
       statistics:
         idle_energy: [today, week, month, year]
       alerts:
@@ -110,15 +124,16 @@ devices:
     switches:
       sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
     programs:
-      clean:
-        name: Limpar
-        sequence:
-          - turn_on: switch_sprinkler
-          - delay: {hours: 2}
-          - turn_off: switch_sprinkler
-        statistics:
-          runtime: [today, week, month, year]
-          cycles: [today, week, month, year]
+      executable:
+        clean:
+          name: Limpar
+          sequence:
+            - turn_on: switch_sprinkler
+            - delay: {hours: 2}
+            - turn_off: switch_sprinkler
+          statistics:
+            runtime: [today, week, month, year]
+            cycles: [today, week, month, year]
     reactions:
       morning:
         name: Manhã

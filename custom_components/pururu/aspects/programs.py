@@ -1,14 +1,21 @@
-"""Programs: sequences of actions on a device's own entities, as Home Assistant scripts.
+"""Programs: a feature's detected ones (ASPECT), and a device's executable ones, as Home Assistant scripts.
 
-A program is a method of its device: something starts it, and it turns the
-device's own switches and lights on and off, with delays between. Its steps are
-pururu's, translated to HA's script syntax in pururu/scripts/programs.yaml,
-whose folder configuration.yaml includes (generated.py); HA runs it. No step
-can reach outside the device. Each run is a cycle: its statistics are sensors
-of its device (STATISTICS).
+A detected program (`programs: detected:` in the block of a builder with the
+Programs role) is a band of the builder's reading, built with the detector
+(features/cycle/program): ASPECT mounts `programs:`, lists each one's keys
+and builds it.
+
+An executable program (`programs: executable:` at the device) is a method of
+its device: something starts it, and it turns the device's own switches and
+lights on and off, with delays between. Its steps are pururu's, translated to
+HA's script syntax in pururu/scripts/programs.yaml, whose folder
+configuration.yaml includes (generated.py); HA runs it. No step can reach
+outside the device. Each run is a cycle: its statistics are sensors of its
+device (PROGRAMS, the device key).
 """
 
 from collections.abc import Collection, Hashable, Iterable, Iterator, Mapping
+from functools import partial
 import logging
 from typing import Any, override
 
@@ -25,15 +32,38 @@ from homeassistant.core import (
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 
-from ..const import CONF_AREA, CONF_DEVICES, CONF_PROGRAMS, ENTITY_PREFIX
+from ..const import (
+    CONF_AREA,
+    CONF_DETECTED,
+    CONF_DEVICES,
+    CONF_EXECUTABLE,
+    CONF_PROGRAMS,
+    ENTITY_PREFIX,
+)
 from ..core import generated, vocabulary
 from ..core.entity import PururuEntity
-from ..core.feature import EACH, Device, Feature, Item, qualified
+from ..core.feature import (
+    EACH,
+    Aspect,
+    Device,
+    Feature,
+    Item,
+    Path,
+    Place,
+    at,
+    qualified,
+)
 from ..core.generated import SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
-from ..core.roles import Counted, Counters, Generates, Items
+from ..core.roles import Counted, Counters, Generates, Items, Programs
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
+from ..features.cycle.program import (
+    DETECTED_SCHEMA,
+    build_detected,
+    detected_keys,
+    unreserved,
+)
 from ..features.cycle.totals import CyclesTotal, RuntimeTotal
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,12 +94,24 @@ def _step(value: Any) -> dict[str, Any]:
 LAST_RUN = tuple(d for d in LAST_CYCLE if d.key != "last_cycle_energy")
 
 
+def slug(program_key: str) -> str:
+    """An executable program's slug, executable_<key>: every entity key of it and its script's ID start with it."""
+    return f"{CONF_EXECUTABLE}_{program_key}"
+
+
 def _item(key: str, program: Mapping[str, Any]) -> Item:
-    return Item(slug=key, name=program[CONF_NAME])
+    return Item(slug=slug(key), name=program[CONF_NAME])
 
 
-# The statistics aspect meters them, `statistics:` in each program
-COUNTED = Counted(needs={"runtime": None, "cycles": None}, at=(EACH,), item=_item)
+def _item_at(block: Any, path: Path) -> Item:
+    """The executable program at `path` of the device key's block."""
+    return _item(path[-1], at(block, path))
+
+
+# The statistics aspect meters them, `statistics:` in each executable program
+COUNTED = Counted(
+    needs={"runtime": None, "cycles": None}, at=(CONF_EXECUTABLE, EACH), item=_item_at
+)
 PER_PROGRAM: dict[str, Platform] = {
     **{description.key: Platform.SENSOR for description in LAST_RUN},
     **{f"{counter}_total": Platform.SENSOR for counter in COUNTED.needs},
@@ -82,8 +124,41 @@ PROGRAM = vol.Schema(
         vol.Required("sequence"): vol.All([_step], vol.Length(min=1)),
     }
 )
-# A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
-SCHEMA = vol.All(vol.Schema({cv.slug: PROGRAM}), vol.Length(min=1))
+
+
+def _executable_only(block: Any) -> Any:
+    """Refuse `detected:` at the device, and a block without `executable:` (a flat map, as before D3).
+
+    A detected program reads a feature's reading, in its block; the device's
+    own programs sit under `executable:`, said at the block.
+    """
+    if not isinstance(block, dict):
+        return block
+    if CONF_DETECTED in block:
+        raise vol.Invalid(
+            "a device's programs are executable: a detected program sits in the "
+            "block of the feature whose reading it reads",
+            path=[CONF_DETECTED],
+        )
+    if CONF_EXECUTABLE not in block:
+        raise vol.Invalid(
+            f"a device's {CONF_PROGRAMS} sit under {CONF_EXECUTABLE}: "
+            f"({CONF_PROGRAMS}: {CONF_EXECUTABLE}: <key>: …)"
+        )
+    return block
+
+
+# Schemas of their own: ALLOW_EXTRA would let a key that isn't a slug through
+SCHEMA = vol.All(
+    _executable_only,
+    vol.Schema(
+        {
+            vol.Required(CONF_EXECUTABLE): vol.All(
+                vol.Schema({cv.slug: PROGRAM}), vol.Length(min=1)
+            )
+        }
+    ),
+)
 
 
 def targets(program: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
@@ -93,8 +168,14 @@ def targets(program: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
 
 
 def script_id(device_key: str, program_key: str) -> str:
-    """The script's object ID, and its unique ID: the pururu pattern."""
-    return f"{ENTITY_PREFIX}_{device_key}_{qualified(NAMESPACE, program_key)}"
+    """The script's object ID, and its unique ID: pururu_<device>_program_executable_<key>."""
+    return f"{ENTITY_PREFIX}_{device_key}_{qualified(NAMESPACE, slug(program_key))}"
+
+
+def executable(device: Mapping[str, Any]) -> Mapping[str, Any]:
+    """A validated device's executable programs, by key; none without `programs`."""
+    found: Mapping[str, Any] = device.get(CONF_PROGRAMS, {}).get(CONF_EXECUTABLE, {})
+    return found
 
 
 def _translated(
@@ -173,7 +254,7 @@ class Runs(CyclesTotal, CycleSource):
 
 
 def _items(config: Mapping[str, Any]) -> list[Item]:
-    return [_item(key, program) for key, program in config.items()]
+    return [_item(key, program) for key, program in config[CONF_EXECUTABLE].items()]
 
 
 def build(
@@ -188,8 +269,9 @@ def build(
     program whose script ID someone else holds counts nothing.
     """
     entities: list[PururuEntity] = []
-    for item in _items(config):
-        script = inputs.get(script_id(device.key, item.slug))
+    for key, program in config[CONF_EXECUTABLE].items():
+        item = _item(key, program)
+        script = inputs.get(script_id(device.key, key))
         counted = item.key("cycles_total")
         entities.append(Runs(device, script, item=item))
         entities.extend(
@@ -202,19 +284,22 @@ def build(
     return entities
 
 
-# Not a device's feature: its programs' statistics, built as a Feature's entities
-STATISTICS = Feature(
+# The device key: not a device's feature; its executable programs' statistics,
+# built as a Feature's entities
+PROGRAMS = Feature(
     schema=SCHEMA,
     entity_keys={},
     build=build,
-    example={"clean": {"name": "Clean", "sequence": [{"delay": 1}]}},
+    example={CONF_EXECUTABLE: {"clean": {"name": "Clean", "sequence": [{"delay": 1}]}}},
     namespace=NAMESPACE,
     roles=(
         Items(PER_PROGRAM, _items),
         Counters((COUNTED,)),
         Generates(
             "program",
-            lambda key, config: ((SCRIPTS.domain, script_id(key, p)) for p in config),
+            lambda key, config: (
+                (SCRIPTS.domain, script_id(key, p)) for p in config[CONF_EXECUTABLE]
+            ),
         ),
     ),
 )
@@ -223,8 +308,14 @@ STATISTICS = Feature(
 def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
     """Refuse a step on what isn't another feature's entity key of the device taking its action (a schema check)."""
     for key, device in house[CONF_DEVICES].items():
-        for program_key, program in device.get(CONF_PROGRAMS, {}).items():
-            path: list[Hashable] = [CONF_DEVICES, key, CONF_PROGRAMS, program_key]
+        for program_key, program in executable(device).items():
+            path: list[Hashable] = [
+                CONF_DEVICES,
+                key,
+                CONF_PROGRAMS,
+                CONF_EXECUTABLE,
+                program_key,
+            ]
             for action, entity_key in targets(program):
                 target = find(index, key, Ref(None, entity_key))
                 if target is None:
@@ -257,7 +348,7 @@ def plan(
     held: set[str] = set()
     targets_: set[str] = set()
     for key, config in devices.items():
-        for program_key, program in config.get(CONF_PROGRAMS, {}).items():
+        for program_key, program in executable(config).items():
             unique_id = script_id(key, program_key)
             entity_ids = _acted_on(hass, index[key], unique_id, program, created)
             if entity_ids is None:
@@ -322,3 +413,104 @@ def _disabled(
             )
             return True
     return False
+
+
+# --- detected programs: the aspect ---------------------------------------------
+
+
+def _detected_only(block: Any) -> Any:
+    """Refuse `executable:` in a feature's block, and a block without `detected:` (`{}`, a flat map).
+
+    An executable program is its device's; a feature's programs sit under
+    `detected:`, said at the block, as the device's under `executable:`.
+    """
+    if not isinstance(block, dict):
+        return block
+    if CONF_EXECUTABLE in block:
+        raise vol.Invalid(
+            "a feature's programs are detected: executable programs are the device's",
+            path=[CONF_EXECUTABLE],
+        )
+    if CONF_DETECTED not in block:
+        raise vol.Invalid(f"a feature's {CONF_PROGRAMS} needs {CONF_DETECTED}")
+    return block
+
+
+# `programs:` in a feature's block; schemas of their own, as the device key's.
+# Built alike: its group is required, and refused at the block when missing
+DETECTED_BLOCK = vol.All(
+    _detected_only,
+    vol.Schema(
+        {
+            # A key a phase could take is refused now (unreserved)
+            vol.Required(CONF_DETECTED): vol.All(
+                vol.Schema({cv.slug: DETECTED_SCHEMA}), vol.Length(min=1), unreserved
+            )
+        }
+    ),
+)
+
+
+def _derived(value: Mapping[str, Any]) -> Iterator[tuple[str, Platform]]:
+    """Every entity key the detected programs of a validated `programs:` create.
+
+    A key two of them create comes twice: checks.keys_distinct refuses it
+    (cotton's cotton_cycles_total beside a program keyed cotton_cycles_total).
+    """
+    for key, config in value[CONF_DETECTED].items():
+        yield from detected_keys(key, config).items()
+
+
+# A detected program with a phase and other: the programs aspect's example
+EXAMPLE: dict[str, Any] = {
+    "name": "Cotton",
+    "above": 1500,
+    "phases": {"rinsing": {"name": "Rinsing", "above": 1800}},
+    "other": {},
+}
+
+
+def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
+    """`programs:` sits in the block; its keys are the detected programs' (derived).
+
+    It names nothing to a person (`_name`); `named` is never asked, as it adds
+    no fixed key.
+    """
+    return (
+        Place(
+            schema=DETECTED_BLOCK,
+            keys={},
+            named=partial(qualified, builder.namespace),
+            # One phase and other: the contract test reaches every place
+            example={CONF_DETECTED: {"cotton": EXAMPLE}},
+            derived=_derived,
+        ),
+    )
+
+
+def _build(
+    hass: HomeAssistant, device: Device, builder: Feature, block: Any, *_: Any
+) -> list[PururuEntity]:
+    """Each detected program, in the configuration's order, reading the builder's settings (Programs)."""
+    if CONF_PROGRAMS not in block:
+        return []
+    role = builder.role(Programs)
+    assert role is not None  # ASPECT.offered checked it
+    energy = None if role.energy is None else block.get(role.energy)
+    return [
+        entity
+        for key, config in block[CONF_PROGRAMS][CONF_DETECTED].items()
+        for entity in build_detected(
+            hass, device, key, config, reading=block[role.reading], energy=energy
+        )
+    ]
+
+
+ASPECT = Aspect(
+    key=CONF_PROGRAMS,
+    offered=lambda builder: builder.role(Programs) is not None,
+    places=_places,
+    build=_build,
+    # Absent: no detected program; an explicit {} or null is refused
+    mount_absent=False,
+)

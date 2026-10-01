@@ -1,11 +1,261 @@
 ---
 title: Programs
-description: Sequences of actions on a device's own entities, each one a Home Assistant script.
+description: What a device runs, detected from a reading or run by pururu as a Home Assistant script, and the phases of each run.
 ---
 
-These are programs pururu **runs**, things a device knows how to do. The ones it **tells** from a reading, such as an appliance running or a wash's phases, are [Detected programs](/concepts/detected-programs).
+A **program** is a named kind of run. There are two:
 
-`programs` gives a device things it knows how to do, such as a greenhouse's cleaning: turn the sprinkler on, wait two hours, turn it off. pururu writes each program as a Home Assistant **script**, and Home Assistant runs it. Its steps act on that device's own entities only.
+- A **detected** program is one pururu knows is running from a reading: a band of the plug's power, confirmed by delays. The appliance running at all is one; a cotton wash, which the power alone tells apart, can be another.
+- An **executable** program is one pururu runs itself: its steps, as a Home Assistant script, such as a greenhouse's cleaning.
+
+| | Detected | Executable |
+|---|---|---|
+| **pururu knows it runs** | from a reading: a band of the power, with `on_delay`/`off_delay` | because it runs it: the steps in `sequence` |
+| **Can be started** | no | yes: a reaction's `then`, `script.turn_on` |
+| **Where** | in the block of the feature whose reading it reads | at the device |
+
+## Where they sit
+
+`programs:` has two groups, `detected:` and `executable:`, each a map of **program key → program**, with at least one program. Where `programs:` sits says which group it takes:
+
+- **In a feature's block**, `programs:` takes `detected:` only: a detected program reads that feature's reading. An `executable:` there is a configuration error (`a feature's programs are detected: executable programs are the device's`). Today the [appliance](/features/appliance) takes them.
+- **At the device**, `programs:` takes `executable:` only: an executable program acts on the device's entities. A `detected:` there is a configuration error (`a device's programs are executable: a detected program sits in the block of the feature whose reading it reads`).
+- **The appliance's own `running_program`** is a detected program with a fixed key, required, in its block: the appliance running at all. It isn't under `programs:`.
+
+Only an executable program can be started.
+
+```yaml
+pururu:
+  devices:
+    clothes_washer:
+      name: Tanquinho
+      appliance:
+        power: sensor.washer_plug_power
+        running_program:                  # required: the appliance running
+          above: 4
+          on_delay: {minutes: 1}
+          off_delay: {minutes: 2}
+          statistics: {cycles: [today, month]}
+          phases:
+            warming: {name: Aquecendo, above: 1000}
+            wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+        programs:                         # optional: more detected programs of the appliance
+          detected:
+            cotton: {name: Algodão, above: 1500, on_delay: {minutes: 5}}   # a program its power alone tells apart
+
+    greenhouse:
+      name: Estufa
+      switches:
+        sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+      programs:                           # at the device
+        executable:
+          clean:
+            name: Limpar
+            sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
+```
+
+## Detected programs
+
+A **detected program** is one pururu knows is running from a reading: a band of the plug's power, confirmed by delays. An appliance's `running_program` is one, the appliance running at all. Its **phases** are bands too: a washer warming, then wringing; a water purifier chilling or warming. The programs pururu runs itself are [executable programs](#executable-programs), below.
+
+```yaml
+pururu:
+  devices:
+    clothes_washer:
+      name: Tanquinho
+      appliance:
+        power: sensor.washer_plug_power
+        running_program:
+          above: 4
+          on_delay: {minutes: 1}
+          off_delay: {minutes: 2}
+          statistics:
+            runtime: [today, week, month, year]
+            cycles: [today, week, month, year]
+          phases:
+            warming: {name: Aquecendo, above: 1000}
+            wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+```
+
+### A band
+
+<Property name="above, below" type="number" optional>
+  The band is strictly **above** `above` and strictly **below** `below`, as Home Assistant's `numeric_state` trigger: with `above: 1000`, a reading of exactly 1000 is outside the band. At least one of them is required, and `above` must be lower than `below`.
+</Property>
+
+---
+
+<Property name="on_delay" type="time period" optional>
+  How long the reading must stay in the band before the run starts. Without it, 0: at once. A [time period](/features/appliance#settings).
+</Property>
+
+---
+
+<Property name="off_delay" type="time period" optional>
+  How long the reading must stay out of the band before the run ends. Without it, 0: at once.
+</Property>
+
+### The running program
+
+`running_program` is required in an appliance's block: it's the appliance running at all. It has a band, then `statistics` (`runtime`, `cycles`: the appliance's own meters, see [Statistics](/concepts/statistics)), `phases` and `other`. It takes no `name`: it's named by the appliance, and a `name` there is a configuration error (`running_program takes no name: it is the appliance running`).
+
+A cycle **starts** at the moment its `on_delay` passed, and **ends** at the moment the reading left the band; `off_delay` only confirms the end. A reading **without a value** (`unknown`, `unavailable`, not a number) counts every delay again from the next reading: what runs stays running, and an end already under way keeps the moment its reading left.
+
+A **restart or reload** keeps the running cycle and its phases, from the detector's own snapshot, and Home Assistant's downtime isn't runtime. A restore that can't be read (a hand-edited `.storage`) starts from nothing.
+
+### More detected programs
+
+`programs: detected:` in the appliance's block is a map of **key → program**, for a kind of run its power alone tells apart, such as a cotton wash that heats above 1500 W:
+
+```yaml
+appliance:
+  power: sensor.washer_plug_power
+  energy: sensor.washer_plug_energy
+  running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+  programs:
+    detected:
+      cotton:
+        name: Algodão
+        above: 1500
+        on_delay: {minutes: 5}
+        statistics:
+          cycles: [today, month]
+          energy: [month]
+```
+
+<Property name="name" type="string" required>
+  How its entities are named (`Algodão`). Without it, a detected program is a configuration error: `a detected program needs a name: it names its entities`.
+</Property>
+
+---
+
+<Property name="above, below, on_delay, off_delay" type="—" optional>
+  Its band, as the running program's [above](#a-band): at least one of `above` and `below`.
+</Property>
+
+---
+
+<Property name="statistics" type="map" optional>
+  `runtime`, `cycles` and `energy` (which needs the appliance's `energy`). See [Statistics](/concepts/statistics).
+</Property>
+
+---
+
+<Property name="phases, other" type="map" optional>
+  Its [phases](#phases) and [`other`](#other), as the running program's.
+</Property>
+
+It reads the appliance's `power`, and its `energy` for each cycle's kWh. It runs on its own, beside the running program. Here, a cycle of `cotton` is also one of the running program's (both bands hold); each counts its own. A restart or reload keeps its running cycle, as the running program's.
+
+Its key is a slug, and an entity key of the appliance's namespace (`cotton` → `binary_sensor.pururu_clothes_washer_appliance_cotton`), so a key whose entities would be the appliance's is refused at the configuration: `device clothes_washer: pururu_clothes_washer_appliance_idle_energy_total would be two entities`. That rules out:
+
+- the appliance's own entity keys (`power`, `running`, `cycles_total`…, and `idle`, whose `idle_energy_total` is the appliance's);
+- its ready-made alerts' (`alert_offline`…) and its meters' (`runtime_today`…);
+- another detected program's (`cotton_cycles_total` or `cotton_runtime_today` beside `cotton`).
+
+These count even while the setting that adds them is off (no `energy`, no `statistics`, no alert enabled), so turning it on later never breaks the configuration.
+
+A phase can be added later too, with any key, and its entities' keys begin with `phase` (the running program's) or `<program>_phase` (a detected program's). So a detected program keyed `phase` or `phase_…`, or `cotton_phase` or `cotton_phase_…` beside a detected program `cotton`, is refused at once, whether those phases exist yet or not:
+
+- `phase_warming is reserved for the running program's phases (phase, phase_…): name the program otherwise`;
+- `cotton_phase_warming is reserved for detected program cotton's phases (cotton_phase, cotton_phase_…): name the program otherwise`.
+
+`phases`, or `rinse_phase` without a program `rinse`, is a key like any other. Pick a word, not an entity's name.
+
+### Phases
+
+<Property name="name" type="string" required>
+  How the phase's entities are named (`Aquecendo`, `Centrifugando`). It names the phase: without it, a phase is a configuration error.
+</Property>
+
+---
+
+<Property name="above, below, on_delay, off_delay" type="—" optional>
+  The same four as the program's own band, above.
+</Property>
+
+---
+
+<Property name="statistics" type="map" optional>
+  `runtime`, `cycles` and `energy` (which needs the appliance's `energy`). See [Statistics](/concepts/statistics).
+</Property>
+
+A phase's key is a slug. `idle` (the state while none runs) is **reserved**: `idle is a reserved phase key: name the phase otherwise`.
+
+`other` and every key beginning with `other_` are reserved too, for the built-in phase ([below](#other)), in the running program's phases and in a detected program's. Its entities' keys begin with `phase_other` (`phase_other_cycles_total`, and its meters, `phase_other_cycles_today`, once `other:` is written), so a phase keyed `other_cycles_today` would be one of them. It's refused at once, whether `other:` is written yet or not, so writing it later never breaks the configuration:
+
+- `other_cycles_today is reserved for the built-in phase other (other, other_…): name the phase otherwise`.
+
+`others` or `heat_other` is a key like any other.
+
+A key whose entities would be another's is refused too, at the configuration:
+
+- A phase keyed `current` or `last` collides with the detector's own: `phase current would create phase_current, the detector's`.
+- One phase's totals can collide with another phase's key, such as `resfriar` beside a phase keyed `resfriar_cycles_total`: `phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`.
+- A phase keyed `resfriar_cycles_today` beside `resfriar`, whose **meter** (a period sensor, not a fixed entity key) it would be, is caught later, once every meter exists: `device <key>: <unique ID> would be two entities`.
+
+#### How phases run
+
+- A phase runs while the program runs and its reading has held its band for its `on_delay`; it ends after its `off_delay` out of the band, dated when it left, or when the program ends.
+- **Bands may overlap**: two phases that hold at once run at once, and none wins. `phase_current` is the one that started last.
+- A **dip** straight from a running phase's band into another's makes the other wait, once its `on_delay` passed, for the first to end or for a reading back in both bands; it then starts from when its `on_delay` passed. A short visit to another band is nothing: a chill's tail dipping into a sip's band for a few seconds isn't a drink.
+- An **idle gap**, a reading outside every band once a phase left its own (between `below: 40` and `above: 40`, or under the program's band), blocks nothing: the next phase starts after its own `on_delay`, and the first still ends, at the moment it left, unless its reading comes back.
+- A phase whose band holds before the program runs starts with it; after the program ends, a band still holding starts with the next cycle; while the program's reading is out (its `off_delay` counting), no phase starts.
+- At one instant: the program's own change first (its start or its end), then the phases' ends in the order they started, then their starts in the configuration's order. A reading at the very instant a delay passes comes before it.
+
+### `other`
+
+`other` is the built-in phase: the program's band outside every configured phase's. It only exists with at least one phase configured (`other` without `phases`: `other is the program outside every phase: it needs phases`). It waits for nothing, and ends at once when a configured phase starts.
+
+`other:` takes `on_delay` and `off_delay`, 30 seconds each by default (so a compressor's 2-second spike isn't a phase), and `statistics`. Write `other: {}`, or `other:` with its own settings, to ask for its meters.
+
+### Entities
+
+`<key>` is the device's key, `<phase>` a phase's key or `other`, `<program>` a detected program's key.
+
+| Entity | What it is |
+|---|---|
+| `binary_sensor.pururu_<key>_appliance_running` | The running program: on while the appliance runs (see [`appliance`](/features/appliance#entities)) |
+| `sensor.pururu_<key>_appliance_phase_current` | The running phase that started last, or `idle`. Device class `enum`. Attributes: `name` (a configured phase's `name`; none for `idle` and `other`, whose state is translated), `running` (the running phases, in the configuration's order) and `seen` (the phases of the current or last cycle, `other` included, cleared when a cycle starts) |
+| `sensor.pururu_<key>_appliance_phase_last` | The phase of the last phase cycle that ended; `enum`, kept across restarts, `unknown` until the first |
+| `binary_sensor.pururu_<key>_appliance_phase_<phase>` | On while the phase runs, named by its `name` (`other`: "Other phase"). Attributes `cycle_start`, and `cycle_end` while its `off_delay` runs |
+| `sensor.pururu_<key>_appliance_phase_<phase>_last_cycle_start`, `_end`, `_duration`, `_energy` | The phase's last cycle, as the appliance's own (`_end` written last; `_energy` *with `energy`*) |
+| `sensor.pururu_<key>_appliance_phase_<phase>_cycles_total`, `_runtime_total`, `_energy_total` | Its totals, `total_increasing` (`_energy_total` added exactly, *with `energy`*) |
+| `sensor.pururu_<key>_appliance_phase_<phase>_<counter>_<period>` | One per entry of the phase's (or `other`'s) `statistics` |
+| `binary_sensor.pururu_<key>_appliance_<program>` | A detected program: on while it runs, named by its `name`. Attributes `cycle_start`, and `cycle_end` while its `off_delay` runs |
+| `sensor.pururu_<key>_appliance_<program>_last_cycle_start`, `_end`, `_duration`, `_energy` | Its last cycle (`_energy` *with `energy`*) |
+| `sensor.pururu_<key>_appliance_<program>_cycles_total`, `_runtime_total`, `_energy_total` | Its totals, `total_increasing` (`_energy_total` *with `energy`*) |
+| `sensor.pururu_<key>_appliance_<program>_<counter>_<period>` | One per entry of its `statistics` |
+| `sensor.pururu_<key>_appliance_<program>_phase_current`, `_phase_last`, `binary_sensor.…_<program>_phase_<phase>`, `sensor.…_<program>_phase_<phase>_<suffix>` | Its phases, as the running program's, under its key |
+
+A phase's cycle entities are named after its `name` ("Aquecendo cycles", "Ciclos de Aquecendo"). `other`'s are named by their own translations ("Other phase cycles", "Ciclos de outra fase"). While `running` is disabled, every phase of the running program is off and `phase_current` is `idle`; so are a detected program's phases while its own binary sensor (`appliance_<program>`) is.
+
+A detected program's own entities, its fixed ones and its `other`'s are named after its name ("Tanquinho Algodão cycles", "Tanquinho Algodão phase", "Tanquinho Algodão other phase"; "Ciclos de Algodão", "Fase de Algodão", "Outra fase de Algodão"); a phase's after the phase's name, as the running program's.
+
+### State names
+
+`phase_current` and `phase_last` show a phase's key. Only the two states pururu gives itself are translated in the UI (English and Portuguese):
+
+| Name | English | Portuguese |
+|---|---|---|
+| `idle` | Idle | Parada |
+| `other` | Other | Outra |
+
+A configured phase's key, such as `warming` or `wringing`, is shown as written: choose keys you'd read. To show its `name` instead, use `phase_current`'s `name` attribute (restored with it after a restart), or the phase's binary sensor, which is named by it. `phase_last` never shows `idle`: it has no cycle to be one.
+
+### Referring to a program or a phase
+
+An alert's or a reaction's `when` names a phase's entity key as it ends every entity ID: `appliance_phase_current`, `appliance_phase_resfriar`, `appliance_phase_resfriar_cycles_total`. A phase not configured, or any phase key of an appliance without phases, is refused at the configuration: `alerts: appliance_phase_morno is not an entity key of another feature of this device`.
+
+A detected program's entities are named the same way: `when: appliance_cotton`, `appliance_cotton_cycles_total`, and, with phases, `appliance_cotton_phase_current`. It can't be started: a reaction's `then` naming it is refused (`reactions: <reaction>: cotton is not an executable program of this device`), and so is a step acting on it (`programs: appliance_cotton does not take turn_on`).
+
+Renaming a phase's entity in the UI is followed, as every pururu entity. If `running` can't be created (its ID taken), neither are the phases: `sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.pururu_clothes_washer_appliance_running, which is not created; not creating it`. A detected program's entities follow its own binary sensor the same way.
+
+## Executable programs
+
+These are programs pururu **runs**, things a device knows how to do. The ones it **tells** from a reading, such as an appliance running or a wash's phases, are [detected programs](#detected-programs), above.
+
+`programs: executable:` gives a device things it knows how to do, such as a greenhouse's cleaning: turn the sprinkler on, wait two hours, turn it off. pururu writes each program as a Home Assistant **script**, and Home Assistant runs it. Its steps act on that device's own entities only.
 
 ```yaml
 pururu:
@@ -15,17 +265,18 @@ pururu:
       switches:
         sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
       programs:
-        clean:
-          name: Limpar
-          sequence:
-            - turn_on: switch_sprinkler
-            - delay: {hours: 2}
-            - turn_off: switch_sprinkler
+        executable:
+          clean:
+            name: Limpar
+            sequence:
+              - turn_on: switch_sprinkler
+              - delay: {hours: 2}
+              - turn_off: switch_sprinkler
 ```
 
-This writes `script.pururu_greenhouse_program_clean`, shown as **Estufa Limpar**, to `pururu/scripts/programs.yaml`.
+This writes `script.pururu_greenhouse_program_executable_clean`, shown as **Estufa Limpar**, to `pururu/scripts/programs.yaml`.
 
-## The include
+### The include
 
 Home Assistant reads scripts only from its configuration. Add this line to `configuration.yaml`, once, then restart Home Assistant:
 
@@ -35,9 +286,9 @@ script pururu: !include_dir_merge_named pururu/scripts
 
 Until it's there, **Settings → Repairs** says so. pururu rewrites the file on every reload: don't edit it.
 
-## Settings
+### Settings
 
-`programs` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after the namespace `program`: `clean` → `script.pururu_greenhouse_program_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
+`programs: executable:` is a map of **program key → program**, with at least one program. The key is a slug, and it ends the script's ID after `program_executable_`: `clean` → `script.pururu_greenhouse_program_executable_clean`. `programs` isn't a feature: a device with programs still needs a feature, such as the switches they act on.
 
 <Property name="name" type="string" required>
   The name shown after the device's name. It can't be empty, and it's the same in every language.
@@ -55,7 +306,9 @@ Until it's there, **Settings → Repairs** says so. pururu rewrites the file on 
   For each period, a sensor with the hours the program ran, or the runs it finished, in the current period. It sits inside the program, next to `sequence`. See [Statistics](/concepts/statistics) for the periods and how they reset, and [below](#statistics) for this program's own sensors.
 </Property>
 
-## Steps
+An executable program has no `phases` yet (its steps could be its phases): `phases` is an unknown key, a configuration error (`'phases' is an invalid option`). Neither does it take a band: `above` is a detected program's.
+
+### Steps
 
 Each step has exactly one key:
 
@@ -70,7 +323,7 @@ An entity key names an entity of **this device**, written as its entity ID ends 
 
 Anything else is a configuration error: an entity ID (`switch.greenhouse_sprinkler`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
 
-## Only its own device
+### Only its own device
 
 A program is a method of its device. It acts only on its device's entities, and it never starts by itself:
 
@@ -78,9 +331,9 @@ A program is a method of its device. It acts only on its device's entities, and 
 - **No templates, no events, no other actions.** Its steps are the four above.
 - **No triggers of its own.** A [reaction](/concepts/reactions#starting-a-program)'s `then` starts it, or you, an automation, a voice assistant.
 
-## The script
+### The script
 
-`script.pururu_<key>_program_<program key>`, in the device's area. Home Assistant keeps a script from YAML out of any device, so it isn't on the device's page.
+`script.pururu_<key>_program_executable_<program key>`, in the device's area. Home Assistant keeps a script from YAML out of any device, so it isn't on the device's page.
 
 - **Starting it:** `script.turn_on`, or **Run** in the UI. It returns at once: an automation starting it doesn't wait for it to end.
 - **While it runs**, its state is `on`, and `script.turn_off` stops it. What it already did stays: if the sprinkler was on, it stays on.
@@ -94,18 +347,18 @@ A program is a method of its device. It acts only on its device's entities, and 
 - If an entity it acts on isn't created, the program isn't either, and the log says so. See [Troubleshooting](/reference/troubleshooting).
 - **Renaming an entity it acts on** in the UI is followed: the file is rewritten with the new ID.
 
-## Statistics
+### Statistics
 
 Each run of a program is a **cycle**, as an [appliance](/features/appliance)'s: it starts when its script turns on and ends when it turns off. pururu records them in sensors of the device, with no setting:
 
 | Entity | Unit | What |
 |---|---|---|
-| `sensor.pururu_<key>_program_<program>_last_cycle_start` | | When the last run started |
-| `sensor.pururu_<key>_program_<program>_last_cycle_end` | | When it ended |
-| `sensor.pururu_<key>_program_<program>_last_cycle_duration` | min | How long it ran |
-| `sensor.pururu_<key>_program_<program>_cycles_total` | cycles | Runs finished, all time |
-| `sensor.pururu_<key>_program_<program>_runtime_total` | h | Hours running, all time |
-| `sensor.pururu_<key>_program_<program>_runtime_<period>`, `…_cycles_<period>` | h, cycles | This period's [statistics](/concepts/statistics), one per `statistics` entry |
+| `sensor.pururu_<key>_program_executable_<program>_last_cycle_start` | | When the last run started |
+| `sensor.pururu_<key>_program_executable_<program>_last_cycle_end` | | When it ended |
+| `sensor.pururu_<key>_program_executable_<program>_last_cycle_duration` | min | How long it ran |
+| `sensor.pururu_<key>_program_executable_<program>_cycles_total` | cycles | Runs finished, all time |
+| `sensor.pururu_<key>_program_executable_<program>_runtime_total` | h | Hours running, all time |
+| `sensor.pururu_<key>_program_executable_<program>_runtime_<period>`, `…_cycles_<period>` | h, cycles | This period's [statistics](/concepts/statistics), one per `statistics` entry |
 
 They're named after the program: **Estufa Limpar cycles**.
 
@@ -116,8 +369,8 @@ They're named after the program: **Estufa Limpar cycles**.
 - **While the program isn't generated** (an entity it acts on is disabled or not created), its statistics keep their values and count nothing. **Removing the program** from the YAML removes them.
 - **Renaming the script** in the UI is followed: pururu reloads and watches its new ID.
 - **A script ID someone else holds** (one of your scripts, another integration's entity): the program isn't generated, and its statistics count nothing. They never count an entity pururu doesn't manage.
-- A reaction can watch them: `when: program_clean_last_cycle_end`.
+- A reaction can watch them: `when: program_executable_clean_last_cycle_end`.
 
-## From 0.1.14 and before
+### From 0.1.14 and before
 
 Programs were buttons, `button.pururu_<key>_program_<program key>`, pressed with `button.press`. The first start of 0.1.15 removes them. Change what pressed one to `script.turn_on` on its script, and add the include above.

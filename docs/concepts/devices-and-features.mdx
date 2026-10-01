@@ -29,6 +29,7 @@ pururu:
 - **`name`** is the name Home Assistant shows. Change it whenever you like. Renaming the device in the UI works too, and pururu keeps your name.
 - **`area`** puts the device in one of the areas declared under `areas:`. It's optional, and it's covered in [Floors and areas](/concepts/floors-and-areas#a-device-in-an-area).
 - **`reactions`** makes the device react to events: each one becomes a Home Assistant automation. It's optional, it isn't a feature, and it's covered in [Reactions](/concepts/reactions).
+- **`programs`** gives the device [executable programs](/concepts/programs#executable-programs), under `programs: executable:`: each one becomes a Home Assistant script. It's optional, and it isn't a feature. A feature's block takes its own detected programs instead (`programs: detected:` in the [appliance](/features/appliance)'s).
 - **`alerts`** watches for problems on the device's own entities: each one becomes a binary sensor. It's optional, it isn't a feature either, and it's covered in [Alerts](/concepts/alerts).
 - **Features** are the other keys. A device needs at least one; `reactions`, `programs` and `alerts` don't count towards it.
 
@@ -44,13 +45,13 @@ A feature is a ready-made piece of behaviour. It reads real entities, such as a 
 | [`lights`](/features/lights) | Real lights, or relays that drive a lamp, inside the device, each named in the YAML, that show their light's state, offer what it offers and pass commands on |
 | [`switches`](/features/switches) | Real switches inside the device, each named in the YAML, that show their switch's state and turn it on and off |
 
-A device can also have [`reactions`](/concepts/reactions), [`programs`](/concepts/programs) and [`alerts`](/concepts/alerts). None of them are features, and a device still needs a feature besides them: `reactions` and `programs` write Home Assistant automations and scripts, each program's runs and each reaction's triggers a sensor of the device; `alerts` watches other features' entities (and the programs' and reactions' statistics) for problems, each one a binary sensor of the device too.
+A device can also have [`reactions`](/concepts/reactions), [`programs`](/concepts/programs#executable-programs) (its executable programs) and [`alerts`](/concepts/alerts). None of them are features, and a device still needs a feature besides them: `reactions` and `programs` write Home Assistant automations and scripts, each executable program's runs and each reaction's triggers a sensor of the device; `alerts` watches other features' entities (and the executable programs' and reactions' statistics) for problems, each one a binary sensor of the device too.
 
 Each feature appears at most once per device, and everything under its key is that feature's configuration. An unknown key inside a feature, such as a typo, is a configuration error, so a mistake never passes silently.
 
 ## Every feature stands alone
 
-A feature reads only the real entities and settings in its own block; it never reads another feature's. What used to be split into separate `phases` and `modes` features, each following another feature's cycle, is now the appliance's own `running_program`: its `phases` are bands of the same power the appliance already reads. See [Detected programs and phases](/concepts/detected-programs).
+A feature reads only the real entities and settings in its own block; it never reads another feature's. What used to be split into separate `phases` and `modes` features, each following another feature's cycle, is now the appliance's own `running_program`: its `phases` are bands of the same power the appliance already reads. A detected program of its own, `programs: detected:`, sits in the same block and reads the same power. See [Programs](/concepts/programs#detected-programs).
 
 ## Two devices, one plug?
 

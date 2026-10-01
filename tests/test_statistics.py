@@ -228,7 +228,7 @@ PROGRAM_NAMES = {
 
 
 def program_sensor(suffix: str) -> str:
-    return f"sensor.pururu_{PROGRAM_KEY}_program_{PROGRAM_SLUG}_{suffix}"
+    return f"sensor.pururu_{PROGRAM_KEY}_program_executable_{PROGRAM_SLUG}_{suffix}"
 
 
 @pytest.fixture
@@ -250,10 +250,12 @@ async def test_programs_meters(scripts: HomeAssistant, language: str) -> None:
             "name": PROGRAM_NAME,
             "switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}},
             "programs": {
-                PROGRAM_SLUG: {
-                    "name": PROGRAM_ITEM_NAME,
-                    "sequence": [{"turn_on": "switch_sprinkler"}],
-                    "statistics": {counter: list(PERIODS) for counter in PROGRAM_COUNTERS},
+                "executable": {
+                    PROGRAM_SLUG: {
+                        "name": PROGRAM_ITEM_NAME,
+                        "sequence": [{"turn_on": "switch_sprinkler"}],
+                        "statistics": {counter: list(PERIODS) for counter in PROGRAM_COUNTERS},
+                    }
                 }
             },
         }

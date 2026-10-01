@@ -134,7 +134,10 @@ ALLOWED: dict[str, tuple[str, ...]] = {
 # The table's named allowances for one module
 ALSO: dict[str, tuple[str, ...]] = {
     "features/__init__": ("features.",),  # it lists FEATURES: every feature
-    "device_keys/__init__": ("aspects.alerts",),  # the hand-written alerts' device key
+    # the hand-written alerts' and the executable programs' device keys
+    "device_keys/__init__": ("aspects.alerts", "aspects.programs"),
+    # a reaction's then names an executable program (programs.executable) and starts its script (programs.script_id)
+    "device_keys/reactions": ("aspects.programs",),
     # HA's entry points take the typed entry: hassfest's strict-typing check wants
     # it named *ConfigEntry, and PururuConfigEntry is core/runtime.py's, as for the platforms
     "__init__": ("core.runtime",),

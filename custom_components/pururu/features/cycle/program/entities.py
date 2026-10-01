@@ -36,13 +36,22 @@ from homeassistant.util import dt as dt_util
 
 from ....const import DOMAIN
 from ....core.entity import PururuEntity, reading
-from ....core.feature import Device
+from ....core.feature import Device, Item
 from .. import Cycle, CycleSource, cycle_signal
 from ..energy import kwh_now
 from ..last import LAST_CYCLE, LastCycleValue
 from ..totals import CyclesTotal, EnergyTotal, RuntimeTotal
 from .detector import Change, Detector, Ended
-from .schema import IDLE, OTHER, PHASE, Phase, Program
+from .schema import (
+    DETECTED,
+    IDLE,
+    OTHER,
+    PHASE,
+    Phase,
+    Program,
+    detected_item,
+    program_of,
+)
 
 type View = Callable[[list[Change]], None]
 
@@ -85,10 +94,17 @@ class Carrier(CycleSource, BinarySensorEntity, RestoreEntity):
         program: Program,
         reading: str,
         energy: str | None,
+        of: Item | None = None,
     ) -> None:
-        """`program` read from `reading`, as `key` of `device`; `energy` gives each cycle's kWh."""
-        self._identify(device, Platform.BINARY_SENSOR, key)
-        self._cycle_signals(device)
+        """`program` read from `reading`, as `key` of `device`; `energy` gives each cycle's kWh.
+
+        `of`: a detected program's item, naming the carrier and its signals;
+        None: the builder's running program, named by `key`'s translation.
+        """
+        self._identify(
+            device, Platform.BINARY_SENSOR, key, None if of is None else of.name
+        )
+        self._cycle_signals(device, of)
         self.detector = Detector(program)
         self._reading = reading
         self._energy = energy
@@ -258,11 +274,13 @@ class PhaseRunning(CycleSource, BinarySensorEntity):
         """Show `phase` of `carrier`'s detector; `source`: the carrier's entity key."""
         item = phase.item
         if phase.other:
+            # phase_other, or <of>_phase_other named with its program's name
             self._identify(
                 device,
                 Platform.BINARY_SENSOR,
-                item.slug,
-                translation=f"{PHASE}_{OTHER}",
+                f"{PHASE}_{OTHER}",
+                item=phase.of,
+                translation=_named_in(f"{PHASE}_{OTHER}", phase.of),
             )
         else:
             self._identify(device, Platform.BINARY_SENSOR, item.slug, name=phase.name)
@@ -323,10 +341,16 @@ class PhaseCurrent(PururuEntity, SensorEntity, RestoreEntity):
 
     _attr_device_class = SensorDeviceClass.ENUM
 
-    def __init__(self, device: Device, carrier: Carrier, *, source: str) -> None:
-        """Show `carrier`'s detector; `source`: the carrier's entity key."""
+    def __init__(
+        self, device: Device, carrier: Carrier, *, source: str, of: Item | None = None
+    ) -> None:
+        """Show `carrier`'s detector; `source`: the carrier's entity key; `of`: a detected program's item."""
         self._identify(
-            device, Platform.SENSOR, f"{PHASE}_current", translation=f"{PHASE}_current"
+            device,
+            Platform.SENSOR,
+            f"{PHASE}_current",
+            item=of,
+            translation=_named_in(f"{PHASE}_current", of),
         )
         self.sources = (source,)
         self._carrier = carrier
@@ -403,10 +427,16 @@ class PhaseLast(PururuEntity, RestoreSensor):
 
     _attr_device_class = SensorDeviceClass.ENUM
 
-    def __init__(self, device: Device, program: Program, *, source: str) -> None:
-        """Take the phase of every cycle `program`'s phases send; `source`: the carrier's entity key."""
+    def __init__(
+        self, device: Device, program: Program, *, source: str, of: Item | None = None
+    ) -> None:
+        """Take the phase of every cycle `program`'s phases send; `source`: the carrier's entity key; `of`: a detected program's item."""
         self._identify(
-            device, Platform.SENSOR, f"{PHASE}_last", translation=f"{PHASE}_last"
+            device,
+            Platform.SENSOR,
+            f"{PHASE}_last",
+            item=of,
+            translation=_named_in(f"{PHASE}_last", of),
         )
         self.sources = (source,)
         self._device = device
@@ -436,9 +466,16 @@ class PhaseLast(PururuEntity, RestoreSensor):
         self.async_write_ha_state()
 
 
+def _named_in(key: str, of: Item | None) -> str:
+    """The translation `key` is named under: itself in the running program, detected_<key> (with {item}, the program's name) in a detected program."""
+    return key if of is None else f"{DETECTED}_{key}"
+
+
 def _translation(phase: Phase, suffix: str) -> str:
-    """What a phase's cycle entity is named under: phase_<suffix> with {item}, or other's own."""
-    return f"{PHASE}_{OTHER}_{suffix}" if phase.other else f"{PHASE}_{suffix}"
+    """What a phase's cycle entity is named under: phase_<suffix> with {item}, or other's own (a detected program's, with {item})."""
+    if not phase.other:
+        return f"{PHASE}_{suffix}"
+    return _named_in(f"{PHASE}_{OTHER}_{suffix}", phase.of)
 
 
 def _cycle_entities(
@@ -487,19 +524,80 @@ def build(
     key: str,
     reading: str,
     energy: str | None,
+    of: Item | None = None,
 ) -> list[PururuEntity]:
     """The program's carrier as `key`; with phases, the current and last phase and each phase's entities.
 
     The carrier comes first: its platform adds it, and it restores the
-    detector, before the phases' binary sensors.
+    detector, before the phases' binary sensors. `of`: a detected program's
+    item (Carrier), None the builder's running program.
     """
-    carrier = Carrier(device, key, program=program, reading=reading, energy=energy)
+    carrier = Carrier(
+        device, key, program=program, reading=reading, energy=energy, of=of
+    )
     entities: list[PururuEntity] = [carrier]
     if not program.phases:
         return entities
-    entities.append(PhaseCurrent(device, carrier, source=key))
-    entities.append(PhaseLast(device, program, source=key))
+    entities.append(PhaseCurrent(device, carrier, source=key, of=of))
+    entities.append(PhaseLast(device, program, source=key, of=of))
     for phase in program.phases:
         entities.append(PhaseRunning(device, carrier, phase, source=key))
         entities.extend(_cycle_entities(hass, device, phase, energy))
+    return entities
+
+
+def build_detected(
+    hass: HomeAssistant,
+    device: Device,
+    key: str,
+    config: Mapping[str, Any],
+    *,
+    reading: str,
+    energy: str | None,
+) -> list[PururuEntity]:
+    """Detected program `key` of a builder's `programs: detected:`: its carrier and phases, then its own cycle entities.
+
+    Its carrier is `key`, named by the program's name; its last cycle and
+    totals are its item's (<key>_<suffix>), named detected_<suffix> with {item}.
+    """
+    of = detected_item(key, config)
+    entities = build(
+        hass,
+        device,
+        program_of(config, of),
+        key=key,
+        reading=reading,
+        energy=energy,
+        of=of,
+    )
+    for description in LAST_CYCLE:
+        if energy is not None or description.key != "last_cycle_energy":
+            entities.append(
+                LastCycleValue(
+                    device,
+                    description,
+                    source=key,
+                    item=of,
+                    translation=f"{DETECTED}_{description.key}",
+                )
+            )
+    entities.append(
+        CyclesTotal(device, source=key, item=of, translation=f"{DETECTED}_cycles_total")
+    )
+    entities.append(
+        RuntimeTotal(
+            device,
+            device.current_entity_id(hass, Platform.BINARY_SENSOR, key),
+            STATE_ON,
+            source=key,
+            item=of,
+            translation=f"{DETECTED}_runtime_total",
+        )
+    )
+    if energy is not None:
+        entities.append(
+            EnergyTotal(
+                device, source=key, item=of, translation=f"{DETECTED}_energy_total"
+            )
+        )
     return entities

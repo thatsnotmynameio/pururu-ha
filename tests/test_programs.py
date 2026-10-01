@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -18,14 +19,15 @@ from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+import yaml
 
-from helpers import (DOMAIN, capture, device_of, fake, generated, generated_scripts, held, module, reload, settle,
+from helpers import (DOMAIN, SCRIPTS, capture, device_of, fake, generated, generated_scripts, held, module, reload, settle,
                      setup, tick)
 
 KEY = "greenhouse"
 REAL_SPRINKLER = "switch.greenhouse_sprinkler"
 SPRINKLER = "switch.pururu_greenhouse_switch_sprinkler"
-CLEAN = "script.pururu_greenhouse_program_clean"
+CLEAN = "script.pururu_greenhouse_program_executable_clean"
 SWITCHES: dict[str, Any] = {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
 TWO_HOURS = 2 * 60 * 60
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
@@ -35,7 +37,7 @@ APPLIANCE = {"power": "sensor.greenhouse_sprinkler_power",
 
 
 def devices(**programs: Any) -> dict[str, Any]:
-    return {KEY: {"name": "Estufa", "switches": SWITCHES, "programs": programs or {"clean": CLEANING}}}
+    return {KEY: {"name": "Estufa", "switches": SWITCHES, "programs": {"executable": programs or {"clean": CLEANING}}}}
 
 
 def reached(calls: list[Event], entity_id: str = REAL_SPRINKLER) -> list[str]:
@@ -107,10 +109,37 @@ async def test_invalid_program_is_refused(ha: HomeAssistant, program: dict[str, 
     assert not await setup(ha, devices(clean=program))
 
 
+# A flat map (before D3) or a block without its group: the device's programs
+# sit under executable:, said at the block
+UNDER_EXECUTABLE = ("a device's programs sit under executable: (programs: executable: <key>: …) "
+                    "for dictionary value 'pururu->devices->greenhouse->programs'")
+
+
+@pytest.mark.parametrize(("programs", "message"), [
+    pytest.param({"clean": CLEANING}, UNDER_EXECUTABLE, id="a flat map, as before D3"),
+    pytest.param({}, UNDER_EXECUTABLE, id="no group"),
+    pytest.param({"executable": {}}, "length of value must be at least 1", id="no program"),
+    pytest.param({"executable": None},
+                 "expected a mapping for dictionary value 'pururu->devices->greenhouse->programs->executable'",
+                 id="executable with nothing under it"),
+    pytest.param(None, "expected a mapping for dictionary value 'pururu->devices->greenhouse->programs'",
+                 id="null"),
+    pytest.param({"executable": {"clean": CLEANING}, "detected": {"cotton": {"name": "Algodão", "above": 1500}}},
+                 "a device's programs are executable: a detected program sits in the block of the "
+                 "feature whose reading it reads", id="detected at the device"),
+])
+async def test_the_programs_block_is_executable(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, programs: Any, message: str) -> None:
+    config = devices()
+    config[KEY]["programs"] = programs
+    assert not await setup(ha, config)
+    assert message in caplog.text
+
+
 @pytest.mark.parametrize("target", [
     pytest.param("switch_greenhouse_sprinkler", id="not an entity key of the device"),
     pytest.param("switch_heater", id="a switch the device doesn't have"),
-    pytest.param("program_clean", id="a program"),
+    pytest.param("program_executable_clean", id="a program"),
 ])
 async def test_a_target_not_of_another_feature_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, target: str) -> None:
@@ -120,7 +149,7 @@ async def test_a_target_not_of_another_feature_is_refused(
 
 async def test_programs_alone_are_not_a_feature(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    assert not await setup(ha, {KEY: {"name": "Estufa", "programs": {"clean": CLEANING}}})
+    assert not await setup(ha, {KEY: {"name": "Estufa", "programs": {"executable": {"clean": CLEANING}}}})
     assert "a device needs at least one feature" in caplog.text
 
 
@@ -128,20 +157,21 @@ async def test_an_action_the_target_does_not_take_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     program = {"name": "Ligar", "sequence": [{"turn_on": "appliance_power"}]}
     assert not await setup(ha, {KEY: {"name": "Estufa", "appliance": APPLIANCE,
-                                      "programs": {"start": program}}})
+                                      "programs": {"executable": {"start": program}}}})
     assert "programs: appliance_power does not take turn_on" in caplog.text
 
 
 async def test_two_programs_with_one_script_id_are_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    """greenhouse's b_program_c and greenhouse_program_b's c would both be pururu_greenhouse_program_b_program_c."""
-    config = devices(b_program_c=CLEANING)
-    config["greenhouse_program_b"] = {
+    """greenhouse's b_program_executable_c and greenhouse_program_executable_b's c would both be pururu_greenhouse_program_executable_b_program_executable_c."""
+    config = devices(b_program_executable_c=CLEANING)
+    config["greenhouse_program_executable_b"] = {
         "name": "Outra", "switches": {"x": {"entity": "switch.dummy_x", "name": "X"}},
-        "programs": {"c": {"name": "C", "sequence": [{"turn_on": "switch_x"}]}},
+        "programs": {"executable": {"c": {"name": "C", "sequence": [{"turn_on": "switch_x"}]}}},
     }
     assert not await setup(ha, config)
-    assert ("device greenhouse_program_b: script.pururu_greenhouse_program_b_program_c is already "
+    assert ("device greenhouse_program_executable_b: "
+            "script.pururu_greenhouse_program_executable_b_program_executable_c is already "
             "a program of device greenhouse") in caplog.text
 
 
@@ -150,7 +180,7 @@ async def test_two_programs_with_one_script_id_are_refused(
 
 async def test_the_file_holds_a_script_per_program(ha: HomeAssistant) -> None:
     assert await setup(ha, devices())
-    assert generated_scripts(ha) == {"pururu_greenhouse_program_clean": {
+    assert generated_scripts(ha) == {"pururu_greenhouse_program_executable_clean": {
         "alias": "Estufa Limpar",
         "description": "pururu: greenhouse, clean",
         "mode": "single",
@@ -160,7 +190,7 @@ async def test_the_file_holds_a_script_per_program(ha: HomeAssistant) -> None:
             {"action": "switch.turn_off", "target": {"entity_id": SPRINKLER}},
         ],
     }}
-    cv.SCRIPT_SCHEMA(generated_scripts(ha)["pururu_greenhouse_program_clean"]["sequence"])
+    cv.SCRIPT_SCHEMA(generated_scripts(ha)["pururu_greenhouse_program_executable_clean"]["sequence"])
 
 
 async def test_it_is_a_script_named_by_the_configuration(greenhouse: HomeAssistant) -> None:
@@ -170,7 +200,7 @@ async def test_it_is_a_script_named_by_the_configuration(greenhouse: HomeAssista
     assert state.attributes["friendly_name"] == "Estufa Limpar"
     entry = er.async_get(greenhouse).async_get(CLEAN)
     assert entry is not None
-    assert (entry.platform, entry.unique_id) == ("script", "pururu_greenhouse_program_clean")
+    assert (entry.platform, entry.unique_id) == ("script", "pururu_greenhouse_program_executable_clean")
     # HA keeps a script from YAML out of any device; its statistics are the device's
     assert CLEAN not in held(greenhouse, KEY)
     assert f"{STAT}cycles_total" in held(greenhouse, KEY)
@@ -203,7 +233,7 @@ async def test_toggle_flips_the_switch(scripts: HomeAssistant) -> None:
     await fake(scripts, REAL_SPRINKLER, "on")
     assert await setup(scripts, devices(flip={"name": "Inverter", "sequence": [{"toggle": "switch_sprinkler"}]}))
     calls = capture(scripts, "call_service")
-    await start(scripts, "script.pururu_greenhouse_program_flip")
+    await start(scripts, "script.pururu_greenhouse_program_executable_flip")
     assert reached(calls) == ["turn_off"]
 
 
@@ -219,9 +249,9 @@ async def test_it_turns_a_light_on_and_off(
         {"turn_on": "light_teto"}, {"delay": {"minutes": 30}}, {"turn_off": "light_teto"}]}
     assert await setup(scripts, {"biblioteca": {"name": "Biblioteca",
                                           "lights": {"teto": {"entity": real, "name": "Teto"}},
-                                          "programs": {"evening": evening}}})
+                                          "programs": {"executable": {"evening": evening}}}})
     calls = capture(scripts, "call_service")
-    await start(scripts, "script.pururu_biblioteca_program_evening")
+    await start(scripts, "script.pururu_biblioteca_program_executable_evening")
     await tick(scripts, freezer, 30 * 60)
     assert reached(calls, real) == ["turn_on", "turn_off"]
 
@@ -386,7 +416,7 @@ async def test_a_program_the_user_disabled_stays_disabled_once_its_target_is_bac
     assert after.id == before.id
     assert after.disabled_by is er.RegistryEntryDisabler.USER
     assert greenhouse.states.get(CLEAN) is None
-    assert "pururu_greenhouse_program_clean" in generated_scripts(greenhouse)
+    assert "pururu_greenhouse_program_executable_clean" in generated_scripts(greenhouse)
 
 
 async def test_a_program_renamed_keeps_its_entity_id_once_its_target_is_back(
@@ -397,7 +427,7 @@ async def test_a_program_renamed_keeps_its_entity_id_once_its_target_is_back(
     await set_target(greenhouse, freezer, disabled=True)
     assert_held_out(greenhouse, "script.limpar_estufa")
     assert registry.async_get_entity_id(
-        "script", "script", "pururu_greenhouse_program_clean") == "script.limpar_estufa"
+        "script", "script", "pururu_greenhouse_program_executable_clean") == "script.limpar_estufa"
     await set_target(greenhouse, freezer, disabled=False)
     assert greenhouse.states.get(CLEAN) is None
     calls = capture(greenhouse, "call_service")
@@ -411,7 +441,7 @@ async def test_a_held_program_stays_tracked_without_a_repairs_issue(
     assert_held_out(greenhouse, CLEAN)
     assert er.async_get(greenhouse).async_get(CLEAN) is not None
     assert greenhouse.config_entries.async_entries("pururu")[0].data["scripts"] == [
-        "pururu_greenhouse_program_clean"]
+        "pururu_greenhouse_program_executable_clean"]
     assert ir.async_get(greenhouse).async_get_issue(DOMAIN, "scripts_not_included") is None
     calls = capture(greenhouse, "call_service")
     await start(greenhouse)
@@ -427,7 +457,7 @@ async def two_switches(hass: HomeAssistant, *keys: str) -> None:
     await fake(hass, "switch.greenhouse_vent", "off")
     program = {"name": "Limpar", "sequence": [{"turn_on": f"switch_{key}"} for key in keys]}
     assert await setup(hass, {KEY: {"name": "Estufa", "switches": TWO_SWITCHES,
-                                    "programs": {"clean": program}}})
+                                    "programs": {"executable": {"clean": program}}}})
 
 
 def counting_reloads(hass: HomeAssistant) -> Any:
@@ -552,14 +582,14 @@ async def test_renamed_it_still_runs_and_stays_renamed(greenhouse: HomeAssistant
     await reload_while_running(greenhouse, devices())
     renamed = er.async_get(greenhouse).async_get("script.limpar_estufa")
     assert renamed is not None
-    assert renamed.unique_id == "pururu_greenhouse_program_clean"
+    assert renamed.unique_id == "pururu_greenhouse_program_executable_clean"
     assert greenhouse.states.get(CLEAN) is None
 
 
 async def test_an_id_taken_by_another_integration_is_not_generated(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
-        "script", "template", "someone_else", suggested_object_id="pururu_greenhouse_program_clean")
+        "script", "template", "someone_else", suggested_object_id="pururu_greenhouse_program_executable_clean")
     assert await setup(ha, devices())
     assert generated_scripts(ha) == {}
     assert (f"{CLEAN} is already taken by the template integration; "
@@ -569,7 +599,7 @@ async def test_an_id_taken_by_another_integration_is_not_generated(
 async def test_a_script_of_ones_own_with_the_same_id_is_not_adopted(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     er.async_get(ha).async_get_or_create(
-        "script", "script", "pururu_greenhouse_program_clean", suggested_object_id="mine")
+        "script", "script", "pururu_greenhouse_program_executable_clean", suggested_object_id="mine")
     assert await setup(ha, devices())
     assert generated_scripts(ha) == {}
     assert (f"{CLEAN} is already taken by script.mine, a script with the same ID; "
@@ -585,6 +615,32 @@ async def test_a_program_whose_target_is_not_created_is_not_generated(
     assert f"{CLEAN} follows {SPRINKLER}, which is not created; not generating it" in caplog.text
 
 
+async def test_the_update_leaves_no_old_id(scripts: HomeAssistant) -> None:
+    """0.2.0 before D3: script.pururu_<device>_program_<key> and its sensors; after it, only the program_executable_ ones.
+
+    The old script is a generated item the entry managed: dropped from the file,
+    its registry entry goes once HA no longer runs it. The old sensors are stale.
+    """
+    old = "pururu_greenhouse_program_clean"
+    path = Path(scripts.config.path(SCRIPTS))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump({old: {"alias": "Estufa Limpar", "sequence": [{"delay": 1}]}}))
+    await scripts.services.async_call("script", "reload", blocking=True)
+    registry = er.async_get(scripts)
+    assert registry.async_get_entity_id("script", "script", old) is not None
+    entry = MockConfigEntry(domain=DOMAIN, source="import", data={"scripts": [old]})
+    entry.add_to_hass(scripts)
+    registry.async_get_or_create("sensor", DOMAIN, f"{old}_cycles_total", config_entry=entry,
+                                 suggested_object_id=f"{old}_cycles_total")
+    await fake(scripts, REAL_SPRINKLER, "off")
+    assert await setup(scripts, devices())
+    assert registry.async_get_entity_id("script", "script", old) is None
+    assert registry.async_get_entity_id("sensor", DOMAIN, f"{old}_cycles_total") is None
+    assert registry.async_get(CLEAN) is not None
+    assert registry.async_get(STAT + "cycles_total") is not None
+    assert entry.data["scripts"] == ["pururu_greenhouse_program_executable_clean"]
+
+
 async def test_the_old_button_is_removed(ha: HomeAssistant) -> None:
     """Up to 0.1.14 a program was button.pururu_<device>_program_<key>."""
     entry = MockConfigEntry(domain="pururu", source="import", data={})
@@ -598,7 +654,7 @@ async def test_the_old_button_is_removed(ha: HomeAssistant) -> None:
 
 # --- statistics --------------------------------------------------------------------
 
-STAT = "sensor.pururu_greenhouse_program_clean_"
+STAT = "sensor.pururu_greenhouse_program_executable_clean_"
 
 
 def value(hass: HomeAssistant, suffix: str) -> str:
@@ -632,7 +688,7 @@ async def test_a_run_counts_itself_before_it_sends_its_cycle(
     """
     cycle = module("features.cycle")
     device = module("core.feature").Device(key=KEY, name="Estufa", namespace="program")
-    item = module("core.feature").Item(slug="clean", name="Limpar")
+    item = module("core.feature").Item(slug="executable_clean", name="Limpar")
     seen: list[str | None] = []
 
     @callback
@@ -663,17 +719,25 @@ async def test_meters_are_asked_for(scripts: HomeAssistant) -> None:
     assert scripts.states.get(STAT + "runtime_week") is None
 
 
+async def test_a_program_keyed_statistics_is_a_program(scripts: HomeAssistant) -> None:
+    """A program keyed like the statistics aspect is a program, with statistics of its own."""
+    program = {**CLEANING, "statistics": {"cycles": ["today"]}}
+    assert await setup(scripts, devices(statistics=program))
+    assert scripts.states.get(
+        "sensor.pururu_greenhouse_program_executable_statistics_cycles_today") is not None
+
+
 def test_a_whole_number_key_keeps_its_statistics(ha: HomeAssistant) -> None:
     """YAML reads a program keyed 1 (a reaction keyed 2) as an int; cv.slug makes it "1": its statistics follow."""
     statistics = {"cycles": ["today"]}
     house = {"devices": {KEY: {
         "name": "Estufa",
-        "programs": {1: {"name": "Limpar", "sequence": [{"delay": 1}], "statistics": statistics}},
+        "programs": {"executable": {1: {"name": "Limpar", "sequence": [{"delay": 1}], "statistics": statistics}}},
         "reactions": {2: {"name": "Noite", "at": "22:00", "statistics": {"triggered": ["week"]}}},
         "switches": {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}},
     }}}
     device = module("setup.schema").CONFIG_SCHEMA({DOMAIN: house})[DOMAIN]["devices"][KEY]
-    assert device["programs"]["1"]["statistics"] == {"runtime": [], "cycles": ["today"]}
+    assert device["programs"]["executable"]["1"]["statistics"] == {"runtime": [], "cycles": ["today"]}
     assert device["reactions"]["2"]["statistics"] == {"triggered": ["week"]}
 
 
@@ -709,7 +773,7 @@ async def test_a_held_program_keeps_its_statistics(greenhouse: HomeAssistant, fr
     await disable(greenhouse, SPRINKLER, disabled=False)
     await tick(greenhouse, freezer, 31)
     await greenhouse.async_block_till_done()
-    assert "pururu_greenhouse_program_clean" in generated_scripts(greenhouse)
+    assert "pururu_greenhouse_program_executable_clean" in generated_scripts(greenhouse)
     await start(greenhouse)
     await tick(greenhouse, freezer, TWO_HOURS)
     await greenhouse.async_block_till_done()
@@ -722,7 +786,7 @@ async def test_a_program_or_reaction_keyed_alerts_is_no_ready_made_alert(
     config = devices(alerts=CLEANING)
     config[KEY]["reactions"] = {"alerts": {"name": "A", "at": "22:00"}}
     assert await setup(scripts, config)
-    assert value_of(scripts, "sensor.pururu_greenhouse_program_alerts_cycles_total") == "0"
+    assert value_of(scripts, "sensor.pururu_greenhouse_program_executable_alerts_cycles_total") == "0"
     assert value_of(scripts, "sensor.pururu_greenhouse_reaction_alerts_triggered_total") == "0"
 
 
@@ -736,7 +800,7 @@ async def test_a_removed_program_takes_its_statistics(greenhouse: HomeAssistant)
     wash = {"name": "Lavar", "sequence": [{"turn_on": "switch_sprinkler"}]}
     await reload(greenhouse, devices(wash=wash))
     assert er.async_get(greenhouse).async_get(STAT + "cycles_total") is None
-    assert er.async_get(greenhouse).async_get("sensor.pururu_greenhouse_program_wash_cycles_total") is not None
+    assert er.async_get(greenhouse).async_get("sensor.pururu_greenhouse_program_executable_wash_cycles_total") is not None
 
 
 async def test_its_statistics_follow_the_script_renamed(greenhouse: HomeAssistant, freezer: Any) -> None:
@@ -752,7 +816,7 @@ async def test_statistics_never_follow_a_script_pururu_does_not_generate(
         ha: HomeAssistant, freezer: Any) -> None:
     """Its ID taken by another integration: the program isn't generated, and that script isn't counted."""
     er.async_get(ha).async_get_or_create(
-        "script", "template", "someone_else", suggested_object_id="pururu_greenhouse_program_clean")
+        "script", "template", "someone_else", suggested_object_id="pururu_greenhouse_program_executable_clean")
     assert await setup(ha, devices())
     await fake(ha, CLEAN, "on")
     await tick(ha, freezer, 60 * 60)

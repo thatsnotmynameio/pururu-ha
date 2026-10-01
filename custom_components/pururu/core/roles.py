@@ -30,6 +30,19 @@ class Derived:
 
 
 @dataclass(frozen=True)
+class Programs:
+    """It takes detected programs, `programs: detected:` in its block: each a band of the setting `reading`.
+
+    `energy` is the setting giving each cycle's kWh, None: none. The programs
+    aspect (aspects/programs.py) mounts `programs:`, lists their keys and
+    builds them.
+    """
+
+    reading: str
+    energy: str | None = None
+
+
+@dataclass(frozen=True)
 class Actions:
     """Services its entities take on their own platform: what a program's step may call."""
 
@@ -57,9 +70,10 @@ class Counted:
     # Where `statistics:` sits: the path from the block to its containers
     # (feature.Path; EACH for each item of a map)
     at: tuple[str, ...] = ()
-    # The item a container there is, from its key and the container: its
-    # totals and meters are the item's, named with {item}; None: the builder's own
-    item: Callable[[str, Any], Item] | None = None
+    # The item the container at a path of the builder's validated block is
+    # (feature.ItemOf: the block, the container's path): its totals and meters
+    # are the item's, named with {item}; None: the builder's own
+    item: Callable[[Any, tuple[str, ...]], Item] | None = None
     # The prefix its meters' translations are named under (<named>_<counter>_<period>,
     # other's own), instead of the statistics aspect's
     named: str | None = None
@@ -115,6 +129,7 @@ class Generates:
 type Role = (
     Configured
     | Derived
+    | Programs
     | Actions
     | Items
     | Counters
