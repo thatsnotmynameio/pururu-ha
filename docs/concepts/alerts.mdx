@@ -117,7 +117,7 @@ appliance:
 - Its defaults are its own too: its `for` (some need one), its `priority`, and texts of its own in Home Assistant's language, which `notify` replaces.
 - Each one is `binary_sensor.pururu_<key>_<namespace>_alert_<name>`, in the feature's namespace: `binary_sensor.pururu_clothes_washer_appliance_alert_offline`.
 - A [reaction](/concepts/reactions) may watch one (`when: appliance_alert_offline`). An alert can't: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
-- Which ones a feature offers, what each watches and its defaults: the [appliance's table](/features/appliance#ready-made-alerts).
+- Which ones a feature offers, what each watches and its defaults: each feature's page, such as the [appliance's](/features/appliance#ready-made-alerts) and the [door's](/features/door#ready-made-alerts) (a window's are the door's).
 
 ## Entity
 

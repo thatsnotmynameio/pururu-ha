@@ -86,6 +86,7 @@ An `opening` event describes the opening whose start is at most `match` from the
 | Entity | Unit | What it is |
 |---|---|---|
 | `binary_sensor.pururu_<key>_door_open` | | Open or closed. Device class `door`, whatever the contact's. While open, its `cycle_start` attribute is when the opening started, kept across restarts. |
+| `binary_sensor.pururu_<key>_door_alert_<alert>` | | A [ready-made alert](#ready-made-alerts), for each one enabled. Device class `problem`. |
 | `sensor.pururu_<key>_door_last_opened` | timestamp | When the last opening started |
 | `sensor.pururu_<key>_door_last_closed` | timestamp | When it ended. **Written last**: trigger on it. |
 | `sensor.pururu_<key>_door_last_open_duration` | s | How long it lasted |
