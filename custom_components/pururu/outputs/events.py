@@ -38,7 +38,7 @@ from homeassistant.util.ulid import ulid_now
 
 from ..const import CONF_CONFIG, CONF_DEVICES, DOMAIN
 from ..core.entity import REFERENCE, PururuEntity
-from ..core.resolve import DEVICE
+from ..core.resolve import Owner, Ref
 from ..core.runtime import Built, PururuConfigEntry
 
 CONF_EVENTS: Final = "events"
@@ -128,7 +128,7 @@ def _data(
     }
     return {
         "event_id": ulid_now(),
-        "event_name": f"{DEVICE}.{device.key}.{path}",
+        "event_name": Ref(Owner.DEVICE, device.key, path).text,
         "event_class": event_class,
         "entity_id": new.entity_id,
         "device": device.key,

@@ -27,7 +27,7 @@ from ..const import (
 )
 from ..core import generated
 from ..core.feature import Device, Feature
-from ..core.resolve import HOME_ASSISTANT, Index, Owner, Ref, resolve
+from ..core.resolve import HOME_ASSISTANT, Index, Owner, Ref
 from ..core.roles import Configured, Generates, Refers
 from ..device_keys import reactions
 from . import catalogue
@@ -54,15 +54,7 @@ def _refused_refs(
     """Builder `name`'s references on device `key` that it can't have: one refusal each, at its field."""
     for where, ref in refers.of(devices[key][name]):
         path: list[Hashable] = [CONF_DEVICES, key, name, *where]
-        if ref.owner is Owner.HOME_ASSISTANT or (
-            ref.owner is Owner.DEVICE and ref.device != key and not refers.others
-        ):
-            yield vol.Invalid(f"{name}: {ref.text} is not of this device", path=path)
-            continue
-        if programs.running(devices, key, ref):
-            yield vol.Invalid(f"{name}: {ref.text} {programs.RUNNING}", path=path)
-            continue
-        found = resolve(index, key, ref)
+        found = programs.reach(index, devices, key, ref, others=refers.others)
         if isinstance(found, str):
             yield vol.Invalid(f"{name}: {found}", path=path)
         elif found.builder == name:
@@ -109,26 +101,32 @@ def pururus_own_as_home_assistants(
     the IDs as pururu creates them; any other pururu_ ID, a helper of the
     user's, is Home Assistant's.
     """
+    # (device, reaction, its when) of each when naming Home Assistant's
+    watching = [
+        (key, reaction_key, ref)
+        for key, device in house[CONF_DEVICES].items()
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items()
+        if "when" in reaction
+        and (ref := Ref.parse(reaction["when"])).owner is Owner.HOME_ASSISTANT
+    ]
+    if not watching:
+        return
     pururus = _pururus(house, index, builders)
-    for key, device in house[CONF_DEVICES].items():
-        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
-            if "when" not in reaction:
-                continue
-            ref = Ref.parse(reaction["when"])
-            if ref.owner is not Owner.HOME_ASSISTANT or ref.path not in pururus:
-                continue
-            owner = pururus[ref.path]
-            if owner is None:
-                why = "is a ready-made notification: a reaction can't watch it"
-            else:
-                written = Ref(Owner.DEVICE, *owner)
-                if written.device == key:
-                    written = Ref(Owner.HERE, None, written.path)
-                why = f"is pururu's: write {written.text}"
-            yield vol.Invalid(
-                f"reactions: {reaction_key}: {ref.text} {why}",
-                path=[CONF_DEVICES, key, CONF_REACTIONS, reaction_key, "when"],
-            )
+    for key, reaction_key, ref in watching:
+        if ref.path not in pururus:
+            continue
+        owner = pururus[ref.path]
+        if owner is None:
+            why = "is a ready-made notification: a reaction can't watch it"
+        else:
+            written = Ref(Owner.DEVICE, *owner)
+            if written.device == key:
+                written = Ref(Owner.HERE, None, written.path)
+            why = f"is pururu's: write {written.text}"
+        yield vol.Invalid(
+            f"reactions: {reaction_key}: {ref.text} {why}",
+            path=[CONF_DEVICES, key, CONF_REACTIONS, reaction_key, "when"],
+        )
 
 
 def _pururus(

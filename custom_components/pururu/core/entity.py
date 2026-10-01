@@ -11,7 +11,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.util import dt as dt_util
 
 from .feature import Device, Item, item_key
-from .resolve import DEVICE
+from .resolve import Owner, Ref
 
 # The state attribute showing an entity's reference: from inside its device, and from another
 REFERENCE = "reference"
@@ -75,9 +75,10 @@ class PururuEntity(Entity):
     follows: tuple[str, ...] = ()
     # Its entity key in its namespace (appliance_running)
     key: str
-    # Its node in its device's YAML (appliance.running_program), and its
-    # device's key: stamped by build from the index once it is built
+    # Its node in its device's YAML (appliance.running_program): stamped by
+    # build from the index once it is built
     path: str
+    # Its device's key: taken with its identity (_identify)
     device_key: str
 
     @override
@@ -106,7 +107,7 @@ class PururuEntity(Entity):
             **(super().capability_attributes or {}),
             REFERENCE: {
                 "inside": self.path,
-                "outside": f"{DEVICE}.{self.device_key}.{self.path}",
+                "outside": Ref(Owner.DEVICE, self.device_key, self.path).text,
             },
         }
 
@@ -120,7 +121,7 @@ class PururuEntity(Entity):
         item: Item | None = None,
         translation: str | None = None,
     ) -> None:
-        """Take `device`'s entity ID, unique ID and device for `entity_key`, and a name.
+        """Take `device`'s key, entity ID, unique ID and device for `entity_key`, and a name.
 
         The name is `name` when given (an entity key from the configuration has
         no translation, even when the base class brings one, as LightGroup's
@@ -132,6 +133,7 @@ class PururuEntity(Entity):
         translation key's, the item's name as the placeholder {item}.
         """
         key = item_key(entity_key, item)
+        self.device_key = device.key
         self.key = device.qualified(key)
         self.entity_id = device.entity_id(platform, key)
         self._attr_unique_id = device.object_id(key)

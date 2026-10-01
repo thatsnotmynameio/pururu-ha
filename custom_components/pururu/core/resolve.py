@@ -60,7 +60,11 @@ class Ref:
             ref = cls(Owner.DEVICE, device, path)
         else:
             ref = cls(Owner.HERE, None, text)
-        if not all(ref.path.partition(".")[::2]) or ref.device == "":
+        # Two segments at least (<block>.<key>, Home Assistant's
+        # <domain>.<object_id>), and device.<device>. names its device
+        first_segment, _, rest_of_path = ref.path.partition(".")
+        two_segments = bool(first_segment and rest_of_path)
+        if not two_segments or ref.device == "":
             raise ValueError(f"{text!r} is not a validated reference")
         return ref
 
@@ -209,19 +213,21 @@ def homeassistant_entity(*domains: str) -> Callable[[Any], str]:
     return validate
 
 
-def key_alone(field: str, of: str) -> Callable[[Any], str]:
+def key_alone(field: str, of: str | None = None) -> Callable[[Any], str]:
     """A field that takes one kind of thing, by its key alone: an area's, a program's.
 
     The field's name says what it is, so a path is refused, naming the key
-    to write (then: programs.executable.blink is blink).
+    to write (then: programs.executable.blink is blink). `of` is what the
+    key is of, the field's own name without.
     """
+    whose = field if of is None else of
 
     def validate(value: Any) -> str:
         if value == "":
             raise vol.Invalid(f"{field} can't be empty")
         if isinstance(value, str) and "." in value:
             raise vol.Invalid(
-                f"{field} is its {of}'s key alone: {value.rpartition('.')[2]}"
+                f"{field} is its {whose}'s key alone: {value.rpartition('.')[2]}"
             )
         return str(cv.slug(value))
 

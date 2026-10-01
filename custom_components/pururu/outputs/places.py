@@ -49,7 +49,7 @@ FLOOR_SCHEMA = vol.Schema(
 AREA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_NAME): TEXT,
-        vol.Optional(CONF_FLOOR): key_alone(CONF_FLOOR, CONF_FLOOR),
+        vol.Optional(CONF_FLOOR): key_alone(CONF_FLOOR),
         vol.Optional(CONF_ICON): cv.icon,
         vol.Optional(CONF_ALIASES, default=[]): _ALIASES,
     }

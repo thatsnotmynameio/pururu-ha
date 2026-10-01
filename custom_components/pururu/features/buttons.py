@@ -101,7 +101,7 @@ ITEM = vol.Schema(
         # A blank name would show the button as its device's name alone
         vol.Required("name"): TEXT,
         # Its own device's executable program, by its key alone, as a reaction's then
-        vol.Optional("program"): key_alone("program", "program"),
+        vol.Optional("program"): key_alone("program"),
     }
 )
 

@@ -211,6 +211,28 @@ def running(devices: Mapping[str, Any], here: str, ref: Ref) -> bool:
     return program[1] in executable(devices[program[0]])
 
 
+def reach(
+    index: Index,
+    devices: Mapping[str, Any],
+    here: str,
+    ref: Ref,
+    *,
+    others: bool = False,
+) -> Target | str:
+    """What `ref`, written in device `here`, names within a field's reach; else why it can't, after the field's place.
+
+    A field reaches its own device's entities, and another device's with
+    `others`; never Home Assistant's, nor an executable program (RUNNING).
+    """
+    if ref.owner is Owner.HOME_ASSISTANT or (
+        ref.owner is Owner.DEVICE and ref.device != here and not others
+    ):
+        return f"{ref.text} is not of this device"
+    if running(devices, here, ref):
+        return f"{ref.text} {RUNNING}"
+    return resolve(index, here, ref)
+
+
 def _translated(
     step: Mapping[str, Any], entity_ids: Mapping[str, str]
 ) -> dict[str, Any]:
@@ -375,16 +397,7 @@ def _refused_step(
                 position,
                 action,
             ]
-            ref = Ref.parse(text)
-            if ref.owner is Owner.HOME_ASSISTANT or (
-                ref.owner is Owner.DEVICE and ref.device != key
-            ):
-                return vol.Invalid(
-                    f"programs: {text} is not of this device", path=place
-                )
-            if running(devices, key, ref):
-                return vol.Invalid(f"programs: {text} {RUNNING}", path=place)
-            found = resolve(index, key, ref)
+            found = reach(index, devices, key, Ref.parse(text))
             if isinstance(found, str):
                 return vol.Invalid(f"programs: {found}", path=place)
             if action not in found.actions:

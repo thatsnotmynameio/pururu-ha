@@ -58,6 +58,10 @@ def texts_together(alert: dict[str, Any]) -> dict[str, Any]:
     return alert
 
 
+# An alert lights group's name, by its key alone
+_GROUP = key_alone("lights", "group")
+
+
 def lights_group(value: Any) -> str:
     """An alert's alert lights group (alert_lights.py), by its name: default is the group default."""
     if isinstance(value, bool):
@@ -65,7 +69,7 @@ def lights_group(value: Any) -> str:
             f"lights names a group of config.alerts.lights.groups, such as "
             f"{DEFAULT_ALERT_LIGHTS}; absent, the alert borrows none"
         )
-    return key_alone("lights", "group")(value)
+    return _GROUP(value)
 
 
 def shared(priority: str) -> dict[Any, Any]:

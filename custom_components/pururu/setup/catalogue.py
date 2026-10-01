@@ -1,7 +1,7 @@
 """Every builder of a device, the aspects mounted in its blocks, and the entity keys they can create."""
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, NamedTuple
 
 import voluptuous as vol
 
@@ -178,8 +178,16 @@ def _flat(errors: list[vol.Invalid]) -> list[vol.Invalid]:
     ]
 
 
-# A row of keys(): (builder, local entity key, platform, by, item, path)
-type Row = tuple[str, str, Platform, str | None, str | None, str]
+class Row(NamedTuple):
+    """A row of keys(): an entity key a device's builder can create, and where."""
+
+    builder: str
+    # Local: in the builder's namespace
+    entity_key: str
+    platform: Platform
+    by: str | None
+    item: str | None
+    path: str
 
 
 def _dotted(name: str, *path: str) -> str:
@@ -187,9 +195,8 @@ def _dotted(name: str, *path: str) -> str:
     return ".".join((name, *path))
 
 
-def _node(feature: Feature, entity_key: str) -> Path:
+def _node(nodes: Nodes | None, entity_key: str) -> Path:
     """Where a fixed entity key sits in its builder's block (Nodes); at the block under its own name unless the builder says."""
-    nodes = feature.role(Nodes)
     return (entity_key,) if nodes is None else nodes.of.get(entity_key, (entity_key,))
 
 
@@ -207,20 +214,21 @@ def keys(device: dict[str, Any]) -> Iterator[Row]:
     for name, feature in builders().items():
         if name not in device:
             continue
+        nodes = feature.role(Nodes)
         yield from (
-            (
+            Row(
                 name,
                 entity_key,
                 platform,
                 None,
                 None,
-                _dotted(name, *_node(feature, entity_key)),
+                _dotted(name, *_node(nodes, entity_key)),
             )
             for entity_key, platform in feature.entity_keys.items()
         )
         if (configured := feature.role(Configured)) is not None:
             yield from (
-                (
+                Row(
                     name,
                     entity_key,
                     configured.platform,
@@ -232,12 +240,19 @@ def keys(device: dict[str, Any]) -> Iterator[Row]:
             )
         if (derived := feature.role(Derived)) is not None:
             yield from (
-                (name, entity_key, born.platform, None, None, _dotted(name, *born.path))
+                Row(
+                    name,
+                    entity_key,
+                    born.platform,
+                    None,
+                    None,
+                    _dotted(name, *born.path),
+                )
                 for entity_key, born in derived.of(device[name]).items()
             )
         if (items := feature.role(Items)) is not None:
             yield from (
-                (
+                Row(
                     name,
                     item.key(suffix),
                     platform,
@@ -273,7 +288,7 @@ def _place_keys(
     """
     item = None if place.item is None else place.item(block, path)
     yield from (
-        (
+        Row(
             name,
             item_key(entity_key, item),
             platform,
@@ -285,7 +300,7 @@ def _place_keys(
     )
     if place.derived is not None and aspect.key in container:
         yield from (
-            (
+            Row(
                 name,
                 entity_key,
                 born.platform,
@@ -300,18 +315,19 @@ def _place_keys(
 def targets(key: str, config: dict[str, Any]) -> dict[str, Target]:
     """Every entity device `key` can create, by its path, and what it is."""
     found: dict[str, Target] = {}
-    for name, entity_key, platform, by, item, path in keys(config):
-        feature = builders()[name]
+    every = builders()
+    for row in keys(config):
+        feature = every[row.builder]
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
         actions = feature.role(Actions)
-        found[path] = Target(
+        found[row.path] = Target(
             device=device,
-            key=device.qualified(entity_key),
-            path=path,
-            platform=platform,
-            builder=name,
-            by=by,
-            item=item,
+            key=device.qualified(row.entity_key),
+            path=row.path,
+            platform=row.platform,
+            builder=row.builder,
+            by=row.by,
+            item=row.item,
             actions=actions.services if actions else (),
         )
     return found

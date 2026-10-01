@@ -55,7 +55,7 @@ def build(
             for entity in aspect.build(hass, device, feature, config[name], texts)
         )
         for entity in (*feature.build(hass, device, config[name], inputs), *aspects):
-            entity.path, entity.device_key = paths[entity.key], key
+            entity.path = paths[entity.key]
             follows = set()
             for path in entity.follows:
                 target = found[path]

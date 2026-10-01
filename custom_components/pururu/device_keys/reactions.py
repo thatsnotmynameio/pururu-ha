@@ -2,12 +2,13 @@
 
 A reaction is one source (an entity of a device, a device's program running,
 Home Assistant's entity, a time of day, the sun) and, for an entity, a
-condition. Each becomes an automation in pururu/automations/automations.yaml, whose folder
-configuration.yaml includes (generated.py). It starts one of its device's programs (then), tells its
-message (message, notify), or does nothing: it fires, and its trace shows when
-and why. An at or sun reaction can retry: its automation triggers again, each
-try skipped once the occurrence ran. Each reaction's triggers are counted:
-sensors of its device (STATISTICS).
+condition. Each becomes an automation in
+pururu/automations/automations.yaml, whose folder configuration.yaml
+includes (generated.py). It starts one of its device's programs (then),
+tells its message (message, notify), or does nothing: it fires, and its
+trace shows when and why. An at or sun reaction can retry: its automation
+triggers again, each try skipped once the occurrence ran. Each reaction's
+triggers are counted: sensors of its device (STATISTICS).
 """
 
 from collections.abc import Collection, Hashable, Iterator, Mapping, Sequence
@@ -463,7 +464,7 @@ def _refused_when(
     if block == CONF_REACTIONS and "." not in rest:
         return f"{when} is a reaction: watch {when}.triggered_total"
     if (program := programs.named(key, ref)) is not None and program[0] in devices:
-        if programs.running(devices, key, ref):
+        if program[1] in programs.executable(devices[program[0]]):
             return None
         whose = "this device" if program[0] == key else f"device {program[0]}"
         return f"{when} is not an executable program of {whose}"
