@@ -1,4 +1,4 @@
-"""dispatcher.py: the author's ready issues become pull requests through lfg sessions."""
+"""tools/dispatcher/dispatcher.py: the author's ready issues become pull requests through lfg sessions."""
 
 from collections.abc import Callable, Iterator
 import dataclasses
@@ -24,7 +24,7 @@ def ready(number: int, *, blocked: int = 0, also: tuple[str, ...] = ()) -> Issue
 
 def ended(issue: int, *, prs: tuple[PullRequest, ...] = (), linked: frozenset[int] = frozenset(),
           reason: str = "lfg stopped: no work source") -> Ended:
-    return Ended(issue, f"/repo/.claude/worktrees/issue-{issue}", "/repo/.dispatch/logs/x.log",
+    return Ended(issue, f"/repo/.claude/worktrees/issue-{issue}", "/repo/tools/dispatcher/.state/logs/x.log",
                  reason, prs, linked)
 
 
@@ -311,7 +311,7 @@ def test_a_session_starts_in_a_new_worktree_from_origin_main(tmp_path: Path) -> 
     assert git.calls[0] == ["fetch", "origin", "main"]
     assert ["worktree", "add", "-b", "issue-74", str(worktree), "origin/main"] in git.calls
     assert (running.issue, running.branch, running.worktree) == (74, "issue-74", worktree)
-    assert running.log == tmp_path / ".dispatch/logs/issue-74.log"
+    assert running.log == tmp_path / dispatcher.STATE / "logs/issue-74.log"
 
 
 def test_a_taken_name_gets_a_suffix(tmp_path: Path) -> None:
@@ -445,13 +445,13 @@ def moves(gh: FakeGitHub) -> list[tuple[int, tuple[str, ...]]]:
 
 def test_misuse_prints_the_usage(capsys: pytest.CaptureFixture[str]) -> None:
     assert dispatcher.main(["dispatcher.py"]) == 2
-    assert "python3 dispatcher.py run" in capsys.readouterr().out
+    assert "python3 tools/dispatcher/dispatcher.py run" in capsys.readouterr().out
 
 
 def test_a_second_dispatcher_refuses_to_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                                               capsys: pytest.CaptureFixture[str]) -> None:
-    lock = tmp_path / ".dispatch/lock"
-    lock.parent.mkdir()
+    lock = tmp_path / dispatcher.STATE / "lock"
+    lock.parent.mkdir(parents=True)
     lock.write_text(str(os.getpid()))
     monkeypatch.setattr(dispatcher, "ROOT", tmp_path)
     monkeypatch.setattr(dispatcher, "GitHub", lambda: pytest.fail("no gh call when refusing"))
@@ -696,7 +696,7 @@ def command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setattr(dispatcher, "GitHub", lambda: object())
     monkeypatch.setattr(dispatcher, "Sessions", lambda root: object())
     monkeypatch.setattr(dispatcher, "serve", serve)
-    return tmp_path / ".dispatch/lock"
+    return tmp_path / dispatcher.STATE / "lock"
 
 
 def test_the_lock_is_held_while_serving_and_released_after(tmp_path: Path,

@@ -1,17 +1,17 @@
 ---
 title: Issue dispatcher
-description: dispatcher.py turns the issues you mark ready into pull requests, one headless lfg session each.
+description: tools/dispatcher/dispatcher.py turns the issues you mark ready into pull requests, one headless lfg session each.
 ---
 
-`dispatcher.py` polls this repository's GitHub issues and starts a headless Claude session running `lfg` for each issue you mark `ready`. Each session works in its own new worktree and ends at an open pull request. You review and merge.
+`tools/dispatcher/dispatcher.py` polls this repository's GitHub issues and starts a headless Claude session running `lfg` for each issue you mark `ready`. Each session works in its own new worktree and ends at an open pull request. You review and merge.
 
 ## Running it
 
 From the main checkout, logged in to `gh` as the issues' author, with `claude` and the compound-engineering plugin installed:
 
 ```sh
-python3 dispatcher.py run                       # 2 sessions at most, a poll every 5 minutes
-python3 dispatcher.py run --sessions 3 --every 120
+python3 tools/dispatcher/dispatcher.py run       # 2 sessions at most, a poll every 5 minutes
+python3 tools/dispatcher/dispatcher.py run --sessions 3 --every 120
 ```
 
 It runs until you stop it with Ctrl-C. Only one dispatcher runs at a time: a second one refuses to start while the first is alive.
@@ -60,8 +60,8 @@ When a session ends, a label move or `Closes #N` that GitHub refuses is tried ag
 ## Where things are
 
 - **Worktrees:** `.claude/worktrees/issue-N` on a branch `issue-N` from the latest `origin/main`, with `-2`, `-3`… when the name is taken. The dispatcher never removes them.
-- **Logs:** `.dispatch/logs/issue-N.log`, the session's JSON lines. The last `result` event holds its final message and its cost.
-- **Lock:** `.dispatch/lock`, the running dispatcher's PID. `.dispatch/` is git-ignored.
+- **Logs:** `tools/dispatcher/.state/logs/issue-N.log`, the session's JSON lines. The last `result` event holds its final message and its cost.
+- **Lock:** `tools/dispatcher/.state/lock`, the running dispatcher's PID. `.state/` is git-ignored.
 
 ## Stopping and restarting
 

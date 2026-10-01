@@ -5,7 +5,7 @@
 """The author's ready issues become pull requests, one lfg session each.
 
 Usage:
-    python3 dispatcher.py run [--sessions N] [--every SECONDS]
+    python3 tools/dispatcher/dispatcher.py run [--sessions N] [--every SECONDS]
 
 Polls this repository's open issues opened by the user `gh` is logged in as and
 labelled `ready`, oldest first, skipping any still blocked by an open issue. Each
@@ -14,7 +14,7 @@ one gets a new worktree from origin/main under .claude/worktrees/ and a headless
 runs every SECONDS (default 300). Labels show where an issue stands: `in progress`,
 then `in review` (a pull request is open) and `ready to merge` (its required checks
 pass), or `needs attention` (the session ended without one). Logs and the lock are
-in .dispatch/. Ctrl-C judges the sessions that ended, as a poll would, then stops the others
+in tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll would, then stops the others
 and marks their issues `needs attention`.
 """
 
@@ -32,7 +32,7 @@ import threading
 import time
 from typing import Any, Protocol
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]  # the checkout: tools/dispatcher/ is two below it
 READY = "ready"
 IN_PROGRESS = "in progress"
 IN_REVIEW = "in review"
@@ -304,7 +304,7 @@ class GitHub:
 # Sessions: a worktree, a headless lfg run in it, its log
 
 WORKTREES = ".claude/worktrees"
-STATE = ".dispatch"
+STATE = "tools/dispatcher/.state"  # logs and the lock, from the checkout's root
 GRACE = 10.0  # seconds a session gets to exit after terminate, before kill
 PROMPT = ("/compound-engineering:lfg #{issue}\n\n"
           "The pull request body must contain the line `Closes #{issue}`, "

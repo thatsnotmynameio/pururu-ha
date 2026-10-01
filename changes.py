@@ -31,6 +31,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "code": (
         "custom_components/",
         "tests/",
+        "tools/",
         "pyproject.toml",
         "uv.lock",
         "ruff.toml",
