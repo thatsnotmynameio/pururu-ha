@@ -36,23 +36,31 @@ from . import catalogue
 def references(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> Iterator[vol.Invalid]:
-    """Refuse a reference that isn't another block's entity, within its reach, at its field (an alert watching an alert: alerts.check)."""
-    for key, device in house[CONF_DEVICES].items():
+    """Refuse a reference that isn't another block's entity, within its reach, at its field (an alert watching an alert: alerts.check).
+
+    An executable program is followed by a reaction's when only: it is no
+    entity pururu creates, so an alert can't follow it.
+    """
+    devices = house[CONF_DEVICES]
+    for key, device in devices.items():
         for name, feature in builders.items():
             if name in device and (refers := feature.role(Refers)) is not None:
-                yield from _refused_refs(index, key, name, refers, device[name])
+                yield from _refused_refs(index, devices, key, name, refers)
 
 
 def _refused_refs(
-    index: Index, key: str, name: str, refers: Refers, block: Any
+    index: Index, devices: Mapping[str, Any], key: str, name: str, refers: Refers
 ) -> Iterator[vol.Invalid]:
     """Builder `name`'s references on device `key` that it can't have: one refusal each, at its field."""
-    for where, ref in refers.of(block):
+    for where, ref in refers.of(devices[key][name]):
         path: list[Hashable] = [CONF_DEVICES, key, name, *where]
         if ref.owner is Owner.HOME_ASSISTANT or (
             ref.owner is Owner.DEVICE and ref.device != key and not refers.others
         ):
             yield vol.Invalid(f"{name}: {ref.text} is not of this device", path=path)
+            continue
+        if programs.running(devices, key, ref):
+            yield vol.Invalid(f"{name}: {ref.text} {programs.RUNNING}", path=path)
             continue
         found = resolve(index, key, ref)
         if isinstance(found, str):

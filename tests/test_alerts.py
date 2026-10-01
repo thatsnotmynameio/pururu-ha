@@ -111,6 +111,16 @@ async def test_a_when_of_no_entity_names_it(
     assert "alerts: appliance.nothing is not an entity of this device" in caplog.text
 
 
+async def test_an_alert_on_an_executable_program_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """A program running is no entity pururu creates: a reaction's when follows it, an alert can't."""
+    config = devices(cleaning={"name": "X", "when": "programs.executable.clean", "state": "on"})
+    config[KEY]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    assert not await setup(ha, config)
+    assert ("alerts: programs.executable.clean is an executable program: only a reaction's when follows it"
+            in caplog.text)
+
+
 async def test_an_alert_may_watch_a_meter(ha: HomeAssistant) -> None:
     """A meter the statistics aspect adds is another feature's entity key: an alert watches it."""
     long_day = {"name": "Long day", "when": "appliance.running_program.statistics.runtime.today", "above": 5}

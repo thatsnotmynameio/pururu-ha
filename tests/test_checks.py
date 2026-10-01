@@ -144,6 +144,19 @@ def group(*members: str) -> dict[str, Any]:
         "reactions: it: reactions.it.triggered_total is its own statistic",
         id="a reaction on its own statistic"),
     pytest.param(
+        {"devices": {"washer": washer(reactions=reaction("programs.executable.wash"), programs=clean({"delay": 1}))}},
+        [*REACTION, "when"],
+        "reactions: it: programs.executable.wash is not an executable program of this device",
+        id="a reaction on a program the device lacks"),
+    pytest.param(
+        {"devices": {"washer": washer(alerts=alert("programs.executable.clean"), programs=clean({"delay": 1}))}},
+        WHEN, "alerts: programs.executable.clean is an executable program: only a reaction's when follows it",
+        id="an alert on a program"),
+    pytest.param(
+        {"devices": {"greenhouse": greenhouse(programs=clean({"turn_on": "programs.executable.clean"}))}}, STEP,
+        "programs: programs.executable.clean is an executable program: only a reaction's when follows it",
+        id="a program's step on a program"),
+    pytest.param(
         {"devices": {"washer": washer(reactions=reaction("appliance.running_program", then="regar"))}},
         [*REACTION, "then"],
         "reactions: it: regar is not an executable program of this device",
@@ -294,3 +307,14 @@ def test_an_alert_watching_an_alert_is_refused_once(
         schema({DOMAIN: house})
     assert [(error.msg, error.path) for error in refused.value.errors] == [
         (message, [DOMAIN, *WHEN])]
+
+
+def test_an_alert_on_a_program_is_refused_once(ha: HomeAssistant) -> None:
+    """An executable program is in no index: refused for what it is, not also as no entity."""
+    house = {"devices": {"washer": washer(alerts=alert("programs.executable.clean"), programs=clean({"delay": 1}))}}
+    schema = module("setup.schema").CONFIG_SCHEMA
+    with pytest.raises(vol.MultipleInvalid) as refused:
+        schema({DOMAIN: house})
+    assert [(error.msg, error.path) for error in refused.value.errors] == [
+        ("alerts: programs.executable.clean is an executable program: only a reaction's when follows it",
+         [DOMAIN, *WHEN])]

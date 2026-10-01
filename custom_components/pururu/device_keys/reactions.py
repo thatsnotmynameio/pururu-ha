@@ -1,8 +1,8 @@
 """Reactions: what a device listens to, as Home Assistant automations pururu generates.
 
-A reaction is one source (an entity of a device, Home Assistant's entity, a
-time of day, the sun) and, for an entity, a condition. Each becomes an
-automation in pururu/automations/automations.yaml, whose folder
+A reaction is one source (an entity of a device, a device's program running,
+Home Assistant's entity, a time of day, the sun) and, for an entity, a
+condition. Each becomes an automation in pururu/automations/automations.yaml, whose folder
 configuration.yaml includes (generated.py). It starts one of its device's programs (then), tells its
 message (message, notify), or does nothing: it fires, and its trace shows when
 and why. An at or sun reaction can retry: its automation triggers again, each
@@ -163,7 +163,8 @@ REACTION = vol.All(
             # A blank name would show the automation as its device's name alone
             vol.Required(CONF_NAME): TEXT,
             # A path: of this device, of another (device.<device>.<path>), or
-            # Home Assistant's entity (homeassistant.<entity ID>), kept whole
+            # Home Assistant's entity (homeassistant.<entity ID>), kept whole;
+            # an executable program's (programs.executable.<key>) is its script
             vol.Optional("when"): path,
             vol.Optional("to"): state_of("to"),
             vol.Optional("from"): state_of("from"),
@@ -418,7 +419,8 @@ def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Inval
     """Refuse a reaction's `when` or `then` it can't have (a schema check), at that field.
 
     `when` names an entity of the device, or of another device
-    (device.<device>.<path>), never one of the reaction's own statistics;
+    (device.<device>.<path>), never one of the reaction's own statistics, or
+    an executable program of either, its script running;
     `then` one of the device's executable programs. Home Assistant's entity
     is Home Assistant's, unless pururu creates it
     (checks.pururus_own_as_home_assistants).
@@ -441,11 +443,18 @@ def _own_statistic(target: Target, key: str, reaction_key: str) -> bool:
     )
 
 
-def _refused_when(index: Index, key: str, reaction_key: str, when: str) -> str | None:
+def _refused_when(
+    index: Index,
+    devices: Mapping[str, Any],
+    key: str,
+    reaction_key: str,
+    when: str,
+) -> str | None:
     """Why the reaction can't watch `when`, after its place; None when it can.
 
     A reaction (reactions.<key>) is no entity: what it does is counted, its
-    triggered_total.
+    triggered_total. An executable program (programs.executable.<key>) is
+    no entity either, but its script running is watched.
     """
     ref = Ref.parse(when)
     if ref.owner is Owner.HOME_ASSISTANT:
@@ -453,6 +462,11 @@ def _refused_when(index: Index, key: str, reaction_key: str, when: str) -> str |
     block, _, rest = ref.path.partition(".")
     if block == CONF_REACTIONS and "." not in rest:
         return f"{when} is a reaction: watch {when}.triggered_total"
+    if (program := programs.named(key, ref)) is not None and program[0] in devices:
+        if programs.running(devices, key, ref):
+            return None
+        whose = "this device" if program[0] == key else f"device {program[0]}"
+        return f"{when} is not an executable program of {whose}"
     found = resolve(index, key, ref)
     if isinstance(found, str):
         return found
@@ -472,7 +486,7 @@ def _refused(
     place: list[Hashable] = [CONF_DEVICES, key, CONF_REACTIONS, reaction_key]
     where = f"reactions: {reaction_key}"
     if "when" in reaction and (
-        why := _refused_when(index, key, reaction_key, reaction["when"])
+        why := _refused_when(index, devices, key, reaction_key, reaction["when"])
     ):
         return vol.Invalid(f"{where}: {why}", path=[*place, "when"])
     then = reaction.get("then")
@@ -495,10 +509,10 @@ def plan(
 ) -> Planned:
     """An automation per reaction of every device; one that can't work is logged.
 
-    One watching an entity not created, or starting a program whose script
-    isn't generated (`scripts`: the IDs generated), isn't generated; held with
-    its program when that is. `notify` is config's: where a message without its
-    own goes.
+    One watching an entity not created, or following or starting a program
+    whose script isn't generated (`scripts`: the IDs generated), isn't
+    generated; held with that program when it is (`held_scripts`). `notify`
+    is config's: where a message without its own goes.
     """
     registry = er.async_get(hass)
     automations: list[generated.Item] = []
@@ -507,9 +521,11 @@ def plan(
         for reaction_key, reaction in config.get(CONF_REACTIONS, {}).items():
             unique_id = automation_id(key, reaction_key)
             watched, entity_id = _watched(
-                hass, index, key, unique_id, reaction, created
+                hass, registry, index, key, unique_id, reaction, created, scripts
             )
             if not watched:
+                if _followed(key, reaction) in held_scripts:
+                    held.add(unique_id)
                 continue
             startable, started = _started(registry, key, unique_id, reaction, scripts)
             if not startable:
@@ -533,24 +549,38 @@ def plan(
     return Planned(automations, frozenset(held))
 
 
+def _followed(key: str, reaction: Mapping[str, Any]) -> str | None:
+    """The script ID of the executable program the reaction's `when` names; None when it names none."""
+    if (when := reaction.get("when")) is None or (
+        program := programs.named(key, Ref.parse(when))
+    ) is None:
+        return None
+    return programs.script_id(*program)
+
+
 def _watched(
     hass: HomeAssistant,
+    registry: er.EntityRegistry,
     index: Index,
     key: str,
     unique_id: str,
     reaction: Mapping[str, Any],
     created: Collection[str],
+    scripts: Collection[str],
 ) -> tuple[bool, str | None]:
     """Whether the reaction can watch what it names, and the entity ID it watches.
 
-    A pururu entity not created can't be, logged; Home Assistant's is its
-    entity ID, without homeassistant.; `at` and `sun` watch none.
+    A pururu entity not created can't be, nor a program's script not
+    generated, logged; Home Assistant's is its entity ID, without
+    homeassistant.; `at` and `sun` watch none.
     """
     if (when := reaction.get("when")) is None:
         return True, None
     ref = Ref.parse(when)
     if ref.owner is Owner.HOME_ASSISTANT:
         return True, ref.path
+    if (script := _followed(key, reaction)) is not None:
+        return _script(registry, unique_id, "follows", script, scripts)
     target = find(index, key, ref)
     assert target is not None  # the schema checked it (check)
     if target.unique_id not in created:
@@ -576,11 +606,25 @@ def _started(
     """
     if (then := reaction.get("then")) is None:
         return True, None
-    script = programs.script_id(key, then)
+    return _script(registry, unique_id, "runs", programs.script_id(key, then), scripts)
+
+
+def _script(
+    registry: er.EntityRegistry,
+    unique_id: str,
+    does: str,
+    script: str,
+    scripts: Collection[str],
+) -> tuple[bool, str | None]:
+    """Whether automation `unique_id` can have the script, and its current entity ID; logged when it can't.
+
+    `does` is what the automation does with it, as logged: follows, runs.
+    """
     if script not in scripts:
         _LOGGER.error(
-            "automation.%s runs script.%s, which is not generated; not generating it",
+            "automation.%s %s script.%s, which is not generated; not generating it",
             unique_id,
+            does,
             script,
         )
         return False, None

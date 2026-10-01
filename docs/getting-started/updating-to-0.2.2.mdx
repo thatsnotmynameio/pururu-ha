@@ -219,7 +219,7 @@ Home Assistant validates the whole block at once: make every change below before
 | A reaction's `entity: binary_sensor.porta_despensa` | `when: homeassistant.binary_sensor.porta_despensa` |
 | A notify action: `notify.mobile_app_phone` | `homeassistant.notify.mobile_app_phone` |
 
-A reaction can't watch a reaction: `reactions.<key>` is refused, pointing to what counts it, `reactions.<key>.triggered_total`.
+A reaction can't watch a reaction: `reactions.<key>` is refused, pointing to what counts it, `reactions.<key>.triggered_total`. It can follow an executable program, new in 0.2.2: `when: programs.executable.<key>` (`device.<device>.programs.executable.<key>` from another device) is its script, `on` while the program runs, so `from: "on"`, `to: "off"` fires when it finishes. An alert's `when` and a program's steps can't name a program: `alerts: programs.executable.clean is an executable program: only a reaction's when follows it`.
 
 ## The whole example
 

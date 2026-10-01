@@ -861,6 +861,135 @@ async def test_a_reaction_on_another_device_starts_its_own_program(ha: HomeAssis
     assert generated(ha)[0]["actions"] == module("device_keys.reactions").actions(CLEAN)
 
 
+# --- when: a program running -------------------------------------------------------------
+
+# A reaction on the greenhouse's cleaning finishing: its script, on then off
+CLEANED = {"name": "Limpou", "when": "programs.executable.clean", "from": "on", "to": "off"}
+BIBLIOTECA = "biblioteca"
+
+
+def biblioteca(**reactions: dict[str, Any]) -> dict[str, Any]:
+    """The greenhouse, its door starting its cleaning, and the library reacting to it."""
+    config = greenhouse()
+    config[BIBLIOTECA] = {"name": "Biblioteca", "lights": {"teto": {"entity": f"homeassistant.{TETO}", "name": "Teto"}},
+                          "reactions": reactions}
+    return config
+
+
+def triggered(ha: HomeAssistant, entity_id: str) -> bool:
+    """Whether the automation has fired."""
+    state = ha.states.get(entity_id)
+    assert state is not None, f"no {entity_id}"
+    return state.attributes["last_triggered"] is not None
+
+
+async def clean_once(ha: HomeAssistant) -> None:
+    """The door opens, the cleaning starts; then it's stopped, its script off."""
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert script_state(ha) == "on"
+    await ha.services.async_call("script", "turn_off", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+
+
+@pytest.mark.parametrize("reaction", [
+    pytest.param(CLEANED, id="its own device's"),
+    pytest.param({**CLEANED, "then": "clean"}, id="with then, its own program"),
+])
+async def test_a_reaction_on_its_devices_program_is_accepted(ha: HomeAssistant, reaction: dict[str, Any]) -> None:
+    assert await setup(ha, greenhouse(done=reaction))
+
+
+async def test_a_reaction_follows_its_devices_program(ha: HomeAssistant, both: None) -> None:
+    """when: programs.executable.clean is its script: the reaction fires when the cleaning finishes."""
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse(clean={**DOOR_OPENS, "then": "clean"}, done=CLEANED))
+    done = generated(ha)[1]
+    assert done["id"] == "pururu_greenhouse_reaction_done"
+    assert done["triggers"][0]["entity_id"] == CLEAN
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert not triggered(ha, "automation.pururu_greenhouse_reaction_done")
+    await ha.services.async_call("script", "turn_off", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+    assert triggered(ha, "automation.pururu_greenhouse_reaction_done")
+
+
+async def test_a_reaction_follows_another_devices_program(ha: HomeAssistant, both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, biblioteca(done={**CLEANED, "when": f"device.{GREENHOUSE}.programs.executable.clean"}))
+    assert generated(ha)[1]["triggers"][0]["entity_id"] == CLEAN
+    await clean_once(ha)
+    assert triggered(ha, "automation.pururu_biblioteca_reaction_done")
+
+
+@pytest.mark.parametrize(("when", "reason"), [
+    pytest.param("programs.executable.wash", "programs.executable.wash is not an executable program of this device",
+                 id="no such program"),
+    pytest.param(f"device.{GREENHOUSE}.programs.executable.wash",
+                 f"device.{GREENHOUSE}.programs.executable.wash is not an executable program of device {GREENHOUSE}",
+                 id="no such program of another device"),
+    pytest.param(f"device.{GREENHOUSE}.reactions.clean",
+                 f"device.{GREENHOUSE}.reactions.clean is a reaction: "
+                 f"watch device.{GREENHOUSE}.reactions.clean.triggered_total",
+                 id="another device's reaction"),
+    pytest.param(f"device.{BIBLIOTECA}.programs.executable.clean",
+                 f"device.{BIBLIOTECA}.programs.executable.clean is this device's: write programs.executable.clean",
+                 id="its own device named"),
+])
+async def test_a_reaction_on_no_program_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                                   when: str, reason: str) -> None:
+    config = biblioteca(done={**CLEANED, "when": when})
+    config[BIBLIOTECA]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    assert not await setup(ha, config)
+    assert f"reactions: done: {reason}" in caplog.text
+
+
+async def test_a_reaction_on_a_program_not_generated_is_not_generated(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The sprinkler's ID is taken: the cleaning isn't generated, nor the reaction that follows it."""
+    er.async_get(ha).async_get_or_create(
+        "switch", "template", "someone_else", suggested_object_id="pururu_greenhouse_switch_sprinkler")
+    night = {"name": "Noite", "at": "22:00"}
+    assert await setup(ha, greenhouse(done=CLEANED, night=night))
+    assert [a["id"] for a in generated(ha)] == ["pururu_greenhouse_reaction_night"]
+    assert ("automation.pururu_greenhouse_reaction_done follows script.pururu_greenhouse_program_executable_clean, "
+            "which is not generated; not generating it") in caplog.text
+
+
+async def test_a_held_program_holds_the_reaction_following_it(ha: HomeAssistant, freezer: Any,
+                                                              both: None) -> None:
+    """The sprinkler disabled: the cleaning is held, and so is the reaction following it, its rename kept."""
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse(done=CLEANED))
+    registry = er.async_get(ha)
+    registry.async_update_entity("automation.pururu_greenhouse_reaction_done",
+                                 new_entity_id="automation.estufa_limpa")
+    await ha.async_block_till_done()
+    await disable(ha, SPRINKLER)
+    await tick(ha, freezer, 31)
+    await ha.async_block_till_done()
+    assert generated(ha) == []
+    assert registry.async_get("automation.estufa_limpa") is not None
+    await disable(ha, SPRINKLER, disabled=False)
+    await tick(ha, freezer, 31)
+    await ha.async_block_till_done()
+    assert [a["id"] for a in generated(ha)] == ["pururu_greenhouse_reaction_done"]
+    assert registry.async_get("automation.estufa_limpa") is not None
+
+
+async def test_a_reaction_follows_the_program_renamed(ha: HomeAssistant, both: None) -> None:
+    """The script renamed in the UI: the entry reloads, and the reaction follows the new ID."""
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, biblioteca(done={**CLEANED, "when": f"device.{GREENHOUSE}.programs.executable.clean"}))
+    er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_estufa")
+    await ha.async_block_till_done()
+    assert generated(ha)[1]["triggers"][0]["entity_id"] == "script.limpar_estufa"
+
+
 async def test_a_script_not_written_drops_its_reaction(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """The scripts' file can't be written: the new program isn't in HA, so its reaction isn't generated."""

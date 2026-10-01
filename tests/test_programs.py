@@ -167,7 +167,8 @@ async def test_the_programs_block_is_executable(
                  id="not an entity of the device"),
     pytest.param("switches.heater", "switches.heater is not an entity of this device",
                  id="a switch the device doesn't have"),
-    pytest.param("programs.executable.clean", "programs.executable.clean is not an entity of this device",
+    pytest.param("programs.executable.clean",
+                 "programs.executable.clean is an executable program: only a reaction's when follows it",
                  id="a program"),
     pytest.param("switch_sprinkler", None, id="an entity key, as before 0.2.2"),
 ])

@@ -180,6 +180,37 @@ def executable(device: Mapping[str, Any]) -> Mapping[str, Any]:
     return found
 
 
+# Why a field other than a reaction's when can't name an executable program
+RUNNING = "is an executable program: only a reaction's when follows it"
+
+
+def named(here: str, ref: Ref) -> tuple[str, str] | None:
+    """(device, program key) when `ref`, written in device `here`, is an executable program's path; None when it isn't.
+
+    programs.executable.<key>, of this device or another (device.<device>.):
+    its script, running or not, which a reaction's when follows
+    (reactions.plan). A script isn't an entity pururu creates, so it isn't in
+    the index; whether the device has that program is the caller's
+    (`executable`). This device named with device. is none: resolve refuses
+    it with the form to write.
+    """
+    if ref.owner is Owner.HOME_ASSISTANT or (
+        ref.owner is Owner.DEVICE and ref.device == here
+    ):
+        return None
+    segments = ref.path.split(".")
+    if len(segments) != 3 or segments[:2] != [CONF_PROGRAMS, CONF_EXECUTABLE]:
+        return None
+    return ref.device or here, segments[2]
+
+
+def running(devices: Mapping[str, Any], here: str, ref: Ref) -> bool:
+    """Whether `ref`, written in device `here`, names an executable program its device has (`named`)."""
+    if (program := named(here, ref)) is None or program[0] not in devices:
+        return False
+    return program[1] in executable(devices[program[0]])
+
+
 def _translated(
     step: Mapping[str, Any], entity_ids: Mapping[str, str]
 ) -> dict[str, Any]:
@@ -309,18 +340,26 @@ PROGRAMS = Feature(
 
 def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
     """Refuse a step on what isn't another feature's entity of the device taking its action (a schema check), at the step's action."""
-    for key, device in house[CONF_DEVICES].items():
+    devices = house[CONF_DEVICES]
+    for key, device in devices.items():
         for program_key, program in executable(device).items():
-            if (refused := _refused_step(index, key, program_key, program)) is not None:
+            if (
+                refused := _refused_step(index, devices, key, program_key, program)
+            ) is not None:
                 yield refused
 
 
 def _refused_step(
-    index: Index, key: str, program_key: str, program: Mapping[str, Any]
+    index: Index,
+    devices: Mapping[str, Any],
+    key: str,
+    program_key: str,
+    program: Mapping[str, Any],
 ) -> vol.Invalid | None:
     """Why the program's first step that can't be can't be; None when all can.
 
-    A step acts on its own device only.
+    A step acts on its own device only, on an entity taking its action: an
+    executable program takes none, a reaction's when follows it.
     """
     for position, step in enumerate(program["sequence"]):
         for action, text in step.items():
@@ -343,6 +382,8 @@ def _refused_step(
                 return vol.Invalid(
                     f"programs: {text} is not of this device", path=place
                 )
+            if running(devices, key, ref):
+                return vol.Invalid(f"programs: {text} {RUNNING}", path=place)
             found = resolve(index, key, ref)
             if isinstance(found, str):
                 return vol.Invalid(f"programs: {found}", path=place)
