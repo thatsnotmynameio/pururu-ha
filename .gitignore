@@ -1,7 +1,46 @@
+# Python
 .venv/
-.hassfest/
-node_modules/
 __pycache__/
+*.py[cod]
+
+# Tools
+.hassfest/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
+.coverage.*
 coverage.xml
+htmlcov/
+
+# Docs
+node_modules/
+
+# Agents
+.claude/worktrees/
+.claude/settings.local.json
+.codegraph/
 .context/compound-engineering/
+.compound-engineering/config.local.yaml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
