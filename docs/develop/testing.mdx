@@ -80,7 +80,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_program_entities.py` | The detector's entities (`build`), through the appliance's `running_program`: IDs, states, the current phase's `name`, the handover, late timers, restarts, reloads, names, what refers to a phase, the phases' meters |
 | `test_programs.py` | Executable programs (`programs: executable:`, `script.pururu_<device>_program_executable_<key>`): the block and its refusals, the scripts file, running, stopping, held and dropped targets, reloads, renames, taken IDs, runs as cycles and their statistics |
 | `test_appliance.py` | `running_program`, cycles, energy, runtime, meters, restores |
-| `test_buttons.py` | A sensor's value as a button: refused blocks, pressing in HA, starting the program (running, not generated, renamed), every press guard (repeats, startup, unavailable, appearing, restored, unknown), restarts, reloads, renames, taken IDs, `buttons.check` |
+| `test_buttons.py` | A sensor's value as a button: refused blocks, pressing in HA, starting the program (running, not generated, renamed), every press guard (repeats, startup, unavailable, appearing, restored, unknown), restarts, reloads, renames, taken IDs, `buttons.check`, each button's presses' total and its statistics |
 | `test_switches.py` | Following the real switch, passing commands on, refused blocks, taken IDs, renames, reloads |
 | `test_lights.py` | Following the real light or switch, what it offers, passing commands on, refused blocks, one feature per real entity, taken IDs, renames, reloads |
 | `test_places.py` | Floors and areas: creation, adoption, deletion, refused names |
