@@ -13,12 +13,16 @@ from typing import Any, override
 import voluptuous as vol
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN, Platform
+from homeassistant.const import STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 
+# Not `from ..aspects.programs import …`: the package import reaches this module
+# through features/__init__ while aspects.programs is still loading
+from ..aspects import programs
 from ..core.entity import PururuEntity
 from ..core.feature import TEXT, Device, Feature, state_text
+from ..core.generated import SCRIPTS
 from ..core.roles import Configured
 from . import standing
 
@@ -60,10 +64,42 @@ class Button(PururuEntity, ButtonEntity):
         self._identify(device, Platform.BUTTON, entity_key, button["name"])
         self._entity = button["entity"]
         self._state = button["state"]
+        # The unique ID of its program's script; None without a program
+        self._script = (
+            None
+            if (program := button.get("program")) is None
+            else programs.script_id(device.key, program)
+        )
 
     @override
     async def async_press(self) -> None:
-        """What a press does once its time is recorded."""
+        """Start the program, once the press's time is recorded: only when it is idle.
+
+        Its script is found now, renamed or not: scripts are written after the
+        entities. Only `off` is a script generated and idle; running, not
+        generated, held out (HA's restored placeholder) or not loaded yet start
+        nothing. Not awaited: a start single mode refuses would wait for the
+        running program's next step.
+        """
+        if self._script is None:
+            return
+        script = er.async_get(self.hass).async_get_entity_id(
+            SCRIPTS.domain, SCRIPTS.domain, self._script
+        )
+        if script is None or not self.hass.states.is_state(script, STATE_OFF):
+            _LOGGER.debug(
+                "%s: script.%s is not idle; not starting it",
+                self.entity_id,
+                self._script,
+            )
+            return
+        await self.hass.services.async_call(
+            SCRIPTS.domain,
+            "turn_on",
+            {"entity_id": script},
+            blocking=False,
+            context=self._context,
+        )
 
 
 def build(
