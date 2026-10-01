@@ -28,8 +28,8 @@ override-dependencies = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = [".", "tests"]
+testpaths = ["tests", "tools"]
+pythonpath = [".", "tests", "tools/dispatcher"]
 asyncio_mode = "auto"
 # The tests that read docs/ (tests/docs/) run apart: uv run pytest -m docs
 addopts = "-n 4 --dist loadfile --import-mode=importlib -m \"not docs\""
