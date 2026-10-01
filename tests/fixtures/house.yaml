@@ -69,7 +69,8 @@ devices:
         for: {hours: 1}
         priority: medium
         lights: externas
-        notify: {message: Travada!, done_message: Destravou.}
+        message: Travada!
+        done_message: Destravou.
       overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
   water_station:
     name: Purificador

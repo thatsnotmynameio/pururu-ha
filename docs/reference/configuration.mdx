@@ -55,7 +55,8 @@ pururu:
           for: {hours: 3}
           priority: medium
           lights: true
-          notify: {message: A máquina passou de 3 horas ligada!, done_message: A máquina terminou.}
+          message: A máquina passou de 3 horas ligada!
+          done_message: A máquina terminou.
     greenhouse:
       name: Estufa
       switches:
@@ -83,7 +84,7 @@ pururu:
 automation pururu: !include_dir_merge_list pururu/automations
 script pururu: !include_dir_merge_named pururu/scripts
 
-alert2:                          # alerts with notify: see alerts
+alert2:                          # alerts with texts: see alerts
   alerts: !include_dir_merge_list pururu/alert2
 ```
 

@@ -11,7 +11,7 @@ An alert is for what you find **critical**, and it lasts until it's resolved. Fo
 
 For the common cases, a feature may offer **ready-made alerts** you enable with one key: see [Ready-made alerts](#ready-made-alerts).
 
-pururu **detects** the problem and, with `notify`, says what to tell. [Alert2](https://github.com/redstone99/hass-alert2) does the telling (phones, reminders, acknowledging): see [Getting notified](#getting-notified).
+pururu **detects** the problem and, with `message` and `done_message`, says what to tell. [Alert2](https://github.com/redstone99/hass-alert2) does the telling (phones, reminders, acknowledging): see [Getting notified](#getting-notified).
 
 ```yaml
 pururu:
@@ -28,9 +28,8 @@ pururu:
           state: "on"
           for: {hours: 3}
           priority: medium
-          notify:
-            message: A máquina passou de 3 horas ligada!
-            done_message: A máquina terminou.
+          message: A máquina passou de 3 horas ligada!
+          done_message: A máquina terminou.
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
         plug_offline: {name: Tomada offline, when: appliance_power, state: unavailable, for: {minutes: 10}}
 ```
@@ -80,8 +79,8 @@ This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **
 
 ---
 
-<Property name="notify" type="map" optional>
-  What to tell, for Alert2 to deliver: `message` when the alert fires and `done_message` when it's resolved. Both are required and can't be empty. Without `notify`, Alert2 leaves the alert alone. See [Getting notified](#getting-notified).
+<Property name="message, done_message" type="string" optional>
+  What to tell, for Alert2 to deliver: `message` when the alert fires and `done_message` when it's resolved. Give both or neither, and neither can be empty. Without them, Alert2 leaves the alert alone. Where it's told is Alert2's, in its `defaults`: an alert has no `notify`. See [Getting notified](#getting-notified).
 </Property>
 
 ---
@@ -113,8 +112,8 @@ appliance:
     long_cycle: {for: {hours: 3}, priority: high}
 ```
 
-- Each one takes `for`, `priority`, `notify` and `lights`, as a written alert does, and nothing else. What it watches and when it's on are the ready-made alert's own.
-- Its defaults are its own too: its `for` (some need one), its `priority`, and texts of its own in Home Assistant's language, which `notify` replaces.
+- Each one takes `for`, `priority`, `message` and `done_message`, and `lights`, as a written alert does, and nothing else. What it watches and when it's on are the ready-made alert's own.
+- Its defaults are its own too: its `for` (some need one), its `priority`, and texts of its own in Home Assistant's language, which `message` and `done_message` replace.
 - Each one is `binary_sensor.pururu_<key>_<namespace>_alert_<name>`, in the feature's namespace: `binary_sensor.pururu_clothes_washer_appliance_alert_offline`.
 - A [reaction](/concepts/reactions) may watch one (`when: appliance_alert_offline`). An alert can't: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
 - Which ones a feature offers, what each watches and its defaults: the [appliance's table](/features/appliance#ready-made-alerts).
@@ -126,7 +125,7 @@ appliance:
 | `binary_sensor.pururu_<key>_alert_<alert key>` | An alert you wrote. On while the problem lasts. Device class `problem`. |
 | `binary_sensor.pururu_<key>_<namespace>_alert_<name>` | A [ready-made alert](#ready-made-alerts) you enabled in a feature's block. The same, in that feature's namespace. |
 
-Its attributes are **`priority`** and **`watches`**, the entity it watches; with `notify`, **`message`** and **`done_message`**, which a ready-made alert always has, its own texts without `notify`; with `lights`, **`lights`**, the name of the group it borrows. It's in the device, so it's in the device's area.
+Its attributes are **`priority`** and **`watches`**, the entity it watches; with `message` and `done_message`, **`message`** and **`done_message`**, which a ready-made alert always has, its own texts without them; with `lights`, **`lights`**, the name of the group it borrows. It's in the device, so it's in the device's area.
 
 ## Needs
 
@@ -134,7 +133,7 @@ An alert needs the entity it watches. If that entity isn't created (its ID is al
 
 ## Getting notified
 
-pururu sends nothing itself. [Alert2](https://github.com/redstone99/hass-alert2) delivers the alerts that have `notify`. pururu writes an Alert2 alert for each of them to `pururu/alert2/alerts.yaml`, next to `configuration.yaml`, and Alert2 reads that folder through **one line** you add once, as the `alerts` of your `alert2:` block:
+pururu sends nothing itself. [Alert2](https://github.com/redstone99/hass-alert2) delivers the alerts that have `message` and `done_message`. pururu writes an Alert2 alert for each of them to `pururu/alert2/alerts.yaml`, next to `configuration.yaml`, and Alert2 reads that folder through **one line** you add once, as the `alerts` of your `alert2:` block:
 
 ```yaml title="configuration.yaml"
 alert2:
@@ -144,7 +143,7 @@ alert2:
   alerts: !include_dir_merge_list pururu/alert2
 ```
 
-Then restart Home Assistant, or reload Alert2 in **Developer tools → YAML → Alert2**. From then on pururu reloads Alert2 itself whenever its alerts change: adding or removing `notify`, a new alert, a changed message.
+Then restart Home Assistant, or reload Alert2 in **Developer tools → YAML → Alert2**. From then on pururu reloads Alert2 itself whenever its alerts change: adding or removing them, a new alert, a changed message.
 
 For the `long_cycle` alert above, pururu writes:
 
@@ -159,13 +158,13 @@ For the `long_cycle` alert above, pururu writes:
   done_message: A máquina terminou.
 ```
 
-- **What each alert says** comes from its `notify`. **How** it's told is the same for every alert, in Alert2's `defaults`: who is told, reminders, acknowledging. See Alert2's documentation.
+- **What each alert says** comes from its `message` and `done_message`. **How** it's told is the same for every alert, in Alert2's `defaults`: who is told, reminders, acknowledging. See Alert2's documentation.
 - Each Alert2 alert is named after the rest of the pururu alert's ID: `binary_sensor.pururu_clothes_washer_alert_long_cycle` becomes `alert2.pururu_clothes_washer_alert_long_cycle`, even after you rename the pururu alert.
-- Only the alerts with `notify` are written, and only those that are created.
+- Only the alerts with texts are written, and only those that are created.
 - A message or name with `{` is shown as you wrote it, not as a template.
 - `condition_on` and `condition_off`, rather than one `condition`, keep the Alert2 alert as it is while the pururu alert is briefly `unavailable`, as during a pururu reload.
 - Until the line is there, **Settings → Repairs** shows **Alert2 doesn't run pururu's alerts**, with the line to add. See [Troubleshooting](/reference/troubleshooting#alert2-doesnt-run-pururus-alerts).
-- If an alert has `notify` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_clothes_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
+- If an alert has `message` and `done_message` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_clothes_washer_alert_long_cycle has a message, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
 
 <Warning>
   `alerts:` is the include alone: a YAML list can't be both written out and included. Create **your own** Alert2 alerts in Alert2's UI instead. Don't put files in `pururu/alert2` and don't edit `alerts.yaml`: the include loads every file there, and pururu rewrites it whenever the configuration changes.
@@ -175,7 +174,7 @@ For the `long_cycle` alert above, pururu writes:
 
 pururu 0.1.11 and earlier asked for a `generator` in Alert2's `alerts`. Replace it with the line above. The alerts keep their Alert2 entities, history and acknowledgements: they have the same names. Kept next to the include, the generator declares every alert twice, and Alert2 reports `Duplicate declaration of alert for domain=pururu`.
 
-**Without `notify`**, the alert is yours to use: an automation triggered by it turning on, or Home Assistant's [`alert`](https://www.home-assistant.io/integrations/alert/):
+**Without them**, the alert is yours to use: an automation triggered by it turning on, or Home Assistant's [`alert`](https://www.home-assistant.io/integrations/alert/):
 
 ```yaml
 alert:

@@ -39,7 +39,7 @@
     },
     "alert2_not_included": {
       "title": "Alert2 doesn't run pururu's alerts",
-      "description": "pururu writes an Alert2 alert for each alert with `notify` to `{file}`, but Alert2 hasn't loaded them. Add this line to the `alert2:` block of `configuration.yaml`, as its `alerts`:\n\n`{include}`\n\nThen reload Alert2 in **Developer tools → YAML → Alert2**, or restart Home Assistant. If Alert2's generator for pururu is still there, remove it."
+      "description": "pururu writes an Alert2 alert for each alert with `message` and `done_message` to `{file}`, but Alert2 hasn't loaded them. Add this line to the `alert2:` block of `configuration.yaml`, as its `alerts`:\n\n`{include}`\n\nThen reload Alert2 in **Developer tools → YAML → Alert2**, or restart Home Assistant. If Alert2's generator for pururu is still there, remove it."
     }
   },
   "entity": {

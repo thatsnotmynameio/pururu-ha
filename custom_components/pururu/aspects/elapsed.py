@@ -54,7 +54,7 @@ class ElapsedAlert(ProblemAlert):
         elapsed: Elapsed,
         hold: timedelta,
         priority: str,
-        notify: Mapping[str, str] | None,
+        messages: Mapping[str, str] | None,
         sources: tuple[str, ...],
         asks_alert2: bool = True,
         lights: str | None = None,
@@ -63,7 +63,7 @@ class ElapsedAlert(ProblemAlert):
         super().__init__(
             watched=watched,
             priority=priority,
-            notify=notify,
+            messages=messages,
             asks_alert2=asks_alert2,
             lights=lights,
         )

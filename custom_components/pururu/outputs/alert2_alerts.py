@@ -1,4 +1,4 @@
-"""Alert2's alerts: one for each pururu alert with notify, which Alert2 delivers.
+"""Alert2's alerts: one for each pururu alert with messages, which Alert2 delivers.
 
 pururu writes them to pururu/alert2/alerts.yaml; the user's alert2: block
 includes its folder as its alerts. Alert2 renders these fields as templates:
@@ -50,7 +50,7 @@ def alert(
     entity_id: str,
     friendly_name: str,
     priority: str,
-    notify: Mapping[str, str],
+    messages: Mapping[str, str],
 ) -> dict[str, Any]:
     """The Alert2 alert of the pururu alert `object_id`, whose entity ID is now `entity_id`.
 
@@ -65,8 +65,8 @@ def alert(
         "condition_on": f"{{{{ is_state('{entity_id}', 'on') }}}}",
         "condition_off": f"{{{{ is_state('{entity_id}', 'off') }}}}",
         "priority": priority,
-        "message": escaped(notify["message"]),
-        "done_message": escaped(notify["done_message"]),
+        "message": escaped(messages["message"]),
+        "done_message": escaped(messages["done_message"]),
     }
 
 
@@ -133,7 +133,7 @@ async def _finish(hass: HomeAssistant, names: list[str]) -> None:
     """Once HA has started: reload Alert2 if it doesn't run the file as written, check the include.
 
     Without Alert2 there is nothing to reload nor include: each alert with
-    notify logs so. A written file stays pending until a reload succeeds, so a
+    a message logs so. A written file stays pending until a reload succeeds, so a
     failed one is retried at the next reload; it raises no issue, the include
     may be there.
     """
@@ -195,13 +195,13 @@ async def async_remove(hass: HomeAssistant) -> None:
 def items(
     hass: HomeAssistant, built: Mapping[Platform, Sequence[Entity]]
 ) -> list[dict[str, Any]]:
-    """An Alert2 alert per created alert with notify, hand-written or ready-made.
+    """An Alert2 alert per created alert with messages, hand-written or ready-made.
 
     Named as HA shows it: its device's name and its own, translated or not.
     """
     alerts: list[dict[str, Any]] = []
     for entity in built[Platform.BINARY_SENSOR]:
-        if not isinstance(entity, ProblemAlert) or entity.notify is None:
+        if not isinstance(entity, ProblemAlert) or entity.messages is None:
             continue
         state = hass.states.get(entity.entity_id)
         name = state.attributes.get(ATTR_FRIENDLY_NAME) if state else None
@@ -211,7 +211,7 @@ def items(
                 entity.entity_id,
                 str(name or entity.entity_id),
                 entity.priority,
-                entity.notify,
+                entity.messages,
             )
         )
     return alerts
@@ -220,5 +220,5 @@ def items(
 async def async_step(
     hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
 ) -> None:
-    """Write Alert2's alerts: one per created alert with notify."""
+    """Write Alert2's alerts: one per created alert with messages."""
     await async_sync(hass, entry, items(hass, built.entities))

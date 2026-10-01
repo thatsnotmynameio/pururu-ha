@@ -134,24 +134,27 @@ async def test_an_alert_may_watch_a_programs_statistic(ha: HomeAssistant) -> Non
     assert ha.states.get(alert("too_many")) is not None
 
 
-NOTIFY = {"message": "Overload!", "done_message": "Back to normal."}
-NOTIFY_PATH = "pururu->devices->dummy_washer->alerts->overload->notify"
+TEXTS = {"message": "Overload!", "done_message": "Back to normal."}
+ALERT_PATH = "pururu->devices->dummy_washer->alerts->overload"
+BOTH_OR_NEITHER = "an alert needs message and done_message, or neither"
 
 
-@pytest.mark.parametrize(("notify", "reason"), [
-    pytest.param({"done_message": "OK"}, "required key 'message' not provided", id="no message"),
-    pytest.param({"message": "X"}, "required key 'done_message' not provided",
-                 id="no done_message"),
-    pytest.param({**NOTIFY, "message": " "},
-                 f"length of value must be at least 1 for dictionary value '{NOTIFY_PATH}->message'",
+@pytest.mark.parametrize(("texts", "reason"), [
+    pytest.param({"done_message": "OK"}, BOTH_OR_NEITHER, id="no message"),
+    pytest.param({"message": "X"}, BOTH_OR_NEITHER, id="no done_message"),
+    pytest.param({**TEXTS, "message": " "},
+                 f"length of value must be at least 1 for dictionary value '{ALERT_PATH}->message'",
                  id="empty message"),
-    pytest.param({**NOTIFY, "title": "X"},
-                 f"'title' is an invalid option for 'pururu', check: {NOTIFY_PATH}->title",
-                 id="unknown key"),
+    pytest.param({"notify": TEXTS},
+                 f"'notify' is an invalid option for 'pururu', check: {ALERT_PATH}->notify",
+                 id="notify: {message, done_message}, as before 0.2.1"),
+    pytest.param({**TEXTS, "notify": "notify.mobile_app_phone"},
+                 f"'notify' is an invalid option for 'pururu', check: {ALERT_PATH}->notify",
+                 id="notify: where, which Alert2's notifier says"),
 ])
-async def test_invalid_notify_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
-                                         notify: dict[str, Any], reason: str) -> None:
-    assert not await setup(ha, devices(overload={**OVERLOAD, "notify": notify}))
+async def test_invalid_texts_are_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                         texts: dict[str, Any], reason: str) -> None:
+    assert not await setup(ha, devices(overload={**OVERLOAD, **texts}))
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(reason in message for message in errors), errors
 
@@ -186,15 +189,15 @@ async def test_the_name_is_the_same_in_portuguese(ha: HomeAssistant) -> None:
     assert ha.states.get(alert("overload")).attributes["friendly_name"] == "Dummy washer Overload"
 
 
-async def test_notify_texts_are_attributes(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
+async def test_the_texts_are_attributes(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}))
     attributes = ha.states.get(alert("overload")).attributes
     assert attributes["message"] == "Overload!"
     assert attributes["done_message"] == "Back to normal."
 
 
-async def test_without_notify_there_are_no_texts(ha: HomeAssistant) -> None:
-    """Only an alert with notify carries what to tell."""
+async def test_without_texts_there_are_none(ha: HomeAssistant) -> None:
+    """Only an alert with message and done_message carries what to tell."""
     assert await setup(ha, devices(overload=OVERLOAD))
     attributes = ha.states.get(alert("overload")).attributes
     assert "message" not in attributes
@@ -203,7 +206,7 @@ async def test_without_notify_there_are_no_texts(ha: HomeAssistant) -> None:
 
 # --- Alert2 ------------------------------------------------------------------------------
 
-NOTIFY_ERROR = "has notify, but Alert2 isn't set up to deliver it"
+NOTIFY_ERROR = "has a message, but Alert2 isn't set up to deliver it"
 
 
 def notify_errors(caplog: pytest.LogCaptureFixture) -> list[str]:
@@ -213,14 +216,14 @@ def notify_errors(caplog: pytest.LogCaptureFixture) -> list[str]:
 
 async def test_notify_without_alert2_is_an_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}, other=OVERLOAD))
+    assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}, other=OVERLOAD))
     assert notify_errors(caplog) == [f"{alert('overload')} {NOTIFY_ERROR}"]
 
 
 async def test_notify_with_alert2_is_no_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     ha.config.components.add("alert2")
-    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
+    assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}))
     assert notify_errors(caplog) == []
 
 
@@ -234,7 +237,7 @@ async def test_alert2_set_up_before_the_start_is_no_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """Alert2 may load after pururu: the check waits for Home Assistant to start."""
     ha.set_state(CoreState.not_running)
-    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
+    assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}))
     ha.config.components.add("alert2")
     await ha.async_start()
     await ha.async_block_till_done()
@@ -243,7 +246,7 @@ async def test_alert2_set_up_before_the_start_is_no_error(
 
 async def test_the_alert2_error_is_logged_once_per_setup(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    config = devices(overload={**OVERLOAD, "notify": NOTIFY})
+    config = devices(overload={**OVERLOAD, **TEXTS})
     assert await setup(ha, config)
     caplog.clear()
     await reload(ha, config)

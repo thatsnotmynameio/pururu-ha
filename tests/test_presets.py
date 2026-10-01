@@ -31,7 +31,7 @@ def devices(enabled: Any, **device: Any) -> dict[str, Any]:
     pytest.param({"offline": None}, id="null is every default"),
     pytest.param({"offline": {}}, id="empty is every default"),
     pytest.param({"offline": {"for": {"minutes": 1}, "priority": "high",
-                              "notify": {"message": "m", "done_message": "d"}}}, id="all set"),
+                              "message": "m", "done_message": "d"}}, id="all set"),
     pytest.param({"long_cycle": {"for": {"hours": 3}}}, id="required for"),
     pytest.param({"no_cycle": {"for": {"days": 2}}}, id="no_cycle"),
     pytest.param({"no_power": None}, id="no_power"),
@@ -48,8 +48,10 @@ async def test_valid_alerts_are_accepted(ha: HomeAssistant, alerts: Any) -> None
                  id="lasts on offline"),
     pytest.param({"offline": {"priority": "urgent"}}, "value must be one of",
                  id="unknown priority"),
-    pytest.param({"offline": {"notify": {"message": "m"}}}, "required key 'done_message'",
-                 id="incomplete notify"),
+    pytest.param({"offline": {"message": "m"}}, "an alert needs message and done_message, or neither",
+                 id="a message without done_message"),
+    pytest.param({"offline": {"notify": {"message": "m", "done_message": "d"}}},
+                 "'notify' is an invalid option", id="notify: {message, done_message}, as before 0.2.1"),
     pytest.param({}, "length of value must be at least 1", id="empty"),
     pytest.param({"offline": {"for": {"minutes": -1}}}, "offline", id="negative for"),
 ])
@@ -155,9 +157,9 @@ async def test_a_language_without_translations_gets_english_texts(ha: HomeAssist
     assert ha.states.get(alert("offline")).attributes["message"] == "The plug is offline."
 
 
-async def test_notify_replaces_the_default_texts(ha: HomeAssistant) -> None:
-    notify = {"message": "Sem Wi-Fi!", "done_message": "Voltou."}
-    assert await setup(ha, devices({"offline": {"notify": notify}}))
+async def test_texts_replace_the_default_texts(ha: HomeAssistant) -> None:
+    texts = {"message": "Sem Wi-Fi!", "done_message": "Voltou."}
+    assert await setup(ha, devices({"offline": texts}))
     found = ha.states.get(alert("offline"))
     assert found.attributes["message"] == "Sem Wi-Fi!"
     assert found.attributes["done_message"] == "Voltou."
@@ -329,7 +331,7 @@ async def test_no_cycle_does_not_flicker_at_a_reload(ha: HomeAssistant, freezer:
                         if e.data["entity_id"] == alert("no_cycle") and e.data["new_state"]]
 
 
-NOTIFY_ERROR = "has notify, but Alert2 isn't set up to deliver it"
+NOTIFY_ERROR = "has a message, but Alert2 isn't set up to deliver it"
 
 
 async def test_default_texts_without_alert2_are_no_error(
@@ -339,10 +341,10 @@ async def test_default_texts_without_alert2_are_no_error(
     assert NOTIFY_ERROR not in caplog.text
 
 
-async def test_a_notify_of_ones_own_without_alert2_is_an_error(
+async def test_texts_of_ones_own_without_alert2_is_an_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    notify = {"message": "m", "done_message": "d"}
-    assert await setup(ha, devices({"offline": {"notify": notify}}))
+    texts = {"message": "m", "done_message": "d"}
+    assert await setup(ha, devices({"offline": texts}))
     assert f"{alert('offline')} {NOTIFY_ERROR}" in caplog.text
 
 
