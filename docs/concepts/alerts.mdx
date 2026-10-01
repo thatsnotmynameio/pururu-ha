@@ -25,14 +25,14 @@ pururu:
         long_cycle:
           name: Ciclo longo
           when: appliance_running
-          is: "on"
+          state: "on"
           for: {hours: 3}
           priority: medium
           notify:
             message: A máquina passou de 3 horas ligada!
             done_message: A máquina terminou.
         overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
-        plug_offline: {name: Tomada offline, when: appliance_power, is: unavailable, for: {minutes: 10}}
+        plug_offline: {name: Tomada offline, when: appliance_power, state: unavailable, for: {minutes: 10}}
 ```
 
 This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **Tanquinho Ciclo longo**, and one alert for each other key.
@@ -53,11 +53,11 @@ This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **
 
 ---
 
-<Property name="is" type="state" optional>
-  The state that is a problem: `"on"`, `"off"`, a phase such as `wringing`, `unavailable`, or a number.
+<Property name="state" type="state" optional>
+  The state that is a problem, as text: `"on"`, `"off"`, a phase such as `wringing`, `unavailable`.
 
   - `on` and `off` work with or without quotes. Without quotes, YAML also reads `yes`/`true` as `on` and `no`/`false` as `off`.
-  - A number without quotes is compared as a number: `is: 1` matches a state of `1`, `1.0` or `1.00`. In quotes (`is: "1"`) it's compared as text.
+  - A state is compared as text, as Home Assistant's `state` condition does: `state: "1"` matches a state of `1`, not `1.0`, and the appliance's power shows `1.0`. So a number without quotes is refused: `state: 1 is a number: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. For a number, write `above`/`below`, or the state in quotes as the entity shows it (`"0.0"`).
 </Property>
 
 ---
@@ -90,14 +90,14 @@ This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **
   Lights that show the alert while it's on: `true` for the group `default`, or a group's name, from `config: alerts: lights: groups`. See [Alert lights](/concepts/alert-lights).
 </Property>
 
-An alert needs **either** `is` **or** `above`/`below`, not both.
+An alert needs **either** `state` **or** `above`/`below`, not both.
 
 ## When an alert is on
 
-- **The condition holds**, for `is` when the watched state equals it, for `above`/`below` when the watched state is a number in the range. The alert turns on after `for`.
+- **The condition holds**, for `state` when the watched state equals it, for `above`/`below` when the watched state is a number in the range. The alert turns on after `for`.
 - **The condition stops holding:** the alert turns off at once. If it stops before `for` passes, the count starts over the next time it holds.
 - **The watched entity has no reading** (`unknown`, `unavailable`, or not a number for `above`/`below`): the alert **keeps its state**, and a count in progress starts over when readings return. A washer's alert doesn't clear because its plug dropped off Wi-Fi for a minute.
-- **An alert about the reading itself**, `is: unavailable` or `is: unknown`, holds while the entity has no reading: `unavailable`, `unknown`, or gone. The two mean the same, because a plug reconnecting shows `unknown` for a moment between `unavailable` and its first value, and that mustn't restart the count. So it turns on for a plug gone offline.
+- **An alert about the reading itself**, `state: unavailable` or `state: unknown`, holds while the entity has no reading: `unavailable`, `unknown`, or gone. The two mean the same, because a plug reconnecting shows `unknown` for a moment between `unavailable` and its first value, and that mustn't restart the count. So it turns on for a plug gone offline.
 - **After a restart or reload,** the alert comes back as it was, and follows the watched entity again once Home Assistant has started: entities pass through `unavailable` while it starts, and that raises no alert. A condition that holds starts its `for` over.
 
 ## Ready-made alerts

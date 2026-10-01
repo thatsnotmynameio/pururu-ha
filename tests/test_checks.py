@@ -21,13 +21,13 @@ def washer(**blocks: Any) -> dict[str, Any]:
 
 @pytest.mark.parametrize(("house", "path", "message"), [
     pytest.param(
-        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_nothing", "is": "on"}})}},
+        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_nothing", "state": "on"}})}},
         ["devices", "washer", "alerts"],
         "alerts: appliance_nothing is not an entity key of another feature of this device",
         id="an alert's when"),
     pytest.param(
         {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_alert_offline",
-                                                    "is": "on"}},
+                                                    "state": "on"}},
                                       appliance={**APPLIANCE, "alerts": {"offline": None}})}},
         ["devices", "washer", "alerts"],
         "alerts: appliance_alert_offline is an alert: an alert can't watch another",
@@ -72,7 +72,7 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "device washer: pururu_washer_appliance_phase_resfriar_cycles_today would be two entities",
         id="two entities of one device"),
     pytest.param(
-        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_running", "is": "on",
+        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_running", "state": "on",
                                                     "lights": "porch"}})}},
         ["devices", "washer", "alerts", "x"],
         "device washer: alerts: x: porch is not a group of config.alerts.lights.groups",
@@ -99,7 +99,7 @@ def test_a_check_says_where(ha: HomeAssistant, house: dict[str, Any], path: list
 
 def test_every_refusal_is_told_at_once(ha: HomeAssistant) -> None:
     """Two devices each refused by a check: both errors come back, not only the first."""
-    bad = {"x": {"name": "X", "when": "appliance_nothing", "is": "on"}}
+    bad = {"x": {"name": "X", "when": "appliance_nothing", "state": "on"}}
     house = {"devices": {"washer": washer(alerts=bad), "dryer": washer(alerts=bad)}}
     schema = module("setup.schema").CONFIG_SCHEMA
     with pytest.raises(vol.MultipleInvalid) as refused:
@@ -119,9 +119,9 @@ def test_every_refusal_is_told_at_once(ha: HomeAssistant) -> None:
 def test_an_alert_watching_an_alert_is_refused_once(
         ha: HomeAssistant, when: str, message: str) -> None:
     """Each check refuses what the other doesn't: one refusal per reference, never two."""
-    other = {"name": "Other", "when": "appliance_running", "is": "on"}
+    other = {"name": "Other", "when": "appliance_running", "state": "on"}
     house = {"devices": {"washer": washer(
-        alerts={"x": {"name": "X", "when": when, "is": "on"}, "other": other},
+        alerts={"x": {"name": "X", "when": when, "state": "on"}, "other": other},
         appliance={**APPLIANCE, "alerts": {"offline": None}})}}
     schema = module("setup.schema").CONFIG_SCHEMA
     with pytest.raises(vol.MultipleInvalid) as refused:

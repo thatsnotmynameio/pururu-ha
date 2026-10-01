@@ -32,25 +32,15 @@ from homeassistant.helpers.start import async_at_started
 
 from ..const import ALERT2, DEFAULT_ALERT_LIGHTS
 from ..core.entity import PururuEntity
-from ..core.feature import PRIORITIES, TEXT, Device, finite_float, state_text
+from ..core.feature import PRIORITIES, TEXT, Device, finite_float, state_of
 from ..core.vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _state(value: Any) -> str | float:
-    """A state to compare with, or a number to compare a reading with.
-
-    A number is compared as a number, so 1 matches a state of 1.0.
-    """
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        return finite_float(value)
-    return state_text(value)
-
-
 def _one_condition(alert: dict[str, Any]) -> dict[str, Any]:
-    if ("is" in alert) == ("above" in alert or "below" in alert):
-        raise vol.Invalid("an alert needs is, or above and/or below, not both")
+    if ("state" in alert) == ("above" in alert or "below" in alert):
+        raise vol.Invalid("an alert needs state, or above and/or below, not both")
     if "above" in alert and "below" in alert and alert["above"] >= alert["below"]:
         raise vol.Invalid("an alert's above must be lower than its below")
     return alert
@@ -86,10 +76,12 @@ ALERT = vol.All(
             # A blank name would show the alert as its device's name alone
             vol.Required("name"): TEXT,
             vol.Required("when"): cv.slug,
-            vol.Optional("is"): _state,
+            # Text, as a reaction's to: a number is a reading's (above/below) or quoted
+            vol.Optional("state"): state_of("state"),
             vol.Optional("above"): finite_float,
             vol.Optional("below"): finite_float,
-            vol.Optional("for", default=timedelta(0)): cv.positive_time_period,
+            # Absent: at once
+            vol.Optional("for"): cv.positive_time_period,
             **shared("low"),
         }
     ),
@@ -186,7 +178,7 @@ class Alert(ProblemAlert):
         name: str | None,
         watched: str,
         condition: Condition,
-        hold: timedelta,
+        hold: timedelta | None,
         priority: str,
         notify: Mapping[str, str] | None,
         follows: tuple[str, ...] = (),
@@ -194,7 +186,7 @@ class Alert(ProblemAlert):
         asks_alert2: bool = True,
         lights: str | None = None,
     ) -> None:
-        """Watch `watched` for `condition` held for `hold`; `name` None: translated."""
+        """Watch `watched` for `condition` held for `hold` (None: at once); `name` None: translated."""
         super().__init__(
             watched=watched,
             priority=priority,

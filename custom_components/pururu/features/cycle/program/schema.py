@@ -13,6 +13,7 @@ from homeassistant.helpers import config_validation as cv
 from ....const import CONF_DETECTED, CONF_PROGRAMS
 from ....core.feature import EACH, TEXT, Item, Path, at, bounded, finite_float
 from ....core.roles import Counted
+from ....core.vocabulary import band
 from ..last import LAST_CYCLE
 
 # The current phase while none runs
@@ -324,9 +325,7 @@ class Band:
 
     def holds(self, value: float) -> bool:
         """Strictly above `above` and strictly below `below`, as HA's numeric_state."""
-        return (self.above is None or value > self.above) and (
-            self.below is None or value < self.below
-        )
+        return band(value, self.above, self.below)
 
 
 @dataclass(frozen=True, kw_only=True)

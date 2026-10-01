@@ -45,7 +45,7 @@ def alert(name: str) -> str:
 
 def raised(name: str, priority: str, lights: Any = True) -> dict[str, Any]:
     """An alert on while the house's switch `name` is on; lights None: no lights key."""
-    block: dict[str, Any] = {"name": name.title(), "when": f"switch_{name}", "is": "on",
+    block: dict[str, Any] = {"name": name.title(), "when": f"switch_{name}", "state": "on",
                              "priority": priority}
     if lights is not None:
         block["lights"] = lights

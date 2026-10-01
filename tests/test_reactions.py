@@ -89,6 +89,17 @@ PATH = "'pururu->devices->lights->reactions->it"
     pytest.param({**DOOR_OPENS, "above": 1},
                  "a reaction on a state needs to, or above and/or below, not both",
                  id="to and above"),
+    pytest.param({**DOOR_OPENS, "to": 1},
+                 'to: 1 is a number: compare a reading with above or below, or quote the state '
+                 f'as the entity shows it ("1.0") for dictionary value {PATH}->to\'',
+                 id="a number in to"),
+    pytest.param({**DOOR_OPENS, "from": 0.0},
+                 'from: 0.0 is a number: compare a reading with above or below, or quote the '
+                 f'state as the entity shows it ("1.0") for dictionary value {PATH}->from\'',
+                 id="a number in from"),
+    pytest.param({"name": "X", "entity": DOOR, "state": "on"},
+                 f"'state' is an invalid option for 'pururu', check: {PATH[1:]}->state",
+                 id="an alert's state"),
     pytest.param({"name": "X", "entity": POWER, "above": 1, "from": "0"},
                  "a reaction's from goes with to", id="from without to"),
     pytest.param({"name": "X", "entity": POWER, "above": 2, "below": 1},
@@ -278,8 +289,8 @@ def test_unquoted_on_and_off_are_states(ha: HomeAssistant) -> None:
     assert (triggers[0]["from"], triggers[0]["to"]) == ("off", "on")
 
 
-def test_a_number_in_to_is_text(ha: HomeAssistant) -> None:
-    assert translated(ha, {**DOOR_OPENS, "to": 1}, DOOR)[0]["to"] == "1"
+def test_a_quoted_number_in_to_is_text(ha: HomeAssistant) -> None:
+    assert translated(ha, {**DOOR_OPENS, "to": "1"}, DOOR)[0]["to"] == "1"
 
 
 def test_above_and_below_are_numeric_state(ha: HomeAssistant) -> None:

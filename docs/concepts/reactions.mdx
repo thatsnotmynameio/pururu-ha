@@ -84,13 +84,13 @@ A reaction listens to **exactly one** of these sources.
 For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 
 <Property name="to" type="state" optional>
-  The state it changes to: `"on"`, `"off"`, `wringing`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: 1` matches a state of `1`, not `1.0`.
+  The state it changes to: `"on"`, `"off"`, `wringing`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: "1"` matches a state of `1`, not `1.0`. So a number without quotes is refused: `to: 1 is a number: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. For a number, write `above`/`below`, or the state in quotes as the entity shows it.
 </Property>
 
 ---
 
 <Property name="from" type="state" optional>
-  The state it must change from. Only with `to`.
+  The state it must change from. Only with `to`; a number goes in quotes, as in `to`.
 </Property>
 
 ---

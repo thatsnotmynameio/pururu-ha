@@ -65,7 +65,7 @@ devices:
       stuck:
         name: Travada
         when: appliance_phase_current
-        is: wringing
+        state: wringing
         for: {hours: 1}
         priority: medium
         lights: externas

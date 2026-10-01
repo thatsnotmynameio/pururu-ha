@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from ..const import CONF_ALERTS, CONF_DEVICES
+from ..core import vocabulary
 from ..core.entity import PururuEntity
 from ..core.feature import (
     ALERTS_KEY,
@@ -51,12 +52,8 @@ def _build(
             entity_key,
             name=alert["name"],
             watched=inputs[alert["when"]],
-            condition=Condition(
-                state=alert.get("is"),
-                above=alert.get("above"),
-                below=alert.get("below"),
-            ),
-            hold=alert["for"],
+            condition=vocabulary.parse(alert),
+            hold=alert.get("for"),
             priority=alert["priority"],
             notify=alert.get("notify"),
             lights=alert.get("lights"),
@@ -95,7 +92,9 @@ ALERTS = Feature(
     schema=SCHEMA,
     entity_keys={},
     build=_build,
-    example={"too_long": {"name": "Too long", "when": "appliance_running", "is": "on"}},
+    example={
+        "too_long": {"name": "Too long", "when": "appliance_running", "state": "on"}
+    },
     namespace="alert",
     roles=(Configured(Platform.BINARY_SENSOR), Refers(_refers)),
 )

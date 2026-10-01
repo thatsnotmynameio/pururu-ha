@@ -43,7 +43,7 @@ from ..core.feature import (
     at,
     finite_float,
     qualified,
-    state_text,
+    state_of,
 )
 from ..core.generated import AUTOMATIONS, SCRIPTS, Planned
 from ..core.resolve import Index, Ref, Target, find
@@ -167,8 +167,8 @@ REACTION = vol.All(
             vol.Optional("when"): cv.slug,
             vol.Optional("device"): cv.slug,
             vol.Optional("entity"): cv.entity_id,
-            vol.Optional("to"): state_text,
-            vol.Optional("from"): state_text,
+            vol.Optional("to"): state_of("to"),
+            vol.Optional("from"): state_of("from"),
             vol.Optional("above"): finite_float,
             vol.Optional("below"): finite_float,
             vol.Optional("for"): cv.positive_time_period,
@@ -231,7 +231,14 @@ def triggers(
     """
     if "at" in reaction or "sun" in reaction:
         return [_occurrence(reaction, timedelta(0)), *_retries(reaction)]
-    return [vocabulary.trigger(reaction, entity_id)]
+    return [
+        vocabulary.trigger(
+            entity_id,
+            vocabulary.parse(reaction, "to"),
+            from_=reaction.get("from"),
+            hold=reaction.get("for"),
+        )
+    ]
 
 
 def conditions(reaction: Mapping[str, Any], script: str | None) -> list[dict[str, Any]]:

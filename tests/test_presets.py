@@ -76,7 +76,7 @@ async def test_without_alerts_none_is_enabled(ha: HomeAssistant) -> None:
 
 async def test_a_hand_written_alert_cannot_watch_a_ready_made_one(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    watching = {"it": {"name": "It", "when": "appliance_alert_offline", "is": "on"}}
+    watching = {"it": {"name": "It", "when": "appliance_alert_offline", "state": "on"}}
     assert not await setup(ha, devices({"offline": None}, alerts=watching))
     assert "appliance_alert_offline is an alert: an alert can't watch another" in caplog.text
 

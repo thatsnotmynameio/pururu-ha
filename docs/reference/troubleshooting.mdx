@@ -24,7 +24,9 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A light whose `entity` isn't a `light.*` or `switch.*` entity (`sensor.x is not a light or switch`), is a pururu light or switch, or has no `name` or an empty one.
 - A real entity in both `switches` and `lights` of one device: `switches: switch.sonoff_abajur is already in lights`. Keep it in one of them.
 - An alert whose `when` isn't an entity of another feature of the device: `alerts: appliance_nothing is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key, with its namespace (`appliance_power`, not `power`).
-- An alert with both `is` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
+- An alert with both `state` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
+- An alert's `is`, as before 0.2.1: `'is' is an invalid option`. Write `state`.
+- A number without quotes in an alert's `state`, or a reaction's `to` or `from`: `state: 1 is a number: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. A state is compared as text, and pururu can't tell which entity shows `1` as `1.0` (the appliance's power does). Write `above`/`below`, or quote the state as the entity shows it.
 - An alert's `notify` without `message` or `done_message`, with an empty one, or with another key.
 - A ready-made alert the feature doesn't offer (`nope is not a ready-made alert: offline, no_power, long_cycle, no_cycle`), `long_cycle` or `no_cycle` without `for`, or `lasts` (`'lasts' is an invalid option`).
 - A ready-made notification the feature doesn't offer: `nope is not a ready-made notification of appliance: finished`. A feature that offers none takes no `notifications` (`'notifications' is an invalid option`).
