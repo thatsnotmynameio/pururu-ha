@@ -774,6 +774,19 @@ async def test_long_opening_counts_the_time_before_a_restart(ha: HomeAssistant, 
     assert alert_state(ha, kind, "long_opening") == "on"
 
 
+async def test_long_opening_never_turns_on_for_an_opening_closed_while_down(
+        ha: HomeAssistant, kind: str) -> None:
+    """Saved open two hours ago, closed when HA comes back: the opening ends before the alert follows."""
+    ha.states.async_set(CONTACT, "off")
+    changes = capture(ha, "state_changed")
+    await restart(ha, devices(kind, alerts={"long_opening": {"for": {"minutes": 30}}}),
+                  saved_open(kind, 2 * 3600))
+    assert alert_state(ha, kind, "long_opening") == "off"
+    assert [event.data["new_state"].state for event in changes
+            if event.data["entity_id"] == alert(kind, "long_opening")
+            and event.data["new_state"] is not None] == ["off"]
+
+
 async def test_no_opening_counts_from_the_last_closing(ha: HomeAssistant, kind: str,
                                                        freezer: Any) -> None:
     await closed(ha, kind, {"no_opening": {"for": {"hours": 24}}})
