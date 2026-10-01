@@ -741,3 +741,23 @@ async def test_a_press_while_its_program_runs_still_counts(
 async def test_a_press_without_a_program_counts(greenhouse: HomeAssistant) -> None:
     await press(greenhouse, BELL)
     assert state(greenhouse, "sensor.pururu_greenhouse_button_bell_triggered_total") == "1"
+
+
+async def test_an_alert_watches_a_buttons_meter(ha: HomeAssistant) -> None:
+    """A button's meter is an entity key of its device (`key`), as any other feature's."""
+    await fake(ha, REMOTE, "")
+    buttons = {**BUTTONS, "ler": {**BUTTONS["ler"], "statistics": {"triggered": ["today"]}}}
+    busy = {"name": "Muito lida", "when": "button_ler_triggered_today", "above": 20}
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": buttons,
+                                  "alerts": {"busy": busy}}})
+    assert ha.states.get("binary_sensor.pururu_biblioteca_alert_busy") is not None
+
+
+async def test_another_devices_reaction_watches_a_buttons_total(ha: HomeAssistant) -> None:
+    """Another device names it as `<device>.<key>`, the one reference form."""
+    await fake(ha, REMOTE, "")
+    sala = {"name": "Sala", "lights": {"teto": {"entity": "light.dummy_sala", "name": "Teto"}},
+            "reactions": {"leitura": {"name": "Leitura", "when": f"{KEY}.button_ler_triggered_total",
+                                      "above": 2}}}
+    assert await setup(ha, {**DEVICES, "sala": sala})
+    assert ha.states.get("sensor.pururu_sala_reaction_leitura_triggered_total") is not None

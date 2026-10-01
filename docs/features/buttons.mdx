@@ -111,6 +111,7 @@ This adds `sensor.pururu_biblioteca_button_ler_triggered_today` (**Biblioteca Le
 - **Every press counts**: the remote's and one in Home Assistant, including one whose program was already running and so didn't start, and one an automation or script makes with `button.press`.
 - **Only presses count.** What [When the sensor presses](#when-the-sensor-presses) doesn't count as a press, the total doesn't count either.
 - **A disabled button** follows no sensor, so it counts nothing.
+- **An alert or a reaction can watch it**, as any entity key: `when: button_ler_triggered_total` on the same device, `when: biblioteca.button_ler_triggered_total` from another device's reaction.
 - **A button that isn't created** (its sensor is one of pururu's, or another integration holds its ID) has no total and no statistics either, and the log says why.
 - **A button's key can't be another button's total or statistic**: `ler_triggered_total`, or `ler_triggered_today` beside a button `ler`, whether or not `ler` asks for `today`. The configuration is refused: `… would be two entities`.
 

@@ -16,7 +16,7 @@ execution: code
 - **Means:** the reactions pattern repeated on `buttons`: a per-button `triggered_total` sensor fed by the button's own press, metered by the statistics aspect (KTD1–KTD3).
 - **Product authority:** the author's decisions in the 2026-10-01 brainstorm, recorded as Key Decisions; the R-IDs govern behaviour, the KTDs govern mechanism. Counters for `switches` and `lights`, and a rule that every feature must count, are not active scope.
 - **Stop conditions:** stop and ask if counting a press would require changing what a press is (the press guards of `docs/plans/2026-09-30-2015-feat-buttons-plan.md`, its R6 and R8), or if the role-model rewrite in KTD3 would let a block-level aspect key into a `Configured` block.
-- **Execution profile:** one branch and one PR titled `pururu: buttons, …`; the manifest stays at 0.2.0 (KTD6).
+- **Execution profile:** one branch and one PR titled `pururu: buttons, …`; the manifest isn't bumped (KTD6).
 - **Open blockers:** none.
 
 ---
@@ -110,7 +110,7 @@ A button's state is the time of its last press, so the history shows when it was
 - KTD5. **A button that isn't built doesn't build its total.** The total declares the button as its source (`build.creatable`). Two cases:
   - A button on a pururu sensor is skipped by the build, and its total in the same branch. Its meters, built by the aspect, are dropped by creatable's "watches …, which this device's settings don't create" line.
   - A button whose ID another integration holds is built, then marked missing; its total and meters are dropped by the "follows …, which is not created" line.
-- KTD6. **The manifest stays at 0.2.0.** `v0.2.0` is tagged and the unreleased 0.2.0 work ships with the 0.2.1 release the refactor spec reserves for its last PR (`docs/superpowers/specs/2026-09-29-yaml-contract-coherence-design.md`); a bump here would collide with it.
+- KTD6. **The manifest isn't bumped.** Refactor C (#63) released 0.2.1 while this was in review; this PR keeps the manifest as `main` has it and ships with the next release, which the author decides.
 
 ### Implementation Constraints
 
@@ -239,7 +239,7 @@ U1 (roles and contract) before U2 (total and counting); U3 (docs) last.
 | Contract | `uv run pytest tests/test_features.py -n 0 -q` | U1 role model |
 | IDs | `uv run pytest tests/test_ids.py -n 0` | snapshot only adds totals |
 | Whole suite | `uv run pytest` | everything, plus ruff, format, mypy, hassfest, quality scale |
-| Release | `python3 release.py check` | 0.2.0 still valid |
+| Release | `python3 release.py check` | the manifest still valid |
 | Docs | `pnpm install` then `pnpm docs:check` | no broken links |
 
 ## Definition of Done
@@ -247,5 +247,5 @@ U1 (roles and contract) before U2 (total and counting); U3 (docs) last.
 - Every R-ID is covered by a unit, and every AE by a named test.
 - The whole suite, release check and docs check pass, with no unexpected `Step … failed` or `Listener failed` log.
 - The two rewritten contract tests still fail for the shapes they used to forbid that remain forbidden (items not one per key; a block-level aspect).
-- The manifest is still 0.2.0.
+- The manifest is as `main` has it.
 - No dead-end or experimental code from abandoned attempts remains in the diff.
