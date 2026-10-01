@@ -16,6 +16,27 @@ python3 tools/dispatcher/dispatcher.py run --sessions 3 --every 120
 
 It runs until you stop it with Ctrl-C. Only one dispatcher runs at a time: a second one refuses to start while the first is alive.
 
+Every line it prints starts with the time. It says what it checked at start, then narrates each poll, even one with nothing to do: what it read, what each `ready` issue gets, which sessions still run or ended, how the reviews stand, and when the next poll comes.
+
+```text
+17:56:28 dispatcher: watching the open issues mguilarducci opened and labelled `ready`, up to 2 sessions at once
+17:56:29 dispatcher: labels: all 5 in place
+17:56:29 dispatcher: no issue left in progress by an earlier run
+17:56:29 dispatcher: a poll every 300s; Ctrl-C stops
+17:56:29 dispatcher: poll: reading GitHub...
+17:56:31 dispatcher: poll: 3 ready (1 blocked), 0 running, 1 in review
+17:56:31 dispatcher: #69 in review: its required checks don't all pass yet
+17:56:31 dispatcher: #70 "Add the gate": dispatching
+17:56:31 dispatcher: #72 "Gate alerts": blocked by 1 open issue, skipped
+17:56:31 dispatcher: #73 "Pool goal": waiting for a free session (1 of 1 in use)
+17:56:32 dispatcher: #70 -> in progress
+17:56:32 dispatcher: #70: fetching origin/main and creating its worktree...
+17:56:35 dispatcher: #70: claude started (PID 4242) in .../.claude/worktrees/issue-70, log .../tools/dispatcher/.state/logs/issue-70.log
+17:56:35 dispatcher: next poll at 18:01:35
+```
+
+Later polls add `#70 still running (5 min)`, then `#70 session ended (exit code 0)` and the label it moves to. A refused `gh` call gets its own line too. A session's own output goes to its log, not to the terminal.
+
 ## Which issues it takes
 
 An issue is taken when it's open, you opened it, and it carries the `ready` label. The oldest goes first. An issue blocked by an open issue (GitHub's **Blocked by** relation) is skipped, and the next one is considered. Once the blocker closes, the issue is taken at a later poll.
