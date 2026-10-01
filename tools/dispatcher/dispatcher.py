@@ -117,10 +117,14 @@ class Hold:
     def extend(self, reset: int | None, now: float) -> "Hold":
         """Fold in a limit ending: a known reset holds a margin past it, never shorter than before.
 
-        An unknown reset holds this poll and probes at the next, unless a later hold is known.
+        An unknown reset holds this poll and probes at the next, unless a later hold is known; a
+        known reset no later than a probe's hold keeps the probe, whatever order they come in.
         """
         if reset is not None:
-            return Hold(max(self.until or 0.0, reset + MARGIN))
+            until = reset + MARGIN
+            if self.probe and self.until is not None and until <= self.until:
+                return self
+            return Hold(max(self.until or 0.0, until))
         if self.until is not None and self.until > now:
             return self
         return Hold(now, probe=True)

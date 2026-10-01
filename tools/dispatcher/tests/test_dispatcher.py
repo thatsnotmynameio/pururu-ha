@@ -234,6 +234,13 @@ def test_the_hold_at_start_comes_from_the_paused_markers() -> None:
     assert dispatcher.restore([], at(18)) == Hold()
 
 
+def test_an_unknown_reset_probes_whatever_order_a_past_reset_comes_in() -> None:
+    """KTD4, KTD8: a reset already past never cancels the probe an unknown reset asks for."""
+    unknown, past = limit(70, reset=None), limit(72, reset=at(17))
+    assert dispatcher.restore([unknown, past], at(18)) == Hold(at(18), probe=True)
+    assert dispatcher.restore([past, unknown], at(18)) == Hold(at(18), probe=True)
+
+
 # Promotion
 
 def test_an_issue_in_review_whose_checks_pass_is_ready_to_merge() -> None:
