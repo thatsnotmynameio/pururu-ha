@@ -980,6 +980,183 @@ def test_an_unreadable_status_marker_reads_as_none(body: str) -> None:
     assert dispatcher.status_marks(body) is None
 
 
+# The status comment on GitHub
+
+COMMENTS = "repos/{owner}/{repo}/issues/74/comments"
+LIST_COMMENTS = ["api", "--paginate", "--slurp", COMMENTS]
+QUEUED_2 = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=2))
+QUEUED_1 = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=1))
+OPENED = dispatcher.Status(IN_REVIEW, ("done", "done", "done", "skipped", "done", "current"))
+
+
+def rest_comment(login: str, number: int, body: str) -> dict[str, object]:
+    """A comment as the REST issue-comments list gives it."""
+    return {"id": number, "user": {"login": login}, "body": body,
+            "created_at": "2026-10-01T15:10:00Z"}
+
+
+def pages_reply(*pages: list[dict[str, object]]) -> tuple[tuple[str, ...], int, str]:
+    """`gh api --paginate --slurp`'s reply: an array of pages, each an array of comments."""
+    return ("api", "--paginate", "--slurp"), 0, json.dumps(list(pages))
+
+
+def posted_reply(number: int) -> tuple[tuple[str, ...], int, str]:
+    return ("api", "--method", "POST"), 0, json.dumps({"id": number, "body": "…"})
+
+
+def writes(fake: FakeGh) -> list[list[str]]:
+    """The status comments `gh` was asked to create or edit."""
+    return [call for call in fake.calls if call[:2] == ["api", "--method"]]
+
+
+def lists(fake: FakeGh) -> list[list[str]]:
+    return [call for call in fake.calls if call[:3] == ["api", "--paginate", "--slurp"]]
+
+
+def test_the_status_comment_is_the_users_newest_one_with_a_status_marker() -> None:
+    """KTD1: every page counts; a stranger's marker and the user's other comments don't."""
+    own = QUEUED_2.body(NOW)
+    newer = OPENED.body(NOW)
+    gh, fake = github(pages_reply(
+        [rest_comment("me", 11, own), rest_comment("me", 12, "Dispatcher: pull request open.")],
+        [rest_comment("me", 13, newer), rest_comment("stranger", 14, QUEUED_1.body(NOW))]))
+    assert gh.status_comment(74) == (13, newer)
+    assert fake.calls[-1] == LIST_COMMENTS
+
+
+def test_an_issue_without_the_users_status_marker_has_no_status_comment() -> None:
+    gh, _ = github(pages_reply([rest_comment("stranger", 14, QUEUED_1.body(NOW)),
+                                rest_comment("me", 12, "Looking into it.")]))
+    assert gh.status_comment(74) is None
+
+
+def test_a_status_comment_is_posted_and_edited_with_its_body_as_a_field() -> None:
+    """The body goes as one `-f` argument, never through a shell."""
+    body = "**Dispatcher status: queued**\n\n`$(rm -rf ~)` {owner}\n\n" + stamp_of(marks())
+    gh, fake = github(posted_reply(9001))
+    assert gh.post_status(74, body) == 9001
+    gh.edit_status(9001, body)
+    assert fake.calls == [["api", "--method", "POST", COMMENTS, "-f", f"body={body}"],
+                          ["api", "--method", "PATCH", "repos/{owner}/{repo}/issues/comments/9001",
+                           "-f", f"body={body}"]]
+
+
+def test_a_queued_issue_gets_one_comment_edited_only_when_its_text_changes() -> None:
+    """AE1: posted at the first poll, untouched at the next, edited by id once a blocker closes."""
+    gh, fake = github(pages_reply([]), posted_reply(9001))
+    board = dispatcher.Board(gh)
+    board.report(74, QUEUED_2, NOW, create=True)
+    assert writes(fake) == [["api", "--method", "POST", COMMENTS, "-f",
+                             f"body={QUEUED_2.body(NOW)}"]]
+    calls = len(fake.calls)
+    board.report(74, QUEUED_2, NOW + 300, create=True)
+    assert len(fake.calls) == calls
+    board.report(74, QUEUED_1, NOW + 600, create=True)
+    assert writes(fake)[1:] == [["api", "--method", "PATCH",
+                                 "repos/{owner}/{repo}/issues/comments/9001", "-f",
+                                 f"body={QUEUED_1.body(NOW + 600)}"]]
+    assert lists(fake) == [LIST_COMMENTS]
+
+
+def test_after_a_restart_the_comment_is_found_by_its_marker_and_edited() -> None:
+    """AE5: no second status comment."""
+    running = dispatcher.Status(dispatcher.RUNNING, marks("done", "done", "current"),
+                                started=NOW - 600)
+    gh, fake = github(pages_reply([rest_comment("me", 9001, running.body(NOW - 300))]))
+    board = dispatcher.Board(gh)
+    assert board.marks(74) == marks("done", "done", "current")
+    board.report(74, OPENED, NOW, create=False)
+    assert writes(fake) == [["api", "--method", "PATCH",
+                             "repos/{owner}/{repo}/issues/comments/9001", "-f",
+                             f"body={OPENED.body(NOW)}"]]
+    assert lists(fake) == [LIST_COMMENTS]
+
+
+def test_an_issue_without_a_status_comment_gets_none_where_it_may_not_be_created() -> None:
+    """AE8, R12: #60 was in review before the feature; it is listed once, never written."""
+    gh, fake = github(pages_reply([]))
+    board = dispatcher.Board(gh)
+    board.report(60, OPENED, NOW, create=False)
+    board.report(60, OPENED, NOW + 300, create=False)
+    assert board.marks(60) is None
+    assert writes(fake) == []
+    assert lists(fake) == [["api", "--paginate", "--slurp",
+                            "repos/{owner}/{repo}/issues/60/comments"]]
+
+
+def test_the_newest_of_the_users_status_comments_is_edited_never_a_strangers() -> None:
+    gh, fake = github(pages_reply([rest_comment("me", 11, QUEUED_2.body(NOW)),
+                                   rest_comment("me", 13, QUEUED_2.body(NOW)),
+                                   rest_comment("stranger", 14, QUEUED_2.body(NOW))]))
+    dispatcher.Board(gh).report(74, QUEUED_1, NOW, create=True)
+    assert [call[3] for call in writes(fake)] == ["repos/{owner}/{repo}/issues/comments/13"]
+
+
+def test_a_failing_list_raises_with_its_stderr_and_the_next_report_lists_again() -> None:
+    gh, fake = github((("api", "--paginate"), 1, ""))
+    board = dispatcher.Board(gh)
+    with pytest.raises(dispatcher.GhError, match="something broke"):
+        board.report(74, QUEUED_2, NOW, create=True)
+    assert writes(fake) == []
+    fake.script = [pages_reply([]), posted_reply(9001)]
+    board.report(74, QUEUED_2, NOW, create=True)
+    assert len(lists(fake)) == 2
+    assert [call[2] for call in writes(fake)] == ["POST"]
+
+
+def test_a_failing_create_raises_with_its_stderr_and_the_next_report_tries_again() -> None:
+    """A create whose reply was lost may have landed: the next report lists before posting."""
+    gh, fake = github(pages_reply([]), (("api", "--method", "POST"), 1, ""))
+    board = dispatcher.Board(gh)
+    with pytest.raises(dispatcher.GhError, match="something broke"):
+        board.report(74, QUEUED_2, NOW, create=True)
+    fake.script = [pages_reply([]), posted_reply(9001)]
+    board.report(74, QUEUED_2, NOW, create=True)
+    assert len(lists(fake)) == 2
+    assert [call[2] for call in writes(fake)] == ["POST", "POST"]
+    board.report(74, QUEUED_1, NOW, create=True)
+    assert writes(fake)[-1][3] == "repos/{owner}/{repo}/issues/comments/9001"
+
+
+@pytest.mark.parametrize("out", [
+    "[{\"id\": 1}][{\"id\": 2}]",
+    "",
+    json.dumps({"message": "Not Found"}),
+    json.dumps([{"id": 13}]),
+    json.dumps([[{"user": {"login": "me"}, "body": stamp_of(marks())}]]),
+    json.dumps([[{"id": "13", "user": {"login": "me"}, "body": stamp_of(marks())}]]),
+], ids=["concatenated pages", "empty", "an object", "a page not an array", "no id",
+        "an id not a number"])
+def test_an_unreadable_comment_list_raises(out: str) -> None:
+    """KTD5: only a GhError is caught where the board is used."""
+    gh, fake = github((("api", "--paginate"), 0, out))
+    board = dispatcher.Board(gh)
+    with pytest.raises(dispatcher.GhError):
+        board.report(74, QUEUED_2, NOW, create=True)
+    assert writes(fake) == []
+
+
+@pytest.mark.parametrize("out", ["", json.dumps({"message": "ok"}), json.dumps({"id": None})],
+                         ids=["empty", "no id", "a null id"])
+def test_an_unreadable_create_reply_raises(out: str) -> None:
+    gh, _ = github((("api", "--method", "POST"), 0, out))
+    with pytest.raises(dispatcher.GhError):
+        gh.post_status(74, QUEUED_2.body(NOW))
+
+
+def test_a_failed_edit_forgets_the_comment_so_the_next_report_lists_again() -> None:
+    """The author deleted the comment: the edit by its cached id fails, then none is found."""
+    gh, fake = github(pages_reply([rest_comment("me", 9001, QUEUED_2.body(NOW))]),
+                      (("api", "--method", "PATCH"), 1, ""))
+    board = dispatcher.Board(gh)
+    with pytest.raises(dispatcher.GhError, match="something broke"):
+        board.report(74, QUEUED_1, NOW, create=True)
+    fake.script = [pages_reply([])]
+    board.report(74, OPENED, NOW, create=False)
+    assert len(lists(fake)) == 2
+    assert [call[2] for call in writes(fake)] == ["PATCH"]
+
+
 def test_a_resume_continues_the_conversation_headless(tmp_path: Path) -> None:
     """KTD7: the same flags as a dispatch, the limit back in the prompt."""
     (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)

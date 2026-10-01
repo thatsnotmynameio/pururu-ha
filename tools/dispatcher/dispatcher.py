@@ -494,6 +494,13 @@ def run_gh(args: list[str]) -> tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
+def comment_id(value: Any) -> int:
+    """A REST comment's numeric id; anything else is no id."""
+    if type(value) is not int:
+        raise TypeError(f"comment id {value!r}")
+    return value
+
+
 class GitHub:
     """Every read and write the dispatcher makes on GitHub, as thin `gh` calls."""
 
@@ -582,6 +589,43 @@ class GitHub:
                  and (marker := marker_of(comment.get("body") or "", issue))]
         return found[-1] if found else None
 
+    def _read[T](self, args: list[str], read: Callable[[Any], T]) -> T:
+        """What `read` makes of a `gh` call's JSON; output it cannot read is a GhError too."""
+        out = self._ok(args)
+        try:
+            return read(json.loads(out))
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            raise GhError(f"gh {' '.join(args[:2])}: unreadable output: {error!r}") from error
+
+    def status_comment(self, issue: int) -> tuple[int, str] | None:
+        """An issue's status comment, as its id and body: the `gh` user's newest with a marker.
+
+        The repository is public: anyone else's marker could take the comment's place.
+        """
+        login = self.login()
+
+        def newest(pages: Any) -> tuple[int, str] | None:
+            if not isinstance(pages, list) or not all(isinstance(page, list) for page in pages):
+                raise TypeError("not an array of pages")
+            found = [(comment_id(comment["id"]), comment["body"])
+                     for page in pages for comment in page  # oldest first
+                     if (comment.get("user") or {}).get("login") == login
+                     and status_marks(comment.get("body") or "") is not None]
+            return found[-1] if found else None
+        return self._read(["api", "--paginate", "--slurp",
+                           f"repos/{{owner}}/{{repo}}/issues/{issue}/comments"], newest)
+
+    def post_status(self, issue: int, body: str) -> int:
+        """Create an issue's status comment; its id."""
+        return self._read(["api", "--method", "POST",
+                           f"repos/{{owner}}/{{repo}}/issues/{issue}/comments",
+                           "-f", f"body={body}"], lambda reply: comment_id(reply["id"]))
+
+    def edit_status(self, comment: int, body: str) -> None:
+        """Replace a status comment's body (an edit notifies no one)."""
+        self._ok(["api", "--method", "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{comment}",
+                  "-f", f"body={body}"])
+
     def move(self, move: Move) -> None:
         """Swap the labels, then comment; a comment-first move comments, then swaps."""
         args = ["issue", "edit", str(move.issue)]
@@ -602,6 +646,47 @@ class GitHub:
         if not re.search(CLOSING.format(link.issue), body, re.IGNORECASE):
             self._ok(["pr", "edit", str(link.pr), "--body",
                       f"{body.rstrip()}\n\nCloses #{link.issue}\n"])
+
+
+class Board:
+    """Each issue's one status comment: looked up once per run, written when its text changes."""
+
+    def __init__(self, gh: GitHub) -> None:
+        """Read and write the comments through `gh`."""
+        self.gh = gh
+        self._comments: dict[int, tuple[int, str] | None] = {}  # issue → its comment's id, body
+
+    def _comment(self, issue: int) -> tuple[int, str] | None:
+        if issue not in self._comments:
+            self._comments[issue] = self.gh.status_comment(issue)
+        return self._comments[issue]
+
+    def marks(self, issue: int) -> tuple[str, ...] | None:
+        """The marks the issue's status comment holds; None without one."""
+        comment = self._comment(issue)
+        return status_marks(comment[1]) if comment else None
+
+    def report(self, issue: int, status: Status, now: float, create: bool) -> None:
+        """Show `status` on the issue: edit its comment, or, only if `create`, post one (R12).
+
+        A failed write forgets the comment, so the next report lists the comments again: the
+        author may have deleted it, or a create whose reply was lost may have landed.
+        """
+        body = status.body(now)
+        comment = self._comment(issue)
+        if comment is not None and same_status(comment[1], body):
+            return
+        if comment is None and not create:
+            return
+        try:
+            if comment is None:
+                self._comments[issue] = (self.gh.post_status(issue, body), body)
+            else:
+                self.gh.edit_status(comment[0], body)
+                self._comments[issue] = (comment[0], body)
+        except GhError:
+            del self._comments[issue]
+            raise
 
 
 # Sessions: a worktree, a headless lfg run in it, its log
