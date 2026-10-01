@@ -54,7 +54,7 @@ from ..core.feature import (
     qualified,
 )
 from ..core.generated import SCRIPTS, Planned
-from ..core.resolve import Index, Ref, Target, find
+from ..core.resolve import Index, Ref, Target, find, local_key
 from ..core.roles import Counted, Counters, Generates, Items, Programs
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
@@ -77,7 +77,7 @@ ACTIONS = ("turn_on", "turn_off", "toggle")
 STEP = vol.Schema(
     {
         vol.Optional(DELAY): cv.positive_time_period,
-        **{vol.Optional(action): cv.slug for action in ACTIONS},
+        **{vol.Optional(action): local_key for action in ACTIONS},
     }
 )
 

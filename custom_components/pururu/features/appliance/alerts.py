@@ -18,7 +18,7 @@ PRESETS: dict[str, Preset] = {
     # It draws nothing: for an appliance that always draws something
     "no_power": Preset(
         watches="power",
-        kind=Condition(state=0.0),
+        kind=Condition(equals=0.0),
         priority="medium",
         hold=timedelta(minutes=10),
     ),

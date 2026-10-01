@@ -21,13 +21,13 @@ def washer(**blocks: Any) -> dict[str, Any]:
 
 @pytest.mark.parametrize(("house", "path", "message"), [
     pytest.param(
-        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_nothing", "is": "on"}})}},
+        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_nothing", "state": "on"}})}},
         ["devices", "washer", "alerts"],
         "alerts: appliance_nothing is not an entity key of another feature of this device",
         id="an alert's when"),
     pytest.param(
         {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_alert_offline",
-                                                    "is": "on"}},
+                                                    "state": "on"}},
                                       appliance={**APPLIANCE, "alerts": {"offline": None}})}},
         ["devices", "washer", "alerts"],
         "alerts: appliance_alert_offline is an alert: an alert can't watch another",
@@ -39,11 +39,11 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "reactions: it: appliance_nothing is not an entity key of this device",
         id="a reaction's when"),
     pytest.param(
-        {"devices": {"washer": washer(reactions={"it": {"name": "X", "device": "dryer",
-                                                        "when": "appliance_running", "to": "on"}})}},
+        {"devices": {"washer": washer(reactions={"it": {"name": "X", "when": "dryer.appliance_running",
+                                                        "to": "on"}})}},
         ["devices", "washer", "reactions", "it"],
         "device washer: reactions: it: device dryer is not in devices",
-        id="a reaction's device"),
+        id="a reaction's other device"),
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "programs": {"executable": {
             "clean": {"name": "Clean", "sequence": [{"turn_on": "switch_nope"}]}}}}}},
@@ -86,22 +86,28 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "device washer: pururu_washer_appliance_phase_resfriar_cycles_today would be two entities",
         id="two entities of one device"),
     pytest.param(
-        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_running", "is": "on",
+        {"devices": {"washer": washer(alerts={"x": {"name": "X", "when": "appliance_running", "state": "on",
                                                     "lights": "porch"}})}},
         ["devices", "washer", "alerts", "x"],
         "device washer: alerts: x: porch is not a group of config.alerts.lights.groups",
         id="an alert's missing group"),
     pytest.param(
-        {"devices": {"washer": washer(appliance={**APPLIANCE, "alerts": {"offline": {"lights": True}}})}},
+        {"devices": {"washer": washer(appliance={**APPLIANCE, "alerts": {"offline": {"lights": "default"}}})}},
         ["devices", "washer", "appliance", "alerts", "offline"],
         "device washer: appliance: alerts: offline: there is no default group in config.alerts.lights.groups",
         id="a ready-made alert's missing default group"),
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER}},
-         "config": {"alerts": {"lights": {"groups": {"porch": {"garagem": ["x"]}}}}}},
-        ["config", "alerts", "lights", "groups", "porch"],
+         "config": {"alerts": {"lights": {"groups": {"porch": ["garagem.light_x"]}}}}},
+        ["config", "alerts", "lights", "groups", "porch", 0],
         "config.alerts.lights.groups: porch: device garagem is not in devices",
         id="a light group"),
+    pytest.param(
+        {"devices": {"garagem": {"name": "Garagem", "lights": {"x": {"entity": "light.dummy_x", "name": "X"}}}},
+         "config": {"alerts": {"lights": {"groups": {"porch": ["garagem.light_x", "garagem.light_y"]}}}}},
+        ["config", "alerts", "lights", "groups", "porch", 1],
+        "config.alerts.lights.groups: porch: garagem.light_y is not a light",
+        id="a light group's second member"),
 ])
 def test_a_check_says_where(ha: HomeAssistant, house: dict[str, Any], path: list[str], message: str) -> None:
     schema = module("setup.schema").CONFIG_SCHEMA
@@ -113,7 +119,7 @@ def test_a_check_says_where(ha: HomeAssistant, house: dict[str, Any], path: list
 
 def test_every_refusal_is_told_at_once(ha: HomeAssistant) -> None:
     """Two devices each refused by a check: both errors come back, not only the first."""
-    bad = {"x": {"name": "X", "when": "appliance_nothing", "is": "on"}}
+    bad = {"x": {"name": "X", "when": "appliance_nothing", "state": "on"}}
     house = {"devices": {"washer": washer(alerts=bad), "dryer": washer(alerts=bad)}}
     schema = module("setup.schema").CONFIG_SCHEMA
     with pytest.raises(vol.MultipleInvalid) as refused:
@@ -133,9 +139,9 @@ def test_every_refusal_is_told_at_once(ha: HomeAssistant) -> None:
 def test_an_alert_watching_an_alert_is_refused_once(
         ha: HomeAssistant, when: str, message: str) -> None:
     """Each check refuses what the other doesn't: one refusal per reference, never two."""
-    other = {"name": "Other", "when": "appliance_running", "is": "on"}
+    other = {"name": "Other", "when": "appliance_running", "state": "on"}
     house = {"devices": {"washer": washer(
-        alerts={"x": {"name": "X", "when": when, "is": "on"}, "other": other},
+        alerts={"x": {"name": "X", "when": when, "state": "on"}, "other": other},
         appliance={**APPLIANCE, "alerts": {"offline": None}})}}
     schema = module("setup.schema").CONFIG_SCHEMA
     with pytest.raises(vol.MultipleInvalid) as refused:

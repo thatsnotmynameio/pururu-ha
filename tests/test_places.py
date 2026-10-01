@@ -289,6 +289,17 @@ async def test_invalid_floors_and_areas_are_refused(
     assert not list(fr.async_get(ha).async_list_floors())
 
 
+@pytest.mark.parametrize(("floors", "areas", "path"), [
+    pytest.param({"terreo": {**TERREO, "name": " "}}, {}, "pururu->floors->terreo->name", id="a floor"),
+    pytest.param({}, {"patio": {"name": ""}}, "pururu->areas->patio->name", id="an area"),
+])
+async def test_a_blank_place_name_is_refused_at_its_path(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+        floors: dict[str, Any], areas: dict[str, Any], path: str) -> None:
+    assert not await setup(ha, {}, floors=floors, areas=areas)
+    assert f"length of value must be at least 1 for dictionary value '{path}'" in caplog.text
+
+
 async def test_an_unknown_key_under_pururu_is_refused_and_deletes_nothing(ha: HomeAssistant) -> None:
     assert await setup(ha, {}, floors={"terreo": TERREO})
     config = {DOMAIN: {"floor": {"terreo": TERREO}}}  # singular: a typo

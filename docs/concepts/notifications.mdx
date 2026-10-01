@@ -91,9 +91,3 @@ automation pururu: !include_dir_merge_list pururu/automations
 ```
 
 Until it's there, **Settings → Repairs** shows **The reactions' and notifications' automations aren't loaded**: one issue for both. See [Reactions: the include](/concepts/reactions#the-include).
-
-## Coming from the `finished` alert
-
-pururu 0.1.21 and earlier had a ready-made alert `finished`. It's a notification now: move `finished` from the appliance's `alerts` to its `notifications`, and drop `lasts`. Left in `alerts`, it's refused as any alert the appliance doesn't offer: `finished is not a ready-made alert: offline, no_power, long_cycle, no_cycle`. It's a ready-made notification: `appliance: notifications: finished`. Its binary sensor `binary_sensor.pururu_<key>_appliance_alert_finished` and its Alert2 alert go away.
-
-A reaction or an automation of yours on that binary sensor goes with it: a reaction with `when: appliance_alert_finished` is refused (`appliance_alert_finished is not an entity key of this device`). React to `appliance_running` going from `on` to `off` instead, or let the notification tell you.

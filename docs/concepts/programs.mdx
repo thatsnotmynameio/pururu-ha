@@ -319,7 +319,7 @@ Each step has exactly one key:
 | `toggle: <entity key>` | Turns it on if it's off, off if it's on |
 | `delay: <time period>` | Waits, such as `{hours: 2}`, `"00:30:00"` or `90` (seconds) |
 
-An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_sprinkler` for `switch.pururu_greenhouse_switch_sprinkler`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps.
+An entity key names an entity of **this device**, written as its entity ID ends after the device key: `switch_sprinkler` for `switch.pururu_greenhouse_switch_sprinkler`. It must be an entity of a feature of the device that takes the action. Today that's a [switch](/features/switches) or a [light](/features/lights). The same entity can appear in several steps. A step names an entity key of its own device (`switch_sprinkler`); a `<device>.` before it is refused.
 
 Anything else is a configuration error: an entity ID (`switch.greenhouse_sprinkler`), another program, a sensor (`turn_on: appliance_power` gives `programs: appliance_power does not take turn_on`), or a Home Assistant action such as `action: switch.turn_on`.
 
@@ -370,7 +370,3 @@ They're named after the program: **Estufa Limpar cycles**.
 - **Renaming the script** in the UI is followed: pururu reloads and watches its new ID.
 - **A script ID someone else holds** (one of your scripts, another integration's entity): the program isn't generated, and its statistics count nothing. They never count an entity pururu doesn't manage.
 - A reaction can watch them: `when: program_executable_clean_last_cycle_end`.
-
-### From 0.1.14 and before
-
-Programs were buttons, `button.pururu_<key>_program_<program key>`, pressed with `button.press`. The first start of 0.1.15 removes them. Change what pressed one to `script.turn_on` on its script, and add the include above.

@@ -228,7 +228,7 @@ async def test_a_step_on_a_detected_program_is_refused(ha: HomeAssistant, caplog
 async def test_an_alert_and_a_reaction_can_watch_it(ha: HomeAssistant, freezer: Any) -> None:
     """The alert follows the carrier, and the reaction's automation triggers on it."""
     config = devices()
-    config[KEY]["alerts"] = {"long": {"name": "Longo", "when": "appliance_cotton", "is": "on", "for": {"hours": 3}}}
+    config[KEY]["alerts"] = {"long": {"name": "Longo", "when": "appliance_cotton", "state": "on", "for": {"hours": 3}}}
     config[KEY]["reactions"] = {"done": {"name": "Pronto", "when": "appliance_cotton", "from": "on", "to": "off"}}
     await fake(ha, ENERGY, "100")
     assert await setup(ha, config)
@@ -548,7 +548,7 @@ async def test_a_detected_programs_phase_statistics(ha: HomeAssistant) -> None:
 
 async def test_an_alert_can_watch_a_detected_programs_phase(ha: HomeAssistant) -> None:
     config = phased()
-    config[KEY]["alerts"] = {"hot": {"name": "Quente", "when": "appliance_cotton_phase_current", "is": "warming",
+    config[KEY]["alerts"] = {"hot": {"name": "Quente", "when": "appliance_cotton_phase_current", "state": "warming",
                                      "for": {"hours": 1}}}
     assert await setup(ha, config)
     assert ha.states.get(f"binary_sensor.pururu_{KEY}_alert_hot") is not None

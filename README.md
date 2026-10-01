@@ -8,6 +8,8 @@ A Home Assistant integration that turns the entities you already have into well-
 
 With [HACS](https://hacs.xyz): **⋮ → Custom repositories**, add `https://github.com/thatsnotmynameio/pururu-ha` as an **Integration**, download **Pururu**, and restart Home Assistant. Or copy `custom_components/pururu/` into your configuration's `custom_components/` and restart.
 
+**Updating from 0.1.23 or 0.2.0?** 0.2.1 changes the configuration. Before you download it, follow [Updating to 0.2.1](https://docs.page/thatsnotmynameio/pururu-ha/getting-started/updating-to-0.2.1): its first step happens on your current version.
+
 ## Configure
 
 Add a `pururu:` block to `configuration.yaml` and restart once. After that, reload it with **Developer tools → YAML → Pururu**.

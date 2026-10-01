@@ -6,7 +6,7 @@ from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 import pytest
 
-from helpers import capture, fake, held, reload, restart, settle, setup, tick
+from helpers import capture, fake, held, module, reload, restart, settle, setup, tick
 
 KEY = "dummy_washer"
 POWER = "sensor.dummy_plug_power"
@@ -18,7 +18,7 @@ APPLIANCE: dict[str, Any] = {
 }
 SWITCHES = {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
 OVERLOAD = {"name": "Overload", "when": "appliance_power", "above": 2500}
-SPRINKLER_ON = {"name": "Sprinkler on", "when": "switch_sprinkler", "is": "on"}
+SPRINKLER_ON = {"name": "Sprinkler on", "when": "switch_sprinkler", "state": "on"}
 
 
 def alert(key: str) -> str:
@@ -48,9 +48,15 @@ NOT_AN_ENTITY_KEY = "is not an entity key of another feature of this device"
                  "'pururu->devices->dummy_washer->alerts->overload->name'", id="empty name"),
     pytest.param({"name": "X", "above": 1}, "required key 'when' not provided", id="no when"),
     pytest.param({"name": "X", "when": "appliance_power"},
-                 "an alert needs is, or above and/or below, not both", id="no condition"),
-    pytest.param({**OVERLOAD, "is": "on"},
-                 "an alert needs is, or above and/or below, not both", id="is and above"),
+                 "an alert needs state, or above and/or below, not both", id="no condition"),
+    pytest.param({**OVERLOAD, "state": "on"},
+                 "an alert needs state, or above and/or below, not both", id="state and above"),
+    pytest.param({"name": "X", "when": "switch_sprinkler", "to": "on"},
+                 "'to' is an invalid option for 'pururu', check: "
+                 "pururu->devices->dummy_washer->alerts->overload->to", id="a reaction's to"),
+    pytest.param({"name": "X", "when": "switch_sprinkler", "is": "on"},
+                 "'is' is an invalid option for 'pururu', check: "
+                 "pururu->devices->dummy_washer->alerts->overload->is", id="is, as before 0.2.1"),
     pytest.param({**OVERLOAD, "below": 2500},
                  "an alert's above must be lower than its below", id="above not lower than below"),
     pytest.param({**OVERLOAD, "above": "nan"},
@@ -70,6 +76,11 @@ NOT_AN_ENTITY_KEY = "is not an entity key of another feature of this device"
                  f"alerts: switch_heater {NOT_AN_ENTITY_KEY}", id="when a switch the device lacks"),
     pytest.param({**OVERLOAD, "when": "alert_other"},
                  f"alerts: alert_other {NOT_AN_ENTITY_KEY}", id="when an alert"),
+    pytest.param({**OVERLOAD, "when": "dummy_washer.appliance_power"},
+                 "dummy_washer.appliance_power must be of this device", id="when with a device"),
+    pytest.param({**OVERLOAD, "when": POWER},
+                 "sensor.dummy_plug_power must be of this device: its entity key, without "
+                 "<device>. or <domain>.", id="when an entity ID"),
     pytest.param({**OVERLOAD, "when": "power"},
                  f"alerts: power {NOT_AN_ENTITY_KEY}", id="when without its namespace"),
 ])
@@ -123,24 +134,29 @@ async def test_an_alert_may_watch_a_programs_statistic(ha: HomeAssistant) -> Non
     assert ha.states.get(alert("too_many")) is not None
 
 
-NOTIFY = {"message": "Overload!", "done_message": "Back to normal."}
-NOTIFY_PATH = "pururu->devices->dummy_washer->alerts->overload->notify"
+TEXTS = {"message": "Overload!", "done_message": "Back to normal."}
+ALERT_PATH = "pururu->devices->dummy_washer->alerts->overload"
+BOTH_OR_NEITHER = "an alert needs message and done_message, or neither"
 
 
-@pytest.mark.parametrize(("notify", "reason"), [
-    pytest.param({"done_message": "OK"}, "required key 'message' not provided", id="no message"),
-    pytest.param({"message": "X"}, "required key 'done_message' not provided",
+@pytest.mark.parametrize(("texts", "reason"), [
+    pytest.param({"done_message": "OK"}, f"{BOTH_OR_NEITHER} for dictionary value '{ALERT_PATH}'",
+                 id="no message"),
+    pytest.param({"message": "X"}, f"{BOTH_OR_NEITHER} for dictionary value '{ALERT_PATH}'",
                  id="no done_message"),
-    pytest.param({**NOTIFY, "message": " "},
-                 f"length of value must be at least 1 for dictionary value '{NOTIFY_PATH}->message'",
+    pytest.param({**TEXTS, "message": " "},
+                 f"length of value must be at least 1 for dictionary value '{ALERT_PATH}->message'",
                  id="empty message"),
-    pytest.param({**NOTIFY, "title": "X"},
-                 f"'title' is an invalid option for 'pururu', check: {NOTIFY_PATH}->title",
-                 id="unknown key"),
+    pytest.param({"notify": TEXTS},
+                 f"'notify' is an invalid option for 'pururu', check: {ALERT_PATH}->notify",
+                 id="notify: {message, done_message}, as before 0.2.1"),
+    pytest.param({**TEXTS, "notify": "notify.mobile_app_phone"},
+                 f"'notify' is an invalid option for 'pururu', check: {ALERT_PATH}->notify",
+                 id="notify: where, which Alert2's notifier says"),
 ])
-async def test_invalid_notify_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
-                                         notify: dict[str, Any], reason: str) -> None:
-    assert not await setup(ha, devices(overload={**OVERLOAD, "notify": notify}))
+async def test_invalid_texts_are_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                         texts: dict[str, Any], reason: str) -> None:
+    assert not await setup(ha, devices(overload={**OVERLOAD, **texts}))
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(reason in message for message in errors), errors
 
@@ -175,15 +191,15 @@ async def test_the_name_is_the_same_in_portuguese(ha: HomeAssistant) -> None:
     assert ha.states.get(alert("overload")).attributes["friendly_name"] == "Dummy washer Overload"
 
 
-async def test_notify_texts_are_attributes(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
+async def test_the_texts_are_attributes(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}))
     attributes = ha.states.get(alert("overload")).attributes
     assert attributes["message"] == "Overload!"
     assert attributes["done_message"] == "Back to normal."
 
 
-async def test_without_notify_there_are_no_texts(ha: HomeAssistant) -> None:
-    """Only an alert with notify carries what to tell."""
+async def test_without_texts_there_are_none(ha: HomeAssistant) -> None:
+    """Only an alert with message and done_message carries what to tell."""
     assert await setup(ha, devices(overload=OVERLOAD))
     attributes = ha.states.get(alert("overload")).attributes
     assert "message" not in attributes
@@ -192,57 +208,57 @@ async def test_without_notify_there_are_no_texts(ha: HomeAssistant) -> None:
 
 # --- Alert2 ------------------------------------------------------------------------------
 
-NOTIFY_ERROR = "has notify, but Alert2 isn't set up to deliver it"
+ALERT2_ERROR = "has a message, but Alert2 isn't set up to deliver it"
 
 
-def notify_errors(caplog: pytest.LogCaptureFixture) -> list[str]:
+def alert2_errors(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [r.getMessage() for r in caplog.records
-            if r.levelname == "ERROR" and NOTIFY_ERROR in r.getMessage()]
+            if r.levelname == "ERROR" and ALERT2_ERROR in r.getMessage()]
 
 
-async def test_notify_without_alert2_is_an_error(
+async def test_texts_without_alert2_are_an_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}, other=OVERLOAD))
-    assert notify_errors(caplog) == [f"{alert('overload')} {NOTIFY_ERROR}"]
+    assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}, other=OVERLOAD))
+    assert alert2_errors(caplog) == [f"{alert('overload')} {ALERT2_ERROR}"]
 
 
-async def test_notify_with_alert2_is_no_error(
+async def test_texts_with_alert2_are_no_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     ha.config.components.add("alert2")
-    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
-    assert notify_errors(caplog) == []
+    assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}))
+    assert alert2_errors(caplog) == []
 
 
-async def test_without_notify_there_is_no_alert2_error(
+async def test_without_texts_there_is_no_alert2_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     assert await setup(ha, devices(overload=OVERLOAD))
-    assert notify_errors(caplog) == []
+    assert alert2_errors(caplog) == []
 
 
 async def test_alert2_set_up_before_the_start_is_no_error(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """Alert2 may load after pururu: the check waits for Home Assistant to start."""
     ha.set_state(CoreState.not_running)
-    assert await setup(ha, devices(overload={**OVERLOAD, "notify": NOTIFY}))
+    assert await setup(ha, devices(overload={**OVERLOAD, **TEXTS}))
     ha.config.components.add("alert2")
     await ha.async_start()
     await ha.async_block_till_done()
-    assert notify_errors(caplog) == []
+    assert alert2_errors(caplog) == []
 
 
 async def test_the_alert2_error_is_logged_once_per_setup(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    config = devices(overload={**OVERLOAD, "notify": NOTIFY})
+    config = devices(overload={**OVERLOAD, **TEXTS})
     assert await setup(ha, config)
     caplog.clear()
     await reload(ha, config)
-    assert notify_errors(caplog) == [f"{alert('overload')} {NOTIFY_ERROR}"]
+    assert alert2_errors(caplog) == [f"{alert('overload')} {ALERT2_ERROR}"]
 
 
 # --- is ------------------------------------------------------------------------------
 
 
-async def test_is_turns_on_after_for_and_off_at_once(ha: HomeAssistant, freezer: Any) -> None:
+async def test_state_turns_on_after_for_and_off_at_once(ha: HomeAssistant, freezer: Any) -> None:
     await fake(ha, REAL_SPRINKLER, "off")
     assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "for": {"minutes": 5}}))
     await fake(ha, REAL_SPRINKLER, "on")
@@ -254,6 +270,12 @@ async def test_is_turns_on_after_for_and_off_at_once(ha: HomeAssistant, freezer:
     assert state(ha, alert("sprinkler_on")) == "off"
 
 
+def test_for_has_no_default(ha: HomeAssistant) -> None:
+    """Absent means at once, as a reaction's: the validated alert has no for."""
+    validated = module("aspects.problem").ALERT({"name": "X", "when": "switch_sprinkler", "state": "on"})
+    assert "for" not in validated
+
+
 async def test_without_for_it_turns_on_at_once(ha: HomeAssistant) -> None:
     await fake(ha, REAL_SPRINKLER, "on")
     assert await setup(ha, devices(sprinkler_on=SPRINKLER_ON))
@@ -261,9 +283,9 @@ async def test_without_for_it_turns_on_at_once(ha: HomeAssistant) -> None:
 
 
 async def test_unquoted_on_means_the_on_state(ha: HomeAssistant) -> None:
-    """YAML reads `is: on` as a boolean."""
+    """YAML reads `state: on` as a boolean."""
     await fake(ha, REAL_SPRINKLER, "on")
-    assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "is": True}))
+    assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "state": True}))
     assert state(ha, alert("sprinkler_on")) == "on"
 
 
@@ -272,19 +294,42 @@ async def test_yaml_booleans_mean_on(ha: HomeAssistant, unquoted: Any) -> None:
     """YAML reads unquoted on, yes and true alike; "yes" stands for what the loader gives."""
     await fake(ha, REAL_SPRINKLER, "on")
     value = True if unquoted == "yes" else unquoted
-    assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "is": value}))
+    assert await setup(ha, devices(sprinkler_on={**SPRINKLER_ON, "state": value}))
     assert state(ha, alert("sprinkler_on")) == "on"
 
 
-@pytest.mark.parametrize("watts", ["1", "1.0", "1.00"])
-async def test_a_number_in_is_compares_as_a_number(ha: HomeAssistant, watts: str) -> None:
-    assert await setup(ha, devices(one={"name": "One", "when": "appliance_power", "is": 1}))
-    await fake(ha, POWER, watts)
-    assert state(ha, alert("one")) == "on"
+NUMBER = (': compare a reading with above or below, or quote the state as the '
+          'entity shows it ("1.0") for dictionary value '
+          "'pururu->devices->dummy_washer->alerts->one->state'")
 
 
-async def test_a_number_in_is_holds_its_state_without_a_reading(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(one={"name": "One", "when": "appliance_power", "is": 1}))
+@pytest.mark.parametrize(("written", "text"), [
+    pytest.param(1, "1", id="an int"),
+    pytest.param(1.0, "1.0", id="a float"),
+])
+async def test_a_number_in_state_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                            written: float, text: str) -> None:
+    """pururu can't tell which entity shows 1 as 1.0: a YAML number is refused, at its path."""
+    assert not await setup(ha, devices(one={"name": "One", "when": "appliance_power", "state": written}))
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any(f"state: YAML reads it as the number {text}{NUMBER}" in message
+               for message in errors), errors
+
+
+@pytest.mark.parametrize(("written", "expected"), [
+    pytest.param("1.0", "on", id="as the mirror shows it"),
+    pytest.param("1", "off", id="1 is not the mirror's 1.0"),
+])
+async def test_a_quoted_number_in_state_compares_as_text(ha: HomeAssistant, written: str,
+                                                         expected: str) -> None:
+    """state is text, as HA's condition: state: the power's mirror shows 1 W as 1.0."""
+    assert await setup(ha, devices(one={"name": "One", "when": "appliance_power", "state": written}))
+    await fake(ha, POWER, "1")
+    assert state(ha, alert("one")) == expected
+
+
+async def test_a_state_holds_its_state_without_a_reading(ha: HomeAssistant) -> None:
+    assert await setup(ha, devices(one={"name": "One", "when": "appliance_power", "state": "1.0"}))
     await fake(ha, POWER, "1")
     await fake(ha, POWER, "unavailable")
     assert state(ha, alert("one")) == "on"
@@ -358,9 +403,9 @@ async def test_no_reading_keeps_off_and_cancels_a_pending_for(
     assert state(ha, alert("overload")) == "on"
 
 
-async def test_is_unavailable_turns_on_when_the_plug_goes_offline(
+async def test_state_unavailable_turns_on_when_the_plug_goes_offline(
         ha: HomeAssistant, freezer: Any) -> None:
-    offline = {"name": "Offline", "when": "appliance_power", "is": "unavailable",
+    offline = {"name": "Offline", "when": "appliance_power", "state": "unavailable",
                "for": {"minutes": 10}}
     assert await setup(ha, devices(offline=offline))
     await fake(ha, POWER, "10")
@@ -374,7 +419,7 @@ async def test_is_unavailable_turns_on_when_the_plug_goes_offline(
     assert state(ha, alert("offline")) == "off"
 
 
-OFFLINE = {"name": "Offline", "when": "appliance_power", "is": "unavailable"}
+OFFLINE = {"name": "Offline", "when": "appliance_power", "state": "unavailable"}
 
 
 def states_of(events: list[Any], entity_id: str) -> list[str]:
@@ -419,7 +464,7 @@ async def test_a_plug_offline_at_start_turns_it_on(ha: HomeAssistant) -> None:
 @pytest.mark.parametrize("gone", ["unavailable", "unknown"])
 async def test_unavailable_and_unknown_are_both_offline(
         ha: HomeAssistant, condition: str, gone: str) -> None:
-    assert await setup(ha, devices(offline={**OFFLINE, "is": condition}))
+    assert await setup(ha, devices(offline={**OFFLINE, "state": condition}))
     await fake(ha, POWER, "10")
     await fake(ha, POWER, gone)
     assert state(ha, alert("offline")) == "on"
@@ -441,7 +486,7 @@ async def test_passing_between_unavailable_and_unknown_keeps_counting(
 
 
 async def test_a_missing_entity_counts_as_unavailable(ha: HomeAssistant) -> None:
-    offline = {"name": "Offline", "when": "appliance_power", "is": "unavailable"}
+    offline = {"name": "Offline", "when": "appliance_power", "state": "unavailable"}
     assert await setup(ha, devices(offline=offline))
     await fake(ha, POWER, "10")
     assert state(ha, alert("offline")) == "off"

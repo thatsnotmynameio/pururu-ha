@@ -1,8 +1,8 @@
 """Alerts: conditions on the device's own entities that mean something is wrong.
 
 Each alert is a problem binary sensor, on while its condition holds (after
-`for`). With `notify`, it also says what to tell; Alert2 does the telling,
-reading its attributes. pururu sends nothing.
+`for`). With `message` and `done_message`, it also says what to tell; Alert2
+does the telling, reading its attributes. pururu sends nothing.
 """
 
 from collections.abc import Mapping
@@ -32,50 +32,51 @@ from homeassistant.helpers.start import async_at_started
 
 from ..const import ALERT2, DEFAULT_ALERT_LIGHTS
 from ..core.entity import PururuEntity
-from ..core.feature import PRIORITIES, TEXT, Device, finite_float, state_text
+from ..core.feature import PRIORITIES, TEXT, Device, finite_float, state_of
+from ..core.resolve import local_key
 from ..core.vocabulary import Condition
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _state(value: Any) -> str | float:
-    """A state to compare with, or a number to compare a reading with.
-
-    A number is compared as a number, so 1 matches a state of 1.0.
-    """
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        return finite_float(value)
-    return state_text(value)
-
-
 def _one_condition(alert: dict[str, Any]) -> dict[str, Any]:
-    if ("is" in alert) == ("above" in alert or "below" in alert):
-        raise vol.Invalid("an alert needs is, or above and/or below, not both")
+    if ("state" in alert) == ("above" in alert or "below" in alert):
+        raise vol.Invalid("an alert needs state, or above and/or below, not both")
     if "above" in alert and "below" in alert and alert["above"] >= alert["below"]:
         raise vol.Invalid("an alert's above must be lower than its below")
     return alert
 
 
-# What to tell, for Alert2 to deliver; a schema of its own, so unknown keys are refused
-NOTIFY = vol.Schema({vol.Required("message"): TEXT, vol.Required("done_message"): TEXT})
+# What an alert tells, for Alert2 to deliver: both or neither
+TEXTS = ("message", "done_message")
 
 
-def lights_group(value: Any) -> str | None:
-    """An alert's alert lights group (alert_lights.py): true is the default group, false none."""
+def texts_together(alert: dict[str, Any]) -> dict[str, Any]:
+    """An alert's message and done_message: both, or neither."""
+    if ("message" in alert) != ("done_message" in alert):
+        raise vol.Invalid("an alert needs message and done_message, or neither")
+    return alert
+
+
+def lights_group(value: Any) -> str:
+    """An alert's alert lights group (alert_lights.py), by its name: default is the group default."""
     if isinstance(value, bool):
-        return DEFAULT_ALERT_LIGHTS if value else None
+        raise vol.Invalid(
+            f"lights names a group of config.alerts.lights.groups, such as "
+            f"{DEFAULT_ALERT_LIGHTS}; absent, the alert borrows none"
+        )
     return str(cv.slug(value))
 
 
 def shared(priority: str) -> dict[Any, Any]:
-    """What every alert takes, hand-written or ready-made: priority, notify, lights.
+    """What every alert takes, hand-written or ready-made: priority, its texts, lights.
 
     Only the default priority differs: low for a hand-written alert, the
-    ready-made alert's own for one.
+    ready-made alert's own for one. Its texts go together (texts_together).
     """
     return {
         vol.Optional("priority", default=priority): vol.In(PRIORITIES),
-        vol.Optional("notify"): NOTIFY,
+        **{vol.Optional(text): TEXT for text in TEXTS},
         vol.Optional("lights"): lights_group,
     }
 
@@ -85,15 +86,18 @@ ALERT = vol.All(
         {
             # A blank name would show the alert as its device's name alone
             vol.Required("name"): TEXT,
-            vol.Required("when"): cv.slug,
-            vol.Optional("is"): _state,
+            vol.Required("when"): local_key,
+            # Text, as a reaction's to: a number is a reading's (above/below) or quoted
+            vol.Optional("state"): state_of("state"),
             vol.Optional("above"): finite_float,
             vol.Optional("below"): finite_float,
-            vol.Optional("for", default=timedelta(0)): cv.positive_time_period,
+            # Absent: at once
+            vol.Optional("for"): cv.positive_time_period,
             **shared("low"),
         }
     ),
     _one_condition,
+    texts_together,
 )
 # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
 SCHEMA = vol.All(vol.Schema({cv.slug: ALERT}), vol.Length(min=1))
@@ -113,26 +117,26 @@ class ProblemAlert(PururuEntity, BinarySensorEntity, RestoreEntity):
         *,
         watched: str,
         priority: str,
-        notify: Mapping[str, str] | None,
+        messages: Mapping[str, str] | None,
         asks_alert2: bool = True,
         lights: str | None = None,
     ) -> None:
-        """Watch `watched`; `notify` is what Alert2 tells, `lights` the group it borrows.
+        """Watch `watched`; `messages` is what Alert2 tells (message, done_message), `lights` the group it borrows.
 
-        `asks_alert2` False: its notify is a ready-made alert's own texts, not a
-        request of the user's, so no error without Alert2.
+        `asks_alert2` False: its messages are a ready-made alert's default
+        texts, not a request of the user's, so no error without Alert2.
         """
         self._watched = watched
-        self._asks_alert2 = asks_alert2 and notify is not None
+        self._asks_alert2 = asks_alert2 and messages is not None
         self.priority = priority
-        self.notify = notify
+        self.messages = messages
         self.lights = lights
         self._attr_is_on = False
         self._attr_extra_state_attributes = {
             "priority": priority,
             "watches": watched,
             **({"lights": lights} if lights is not None else {}),
-            **(notify or {}),
+            **(messages or {}),
         }
         self._pending: CALLBACK_TYPE | None = None
 
@@ -147,13 +151,14 @@ class ProblemAlert(PururuEntity, BinarySensorEntity, RestoreEntity):
 
     @callback
     def _start(self, _hass: HomeAssistant) -> None:
-        """Follow; also the time to know whether Alert2, which delivers `notify`, is set up.
+        """Follow; also the time to know whether Alert2, which delivers its messages, is set up.
 
         Alert2 may load after pururu.
         """
         if self._asks_alert2 and ALERT2 not in self.hass.config.components:
             _LOGGER.error(
-                "%s has notify, but Alert2 isn't set up to deliver it", self.entity_id
+                "%s has a message, but Alert2 isn't set up to deliver it",
+                self.entity_id,
             )
         self._follow()
 
@@ -186,19 +191,19 @@ class Alert(ProblemAlert):
         name: str | None,
         watched: str,
         condition: Condition,
-        hold: timedelta,
+        hold: timedelta | None,
         priority: str,
-        notify: Mapping[str, str] | None,
+        messages: Mapping[str, str] | None,
         follows: tuple[str, ...] = (),
         sources: tuple[str, ...] = (),
         asks_alert2: bool = True,
         lights: str | None = None,
     ) -> None:
-        """Watch `watched` for `condition` held for `hold`; `name` None: translated."""
+        """Watch `watched` for `condition` held for `hold` (None: at once); `name` None: translated."""
         super().__init__(
             watched=watched,
             priority=priority,
-            notify=notify,
+            messages=messages,
             asks_alert2=asks_alert2,
             lights=lights,
         )

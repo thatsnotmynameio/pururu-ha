@@ -12,23 +12,29 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A typo in a key, such as `floor:` for `floors:` or `running:` for `running_program:` (an old key is `'running' is an invalid option`), or the appliance's `statistics: runtime`/`cycles` still in the block instead of in `running_program` (`'cycles' is an invalid option`).
 - A key that isn't a slug, such as `Laundry Washer:` instead of `clothes_washer:`.
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
+- A device's, floor's or area's empty `name`: `length of value must be at least 1`.
+- A top-level `events:`, as before 0.2.1: `'events' is an invalid option for 'pururu', check: pururu->events`. Move it under `config:`.
 - A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
 - A `running_program` with a `name` (`running_program takes no name: it is the appliance running`), or with neither `above` nor `below` (`a program needs above, below or both`).
 - A phase without `name`, keyed `idle` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
 - A phase keyed `other` or `other_…`, the built-in phase's, whether `other:` is written yet or not: its meters would be the phase's entities once it is (`other_cycles_today is reserved for the built-in phase other (other, other_…): name the phase otherwise`). Pick a key that doesn't begin with `other_`.
 - `other:` without `phases` (`other is the program outside every phase: it needs phases`).
+- A `modes:` or `phases:` feature, as before 0.2.1 (`'modes' is an invalid option`, `'phases' is an invalid option`): their bands are `running_program: phases:`, as [Updating to 0.2.1](/getting-started/updating-to-0.2.1) shows. A phase's `for` (`'for' is an invalid option`) is `on_delay`, and `running_program`'s `threshold` (`'threshold' is an invalid option`) is `above`. A phase's `sensor` or `cycle_from` goes: every phase compares the appliance's `power`.
 - Two entities of one device with one unique ID, such as a phase's key and another phase's meter (`device clothes_washer: pururu_clothes_washer_appliance_phase_resfriar_cycles_today would be two entities`).
 - `statistics.energy` on a phase or a detected program without the appliance's `energy` (`statistics.energy needs energy`).
 - A switch whose `entity` isn't a `switch.*` entity, is a pururu switch, or has no `name` or an empty one.
-- A door or window whose `contact` isn't a `binary_sensor.*` entity (`sensor.x is not a binary_sensor`) or is a pururu binary sensor (`binary_sensor.pururu_… is a pururu binary_sensor: name the real one`); an event whose `entity` isn't an `event.*` entity, whose `types` is empty or means something other than `opening`, `denied` or `ring`, or whose `fields` names something other than `who`, `how` or `direction`.
+- A door or window whose `contact` isn't a `binary_sensor.*` entity (`sensor.x is not a binary_sensor`) or is a pururu binary sensor (`binary_sensor.pururu_… is a pururu binary_sensor: name the real one`); an event entity whose `entity` isn't an `event.*` entity, whose `types` is empty or means something other than `opening`, `denied` or `ring`, or whose `fields` names something other than `who`, `how` or `direction`.
+- A door's or window's `events`, as before 0.2.1: `'events' is an invalid option`. Write `event_entities`.
 - A light whose `entity` isn't a `light.*` or `switch.*` entity (`sensor.x is not a light or switch`), is a pururu light or switch, or has no `name` or an empty one.
 - A button whose `entity` isn't a `sensor.*` entity (`binary_sensor.x is not a sensor`) or is a pururu sensor, with no `name` or an empty one, or whose `state` is empty, `unavailable` or `unknown` (`unknown is not a value a person presses`).
 - A button's `program` that isn't one of its device's executable programs: `buttons: ler: regar is not an executable program of this device`.
 - Two buttons of one device on the same sensor and value: `buttons: extra: sensor.controle_biblioteca_action at 1_single is already button ler`. Give each its own value.
 - A real entity in both `switches` and `lights` of one device: `switches: switch.sonoff_abajur is already in lights`. Keep it in one of them.
 - An alert whose `when` isn't an entity of another feature of the device: `alerts: appliance_nothing is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key, with its namespace (`appliance_power`, not `power`).
-- An alert with both `is` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
-- An alert's `notify` without `message` or `done_message`, with an empty one, or with another key.
+- An alert with both `state` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
+- An alert's `is`, as before 0.2.1: `'is' is an invalid option`. Write `state`.
+- A number without quotes in an alert's `state`, a button's `state`, or a reaction's `to` or `from`: `state: YAML reads it as the number 1: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. A state is compared as text, and pururu can't tell which entity shows `1` as `1.0` (the appliance's power does). Write `above`/`below`, or quote the state as the entity shows it. The message shows the value as YAML read it, which isn't always as you wrote it: YAML reads some unquoted values as numbers, such as `12:30` (750, read in base 60) or `1.50` (1.5). Quote them: `to: "12:30"`.
+- An alert's `message` without `done_message`, or the reverse (`an alert needs message and done_message, or neither`), or an empty one. An alert's `notify`, as before 0.2.1 (`'notify' is an invalid option`): write `message` and `done_message` on the alert itself.
 - A ready-made alert the feature doesn't offer (`nope is not a ready-made alert: offline, no_power, long_cycle, no_cycle`; a door or window lists `long_opening, no_opening`), `long_cycle`, `no_cycle`, `long_opening` or `no_opening` without `for`, or `lasts` (`'lasts' is an invalid option`).
 - A ready-made notification the feature doesn't offer: `nope is not a ready-made notification of appliance: finished`. A feature that offers none takes no `notifications` (`'notifications' is an invalid option`).
 - A message that goes nowhere: `device clothes_washer: reactions: door_open: message needs notify, here or in config.notify`. Add `config.notify`, or a `notify` to that reaction or notification. A reaction's `notify` without `message` is refused too, and so is a `notify` that isn't `notify.<name>`.
@@ -36,15 +42,19 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A program step naming something that isn't an entity of another feature of the device: `programs: switch_greenhouse_sprinkler is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key (`switch_sprinkler`), not as an entity ID.
 - A program step whose entity doesn't take the action: `programs: appliance_power does not take turn_on`. Only switches and lights can be turned on, off or toggled.
 - A program step with an unknown key (such as `action:`), with two keys, or a program with no `name` or an empty `sequence`. An executable program takes no `phases` yet (`'phases' is an invalid option`), nor a band (`'above' is an invalid option`).
-- A device's `programs:` written as a flat map, as up to 0.2.0, or with no group: `a device's programs sit under executable: (programs: executable: <key>: …) for dictionary value 'pururu->devices->greenhouse->programs'`. Indent its programs under `executable:`.
+- A device's `programs:` written as a flat map, as before 0.2.1, or with no group: `a device's programs sit under executable: (programs: executable: <key>: …) for dictionary value 'pururu->devices->greenhouse->programs'`. Indent its programs under `executable:`.
 - `detected:` in a device's `programs:` (`a device's programs are executable: a detected program sits in the block of the feature whose reading it reads`): move it into the appliance's block. `executable:` in a feature's `programs:` (`a feature's programs are detected: executable programs are the device's`): move it to the device.
 - A feature's `programs:` without `detected:`, such as `programs: {}` or a flat map: `a feature's programs needs detected`.
 - A detected program without `name`: `a detected program needs a name: it names its entities`.
 - A reaction's `then` naming a detected program, which can't be started: `reactions: <reaction>: cotton is not an executable program of this device`.
 - A detected program keyed as one of the appliance's entities, such as `idle`, `running` or `cycles_total`: `device clothes_washer: pururu_clothes_washer_appliance_idle_energy_total would be two entities`. Pick another key: see [More detected programs](/concepts/programs#more-detected-programs).
 - A detected program keyed as phases' keys begin, whether those phases exist yet or not: `phase` or `phase_…` (the running program's phases: `phase_warming is reserved for the running program's phases (phase, phase_…): name the program otherwise`), or `cotton_phase` or `cotton_phase_…` beside a detected program `cotton` (`cotton_phase_warming is reserved for detected program cotton's phases (cotton_phase, cotton_phase_…): name the program otherwise`). Pick a key no phase could take.
-- A reaction with no source or two (`a reaction needs one source: when, entity, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `device` without `when`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`. A `retry` on a reaction to an entity (`a reaction's retry goes with at or sun`), with `times × every` over 12 hours (`a reaction's retries must end within 12 hours`), with `every` under a minute or not in whole seconds (`a reaction's retry every must be whole seconds`), or with `times` not a whole number (`a reaction's retry times must be a whole number`).
-- A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: add `device:` to point at another device), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device clothes_washer`), or whose `device` isn't a device (`device laundry_lights: reactions: washer_done: device dryer is not in devices`).
+- A reaction with no source or two (`a reaction needs one source: when, entity, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`. A `retry` on a reaction to an entity (`a reaction's retry goes with at or sun`), with `times × every` over 12 hours (`a reaction's retries must end within 12 hours`), with `every` under a minute or not in whole seconds (`a reaction's retry every must be whole seconds`), or with `times` not a whole number (`a reaction's retry times must be a whole number`).
+- A reaction whose `when` isn't an entity of its device (`reactions: door: appliance_power is not an entity key of this device`: write `<device>.appliance_power` for another device's), or of the device it names (`device laundry_lights: reactions: washer_done: light_teto is not an entity key of device clothes_washer`), or whose device isn't a device (`… device dryer is not in devices`). A `when` written as an entity ID reads as a device that isn't one, and the message says so: a pururu entity's gives its reference (`device binary_sensor is not in devices (binary_sensor.pururu_clothes_washer_appliance_running is an entity ID: write clothes_washer.appliance_running)`), a real entity's says to watch it with `entity:`. `device:` with `when:`, as before 0.2.1, is refused (`'device' is an invalid option`).
+- A light group's member that isn't `<device>.light_<key>` of a device's `lights`: `config.alerts.lights.groups: porch: varanda.rele is not a light`; a member without its device: `light_rele needs its device: <device>.light_rele`; a member written as an entity ID: `device light is not in devices (light.pururu_varanda_light_rele is an entity ID: write varanda.light_rele)`; a group written as a map of devices, as before 0.2.1: `expected a list`.
+- An alert's `lights: true` or `false`, as before 0.2.1: `lights names a group of config.alerts.lights.groups, such as default; absent, the alert borrows none`.
+- `resolved`'s `for`, as before 0.2.1 (`'for' is an invalid option`): write `lasts`. A `repeat` or `lasts` under a second: `value must be at least 0:00:01`.
+- An alert's `when`, a program step, a reaction's `then` or a button's `program` with a dot: `<x> must be of this device: its entity key, without <device>. or <domain>.` Any of them, a reaction's `when` or a light group's member left empty (`""`): `an entity key can't be empty`.
 - Two reactions whose automations would share an ID: `device lights_reaction_b: automation.pururu_lights_reaction_b_reaction_c is already a reaction of device lights`. Rename a device key or a reaction key.
 - Two devices that would give an entity the same ID: `device greenhouse_switch: pururu_greenhouse_switch_switch_sprinkler is already an entity of device greenhouse`. Rename a device key or a switch key.
 
@@ -134,15 +144,15 @@ An [alert](/concepts/alerts)'s `when` names an entity its feature can create, bu
 
 **Fix:** turn on the setting that creates the entity, or point `when` at another entity, then reload pururu.
 
-### `… has notify, but Alert2 isn't set up to deliver it`
+### `… has a message, but Alert2 isn't set up to deliver it`
 
 ```
-binary_sensor.pururu_clothes_washer_alert_long_cycle has notify, but Alert2 isn't set up to deliver it
+binary_sensor.pururu_clothes_washer_alert_long_cycle has a message, but Alert2 isn't set up to deliver it
 ```
 
-An alert with `notify` is delivered by [Alert2](/concepts/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told. A [ready-made alert](/features/appliance#ready-made-alerts)'s own texts never log this: only a `notify` you wrote does.
+An alert with texts is delivered by [Alert2](/concepts/alerts#getting-notified), which isn't installed, or failed to set up. The alert still works as a binary sensor; nobody is told. A [ready-made alert](/features/appliance#ready-made-alerts)'s own texts never log this: only texts you wrote do.
 
-**Fix:** install Alert2 and add [the include](/concepts/alerts#getting-notified) to its `alert2:` block, or remove `notify` from the alert.
+**Fix:** install Alert2 and add [the include](/concepts/alerts#getting-notified) to its `alert2:` block, or remove `message` and `done_message` from the alert.
 
 ### Alert2 doesn't run pururu's alerts
 
@@ -156,7 +166,7 @@ Alert2 doesn't run pururu's alerts: add "alerts: !include_dir_merge_list pururu/
 
 ### `Duplicate declaration of alert for domain=pururu …`
 
-Alert2 reports it when its old pururu `generator` is still in its `alerts` next to the include. **Fix:** remove the generator. See [Coming from the generator](/concepts/alerts#coming-from-the-generator).
+Alert2 reports it when its old pururu `generator` is still in its `alerts` next to the include. **Fix:** remove the generator. See [Getting notified](/concepts/alerts#getting-notified).
 
 ### `Alert2 is not reloaded…`
 
@@ -204,7 +214,7 @@ You renamed a pururu switch or light in the UI to the entity its own `entity:` n
 ### `… is a pururu binary sensor: name the real contact; … stands for nothing`
 
 ```
-binary_sensor.lavadora_rodando is a pururu binary sensor: name the real contact; binary_sensor.pururu_cercado_frente_door_open stands for nothing
+binary_sensor.lavadora_rodando is a pururu binary sensor: name the real contact; binary_sensor.pururu_porta_frente_door_open stands for nothing
 ```
 
 A door's or window's `contact:` names one of pururu's own binary sensors that you renamed in the UI, so it no longer starts with `binary_sensor.pururu_`. The door is kept, but its `open` is `unavailable` and it records no openings.

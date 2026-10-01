@@ -1,8 +1,8 @@
 """A door or a window: its contact opens and closes it, and each opening is a cycle.
 
 `door` and `window` are one feature under two namespaces: they differ only in
-their `open`'s device class and their texts. The contact is required; events
-(events.py), optional, describe the openings.
+their `open`'s device class and their texts. The contact is required;
+event_entities (events.py), optional, describe the openings.
 """
 
 from collections.abc import Mapping
@@ -30,6 +30,9 @@ from .open import Open
 
 _LOGGER = logging.getLogger(__name__)
 
+# The block's key for its event.* entities
+EVENT_ENTITIES = "event_entities"
+
 # Its totals, <counter>_total; the statistics aspect meters them
 COUNTED = Counted(needs={"openings": None, "open_time": None})
 
@@ -38,7 +41,8 @@ SCHEMA = vol.Schema(
         vol.Required("contact"): standing.real_entity(Platform.BINARY_SENSOR),
         # How far from an opening's start an opening event may be, before or after
         vol.Optional("match", default=timedelta(seconds=5)): cv.positive_time_period,
-        vol.Optional("events"): vol.All([events.SCHEMA], vol.Length(min=1)),
+        # The event.* entities that describe the openings (not pururu's bus events)
+        vol.Optional(EVENT_ENTITIES): vol.All([events.SCHEMA], vol.Length(min=1)),
     }
 )
 
@@ -100,7 +104,7 @@ def _builder(device_class: BinarySensorDeviceClass) -> Build:
                 watched,
             )
             real = None
-        sources = [events.Source.of(block) for block in config.get("events", [])]
+        sources = [events.Source.of(block) for block in config.get(EVENT_ENTITIES, [])]
         entities: list[PururuEntity] = [
             Open(
                 device,

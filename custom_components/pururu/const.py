@@ -22,7 +22,7 @@ CONF_MESSAGE: Final = "message"
 CONF_NOTIFY: Final = "notify"
 # A device's ready-made notifications: feature key -> name -> settings
 CONF_NOTIFICATIONS: Final = "notifications"
-# A device's alerts: the feature whose alerts with notify Alert2 delivers
+# A device's alerts: the device key of the hand-written alerts (those with texts go to Alert2)
 CONF_ALERTS: Final = "alerts"
 # The key of the entry's data holding the IDs of the automations it generated
 CONF_AUTOMATIONS: Final = "automations"
@@ -35,7 +35,7 @@ CONF_EXECUTABLE: Final = "executable"
 CONF_DETECTED: Final = "detected"
 # The key of the entry's data holding the IDs of the scripts it generated
 CONF_SCRIPTS: Final = "scripts"
-# Alert2 (HACS) delivers what an alert's notify says
+# Alert2 (HACS) delivers an alert's texts, message and done_message
 ALERT2: Final = "alert2"
 # Every entity ID is <platform>.pururu_<device key>_<namespace>_<entity key>
 ENTITY_PREFIX: Final = "pururu"
@@ -52,7 +52,7 @@ DATA_CONFIG: HassKey[dict[str, Any]] = HassKey(DOMAIN)
 CONF_CONFIG: Final = "config"
 # A device's lights, config: alerts: lights:, and an alert's lights
 CONF_LIGHTS: Final = "lights"
-# The alert lights group of an alert's `lights: true`
+# The alert lights group `lights: default` names: the one to write first
 DEFAULT_ALERT_LIGHTS: Final = "default"
 # Fired when the alert lights hand a light back: {"entity_id": the pururu light}
 EVENT_ALERT_LIGHTS_RELEASED: Final = "pururu_alert_lights_released"

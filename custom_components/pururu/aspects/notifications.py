@@ -101,14 +101,17 @@ def automation(
     notify: Sequence[str],
 ) -> dict[str, Any]:
     """The automation of notification `name` of `device`'s feature; `entity_id` is what it watches."""
-    trigger: dict[str, Any] = {"to": happening.to}
-    if happening.from_ is not None:
-        trigger["from"] = happening.from_
     return {
         "id": automation_id(device.key, device.namespace, name),
         "alias": f"{device.name} {alias}",
         "description": f"pururu: {device.key}, {device.namespace} {NAMESPACE} {name}",
-        "triggers": [vocabulary.trigger(trigger, entity_id)],
+        "triggers": [
+            vocabulary.trigger(
+                entity_id,
+                vocabulary.Condition(state=happening.to),
+                from_=happening.from_,
+            )
+        ],
         "actions": messages.actions(notify, device.name, message),
     }
 

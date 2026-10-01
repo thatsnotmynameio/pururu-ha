@@ -1,11 +1,13 @@
 config:
   notify: notify.mobile_app_phone
+  events: [state_changed, reading]
   alerts:
     lights:
       groups:
-        default: {biblioteca: [teto]}
-        externas: {biblioteca: [teto, abajur]}
-events: [state_changed, reading]
+        default: [biblioteca.light_teto]
+        externas: [biblioteca.light_teto, biblioteca.light_abajur]
+      high: {turn_on: {color_name: red, effect: breathe}, repeat: "00:00:15"}
+      resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}
 floors:
   terreo: {name: Térreo, level: 0}
 areas:
@@ -57,7 +59,7 @@ devices:
       alerts:
         offline:
         no_power:
-        long_cycle: {for: {hours: 3}, lights: true}
+        long_cycle: {for: {hours: 3}, lights: default}
         no_cycle: {for: {days: 2}}
       notifications:
         finished:
@@ -65,11 +67,12 @@ devices:
       stuck:
         name: Travada
         when: appliance_phase_current
-        is: wringing
+        state: wringing
         for: {hours: 1}
         priority: medium
         lights: externas
-        notify: {message: Travada!, done_message: Destravou.}
+        message: Travada!
+        done_message: Destravou.
       overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
   water_station:
     name: Purificador
@@ -106,7 +109,7 @@ devices:
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
-      events:
+      event_entities:
         - entity: event.porta_frente_access
           types: {access_granted: opening, access_denied: denied}
           fields: {who: actor, how: authentication, direction: direction}
@@ -158,8 +161,7 @@ devices:
     reactions:
       washer_done:
         name: Lavadora terminou
-        device: clothes_washer
-        when: appliance_running
+        when: clothes_washer.appliance_running
         from: "on"
         to: "off"
       night: {name: Noite, at: "22:00", message: Hora de apagar as luzes.}
