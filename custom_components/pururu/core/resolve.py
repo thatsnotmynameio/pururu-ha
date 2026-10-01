@@ -217,14 +217,20 @@ def key_alone(field: str, of: str | None = None) -> Callable[[Any], str]:
     """A field that takes one kind of thing, by its key alone: an area's, a program's.
 
     The field's name says what it is, so a path is refused, naming the key
-    to write (then: programs.executable.blink is blink). `of` is what the
-    key is of, the field's own name without.
+    to write (then: programs.executable.blink is blink). Another device's
+    (device.<device>.) names no key: this device may have another thing by
+    that key, so its key would name the wrong one. `of` is what the key is
+    of, the field's own name without.
     """
     whose = field if of is None else of
 
     def validate(value: Any) -> str:
         if value == "":
             raise vol.Invalid(f"{field} can't be empty")
+        if isinstance(value, str) and value.startswith(f"{DEVICE}."):
+            raise vol.Invalid(
+                f"{field} is its {whose}'s key alone, never another device's"
+            )
         if isinstance(value, str) and "." in value:
             raise vol.Invalid(
                 f"{field} is its {whose}'s key alone: {value.rpartition('.')[2]}"

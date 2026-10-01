@@ -51,7 +51,7 @@ pururu knows nothing about remotes, integrations or vendors. You name a sensor a
 ---
 
 <Property name="program" type="string">
-  One of the device's [executable programs](/concepts/programs#executable-programs), by its key alone: `program: ler`. A button starts its own device's programs only, so a path, such as `programs.executable.ler` or another device's `device.estufa.programs.executable.regar`, is refused, naming the key to write (`program is its program's key alone: regar`); a key that isn't one of the device's executable programs is refused too (`buttons: ler: regar is not an executable program of this device`). Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button, as [Reacting to a press](#reacting-to-a-press) says.
+  One of the device's [executable programs](/concepts/programs#executable-programs), by its key alone: `program: ler`. A button starts its own device's programs only, so a path, such as `programs.executable.regar`, is refused, naming the key to write (`program is its program's key alone: regar`), and another device's, such as `device.estufa.programs.executable.regar`, is refused without one (`program is its program's key alone, never another device's`); a key that isn't one of the device's executable programs is refused too (`buttons: ler: regar is not an executable program of this device`). Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button, as [Reacting to a press](#reacting-to-a-press) says.
 </Property>
 
 <Property name="statistics" type="map">

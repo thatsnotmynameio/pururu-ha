@@ -181,7 +181,7 @@ def test_a_key_alone_is_accepted(ha: HomeAssistant, field: str, of: str, value: 
     pytest.param("then", "program", "programs.executable.blink", "then is its program's key alone: blink",
                  id="a program's path"),
     pytest.param("then", "program", "device.greenhouse.programs.executable.blink",
-                 "then is its program's key alone: blink", id="another device's program"),
+                 "then is its program's key alone, never another device's", id="another device's program"),
     pytest.param("area", "area", "areas.despensa", "area is its area's key alone: despensa", id="an area's path"),
     pytest.param("floor", "floor", "floors.terreo", "floor is its floor's key alone: terreo", id="a floor's path"),
     pytest.param("then", "program", "Blink", "invalid slug Blink", id="not a slug"),
@@ -190,3 +190,27 @@ def test_a_key_alone_is_accepted(ha: HomeAssistant, field: str, of: str, value: 
 def test_a_key_alone_refuses_a_path(ha: HomeAssistant, field: str, of: str, value: str, message: str) -> None:
     with pytest.raises(vol.Invalid, match=re.escape(message)):
         module("core.resolve").key_alone(field, of)(value)
+
+
+@pytest.mark.parametrize(("value", "domains", "entity_id"), [
+    pytest.param("homeassistant.sensor.washer_power", ("sensor",), "sensor.washer_power", id="its domain's"),
+    pytest.param("homeassistant.light.teto", (), "light.teto", id="any domain"),
+    pytest.param("homeassistant.sensor.Washer_Power", ("sensor",), "sensor.washer_power",
+                 id="lowered, as Home Assistant's cv.entity_id"),
+])
+def test_a_home_assistant_entity_is_accepted(ha: HomeAssistant, value: str, domains: tuple[str, ...],
+                                             entity_id: str) -> None:
+    assert module("core.resolve").homeassistant_entity(*domains)(value) == entity_id
+
+
+@pytest.mark.parametrize(("value", "domains", "message"), [
+    pytest.param("sensor.washer_power", ("sensor",),
+                 "sensor.washer_power is not a Home Assistant entity: homeassistant.<domain>.<object_id>",
+                 id="without homeassistant."),
+    pytest.param("homeassistant.light.teto", ("sensor",), "homeassistant.light.teto is not a sensor",
+                 id="another domain"),
+])
+def test_a_home_assistant_entity_is_refused(ha: HomeAssistant, value: str, domains: tuple[str, ...],
+                                            message: str) -> None:
+    with pytest.raises(vol.Invalid, match=re.escape(message)):
+        module("core.resolve").homeassistant_entity(*domains)(value)

@@ -20,7 +20,7 @@ from typing import Any, override
 import voluptuous as vol
 
 from homeassistant.components.sensor import RestoreSensor, SensorStateClass
-from homeassistant.const import CONF_NAME, STATE_OFF, Platform
+from homeassistant.const import CONF_NAME, STATE_OFF, STATE_ON, Platform
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
@@ -59,6 +59,8 @@ SOURCES = ("when", "at", "sun")
 # data. A string, not automation's constant: pururu doesn't depend on it
 AUTOMATION_TRIGGERED = "automation_triggered"
 PER_REACTION: dict[str, Platform] = {"triggered_total": Platform.SENSOR}
+# What a program's script shows, which a reaction following it compares
+SCRIPT_STATES = (STATE_ON, STATE_OFF)
 
 
 def _item(key: str, reaction: Mapping[str, Any]) -> Item:
@@ -421,7 +423,8 @@ def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Inval
 
     `when` names an entity of the device, or of another device
     (device.<device>.<path>), never one of the reaction's own statistics, or
-    an executable program of either, its script running;
+    an executable program of either, its script running, on or off, so
+    followed with to and from "on" or "off" (the field refused);
     `then` one of the device's executable programs. Home Assistant's entity
     is Home Assistant's, unless pururu creates it
     (checks.pururus_own_as_home_assistants).
@@ -490,12 +493,35 @@ def _refused(
         why := _refused_when(index, devices, key, reaction_key, reaction["when"])
     ):
         return vol.Invalid(f"{where}: {why}", path=[*place, "when"])
+    if (field := _beyond_script(key, reaction)) is not None:
+        return vol.Invalid(
+            f"{where}: {reaction['when']} is a program, on while it runs: "
+            'a reaction follows it with to and from "on" or "off"',
+            path=[*place, field],
+        )
     then = reaction.get("then")
     if then is not None and then not in programs.executable(devices[key]):
         return vol.Invalid(
             f"{where}: {then} is not an executable program of this device",
             path=[*place, "then"],
         )
+    return None
+
+
+def _beyond_script(key: str, reaction: Mapping[str, Any]) -> str | None:
+    """The first condition a followed program's script never meets; None when it meets them all, or follows none.
+
+    A script is on while it runs, off otherwise: a reading (above, below)
+    or another state would never fire the automation.
+    """
+    if _followed(key, reaction) is None:
+        return None
+    for field in ("above", "below"):
+        if field in reaction:
+            return field
+    for field in ("to", "from"):
+        if field in reaction and reaction[field] not in SCRIPT_STATES:
+            return field
     return None
 
 

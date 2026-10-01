@@ -89,7 +89,7 @@ PATH = "'pururu->devices->lights->reactions->it"
     pytest.param({"name": "X", "when": "device.Washer.appliance.power", "to": "on"},
                  "invalid slug Washer", id="a device not a slug"),
     pytest.param({"name": "X", "at": "22:00", "then": "device.greenhouse.programs.executable.clean"},
-                 "then is its program's key alone: clean", id="then of another device"),
+                 "then is its program's key alone, never another device's", id="then of another device"),
     pytest.param({"name": "X", "at": "22:00", "offset": {"minutes": 1}},
                  "a reaction's offset goes with sun", id="offset without sun"),
     pytest.param({"name": "X", "at": "22:00", "for": {"minutes": 1}},
@@ -945,6 +945,48 @@ async def test_a_reaction_on_no_program_is_refused(ha: HomeAssistant, caplog: py
     config[BIBLIOTECA]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
     assert not await setup(ha, config)
     assert f"reactions: done: {reason}" in caplog.text
+
+
+# A program's script is on while it runs, off otherwise: no other state, no reading
+ON_OR_OFF = 'is a program, on while it runs: a reaction follows it with to and from "on" or "off"'
+OWN_CLEAN = "programs.executable.clean"
+OTHER_CLEAN = f"device.{GREENHOUSE}.programs.executable.clean"
+
+
+@pytest.mark.parametrize("when", [
+    pytest.param(OWN_CLEAN, id="its own device's"),
+    pytest.param(OTHER_CLEAN, id="another device's"),
+])
+@pytest.mark.parametrize(("conditions", "field"), [
+    pytest.param({"above": 0}, "above", id="above"),
+    pytest.param({"below": 1}, "below", id="below"),
+    pytest.param({"to": "running"}, "to", id="to running"),
+    pytest.param({"from": "idle", "to": "off"}, "from", id="from idle"),
+])
+async def test_a_reaction_on_a_program_takes_on_or_off(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                                       when: str, conditions: dict[str, Any], field: str) -> None:
+    """A script is on or off: any other condition would never fire, so it's refused at its field."""
+    config = biblioteca(done={"name": "Limpou", "when": when, **conditions})
+    config[BIBLIOTECA]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    assert not await setup(ha, config)
+    assert f"reactions: done: {when} {ON_OR_OFF} 'pururu->devices->{BIBLIOTECA}->reactions->done->{field}'" \
+        in caplog.text
+
+
+@pytest.mark.parametrize("when", [
+    pytest.param(OWN_CLEAN, id="its own device's"),
+    pytest.param(OTHER_CLEAN, id="another device's"),
+])
+@pytest.mark.parametrize("conditions", [
+    pytest.param({"from": "on", "to": "off"}, id="quoted"),
+    pytest.param(parse_yaml("from: on\nto: off"), id="unquoted, YAML's booleans"),
+    pytest.param({"to": "on", "for": {"minutes": 5}}, id="on for a while"),
+])
+async def test_a_reaction_on_a_program_on_or_off_is_accepted(ha: HomeAssistant, when: str,
+                                                             conditions: dict[str, Any]) -> None:
+    config = biblioteca(done={"name": "Limpou", "when": when, **conditions})
+    config[BIBLIOTECA]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    assert await setup(ha, config)
 
 
 async def test_a_reaction_on_a_program_not_generated_is_not_generated(

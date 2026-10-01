@@ -87,7 +87,7 @@ A path that names nothing is refused with its place: `reactions: washer_done: de
 ### An executable program
 
 <Property name="when" type="programs.executable.<key>">
-  An [executable program](/concepts/programs#executable-programs) running: its script, `on` while it runs and `off` once it ends. `when: programs.executable.blink`, `from: "on"`, `to: "off"` fires when `blink` finishes; `to: "on"` when it starts. Another device's program is `device.<device>.programs.executable.<key>`. One the device doesn't have is refused: `reactions: blinked: programs.executable.wash is not an executable program of this device`.
+  An [executable program](/concepts/programs#executable-programs) running: its script, `on` while it runs and `off` once it ends. `when: programs.executable.blink`, `from: "on"`, `to: "off"` fires when `blink` finishes; `to: "on"` when it starts. Another device's program is `device.<device>.programs.executable.<key>`. One the device doesn't have is refused: `reactions: blinked: programs.executable.wash is not an executable program of this device`. A script shows no other state and no reading, so `above`, `below`, or a `to` or `from` other than `"on"` or `"off"` would never fire, and is refused at that field: `reactions: blinked: programs.executable.blink is a program, on while it runs: a reaction follows it with to and from "on" or "off"`.
 </Property>
 
 A program's script that isn't generated (an entity it acts on isn't created, or its ID is taken) leaves the reaction that follows it ungenerated too, and one waiting for a disabled entity holds the reaction with it, as `then` does: see [Starting a program](#starting-a-program).
@@ -155,7 +155,7 @@ For `when`, give **either** `to` **or** `above`/`below`:
 ### What it does
 
 <Property name="then" type="program key" optional>
-  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. A detected program (it can't be started), a key that isn't a program of this device, or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`. `then` takes the program's key alone, as `then` only ever names one of this device's executable programs: a path (`programs.executable.clean`, `device.greenhouse.programs.executable.clean`) or a script's entity ID is refused, naming the key to write: `then is its program's key alone: clean`.
+  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. A detected program (it can't be started), a key that isn't a program of this device, or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`. `then` takes the program's key alone, as `then` only ever names one of this device's executable programs: a path (`programs.executable.clean`) or a script's entity ID is refused, naming the key to write: `then is its program's key alone: clean`. Another device's program (`device.greenhouse.programs.executable.clean`) is refused without a key to write, as this device may have a program of its own by that key: `then is its program's key alone, never another device's`.
 </Property>
 
 ---

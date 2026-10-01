@@ -149,6 +149,20 @@ def group(*members: str) -> dict[str, Any]:
         "reactions: it: programs.executable.wash is not an executable program of this device",
         id="a reaction on a program the device lacks"),
     pytest.param(
+        {"devices": {"washer": washer(reactions={"it": {"name": "X", "when": "programs.executable.clean", "above": 0}},
+                                      programs=clean({"delay": 1}))}},
+        [*REACTION, "above"],
+        'reactions: it: programs.executable.clean is a program, on while it runs: '
+        'a reaction follows it with to and from "on" or "off"',
+        id="a reaction on a program above a reading"),
+    pytest.param(
+        {"devices": {"washer": washer(reactions=reaction("device.greenhouse.programs.executable.clean", to="running")),
+                     "greenhouse": greenhouse(programs=clean({"delay": 1}))}},
+        [*REACTION, "to"],
+        'reactions: it: device.greenhouse.programs.executable.clean is a program, on while it runs: '
+        'a reaction follows it with to and from "on" or "off"',
+        id="a reaction on another device's program to a state it never shows"),
+    pytest.param(
         {"devices": {"washer": washer(alerts=alert("programs.executable.clean"), programs=clean({"delay": 1}))}},
         WHEN, "alerts: programs.executable.clean is an executable program: only a reaction's when follows it",
         id="an alert on a program"),
@@ -166,6 +180,11 @@ def group(*members: str) -> dict[str, Any]:
                                                          then="programs.executable.blink"))}},
         [*REACTION, "then"], "then is its program's key alone: blink",
         id="a reaction's then as a path"),
+    pytest.param(
+        {"devices": {"washer": washer(reactions=reaction("appliance.running_program",
+                                                         then="device.greenhouse.programs.executable.blink"))}},
+        [*REACTION, "then"], "then is its program's key alone, never another device's",
+        id="a reaction's then of another device"),
     pytest.param(
         {"devices": {"greenhouse": greenhouse(programs=clean({"turn_on": "switches.nope"}))}}, STEP,
         "programs: switches.nope is not an entity of this device",
