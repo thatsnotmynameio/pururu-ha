@@ -150,7 +150,9 @@ def test_the_ready_queue_in_creation_order_with_blocked_counts() -> None:
                                                      node(72, ("ready",), blocked=1))))
     assert [(issue.number, issue.blocked) for issue, _ in gh.issues(READY)] == [(70, 0), (72, 1)]
     query = fake.calls[-1]
-    assert "createdBy: $login" in " ".join(query) and "login=me" in query and "label=ready" in query
+    assert "createdBy: $login" in " ".join(query)
+    assert "login=me" in query
+    assert "label=ready" in query
 
 
 def test_only_open_pull_requests_linked_to_an_issue_are_kept() -> None:
@@ -240,8 +242,9 @@ def test_a_forks_branch_of_the_same_name_is_not_the_sessions() -> None:
 
 def test_a_failing_gh_call_raises_with_its_stderr() -> None:
     gh, _ = github((("issue", "edit"), 1, ""))
+    swap = Move(74, (READY,), (IN_PROGRESS,))
     with pytest.raises(dispatcher.GhError, match="something broke"):
-        gh.move(Move(74, (READY,), (IN_PROGRESS,)))
+        gh.move(swap)
 
 
 # The session runner
@@ -323,7 +326,8 @@ def test_the_session_runs_lfg_headless_in_its_worktree(tmp_path: Path) -> None:
     runner.start(74)
     (args, options), = spawn.calls
     assert args[:2] == ["claude", "-p"]
-    assert args[2].startswith("/compound-engineering:lfg #74") and "Closes #74" in args[2]
+    assert args[2].startswith("/compound-engineering:lfg #74")
+    assert "Closes #74" in args[2]
     assert args[3:] == ["--permission-mode", "auto", "--output-format", "stream-json", "--verbose"]
     assert options["cwd"] == tmp_path / ".claude/worktrees/issue-74"
     assert options["start_new_session"] is True
@@ -473,7 +477,8 @@ def test_start_marks_the_orphans_before_the_first_poll(tmp_path: Path) -> None:
     dispatcher.Dispatcher(gh, runner, 2, say=lambda line: None).start()
     assert gh.writes[0] == "labels"
     move = gh.writes[1]
-    assert isinstance(move, Move) and move.add == (NEEDS_ATTENTION,)
+    assert isinstance(move, Move)
+    assert move.add == (NEEDS_ATTENTION,)
     assert f"{tmp_path}/.claude/worktrees/issue-74" in (move.comment or "")
 
 
@@ -484,7 +489,8 @@ def test_a_poll_dispatches_then_judges_the_ended_session(tmp_path: Path) -> None
     lines: list[str] = []
     boss = dispatcher.Dispatcher(gh, runner, 1, say=lines.append)
     boss.poll()
-    assert moves(gh) == [(74, (IN_PROGRESS,))] and len(spawn.calls) == 1
+    assert moves(gh) == [(74, (IN_PROGRESS,))]
+    assert len(spawn.calls) == 1
     process = boss.running[74].process
     assert isinstance(process, FakeProcess)
     process.returncode = 0
@@ -518,7 +524,8 @@ def test_stopping_ends_the_sessions_and_marks_their_issues(tmp_path: Path) -> No
     boss.stop()
     assert process.signals == ["terminate"]
     move = gh.writes[-1]
-    assert isinstance(move, Move) and move.add == (NEEDS_ATTENTION,)
+    assert isinstance(move, Move)
+    assert move.add == (NEEDS_ATTENTION,)
     assert "stopped" in (move.comment or "")
     assert boss.running == {}
 
@@ -529,7 +536,8 @@ def test_a_failing_label_swap_does_not_stop_the_poll(tmp_path: Path) -> None:
     lines: list[str] = []
     boss = dispatcher.Dispatcher(gh, runner, 2, say=lines.append)
     boss.poll()
-    assert moves(gh) == [(74, (IN_PROGRESS,))] and len(spawn.calls) == 1
+    assert moves(gh) == [(74, (IN_PROGRESS,))]
+    assert len(spawn.calls) == 1
     assert any("HTTP 502" in line for line in lines)
 
 
@@ -551,7 +559,8 @@ def test_a_failed_move_after_a_session_ends_is_retried_at_the_next_poll(tmp_path
     boss = ended_session(tmp_path, gh)
     gh.flaky = {"move"}
     boss.poll()
-    assert (74, (IN_REVIEW,)) not in moves(gh) and boss.running == {}
+    assert (74, (IN_REVIEW,)) not in moves(gh)
+    assert boss.running == {}
     boss.poll()
     assert moves(gh).count((74, (IN_REVIEW,))) == 1
     assert [write.comment for write in gh.writes  # type: ignore[union-attr]
@@ -566,7 +575,8 @@ def test_a_failed_link_after_a_session_ends_is_retried_at_the_next_poll(tmp_path
     boss = ended_session(tmp_path, gh)
     gh.flaky = {"link"}
     boss.poll()
-    assert Link(101, 74) not in gh.writes and (74, (IN_REVIEW,)) in moves(gh)
+    assert Link(101, 74) not in gh.writes
+    assert (74, (IN_REVIEW,)) in moves(gh)
     boss.poll()
     assert gh.writes.count(Link(101, 74)) == 1
     boss.poll()
@@ -578,9 +588,11 @@ def test_an_ended_session_github_cannot_read_waits_for_the_next_poll(tmp_path: P
     boss = ended_session(tmp_path, gh)
     gh.flaky = {"head"}
     boss.poll()
-    assert 74 in boss.running and moves(gh) == [(74, (IN_PROGRESS,))]
+    assert 74 in boss.running
+    assert moves(gh) == [(74, (IN_PROGRESS,))]
     boss.poll()
-    assert boss.running == {} and (74, (IN_REVIEW,)) in moves(gh)
+    assert boss.running == {}
+    assert (74, (IN_REVIEW,)) in moves(gh)
 
 
 def two_sessions(tmp_path: Path, gh: FakeGitHub) -> tuple[dispatcher.Dispatcher, FakeProcess,
@@ -592,7 +604,8 @@ def two_sessions(tmp_path: Path, gh: FakeGitHub) -> tuple[dispatcher.Dispatcher,
     boss.poll()
     gh.answers = {}
     done, live = boss.running[74].process, boss.running[75].process
-    assert isinstance(done, FakeProcess) and isinstance(live, FakeProcess)
+    assert isinstance(done, FakeProcess)
+    assert isinstance(live, FakeProcess)
     done.returncode = 0
     return boss, done, live
 
@@ -602,11 +615,13 @@ def test_stopping_judges_a_session_that_already_ended(tmp_path: Path) -> None:
     gh = FakeGitHub(head={"issue-74": (PR,)})
     boss, done, live = two_sessions(tmp_path, gh)
     boss.stop()
-    assert done.signals == [] and live.signals == ["terminate"]
+    assert done.signals == []
+    assert live.signals == ["terminate"]
     assert moves(gh)[2:] == [(74, (IN_REVIEW,)), (75, (NEEDS_ATTENTION,))]
     assert Link(101, 74) in gh.writes
     move = gh.writes[-1]
-    assert isinstance(move, Move) and "stopped while the session ran" in (move.comment or "")
+    assert isinstance(move, Move)
+    assert "stopped while the session ran" in (move.comment or "")
     assert boss.running == {}
 
 
@@ -617,7 +632,8 @@ def test_stopping_when_github_cannot_read_an_ended_session(tmp_path: Path) -> No
     boss.stop()
     assert moves(gh)[2:] == [(74, (NEEDS_ATTENTION,)), (75, (NEEDS_ATTENTION,))]
     move = gh.writes[2]
-    assert isinstance(move, Move) and "HTTP 502" in (move.comment or "")
+    assert isinstance(move, Move)
+    assert "HTTP 502" in (move.comment or "")
 
 
 # The loop and the lock
@@ -669,7 +685,8 @@ def test_an_unexpected_error_still_stops_the_sessions() -> None:
     boss = Boss(broken)
     with pytest.raises(RuntimeError, match="a bug"):
         dispatcher.serve(boss, 0)  # type: ignore[arg-type]
-    assert boss.calls[-1] == "stop" and boss.calls.count("stop") == 1
+    assert boss.calls[-1] == "stop"
+    assert boss.calls.count("stop") == 1
 
 
 def command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -687,7 +704,8 @@ def test_the_lock_is_held_while_serving_and_released_after(tmp_path: Path,
     held: list[bool] = []
     lock = command(tmp_path, monkeypatch, lambda boss, every: held.append(lock.exists()))
     assert dispatcher.main(["dispatcher.py", "run", "--every", "0"]) == 0
-    assert held == [True] and not lock.exists()
+    assert held == [True]
+    assert not lock.exists()
 
 
 def test_the_lock_is_released_when_serving_fails(tmp_path: Path,
