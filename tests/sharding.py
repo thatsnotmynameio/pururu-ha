@@ -1,5 +1,6 @@
 """PURURU_SHARD=i/N: whole test files split into N stable bins, for CI's parallel test jobs."""
 
+from collections.abc import Iterable
 import re
 
 import pytest
@@ -15,7 +16,7 @@ def parse(value: str) -> tuple[int, int]:
     return int(match[1]), int(match[2])
 
 
-def split(files: list[tuple[str, int]], i: int, n: int) -> list[str]:
+def split(files: Iterable[tuple[str, int]], i: int, n: int) -> list[str]:
     """The files of bin i of n: largest item count first (ties by name), each to the lightest bin.
 
     Whatever order the files come in, every caller (every xdist worker) gets the same bins.

@@ -13,6 +13,13 @@ PROJECT = Path(__file__).resolve().parents[2]
 CODE = "custom_components/pururu"
 
 
+def section(page: Path, heading: str) -> str:
+    """The text of a page's `## heading` section, up to the next one."""
+    found = re.search(rf"## {heading}\n(.*?)\n## ", page.read_text(encoding="utf-8"), re.DOTALL)
+    assert found is not None, f"no {heading} section"
+    return found[1]
+
+
 # --- docs/develop ------------------------------------------------------------------------
 
 BLOCK = re.compile(r'```python title="([\w/]+\.py)"\n(.*?)```', re.DOTALL)
@@ -75,12 +82,10 @@ NOTIFICATIONS_PAGE = PROJECT / "docs/concepts/notifications.mdx"
 
 
 def test_the_page_lists_every_ready_made_notification(ha: HomeAssistant) -> None:
-    page = NOTIFICATIONS_PAGE.read_text(encoding="utf-8")
-    section = re.search(r"## Ready-made notifications\n(.*?)\n## ", page, re.DOTALL)
-    assert section is not None, "no Ready-made notifications section"
+    listed = section(NOTIFICATIONS_PAGE, "Ready-made notifications")
     for name, feature in module("features").FEATURES.items():
         for notification in module("core.feature").happenings_of(feature):
-            assert f"`{name}: notifications: {notification}`" in section[1], notification
+            assert f"`{name}: notifications: {notification}`" in listed, notification
 
 
 # --- docs/features/door.mdx --------------------------------------------------------------
@@ -90,12 +95,10 @@ DOOR_PAGE = PROJECT / "docs/features/door.mdx"
 
 def test_the_door_page_lists_every_ready_made_alert(ha: HomeAssistant) -> None:
     """The window page points to the door's: one list for both."""
-    page = DOOR_PAGE.read_text(encoding="utf-8")
-    section = re.search(r"## Ready-made alerts\n(.*?)\n## ", page, re.DOTALL)
-    assert section is not None, "no Ready-made alerts section"
+    listed = section(DOOR_PAGE, "Ready-made alerts")
     features = module("features").FEATURES
     for name in module("core.feature").presets_of(features["door"]):
-        assert f"`{name}`" in section[1], name
+        assert f"`{name}`" in listed, name
     assert set(module("core.feature").presets_of(features["window"])) == set(
         module("core.feature").presets_of(features["door"]))
 
@@ -106,8 +109,6 @@ APPLIANCE_PAGE = PROJECT / "docs/features/appliance.mdx"
 
 
 def test_the_appliance_page_lists_every_ready_made_alert(ha: HomeAssistant) -> None:
-    page = APPLIANCE_PAGE.read_text(encoding="utf-8")
-    section = re.search(r"## Ready-made alerts\n(.*?)\n## ", page, re.DOTALL)
-    assert section is not None, "no Ready-made alerts section"
+    listed = section(APPLIANCE_PAGE, "Ready-made alerts")
     for name in module("core.feature").presets_of(module("features").FEATURES["appliance"]):
-        assert f"`{name}`" in section[1], name
+        assert f"`{name}`" in listed, name

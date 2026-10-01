@@ -241,6 +241,7 @@ def reading_docs(folder: Path) -> list[str]:
     found = []
     for path in sorted(folder.rglob("*.py")):
         module = path.relative_to(folder)
+        # test_code.py itself: the guard's own samples name docs/
         if module.parts[0] == "docs" or module in DOCS_ALLOWED or module == Path("test_code.py"):
             continue
         if named := docs_named_in(path):

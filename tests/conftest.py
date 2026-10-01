@@ -53,10 +53,12 @@ def pytest_collection_modifyitems(
         return
     i, n = config.stash[SHARD]
     files = [item.path.relative_to(config.rootpath).as_posix() for item in items]
-    kept = set(sharding.split(list(Counter(files).items()), i, n))
-    config.hook.pytest_deselected(
-        items=[item for item, file in zip(items, files, strict=True) if file not in kept])
-    items[:] = [item for item, file in zip(items, files, strict=True) if file in kept]
+    kept = set(sharding.split(Counter(files).items(), i, n))
+    selected, deselected = [], []
+    for item, file in zip(items, files, strict=True):
+        (selected if file in kept else deselected).append(item)
+    config.hook.pytest_deselected(items=deselected)
+    items[:] = selected
 
 
 @pytest.fixture
