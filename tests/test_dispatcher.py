@@ -22,11 +22,11 @@ def ready(number: int, *, blocked: int = 0, also: tuple[str, ...] = ()) -> Issue
 
 def ended(issue: int, *, prs: tuple[PullRequest, ...] = (), linked: frozenset[int] = frozenset(),
           reason: str = "lfg stopped: no work source") -> Ended:
-    return Ended(issue, "/repo/.claude/worktrees/issue-%d" % issue, "/repo/.dispatch/logs/x.log",
+    return Ended(issue, f"/repo/.claude/worktrees/issue-{issue}", "/repo/.dispatch/logs/x.log",
                  reason, prs, linked)
 
 
-# The queue (R1, R2, R3, R4)
+# The queue
 
 def test_a_blocked_issue_is_skipped_and_dispatched_once_its_blocker_closes() -> None:
     """AE1: #72 waits on #70; once #70 is gone from the queue and closed, #72 goes."""
@@ -58,7 +58,7 @@ def test_free_slots_fill_in_order() -> None:
     assert dispatcher.tick(snapshot, set(), 2) == [Dispatch(69), Dispatch(70)]
 
 
-# A session's end (R9, R10)
+# A session's end
 
 def test_a_session_that_opened_a_pull_request_goes_in_review() -> None:
     """AE4: in review with the link; the slot frees."""
@@ -87,7 +87,7 @@ def test_a_session_without_a_pull_request_needs_attention() -> None:
     assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
 
 
-# Promotion (R13)
+# Promotion
 
 def test_an_issue_in_review_whose_checks_pass_is_ready_to_merge() -> None:
     """AE4, later: every required check passes."""
@@ -99,7 +99,7 @@ def test_pending_or_failing_checks_leave_it_in_review() -> None:
     assert dispatcher.tick(Snapshot(reviews=(Review(74, False),)), set(), 1) == []
 
 
-# Start (R11)
+# Start
 
 def test_an_in_progress_issue_at_start_needs_attention() -> None:
     """AE6: the orphan fails with its worktree; issues in review are not in the input at all."""
@@ -109,7 +109,7 @@ def test_an_in_progress_issue_at_start_needs_attention() -> None:
     assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
 
 
-# The gh gateway (U2)
+# The gh gateway
 
 class FakeGh:
     """`gh` answering from a script of (argument prefix, exit code, stdout); records every call."""
@@ -140,7 +140,7 @@ def node(number: int, labels: tuple[str, ...], blocked: int = 0,
 
 
 def github(*script: tuple[tuple[str, ...], int, str]) -> tuple[dispatcher.GitHub, FakeGh]:
-    fake = FakeGh((("repo", "view"), 0, "o/r\n"), (("api", "user"), 0, "me\n"), *script)
+    fake = FakeGh((("api", "user"), 0, "me\n"), *script)
     return dispatcher.GitHub(fake), fake
 
 
@@ -211,7 +211,7 @@ def test_a_failing_gh_call_raises_with_its_stderr() -> None:
         gh.move(Move(74, (READY,), (IN_PROGRESS,)))
 
 
-# The session runner (U3)
+# The session runner
 
 class FakeGit:
     """`git` with these branches; records every call."""
@@ -319,11 +319,25 @@ def test_the_reason_is_the_final_result_or_the_exit_code(tmp_path: Path) -> None
     assert runner.reason(running) == "the session exited with code 1 and no final result"
 
 
+def test_a_new_attempt_never_reports_an_earlier_attempts_result(tmp_path: Path) -> None:
+    """The log is per issue and appended: a retry that dies silently has its own reason."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    first = runner.start(74)
+    first.log.write_text(json.dumps({"type": "result", "result": "First attempt: blocked."}) + "\n")
+    again = runner.start(74)
+    process = again.process
+    assert isinstance(process, FakeProcess)
+    process.returncode = 1
+    with again.log.open("a") as log:
+        log.write(json.dumps({"type": "assistant"}) + "\n")
+    assert runner.reason(again) == "the session exited with code 1 and no final result"
+
+
 def test_a_session_that_ignores_terminate_is_killed(tmp_path: Path) -> None:
     runner, _ = sessions(tmp_path, FakeGit())
     running = runner.start(74)
     stubborn = FakeProcess(stubborn=True)
-    runner.end(dataclasses.replace(running, process=stubborn))
+    runner.end([dataclasses.replace(running, process=stubborn)])
     assert stubborn.signals == ["terminate", "kill"]
 
 
@@ -339,7 +353,7 @@ def test_worktrees_by_issue(tmp_path: Path) -> None:
                                        f"{tmp_path}/.claude/worktrees/issue-74-2"]}
 
 
-# The command (U4)
+# The command
 
 class FakeGitHub:
     """The gateway's interface over fixed answers; records the writes."""
@@ -409,7 +423,7 @@ def test_a_dead_dispatchers_lock_is_taken_over(tmp_path: Path) -> None:
     assert not dispatcher.take(lock)
 
 
-def test_an_issue_in_progress_at_start_needs_attention(tmp_path: Path) -> None:
+def test_start_marks_the_orphans_before_the_first_poll(tmp_path: Path) -> None:
     """AE6: the orphan gets its worktree in the comment, before the first poll."""
     gh = FakeGitHub({IN_PROGRESS: [(Issue(74, frozenset({IN_PROGRESS})), ())]})
     runner, _ = sessions(tmp_path, FakeGit())
@@ -427,14 +441,14 @@ def test_a_poll_dispatches_then_judges_the_ended_session(tmp_path: Path) -> None
     runner, spawn = sessions(tmp_path, FakeGit())
     lines: list[str] = []
     boss = dispatcher.Dispatcher(gh, runner, 1, say=lines.append)
-    boss.tick()
+    boss.poll()
     assert moves(gh) == [(74, (IN_PROGRESS,))] and len(spawn.calls) == 1
     process = boss.running[74].process
     assert isinstance(process, FakeProcess)
     process.returncode = 0
     gh.answers = {IN_REVIEW: [(Issue(74, frozenset({IN_REVIEW})), ())]}
     gh.checks = True
-    boss.tick()
+    boss.poll()
     assert moves(gh)[1:] == [(74, (IN_REVIEW,)), (74, (READY_TO_MERGE,))]
     assert Link(101, 74) in gh.writes
     assert boss.running == {}
@@ -446,7 +460,7 @@ def test_a_session_that_cannot_start_needs_attention(tmp_path: Path) -> None:
     gh = FakeGitHub({READY: [(ready(74), ())]})
     runner, _ = sessions(tmp_path, FakeGit(fail="worktree add"))
     boss = dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None)
-    boss.tick()
+    boss.poll()
     assert moves(gh) == [(74, (IN_PROGRESS,)), (74, (NEEDS_ATTENTION,))]
     assert "no space" in (gh.writes[-1].comment or "")  # type: ignore[union-attr]
     assert boss.running == {}
@@ -456,7 +470,7 @@ def test_stopping_ends_the_sessions_and_marks_their_issues(tmp_path: Path) -> No
     gh = FakeGitHub({READY: [(ready(74), ())]})
     runner, _ = sessions(tmp_path, FakeGit())
     boss = dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None)
-    boss.tick()
+    boss.poll()
     process = boss.running[74].process
     assert isinstance(process, FakeProcess)
     boss.stop()
@@ -472,6 +486,6 @@ def test_a_failing_label_swap_does_not_stop_the_poll(tmp_path: Path) -> None:
     runner, spawn = sessions(tmp_path, FakeGit())
     lines: list[str] = []
     boss = dispatcher.Dispatcher(gh, runner, 2, say=lines.append)
-    boss.tick()
+    boss.poll()
     assert moves(gh) == [(74, (IN_PROGRESS,))] and len(spawn.calls) == 1
     assert any("HTTP 502" in line for line in lines)

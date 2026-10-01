@@ -28,6 +28,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from typing import Any, Protocol
 
 ROOT = Path(__file__).resolve().parent
@@ -112,17 +113,25 @@ class Dispatch:
 type Action = Move | Link | Dispatch
 
 
+def needs_attention(issue: int, *paragraphs: str) -> Move:
+    """In progress to needs attention, the comment saying why and how to queue it again."""
+    return Move(issue, (IN_PROGRESS,), (NEEDS_ATTENTION,),
+                "\n\n".join(("Dispatcher: " + paragraphs[0], *paragraphs[1:],
+                              "Add `ready` to queue it again.")))
+
+
 def judge(session: Ended) -> list[Action]:
     """A session ended: in review when its branch has an open pull request, else needs attention."""
-    if session.prs:
-        pr = session.prs[0]
-        moved: list[Action] = [Move(session.issue, (IN_PROGRESS,), (IN_REVIEW,),
-                                    f"Dispatcher: pull request {pr.url} is open.")]
-        return moved + ([] if pr.number in session.linked else [Link(pr.number, session.issue)])
-    return [Move(session.issue, (IN_PROGRESS,), (NEEDS_ATTENTION,),
-                 "Dispatcher: the session ended without a pull request.\n\n"
-                 f"Reason: {session.reason}\n\nWorktree: `{session.worktree}`\n\n"
-                 f"Log: `{session.log}`\n\nAdd `ready` to queue it again.")]
+    if not session.prs:
+        return [needs_attention(session.issue, "the session ended without a pull request.",
+                                f"Reason: {session.reason}", f"Worktree: `{session.worktree}`",
+                                f"Log: `{session.log}`")]
+    pr = session.prs[0]
+    actions: list[Action] = [Move(session.issue, (IN_PROGRESS,), (IN_REVIEW,),
+                                  f"Dispatcher: pull request {pr.url} is open.")]
+    if pr.number not in session.linked:
+        actions.append(Link(pr.number, session.issue))
+    return actions
 
 
 def pick(ready: Iterable[Issue], running: set[int], free: int) -> list[int]:
@@ -148,11 +157,9 @@ def tick(snapshot: Snapshot, running: set[int], sessions: int) -> list[Action]:
 
 def orphans(in_progress: Iterable[Issue], worktrees: Mapping[int, list[str]]) -> list[Move]:
     """At start no session runs, so every issue in progress lost its session: it needs attention."""
-    return [Move(issue.number, (IN_PROGRESS,), (NEEDS_ATTENTION,),
-                 "Dispatcher: this issue was in progress with no session running "
-                 "(the dispatcher was stopped or crashed).\n\n"
-                 + "".join(f"Worktree: `{path}`\n\n" for path in worktrees.get(issue.number, []))
-                 + "Add `ready` to queue it again.")
+    return [needs_attention(issue.number, "this issue was in progress with no session running "
+                            "(the dispatcher was stopped or crashed).",
+                            *(f"Worktree: `{path}`" for path in worktrees.get(issue.number, [])))
             for issue in in_progress]
 
 
@@ -205,7 +212,6 @@ class GitHub:
     def __init__(self, run: GhRunner = run_gh) -> None:
         """Call `gh` through `run`."""
         self.run = run
-        self._repo: tuple[str, str] | None = None
         self._login: str | None = None
 
     def _ok(self, args: list[str]) -> str:
@@ -215,22 +221,13 @@ class GitHub:
         return out
 
     def _graphql(self, query: str, **fields: str | int) -> dict[str, Any]:
-        owner, name = self.repo()
-        args = ["api", "graphql", "-f", f"query={query}", "-F", f"owner={owner}", "-F",
-                f"name={name}"]
+        # gh fills {owner} and {repo} from this checkout's remote
+        args = ["api", "graphql", "-f", f"query={query}", "-F", "owner={owner}", "-F",
+                "name={repo}"]
         for key, value in fields.items():
             args += ["-F", f"{key}={value}"]
         data: dict[str, Any] = json.loads(self._ok(args))["data"]["repository"]
         return data
-
-    def repo(self) -> tuple[str, str]:
-        """This checkout's GitHub owner and name."""
-        if self._repo is None:
-            owner, name = self._ok(
-                ["repo", "view", "--json", "owner,name", "-q",
-                 '.owner.login + "/" + .name']).strip().split("/")
-            self._repo = owner, name
-        return self._repo
 
     def login(self) -> str:
         """The user `gh` is logged in as."""
@@ -242,7 +239,7 @@ class GitHub:
         """The user's open issues with this label, oldest first, each with its linked open PRs."""
         found = self._graphql(ISSUES, login=self.login(), label=label)["issues"]["nodes"]
         return [(Issue(node["number"],
-                       frozenset(label["name"] for label in node["labels"]["nodes"]),
+                       frozenset(tag["name"] for tag in node["labels"]["nodes"]),
                        node["issueDependenciesSummary"]["blockedBy"]),
                  tuple(PullRequest(pr["number"], pr["url"])
                        for pr in node["closedByPullRequestsReferences"]["nodes"]
@@ -333,6 +330,7 @@ class Running:
     worktree: Path
     log: Path
     process: Process
+    since: int = 0  # where this session's output starts in the issue's log
 
 
 def run_git(args: list[str]) -> str:
@@ -370,14 +368,23 @@ class Sessions:
         log = self.root / STATE / "logs" / f"issue-{issue}.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a") as output:
+            since = output.tell()
             process = self.spawn(["claude", "-p", PROMPT.format(issue=issue), *FLAGS],
                                  cwd=worktree, stdin=subprocess.DEVNULL, stdout=output,
                                  stderr=subprocess.STDOUT, start_new_session=True)
-        return Running(issue, name, worktree, log, process)
+        return Running(issue, name, worktree, log, process, since)
 
     def reason(self, running: Running) -> str:
-        """Why a session ended: its final result's text, else its exit code."""
-        lines = running.log.read_text(errors="replace").splitlines() if running.log.exists() else []
+        """Why a session ended: its final result's text, else its exit code.
+
+        Only this session's part of the log counts: an earlier attempt's result is not its reason.
+        """
+        try:
+            with running.log.open("rb") as log:
+                log.seek(running.since)
+                lines = log.read().decode(errors="replace").splitlines()
+        except FileNotFoundError:
+            lines = []
         for line in reversed(lines):
             try:
                 event = json.loads(line)
@@ -387,14 +394,18 @@ class Sessions:
                 return str(event["result"]).strip()[:2000]
         return f"the session exited with code {running.process.returncode} and no final result"
 
-    def end(self, running: Running) -> None:
-        """Terminate a session; kill it when it hasn't exited after the grace period."""
-        running.process.terminate()
-        try:
-            running.process.wait(GRACE)
-        except subprocess.TimeoutExpired:
-            running.process.kill()
-            running.process.wait()
+    def end(self, sessions: Iterable[Running]) -> None:
+        """Terminate the sessions; kill those still running once the grace period is over."""
+        processes = [running.process for running in sessions]
+        for process in processes:
+            process.terminate()
+        deadline = time.monotonic() + GRACE
+        for process in processes:
+            try:
+                process.wait(max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
     def worktrees(self) -> dict[int, list[str]]:
         """The worktrees named after an issue (`issue-N`, `issue-N-2`…), by issue."""
@@ -426,7 +437,7 @@ class Dispatcher:
         self.branches: dict[int, str] = {}  # issues in review: the branch their session pushed
 
     def start(self) -> None:
-        """Create the missing labels; mark the issues left in progress (R11)."""
+        """Create the missing labels; the issues left in progress need attention."""
         self.gh.ensure_labels()
         stranded = [issue for issue, _ in self.gh.issues(IN_PROGRESS)]
         for move in orphans(stranded, self.sessions.worktrees() if stranded else {}):
@@ -451,7 +462,7 @@ class Dispatcher:
         ready = tuple(issue for issue, _ in self.gh.issues(READY))
         return Snapshot(tuple(ended), tuple(reviews), ready), over
 
-    def tick(self) -> None:
+    def poll(self) -> None:
         """One poll: read, decide, apply. A failed read skips the poll; ended sessions wait."""
         try:
             snapshot, over = self.snapshot()
@@ -478,7 +489,7 @@ class Dispatcher:
             self.say(f"dispatcher: {action}: {error}")
 
     def dispatch(self, issue: int) -> None:
-        """In progress, then a session; one that cannot start needs attention (R10).
+        """In progress, then a session; one that cannot start needs attention.
 
         A failed label swap raises before the session: the issue stays `ready` for the next poll.
         """
@@ -487,23 +498,22 @@ class Dispatcher:
         try:
             running = self.sessions.start(issue)
         except (OSError, subprocess.CalledProcessError) as error:
-            detail = getattr(error, "stderr", None) or error
-            self.apply(Move(issue, (IN_PROGRESS,), (NEEDS_ATTENTION,),
-                            f"Dispatcher: the session could not start: {str(detail).strip()}\n\n"
-                            "Add `ready` to queue it again."))
+            detail = (error.stderr if isinstance(error, subprocess.CalledProcessError)
+                      and error.stderr else error)
+            self.apply(needs_attention(issue, f"the session could not start: {str(detail).strip()}"))
             return
         self.running[issue] = running
         self.say(f"dispatcher: #{issue} running in {running.worktree}, log {running.log}")
 
     def stop(self) -> None:
         """End every session and mark its issue: the dispatcher was stopped."""
-        for running in list(self.running.values()):
-            self.sessions.end(running)
-            del self.running[running.issue]
-            self.apply(Move(running.issue, (IN_PROGRESS,), (NEEDS_ATTENTION,),
-                            "Dispatcher: the dispatcher was stopped while the session ran.\n\n"
-                            f"Worktree: `{running.worktree}`\n\nLog: `{running.log}`\n\n"
-                            "Add `ready` to queue it again."))
+        stopped = list(self.running.values())
+        self.sessions.end(stopped)
+        self.running.clear()
+        for running in stopped:
+            self.apply(needs_attention(running.issue,
+                                       "the dispatcher was stopped while the session ran.",
+                                       f"Worktree: `{running.worktree}`", f"Log: `{running.log}`"))
 
 
 def alive(pid: int) -> bool:
@@ -519,13 +529,20 @@ def alive(pid: int) -> bool:
 
 def take(lock: Path) -> bool:
     """Hold the lock for this process, unless a live dispatcher holds it."""
-    if lock.exists():
-        holder = lock.read_text().strip()
-        if holder.isdigit() and alive(int(holder)):
-            return False
     lock.parent.mkdir(parents=True, exist_ok=True)
-    lock.write_text(str(os.getpid()))
-    return True
+    for _ in range(2):
+        try:
+            descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            holder = lock.read_text().strip()
+            if holder.isdigit() and alive(int(holder)):
+                return False
+            lock.unlink(missing_ok=True)  # a dead dispatcher's lock
+            continue
+        with os.fdopen(descriptor, "w") as file:
+            file.write(str(os.getpid()))
+        return True
+    return False
 
 
 def serve(boss: Dispatcher, every: float) -> None:
@@ -539,7 +556,7 @@ def serve(boss: Dispatcher, every: float) -> None:
     signal.signal(signal.SIGTERM, stop)
     boss.start()
     while not stopping.is_set():
-        boss.tick()
+        boss.poll()
         stopping.wait(every)
     boss.say("dispatcher: stopping")
     boss.stop()
