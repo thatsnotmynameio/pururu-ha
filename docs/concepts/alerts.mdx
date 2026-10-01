@@ -56,7 +56,7 @@ This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **
   The state that is a problem, as text: `"on"`, `"off"`, a phase such as `wringing`, `unavailable`.
 
   - `on` and `off` work with or without quotes. Without quotes, YAML also reads `yes`/`true` as `on` and `no`/`false` as `off`.
-  - A state is compared as text, as Home Assistant's `state` condition does: `state: "1"` matches a state of `1`, not `1.0`, and the appliance's power shows `1.0`. So a number without quotes is refused: `state: 1 is a number: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. For a number, write `above`/`below`, or the state in quotes as the entity shows it (`"0.0"`).
+  - A state is compared as text, as Home Assistant's `state` condition does: `state: "1"` matches a state of `1`, not `1.0`, and the appliance's power shows `1.0`. So a number without quotes is refused: `state: YAML reads it as the number 1: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. For a number, write `above`/`below`, or the state in quotes as the entity shows it (`"0.0"`).
 </Property>
 
 ---
@@ -143,7 +143,7 @@ alert2:
   alerts: !include_dir_merge_list pururu/alert2
 ```
 
-Then restart Home Assistant, or reload Alert2 in **Developer tools → YAML → Alert2**. From then on pururu reloads Alert2 itself whenever its alerts change: adding or removing them, a new alert, a changed message.
+Then restart Home Assistant, or reload Alert2 in **Developer tools → YAML → Alert2**. From then on pururu reloads Alert2 itself whenever its alerts change: adding or removing an alert's `message` and `done_message`, a new alert, a changed message.
 
 For the `long_cycle` alert above, pururu writes:
 
@@ -164,7 +164,7 @@ For the `long_cycle` alert above, pururu writes:
 - A message or name with `{` is shown as you wrote it, not as a template.
 - `condition_on` and `condition_off`, rather than one `condition`, keep the Alert2 alert as it is while the pururu alert is briefly `unavailable`, as during a pururu reload.
 - Until the line is there, **Settings → Repairs** shows **Alert2 doesn't run pururu's alerts**, with the line to add. See [Troubleshooting](/reference/troubleshooting#alert2-doesnt-run-pururus-alerts).
-- If an alert has `message` and `done_message` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_clothes_washer_alert_long_cycle has a message, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
+- If you gave an alert `message` and `done_message` and Alert2 isn't set up once Home Assistant has started, the log says so: `binary_sensor.pururu_clothes_washer_alert_long_cycle has a message, but Alert2 isn't set up to deliver it`. The alert still works as a binary sensor.
 
 <Warning>
   `alerts:` is the include alone: a YAML list can't be both written out and included. Create **your own** Alert2 alerts in Alert2's UI instead. Don't put files in `pururu/alert2` and don't edit `alerts.yaml`: the include loads every file there, and pururu rewrites it whenever the configuration changes.

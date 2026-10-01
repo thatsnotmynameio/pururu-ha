@@ -84,7 +84,7 @@ A reaction listens to **exactly one** of these sources.
 For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 
 <Property name="to" type="state" optional>
-  The state it changes to: `"on"`, `"off"`, `wringing`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: "1"` matches a state of `1`, not `1.0`. So a number without quotes is refused: `to: 1 is a number: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. For a number, write `above`/`below`, or the state in quotes as the entity shows it.
+  The state it changes to: `"on"`, `"off"`, `wringing`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: "1"` matches a state of `1`, not `1.0`. So a number without quotes is refused: `to: YAML reads it as the number 1: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. For a number, write `above`/`below`, or the state in quotes as the entity shows it.
 </Property>
 
 ---
@@ -138,7 +138,7 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 ### What it does
 
 <Property name="then" type="program key" optional>
-  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. Another device's program, a detected program (it can't be started), a script's entity ID or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`.
+  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. A detected program (it can't be started), a key that isn't a program of this device, or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`. Another device's program or a script's entity ID (anything with a dot) is one too: `greenhouse.clean must be of this device: its entity key, without <device>. or <domain>.`
 </Property>
 
 ---
