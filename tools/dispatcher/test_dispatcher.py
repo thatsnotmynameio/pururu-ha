@@ -414,8 +414,11 @@ class FakeGitHub:
             self.flaky.discard(call)
             raise dispatcher.GhError(f"gh {call}: HTTP 502")
 
-    def ensure_labels(self) -> None:
+    created: list[str] = []
+
+    def ensure_labels(self) -> list[str]:
         self.writes.append("labels")
+        return self.created
 
     def login(self) -> str:
         return "me"
@@ -745,7 +748,7 @@ def test_every_poll_says_what_it_found(tmp_path: Path) -> None:
     runner, _ = sessions(tmp_path, FakeGit())
     lines: list[str] = []
     dispatcher.Dispatcher(gh, runner, 0, say=lines.append).poll()
-    summary, = [line for line in lines if "poll" in line]
+    summary, = [line for line in lines if "ready (" in line]
     assert "2 ready (1 blocked)" in summary
     assert "0 running" in summary
     assert "1 in review" in summary
@@ -769,3 +772,96 @@ def test_serve_says_how_often_it_polls() -> None:
     boss = Boss(lambda: signal.raise_signal(signal.SIGINT))
     dispatcher.serve(boss, 0)  # type: ignore[arg-type]
     assert any("every 0s" in call for call in boss.calls)
+
+
+def test_each_ready_issue_says_what_happens_to_it() -> None:
+    """Dispatched, blocked, waiting for a slot or already running: each ready issue gets a line."""
+    queue = (Issue(70, frozenset({READY}), 0, "Add the gate"),
+             Issue(72, frozenset({READY}), 1, "Gate alerts"),
+             Issue(73, frozenset({READY}), 0, "Pool goal"),
+             Issue(74, frozenset({READY, IN_PROGRESS}), 0, "Pump"))
+    lines = dispatcher.queue_lines(queue, running=set(), picked=[70], slots=1)
+    assert lines == [
+        '#70 "Add the gate": dispatching',
+        '#72 "Gate alerts": blocked by 1 open issue, skipped',
+        '#73 "Pool goal": waiting for a free session (1 of 1 in use)',
+        '#74 "Pump": already in progress',
+    ]
+
+
+def test_a_poll_says_it_reads_github_and_what_runs_and_waits(tmp_path: Path) -> None:
+    gh = FakeGitHub({READY: [(Issue(70, frozenset({READY}), 0, "Add the gate"), ())],
+                     IN_REVIEW: [(Issue(69, frozenset({IN_REVIEW})), (PR,))]})
+    runner, _ = sessions(tmp_path, FakeGit())
+    lines: list[str] = []
+    boss = dispatcher.Dispatcher(gh, runner, 1, say=lines.append)
+    boss.poll()
+    text = "\n".join(lines)
+    assert "reading GitHub" in lines[0]
+    assert '#70 "Add the gate": dispatching' in text
+    assert "#69 in review: its required checks don't all pass yet" in text
+    assert "creating its worktree" in text
+    assert "claude started" in text
+    lines.clear()
+    boss.poll()
+    assert any("#70 still running" in line for line in lines)
+
+
+def test_an_ended_session_says_how_it_ended(tmp_path: Path) -> None:
+    gh = FakeGitHub({READY: [(ready(74), ())]}, head={"issue-74": (PR,)})
+    runner, _ = sessions(tmp_path, FakeGit())
+    lines: list[str] = []
+    boss = dispatcher.Dispatcher(gh, runner, 1, say=lines.append)
+    boss.poll()
+    process = boss.running[74].process
+    assert isinstance(process, FakeProcess)
+    process.returncode = 0
+    gh.answers = {}
+    lines.clear()
+    boss.poll()
+    assert any("#74 session ended (exit code 0)" in line for line in lines)
+
+
+def test_start_says_what_it_found_and_fixed(tmp_path: Path) -> None:
+    gh = FakeGitHub({IN_PROGRESS: [(Issue(74, frozenset({IN_PROGRESS})), ())]})
+    gh.created = ["ready to merge"]
+    runner, _ = sessions(tmp_path, FakeGit())
+    runner.git = lambda args: ""
+    lines: list[str] = []
+    dispatcher.Dispatcher(gh, runner, 2, say=lines.append).start()
+    text = "\n".join(lines)
+    assert "created the label `ready to merge`" in text
+    assert "#74 was left in progress" in text
+
+
+def test_start_with_nothing_to_fix_says_so(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    lines: list[str] = []
+    dispatcher.Dispatcher(FakeGitHub(), runner, 2, say=lines.append).start()
+    text = "\n".join(lines)
+    assert "labels: all 5 in place" in text
+    assert "no issue left in progress" in text
+
+
+@pytest.mark.usefixtures("handlers")
+def test_serve_says_when_the_next_poll_comes() -> None:
+    polls = iter([None, "stop"])
+
+    def polled() -> None:
+        if next(polls) == "stop":
+            signal.raise_signal(signal.SIGINT)
+
+    boss = Boss(polled)
+    dispatcher.serve(boss, 0)  # type: ignore[arg-type]
+    assert any(call.startswith("dispatcher: next poll at ") for call in boss.calls)
+
+
+def test_issues_carry_their_title() -> None:
+    gh, _ = github((("api", "graphql"), 0, nodes(dict(node(70, ("ready",)), title="Add the gate"))))
+    (issue, _), = gh.issues(READY)
+    assert issue.title == "Add the gate"
+
+
+def test_ensure_labels_returns_what_it_created() -> None:
+    gh, _ = github((("label", "list"), 0, json.dumps([{"name": READY}])))
+    assert gh.ensure_labels() == [IN_PROGRESS, IN_REVIEW, READY_TO_MERGE, NEEDS_ATTENTION]
