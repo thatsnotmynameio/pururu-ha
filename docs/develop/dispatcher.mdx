@@ -33,6 +33,7 @@ The labels show where each issue stands. The dispatcher creates the missing ones
 | `in review` | The session ended with an open pull request; its required checks don't all pass yet. |
 | `ready to merge` | That pull request's required checks all pass. |
 | `needs attention` | The session ended without a pull request. A comment says why, with the worktree and the log. |
+| `paused` | The Claude usage limit stopped the session. It resumes once the limit is back (see [Usage limit](#usage-limit)). |
 
 ```mermaid
 stateDiagram-v2
@@ -40,6 +41,9 @@ stateDiagram-v2
   ready --> in_progress: a slot is free
   in_progress --> in_review: pull request open
   in_progress --> needs_attention: no pull request, could not start, or dispatcher stopped
+  in_progress --> paused: usage limit reached, no pull request
+  paused --> in_progress: limit back, conversation resumed
+  paused --> needs_attention: the session cannot resume
   in_review --> ready_to_merge: required checks pass
   needs_attention --> ready: you add the label again
   ready_to_merge --> [*]: you merge, the issue closes
@@ -65,8 +69,39 @@ When a session ends, a label move or `Closes #N` that GitHub refuses is tried ag
 
 ## Stopping and restarting
 
-Ctrl-C first judges the sessions that already ended, as a poll would: one with an open pull request goes `in review`. It then ends the sessions still running and moves their issues to `needs attention`. An unexpected error stops the sessions the same way before the dispatcher exits. If the dispatcher dies without that, for example when the Mac sleeps, the next start finds the issues left `in progress` and moves them to `needs attention`, naming their worktrees.
+Ctrl-C first judges the sessions that already ended, as a poll would: one with an open pull request goes `in review`, and one the usage limit stopped goes `paused`. It then ends the sessions still running and moves their issues to `needs attention`. An unexpected error stops the sessions the same way before the dispatcher exits. If the dispatcher dies without that, for example when the Mac sleeps, the next start finds the issues left `in progress` and moves them to `needs attention`, naming their worktrees.
+
+`paused` issues survive both: they have no session running, so stopping loses nothing. The next start reads their pause comments and resumes them once the limit allows.
 
 ## Sessions
 
-A session is `claude -p` in the worktree, running `/compound-engineering:lfg #N` with `--permission-mode auto`. It ends where `lfg` ends: an open pull request, never a merge. A session has no time or cost limit. One that stops, for example at a permission `auto` doesn't grant, ends without a pull request, and its issue needs attention.
+A session is `claude -p` in the worktree, running `/compound-engineering:lfg #N` with `--permission-mode auto`. It ends where `lfg` ends: an open pull request, never a merge. A session has no time or cost limit of its own; the Claude usage limit can stop it, which pauses its issue (see [Usage limit](#usage-limit)). One that stops for another reason, for example at a permission `auto` doesn't grant, ends without a pull request, and its issue needs attention.
+
+## Usage limit
+
+When the Claude usage limit stops a session before it opens a pull request, the issue goes `paused`, not `needs attention`, and no session starts until the limit is back.
+
+The dispatcher reads this from the session's own log, from its JSON events only: a `rate_limit_event` whose status is `rejected`, or a final `result` that is an error naming the limit. Text a session quotes, for example a plan that mentions the limit, never pauses an issue. A session that ends with a clean result is never paused.
+
+The pause comment says when the limit resets, and gives the session's ID, the worktree and the log. Its last line is a hidden marker the dispatcher reads back:
+
+```text
+<!-- dispatcher-pause {"session": "<session ID>", "branch": "issue-70", "reset": 1759361400} -->
+```
+
+Only markers in comments by the `gh` user count, so a stranger's comment can't name a session to resume. A `paused` issue with no valid marker moves to `needs attention`.
+
+While the limit is spent:
+
+- No session starts, neither a new one nor a resume, until a minute after the reset. Sessions already running keep running. The dispatcher prints until when.
+- When the limit gives no reset time, the next poll tries one session. If the limit is still spent, that session pauses again.
+- A weekly limit can hold every start for days.
+
+Once the limit is back, paused issues take the free slots before `ready` issues, oldest first. Each resumes its own conversation with `claude -p --resume`, in its own worktree, told the limit is back and to continue `lfg`. Its issue goes `in progress`, and its end is judged like any session's: `in review`, `needs attention`, or `paused` again. A session that pauses again with nothing new to say swaps the labels without another comment.
+
+Some cases to know:
+
+- Removing `paused` takes the issue out of the dispatcher's hands: it is never resumed. Closing it does the same, and its worktree stays.
+- Adding `ready` to a paused issue doesn't start a fresh session: the issue resumes when its turn comes.
+- A resume whose worktree is gone moves the issue to `needs attention`.
+- A limit hit after the pull request is open ends `in review`, as any session with a pull request does.
