@@ -46,6 +46,16 @@ NEEDS_ATTENTION = "needs attention"
 PAUSED = "paused"
 MARGIN = 60  # seconds past a limit's reset before a session starts again
 MARKER = "dispatcher-pause"  # the hidden marker's tag on a pause comment's last line
+# lfg's stages in order, and the skills that enter each (compound-engineering 3.30.1), named
+# without their plugin's prefix. A stage is marked done, current, pending, skipped, failed or
+# paused.
+STAGES = ("plan", "plan review", "implementation", "code review", "pull request", "CI")
+SKILLS = {"ce-plan": "plan", "ce-brainstorm": "plan", "ce-doc-review": "plan review",
+          "ce-work": "implementation", "ce-debug": "implementation",
+          "ce-simplify-code": "code review", "ce-code-review": "code review",
+          "ce-commit-push-pr": "pull request", "ce-babysit-pr": "CI"}
+UNSTARTED = ("pending",) * len(STAGES)
+LATEST = 200  # characters of the session's last sentence shown at most
 
 
 @dataclass(frozen=True)
@@ -133,6 +143,14 @@ class Hold:
 
 
 @dataclass(frozen=True)
+class Progress:
+    """Where a session stands in lfg: a mark per stage of `STAGES`, and its last sentence."""
+
+    marks: tuple[str, ...] = UNSTARTED
+    latest: str | None = None
+
+
+@dataclass(frozen=True)
 class Ended:
     """A session whose process exited, with what GitHub says about its branch and issue."""
 
@@ -144,6 +162,7 @@ class Ended:
     linked: frozenset[int] = frozenset()  # the pull requests GitHub links to the issue
     limit: Marker | None = None  # the usage limit stopped it, as its log says
     resumed: Marker | None = None  # the marker it was resumed from
+    progress: Progress = Progress()  # where it stood when it ended, as its log says
 
 
 @dataclass(frozen=True)
@@ -515,6 +534,7 @@ class Running:
     since: int = 0  # where this session's output starts in the issue's log
     started: float = 0.0  # time.time() when it started
     resumed: Marker | None = None  # the marker it was resumed from
+    start_marks: tuple[str, ...] = UNSTARTED  # the checklist a resume continues from
 
 
 def reason_of(events: list[dict[str, Any]], running: Running) -> str:
@@ -553,6 +573,41 @@ def limit_of(events: list[dict[str, Any]], running: Running) -> Marker | None:
     reset = (int(resets) if status == "rejected" and isinstance(resets, int | float)
              and not isinstance(resets, bool) else None)
     return Marker(session, running.branch, reset)
+
+
+def progress_of(events: list[dict[str, Any]], start_marks: tuple[str, ...]) -> Progress:
+    """The checklist and the last sentence after these events, from where `start_marks` left off.
+
+    Only the main thread's assistant events count, never a sub-agent's skills or words. A stage
+    is entered by a `Skill` call to one of its `SKILLS`, or by a starting mark done, current or
+    paused. The furthest stage entered is current, so it never moves back; the ones before it
+    are done if entered, else skipped; the ones after it pending. Before any, the plan is
+    current. The sentence is the last text, on one line, at most `LATEST` characters.
+    """
+    entered = {index for index, mark in enumerate(start_marks)
+               if mark in ("done", "current", "paused")}
+    latest: str | None = None
+    for event in events:
+        if event.get("type") != "assistant" or event.get("parent_tool_use_id") is not None:
+            continue
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") == "Skill":
+                arguments = block.get("input")
+                skill = arguments.get("skill") if isinstance(arguments, dict) else None
+                stage = SKILLS.get(skill.rpartition(":")[2]) if isinstance(skill, str) else None
+                if stage:
+                    entered.add(STAGES.index(stage))
+            elif (block.get("type") == "text"
+                  and (text := " ".join(str(block.get("text") or "").split()))):
+                latest = text if len(text) <= LATEST else text[:LATEST - 1] + "…"
+    current = max(entered, default=0)
+    marks = tuple("current" if index == current else "pending" if index > current
+                  else "done" if index in entered else "skipped" for index in range(len(STAGES)))
+    return Progress(marks, latest)
 
 
 def run_git(args: list[str]) -> str:
@@ -633,10 +688,18 @@ class Sessions:
                 events.append(event)
         return events
 
-    def ending(self, running: Running) -> tuple[str, Marker | None]:
-        """Why a session ended, and its marker when the usage limit stopped it, from one read."""
+    def ending(self, running: Running) -> tuple[str, Marker | None, Progress]:
+        """Why a session ended, its marker when the usage limit stopped it, and where it stood.
+
+        One read of the log; the progress continues from the marks its resume started from.
+        """
         events = self._events(running)
-        return reason_of(events, running), limit_of(events, running)
+        return (reason_of(events, running), limit_of(events, running),
+                progress_of(events, running.start_marks))
+
+    def progress(self, running: Running, start_marks: tuple[str, ...]) -> Progress:
+        """Where a running session stands, from its part of the log and these starting marks."""
+        return progress_of(self._events(running), start_marks)
 
     def end(self, sessions: Iterable[Running]) -> None:
         """Terminate the sessions; kill those still running once the grace period is over."""
@@ -730,13 +793,16 @@ class Dispatcher:
     def read(self, running: Running) -> Ended:
         """An ended session with what GitHub says of its branch; one with a PR is remembered.
 
-        Without a pull request, its log says whether the usage limit stopped it.
+        Its log says where it stood and, without a pull request, why it ended and whether the
+        usage limit stopped it.
         """
         prs = self.gh.head(running.branch)
-        reason, limit = ("", None) if prs else self.sessions.ending(running)
+        reason, limit, progress = self.sessions.ending(running)
+        if prs:
+            reason, limit = "", None  # judged by its pull request alone
         session = Ended(running.issue, str(running.worktree), str(running.log), reason, prs,
                         self.gh.linked(running.issue) if prs else frozenset(), limit,
-                        running.resumed)
+                        running.resumed, progress)
         if prs:
             self.branches[running.issue] = running.branch
         return session

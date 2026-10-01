@@ -683,6 +683,113 @@ def test_an_empty_slice_is_no_limit_ending(tmp_path: Path) -> None:
     assert runner.ending(running)[0] == "the session exited with code 1 and no final result"
 
 
+# The session's progress
+
+def marks(*given: str) -> tuple[str, ...]:
+    """These marks for the first stages, the others pending."""
+    return (*given, *("pending",) * (len(dispatcher.STAGES) - len(given)))
+
+
+def skill(name: str, parent: str | None = None) -> dict[str, Any]:
+    """An assistant event calling this lfg skill, from a sub-agent when `parent` is set."""
+    return {"type": "assistant", "parent_tool_use_id": parent, "session_id": SESSION,
+            "message": {"role": "assistant", "content": [{
+                "type": "tool_use", "id": "toolu_01", "name": "Skill",
+                "input": {"skill": f"compound-engineering:{name}", "args": "mode:pipeline"}}]}}
+
+
+def says(text: str, parent: str | None = None) -> dict[str, Any]:
+    """An assistant event narrating `text`, from a sub-agent when `parent` is set."""
+    return {"type": "assistant", "parent_tool_use_id": parent, "session_id": SESSION,
+            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
+
+
+AE2_SENTENCE = "U1 committed (9073eb3): 1684 tests pass. Dispatching U2, the grammar change."
+
+
+def test_the_furthest_stage_entered_is_current_and_the_last_text_the_latest() -> None:
+    """AE2: plan, doc review, work: the shape of a recorded lfg log."""
+    events = [skill("ce-plan"), says("Planning #74."), skill("ce-doc-review"), skill("ce-work"),
+              says(AE2_SENTENCE)]
+    assert dispatcher.progress_of(events, marks()) == dispatcher.Progress(
+        marks("done", "done", "current"), AE2_SENTENCE)
+
+
+def test_a_route_without_a_plan_skips_it() -> None:
+    """AE3: lfg's bug route starts at ce-debug."""
+    assert dispatcher.progress_of([skill("ce-debug")], marks()).marks == marks(
+        "skipped", "skipped", "current")
+
+
+def test_a_sub_agents_skills_and_words_move_nothing() -> None:
+    events = [skill("ce-plan"), says("Planning #74."), skill("ce-work", parent="toolu_02"),
+              says("A sub-agent's report.", parent="toolu_02")]
+    assert dispatcher.progress_of(events, marks()) == dispatcher.Progress(marks("current"),
+                                                                          "Planning #74.")
+
+
+def test_unmapped_skills_move_nothing() -> None:
+    events = [skill("ce-work"), skill("ce-compound"), skill("ce-noslop")]
+    assert dispatcher.progress_of(events, marks()).marks == marks("skipped", "skipped", "current")
+
+
+def test_the_checklist_never_moves_back() -> None:
+    """A plan called after the work is done as entered; the work stays current."""
+    events = [skill("ce-work"), skill("ce-plan")]
+    assert dispatcher.progress_of(events, marks()).marks == marks("done", "skipped", "current")
+
+
+def test_before_any_lfg_skill_the_plan_is_current_with_no_sentence() -> None:
+    assert dispatcher.progress_of([], marks()) == dispatcher.Progress(marks("current"), None)
+    assert dispatcher.progress_of([json.loads(INIT), skill("ce-noslop")], marks()) == (
+        dispatcher.Progress(marks("current"), None))
+
+
+def test_a_resumed_session_continues_from_its_paused_stage() -> None:
+    """AE7: paused in implementation; the resume calls ce-code-review."""
+    start = marks("done", "done", "paused")
+    assert dispatcher.progress_of([], start).marks == marks("done", "done", "current")
+    assert dispatcher.progress_of([skill("ce-code-review")], start).marks == marks(
+        "done", "done", "done", "current")
+
+
+def test_the_latest_sentence_is_one_line_of_at_most_200_characters() -> None:
+    """KTD4: whitespace collapses; a longer text is cut to 200 characters with an ellipsis."""
+    long = "Step one done.\n\n  Now step two:\t" + "x" * 300
+    latest = dispatcher.progress_of([says(long)], marks()).latest
+    assert latest == ("Step one done. Now step two: " + "x" * 300)[:199] + "…"
+    assert len(latest) == 200
+    assert dispatcher.progress_of([says("y" * 200)], marks()).latest == "y" * 200
+
+
+def test_a_missing_log_gives_the_starting_marks_unchanged(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = dispatcher.Running(70, "issue-70", tmp_path / ".claude/worktrees/issue-70",
+                                 tmp_path / "missing.log", FakeProcess())
+    start = marks("done", "done", "current")
+    assert runner.progress(running, start) == dispatcher.Progress(start, None)
+
+
+def test_a_running_sessions_progress_is_its_own_part_of_the_log(tmp_path: Path) -> None:
+    """An earlier attempt's skills and words, before `since`, are not this session's."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = slice_of(tmp_path, INIT, json.dumps(skill("ce-plan")),
+                       before=(INIT, json.dumps(skill("ce-work")), json.dumps(says("Earlier."))))
+    assert runner.progress(running, marks()) == dispatcher.Progress(marks("current"), None)
+
+
+def test_the_ending_reads_the_progress_with_the_reason_and_the_limit(tmp_path: Path) -> None:
+    """One read; the progress starts from the marks the resume seeded."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = dataclasses.replace(
+        slice_of(tmp_path, INIT, json.dumps(skill("ce-code-review")),
+                 json.dumps(says("Reviewing.")), rejected(), result("API Error")),
+        start_marks=marks("done", "done", "paused"))
+    assert runner.ending(running) == ("API Error", Marker(SESSION, "issue-70", 1759350600),
+                                      dispatcher.Progress(marks("done", "done", "done", "current"),
+                                                          "Reviewing."))
+
+
 def test_a_resume_continues_the_conversation_headless(tmp_path: Path) -> None:
     """KTD7: the same flags as a dispatch, the limit back in the prompt."""
     (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
@@ -1123,6 +1230,20 @@ def test_a_resumed_session_that_opens_its_pull_request_goes_in_review(tmp_path: 
     gh.checks = True
     boss.poll()
     assert moves(gh)[2:] == [(70, (READY_TO_MERGE,))]
+
+
+def test_a_session_ended_with_its_pull_request_open_carries_its_progress(tmp_path: Path) -> None:
+    """The in-review report needs the log's marks; the limit still counts only without a PR."""
+    gh = FakeGitHub({READY: [(ready(74), ())]}, head={"issue-74": (PR,)})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
+    boss.poll()
+    exits(boss, 74, INIT, *(json.dumps(skill(name)) for name in (
+        "ce-plan", "ce-doc-review", "ce-work", "ce-code-review", "ce-commit-push-pr")),
+          json.dumps(says("Pull request #101 is open.")), rejected(), result("API Error"))
+    session = boss.read(boss.running[74])
+    assert session.progress == dispatcher.Progress(marks("done", "done", "done", "done", "current"),
+                                                   "Pull request #101 is open.")
+    assert (session.reason, session.limit) == ("", None)
 
 
 def resumed_once(tmp_path: Path, marker: Marker) -> tuple[dispatcher.Dispatcher, FakeGitHub]:
