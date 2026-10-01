@@ -13,9 +13,13 @@ one gets a new worktree from origin/main under .claude/worktrees/ and a headless
 `claude -p` session running lfg; at most N run at once (default 2), and the poll
 runs every SECONDS (default 300). Labels show where an issue stands: `in progress`,
 then `in review` (a pull request is open) and `ready to merge` (its required checks
-pass), or `needs attention` (the session ended without one). Logs and the lock are
-in tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll would, then stops the others
-and marks their issues `needs attention`.
+pass), or `needs attention` (the session ended without one), or `paused` (the Claude
+usage limit stopped it). A pause holds every start until a minute past the limit's
+reset, or, with no reset known, until the next poll tries one session. Past the hold,
+paused issues resume first, oldest first: the same conversation, in the same worktree.
+Logs and the lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions that
+ended, as a poll would, then stops the others and marks their issues `needs attention`;
+paused issues stay paused, and the next start resumes them from GitHub alone.
 """
 
 import argparse
@@ -626,25 +630,36 @@ class Dispatcher:
     """Applies each poll's actions through GitHub and the sessions; owns the running sessions."""
 
     def __init__(self, gh: GitHub, sessions: Sessions, slots: int,
-                 say: Callable[[str], None] = print) -> None:
-        """Up to `slots` sessions; progress lines through `say`."""
+                 say: Callable[[str], None] = print,
+                 clock: Callable[[], float] = time.time) -> None:
+        """Up to `slots` sessions; progress lines through `say`; the wall clock through `clock`."""
         self.gh = gh
         self.sessions = sessions
         self.slots = slots
         self.say = say
+        self.clock = clock
+        self.hold = Hold()  # starts wait while the usage limit is spent
         self.running: dict[int, Running] = {}
         self.branches: dict[int, str] = {}  # issues in review: the branch their session pushed
         self.pending: list[Action] = []  # ended sessions' verdicts that failed: the next poll's
 
     def start(self) -> None:
-        """Create the missing labels; the issues left in progress need attention."""
+        """Create the missing labels; the issues left in progress need attention.
+
+        The hold comes back from the paused issues' markers; one without a valid marker is left
+        to the first resume, which moves it to needs attention.
+        """
         self.gh.ensure_labels()
         stranded = [issue for issue, _ in self.gh.issues(IN_PROGRESS)]
         for move in orphans(stranded, self.sessions.worktrees() if stranded else {}):
             self.apply(move)
+        now = self.clock()
+        markers = [marker for issue, _ in self.gh.issues(PAUSED)
+                   if (marker := self.gh.markers(issue.number))]
+        self.held(restore(markers, now))
 
     def snapshot(self) -> tuple[Snapshot, list[Running]]:
-        """Read GitHub: ended sessions' pull requests, issues in review, the ready queue."""
+        """Read GitHub: ended sessions' pull requests, issues in review, ready and paused ones."""
         over = [running for running in self.running.values() if running.process.poll() is not None]
         ended = [self.read(running) for running in over]
         reviews = []
@@ -653,23 +668,30 @@ class Dispatcher:
                 prs = self.gh.head(self.branches[issue.number])
             reviews.append(Review(issue.number, any(self.gh.passing(pr.number) for pr in prs)))
         ready = tuple(issue for issue, _ in self.gh.issues(READY))
-        return Snapshot(tuple(ended), tuple(reviews), ready), over
+        paused = tuple(issue for issue, _ in self.gh.issues(PAUSED))
+        return Snapshot(tuple(ended), tuple(reviews), ready, paused), over
 
     def read(self, running: Running) -> Ended:
-        """An ended session with what GitHub says of its branch; one with a PR is remembered."""
+        """An ended session with what GitHub says of its branch; one with a PR is remembered.
+
+        Without a pull request, its log says whether the usage limit stopped it.
+        """
         prs = self.gh.head(running.branch)
         session = Ended(running.issue, str(running.worktree), str(running.log),
                         "" if prs else self.sessions.reason(running), prs,
-                        self.gh.linked(running.issue) if prs else frozenset())
+                        self.gh.linked(running.issue) if prs else frozenset(),
+                        None if prs else self.sessions.limit(running), running.resumed)
         if prs:
             self.branches[running.issue] = running.branch
         return session
 
     def poll(self) -> None:
-        """One poll: retry the failed verdicts, read, decide, apply.
+        """One poll: retry the failed verdicts, read, hold at the limit, decide, apply.
 
-        A failed read skips the rest of the poll: ended sessions wait for the next one.
+        A failed read skips the rest of the poll: ended sessions wait for the next one. The
+        clock is read once: an unknown reset holds until this `now`, so this poll's tick too.
         """
+        now = self.clock()
         self.pending = [action for action in self.pending if not self.apply(action)]
         try:
             snapshot, over = self.snapshot()
@@ -678,9 +700,27 @@ class Dispatcher:
             return
         for running in over:
             del self.running[running.issue]
+        hold = self.hold
+        for session in snapshot.ended:
+            if session.limit:
+                hold = hold.extend(session.limit.reset, now)
+        if hold != self.hold:
+            self.held(hold)
         self.settle(snapshot.ended)
-        for action in tick(snapshot, set(self.running), self.slots, time.time(), Hold()):
+        for action in tick(snapshot, set(self.running), self.slots, now, self.hold):
             self.apply(action)
+        if not self.hold.holds(now):
+            self.hold = Hold()
+
+    def held(self, hold: Hold) -> None:
+        """Take this hold, and say until when no session starts."""
+        self.hold = hold
+        if hold.probe:
+            self.say("dispatcher: the Claude usage limit is spent and its reset is unknown; "
+                     "one session is tried at the next poll")
+        elif hold.until is not None:
+            self.say("dispatcher: the Claude usage limit is spent; no session starts until "
+                     f"{local_time(hold.until)}")
 
     def settle(self, ended: Iterable[Ended]) -> None:
         """Apply the ended sessions' verdicts: no later poll judges them, so a failed one waits."""
@@ -698,6 +738,8 @@ class Dispatcher:
                     self.gh.link(action)
                 case Dispatch():
                     self.dispatch(action.issue)
+                case Resume():
+                    self.resume(action.issue)
         except GhError as error:
             self.say(f"dispatcher: {action}: {error}")
             return False
@@ -720,6 +762,28 @@ class Dispatcher:
             return
         self.running[issue] = running
         self.say(f"dispatcher: #{issue} running in {running.worktree}, log {running.log}")
+
+    def resume(self, issue: int) -> None:
+        """In progress, then the paused conversation; one that cannot resume needs attention.
+
+        Without a valid marker there is nothing to resume. A failed read or label swap raises
+        before the session: the issue stays `paused` for the next poll.
+        """
+        marker = self.gh.markers(issue)
+        if marker is None:
+            self.apply(needs_attention(issue, "this issue is paused, but no pause record was "
+                                       "found in its comments, so its session cannot resume.",
+                                       remove=PAUSED))
+            return
+        self.gh.move(Move(issue, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,)))
+        self.say(f"dispatcher: #{issue} -> {IN_PROGRESS}")
+        try:
+            running = self.sessions.resume(issue, marker)
+        except OSError as error:
+            self.apply(needs_attention(issue, f"the paused session could not resume: {error}"))
+            return
+        self.running[issue] = running
+        self.say(f"dispatcher: #{issue} resumed in {running.worktree}, log {running.log}")
 
     def stop(self) -> None:
         """Judge the sessions that already ended, as a poll would; end the others and mark them.

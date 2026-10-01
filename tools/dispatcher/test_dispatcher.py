@@ -524,7 +524,7 @@ def sessions(tmp_path: Path, git: FakeGit) -> tuple[dispatcher.Sessions, FakeSpa
 
 def test_a_session_starts_in_a_new_worktree_from_origin_main(tmp_path: Path) -> None:
     git = FakeGit()
-    runner, spawn = sessions(tmp_path, git)
+    runner, _ = sessions(tmp_path, git)
     running = runner.start(74)
     worktree = tmp_path / ".claude/worktrees/issue-74"
     assert git.calls[0] == ["fetch", "origin", "main"]
@@ -751,8 +751,9 @@ class FakeGitHub:
     def __init__(self, issues: dict[str, list[tuple[Issue, tuple[PullRequest, ...]]]] | None = None,
                  *, head: dict[str, tuple[PullRequest, ...]] | None = None,
                  linked: frozenset[int] = frozenset(), passing: bool = False,
-                 broken: int | None = None) -> None:
+                 broken: int | None = None, markers: dict[int, Marker] | None = None) -> None:
         self.answers = issues or {}
+        self.records = markers or {}  # each paused issue's valid marker, as its comments hold it
         self.heads = head or {}
         self.linked_prs = linked
         self.checks = passing
@@ -790,6 +791,9 @@ class FakeGitHub:
     def link(self, link: Link) -> None:
         self._flake("link")
         self.writes.append(link)
+
+    def markers(self, issue: int) -> Marker | None:
+        return self.records.get(issue)
 
 
 def moves(gh: FakeGitHub) -> list[tuple[int, tuple[str, ...]]]:
@@ -987,6 +991,330 @@ def test_stopping_when_github_cannot_read_an_ended_session(tmp_path: Path) -> No
     move = gh.writes[2]
     assert isinstance(move, Move)
     assert "HTTP 502" in (move.comment or "")
+
+
+# The command at the usage limit
+
+class Clock:
+    """A wall clock the test sets; `step` seconds pass at every reading."""
+
+    def __init__(self, now: float, step: float = 0.0) -> None:
+        self.now = now
+        self.step = step
+
+    def __call__(self) -> float:
+        now = self.now
+        self.now += self.step
+        return now
+
+
+def boss_at(tmp_path: Path, gh: FakeGitHub, slots: int, clock: Clock,
+            lines: list[str]) -> tuple[dispatcher.Dispatcher, FakeSpawn]:
+    """A dispatcher on this clock, its say lines into `lines`."""
+    runner, spawn = sessions(tmp_path, FakeGit())
+    return dispatcher.Dispatcher(gh, runner, slots, say=lines.append, clock=clock), spawn
+
+
+def exits(boss: dispatcher.Dispatcher, issue: int, *events: str) -> None:
+    """The issue's session writes these events to its part of the log, then exits with 0."""
+    running = boss.running[issue]
+    with running.log.open("a") as log:
+        log.write("".join(line + "\n" for line in events))
+    process = running.process
+    assert isinstance(process, FakeProcess)
+    process.returncode = 0
+
+
+def resumes(spawn: FakeSpawn) -> list[tuple[list[str], dict[str, Any]]]:
+    return [(args, options) for args, options in spawn.calls if "--resume" in args]
+
+
+def worktrees(tmp_path: Path, *names: str) -> None:
+    for name in names:
+        (tmp_path / ".claude/worktrees" / name).mkdir(parents=True)
+
+
+AT_LIMIT = (INIT, rejected(int(at(20, 30))), result("API Error"))
+UNKNOWN = (INIT, result("You've hit your session limit · resets 8:30pm (America/Sao_Paulo)"))
+
+
+def test_a_session_at_the_limit_is_paused_and_holds_every_start(tmp_path: Path) -> None:
+    """AE1: #70 stops at 15:10, resets 20:30; #74 waits although a slot is free, #72 runs on."""
+    gh = FakeGitHub({READY: [(ready(70), ()), (ready(72), ())]})
+    clock = Clock(at(15))
+    lines: list[str] = []
+    boss, spawn = boss_at(tmp_path, gh, 2, clock, lines)
+    boss.poll()
+    gh.answers = {READY: [(ready(74), ())]}
+    exits(boss, 70, *AT_LIMIT)
+    clock.now = at(15, 10)
+    boss.poll()
+    pause = gh.writes[-1]
+    assert isinstance(pause, Move)
+    assert (pause.issue, pause.remove, pause.add, pause.comment_first) == (
+        70, (IN_PROGRESS,), (PAUSED,), True)
+    assert "20:30" in (pause.comment or "")
+    assert (pause.comment or "").splitlines()[-1] == (
+        f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", '
+        f'"reset": {int(at(20, 30))}}} -->')
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (72, (IN_PROGRESS,)), (70, (PAUSED,))]
+    assert list(boss.running) == [72]
+    assert len(spawn.calls) == 2
+    held = [line for line in lines if "no session starts until" in line]
+    assert len(held) == 1
+    assert "2026-10-01 20:31" in held[0]
+    clock.now = at(15, 15)
+    boss.poll()
+    assert len(spawn.calls) == 2
+    assert moves(gh)[3:] == []
+    assert len([line for line in lines if "no session starts until" in line]) == 1
+
+
+def test_paused_issues_resume_in_their_worktrees_once_the_limit_is_back(tmp_path: Path) -> None:
+    """AE2: #70 and #72 resume at 20:35 with their own conversations; #74 waits for a slot."""
+    worktrees(tmp_path, "issue-70", "issue-72")
+    gh = FakeGitHub({PAUSED: [(paused(70), ()), (paused(72), ())], READY: [(ready(74), ())]},
+                    markers={70: Marker(SESSION, "issue-70", int(at(20, 30))),
+                             72: Marker(OTHER, "issue-72", int(at(20, 30)))})
+    lines: list[str] = []
+    boss, spawn = boss_at(tmp_path, gh, 2, Clock(at(20, 35)), lines)
+    boss.poll()
+    (first, first_options), (second, second_options) = spawn.calls
+    assert first[:4] == ["claude", "-p", "--resume", SESSION]
+    assert second[:4] == ["claude", "-p", "--resume", OTHER]
+    assert first_options["cwd"] == tmp_path / ".claude/worktrees/issue-70"
+    assert second_options["cwd"] == tmp_path / ".claude/worktrees/issue-72"
+    assert gh.writes == [Move(70, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,)),
+                         Move(72, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,))]
+    assert {issue: running.branch for issue, running in boss.running.items()} == {
+        70: "issue-70", 72: "issue-72"}
+    log = tmp_path / dispatcher.STATE / "logs/issue-70.log"
+    assert (f"dispatcher: #70 resumed in {tmp_path}/.claude/worktrees/issue-70, log {log}"
+            in lines)
+
+
+def test_a_resumed_session_that_opens_its_pull_request_goes_in_review(tmp_path: Path) -> None:
+    """AE3: the marker's branch finds the pull request, then promotes it once its checks pass."""
+    worktrees(tmp_path, "issue-70-2")
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]}, head={"issue-70-2": (PR,)},
+                    markers={70: Marker(SESSION, "issue-70-2", int(at(20, 30)))})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    gh.answers = {}
+    exits(boss, 70, INIT, result("Done.", error=False))
+    boss.poll()
+    assert moves(gh)[1:] == [(70, (IN_REVIEW,))]
+    assert Link(101, 70) in gh.writes
+    gh.answers = {IN_REVIEW: [(Issue(70, frozenset({IN_REVIEW})), ())]}
+    gh.checks = True
+    boss.poll()
+    assert moves(gh)[2:] == [(70, (READY_TO_MERGE,))]
+
+
+def resumed_once(tmp_path: Path, marker: Marker) -> tuple[dispatcher.Dispatcher, FakeGitHub]:
+    """A dispatcher that resumed #70 from `marker`; #70 is no longer among the paused issues."""
+    worktrees(tmp_path, marker.branch)
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]}, markers={70: marker})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    gh.answers = {}
+    return boss, gh
+
+
+def test_a_resumed_session_at_the_limit_again_comments_its_new_reset(tmp_path: Path) -> None:
+    """AE3, KTD5: the reset is news, so the pause comments again."""
+    boss, gh = resumed_once(tmp_path, Marker(SESSION, "issue-70", None))
+    exits(boss, 70, INIT, rejected(int(at(22))), result("API Error"))
+    boss.poll()
+    pause = gh.writes[-1]
+    assert isinstance(pause, Move)
+    assert (pause.remove, pause.add) == ((IN_PROGRESS,), (PAUSED,))
+    assert (pause.comment or "").splitlines()[-1] == (
+        f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", '
+        f'"reset": {int(at(22))}}} -->')
+
+
+def test_a_resumed_session_at_the_limit_again_with_nothing_new_does_not_comment(
+        tmp_path: Path) -> None:
+    """KTD5: the same session, the reset still unknown: the labels swap, no comment."""
+    boss, gh = resumed_once(tmp_path, Marker(SESSION, "issue-70", None))
+    exits(boss, 70, *UNKNOWN)
+    boss.poll()
+    assert gh.writes[-1] == Move(70, (IN_PROGRESS,), (PAUSED,))
+
+
+def test_a_paused_issue_past_its_reset_resumes_after_a_restart(tmp_path: Path) -> None:
+    """AE4: started again at 21:00, #70 is no orphan and resumes at the first poll."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]},
+                    markers={70: Marker(SESSION, "issue-70", int(at(20, 30)))})
+    lines: list[str] = []
+    boss, spawn = boss_at(tmp_path, gh, 2, Clock(at(21)), lines)
+    boss.start()
+    assert gh.writes == ["labels"]
+    assert not [line for line in lines if "usage limit" in line]
+    boss.poll()
+    assert [args[3] for args, _ in resumes(spawn)] == [SESSION]
+    assert moves(gh) == [(70, (IN_PROGRESS,))]
+
+
+def test_a_paused_issue_before_its_reset_holds_after_a_restart(tmp_path: Path) -> None:
+    """AE4: started again at 18:00, the hold comes back from the marker alone."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({PAUSED: [(paused(70), ())], READY: [(ready(74), ())]},
+                    markers={70: Marker(SESSION, "issue-70", int(at(20, 30)))})
+    lines: list[str] = []
+    clock = Clock(at(18))
+    boss, spawn = boss_at(tmp_path, gh, 2, clock, lines)
+    boss.start()
+    held = [line for line in lines if "no session starts until" in line]
+    assert len(held) == 1
+    assert "2026-10-01 20:31" in held[0]
+    clock.now = at(18, 5)
+    boss.poll()
+    assert spawn.calls == []
+    assert gh.writes == ["labels"]
+
+
+def test_an_unknown_reset_holds_its_poll_then_probes_with_one_session(tmp_path: Path) -> None:
+    """AE6: no start at poll k; #70 alone at k+1; #72 at k+2 while #70 runs."""
+    gh = FakeGitHub({READY: [(ready(70), ())]},
+                    markers={72: Marker(OTHER, "issue-72", int(at(14)))})
+    lines: list[str] = []
+    clock = Clock(at(15))
+    boss, spawn = boss_at(tmp_path, gh, 2, clock, lines)
+    boss.poll()
+    worktrees(tmp_path, "issue-70", "issue-72")
+    gh.answers = {PAUSED: [(paused(72), ())], READY: [(ready(74), ())]}
+    exits(boss, 70, *UNKNOWN)
+    clock.now = at(15, 10)
+    boss.poll()  # poll k
+    assert len(spawn.calls) == 1
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,))]
+    assert lines.count("dispatcher: the Claude usage limit is spent and its reset is unknown; "
+                       "one session is tried at the next poll") == 1
+    gh.answers = {PAUSED: [(paused(70), ()), (paused(72), ())], READY: [(ready(74), ())]}
+    gh.records[70] = Marker(SESSION, "issue-70", None)
+    clock.now = at(15, 15)
+    boss.poll()  # poll k+1
+    assert [args[3] for args, _ in resumes(spawn)] == [SESSION]
+    gh.answers = {PAUSED: [(paused(72), ())], READY: [(ready(74), ())]}
+    clock.now = at(15, 20)
+    boss.poll()  # poll k+2
+    assert [args[3] for args, _ in resumes(spawn)] == [SESSION, OTHER]
+    assert sorted(boss.running) == [70, 72]
+
+
+def test_an_unknown_reset_holds_its_poll_on_a_clock_that_moves_at_every_reading(
+        tmp_path: Path) -> None:
+    """KTD4: the poll reads the clock once, so the hold it made at `now` still holds its tick."""
+    gh = FakeGitHub({READY: [(ready(70), ())]})
+    clock = Clock(at(15), step=1.0)
+    boss, spawn = boss_at(tmp_path, gh, 2, clock, [])
+    boss.poll()
+    gh.answers = {READY: [(ready(74), ())]}
+    exits(boss, 70, *UNKNOWN)
+    boss.poll()
+    assert len(spawn.calls) == 1
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,))]
+
+
+def test_an_issue_whose_paused_label_was_removed_never_resumes(tmp_path: Path) -> None:
+    """AE7: past the reset and after a restart, #70 is no longer paused: no resume."""
+    gh = FakeGitHub({READY: [(ready(70), ())]},
+                    markers={70: Marker(SESSION, "issue-70", int(at(20, 30)))})
+    clock = Clock(at(15))
+    boss, spawn = boss_at(tmp_path, gh, 1, clock, [])
+    boss.poll()
+    worktrees(tmp_path, "issue-70")
+    gh.answers = {}
+    exits(boss, 70, *AT_LIMIT)
+    clock.now = at(15, 10)
+    boss.poll()
+    assert moves(gh)[-1] == (70, (PAUSED,))
+    clock.now = at(21)
+    boss.poll()
+    again, spawn_again = boss_at(tmp_path, gh, 1, Clock(at(21)), [])
+    again.start()
+    again.poll()
+    assert resumes(spawn) == []
+    assert spawn_again.calls == []
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,))]
+
+
+def test_a_paused_issue_without_a_pause_record_needs_attention(tmp_path: Path) -> None:
+    """R9: no valid marker among its comments: paused to needs attention, nothing spawned."""
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]})
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(21)), [])
+    boss.poll()
+    move, = gh.writes
+    assert isinstance(move, Move)
+    assert (move.issue, move.remove, move.add) == (70, (PAUSED,), (NEEDS_ATTENTION,))
+    assert "no pause record was found" in (move.comment or "")
+    assert spawn.calls == []
+
+
+def test_a_resume_whose_worktree_is_gone_needs_attention(tmp_path: Path) -> None:
+    """R9: in progress first, then needs attention with the reason; the slot stays free."""
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]},
+                    markers={70: Marker(SESSION, "issue-70", int(at(20, 30)))})
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(21)), [])
+    boss.poll()
+    swap, failure = gh.writes
+    assert swap == Move(70, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,))
+    assert isinstance(failure, Move)
+    assert (failure.remove, failure.add) == ((IN_PROGRESS,), (NEEDS_ATTENTION,))
+    assert f"{tmp_path}/.claude/worktrees/issue-70" in (failure.comment or "")
+    assert "gone" in (failure.comment or "")
+    assert spawn.calls == []
+    assert boss.running == {}
+
+
+def test_stopping_leaves_a_paused_issue_alone(tmp_path: Path) -> None:
+    """R10: #70 is paused on GitHub, #75 runs: only #75 is ended and marked."""
+    gh = FakeGitHub({READY: [(ready(75), ())]},
+                    markers={70: Marker(SESSION, "issue-70", int(at(20, 30)))})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(18)), [])
+    boss.poll()
+    gh.answers = {PAUSED: [(paused(70), ())]}
+    process = boss.running[75].process
+    assert isinstance(process, FakeProcess)
+    boss.stop()
+    assert process.signals == ["terminate"]
+    assert moves(gh) == [(75, (IN_PROGRESS,)), (75, (NEEDS_ATTENTION,))]
+
+
+def test_stopping_pauses_a_session_that_ended_at_the_limit(tmp_path: Path) -> None:
+    """KTD9: #74 hit the limit before Ctrl-C: paused, not needs attention; #75 is ended."""
+    gh = FakeGitHub()
+    boss, _, live = two_sessions(tmp_path, gh)
+    with boss.running[74].log.open("a") as log:
+        log.write("".join(line + "\n" for line in AT_LIMIT))
+    boss.stop()
+    assert live.signals == ["terminate"]
+    assert moves(gh)[2:] == [(74, (PAUSED,)), (75, (NEEDS_ATTENTION,))]
+
+
+def test_a_pause_that_fails_to_write_still_holds_and_is_retried_once(tmp_path: Path) -> None:
+    """The hold is read from the log before any write; the move waits in `pending`."""
+    gh = FakeGitHub({READY: [(ready(70), ())]})
+    clock = Clock(at(15))
+    boss, spawn = boss_at(tmp_path, gh, 1, clock, [])
+    boss.poll()
+    gh.answers = {READY: [(ready(74), ())]}
+    exits(boss, 70, *AT_LIMIT)
+    gh.flaky = {"move"}
+    clock.now = at(15, 10)
+    boss.poll()
+    assert moves(gh) == [(70, (IN_PROGRESS,))]
+    assert len(spawn.calls) == 1
+    clock.now = at(15, 15)
+    boss.poll()
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,))]
+    clock.now = at(15, 20)
+    boss.poll()
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,))]
+    assert len(spawn.calls) == 1
 
 
 # The loop and the lock
