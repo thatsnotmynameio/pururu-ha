@@ -94,6 +94,33 @@ async def test_an_unquoted_on_is_the_state_on(ha: HomeAssistant) -> None:
     assert held(ha, KEY) == {LER}
 
 
+# --- what a block refers to (buttons.check) -------------------------------------------
+
+
+async def test_a_program_of_another_device_is_refused(ha: HomeAssistant) -> None:
+    """Covers AE8: a button starts its own device's executable programs only."""
+    other = {"name": "Estufa", "switches": {"sprinkler": {"entity": "switch.x", "name": "X"}},
+             "programs": {"executable": {"regar": {"name": "Regar", "sequence": [{"turn_on": "switch_sprinkler"}]}}}}
+    assert not await setup(ha, {"estufa": other, KEY: {"name": "Biblioteca", "buttons": {
+        "ler": {**BUTTONS["ler"], "program": "regar"}}}})
+
+
+async def test_one_value_in_two_devices_is_accepted(ha: HomeAssistant) -> None:
+    """A remote may press a button of each of two devices: each starts its own program."""
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {"ler": BUTTONS["ler"]}},
+                            "sala": {"name": "Sala", "buttons": {"ler": BUTTONS["ler"]}}})
+    assert held(ha, "sala") == {"button.pururu_sala_button_ler"}
+
+
+async def test_a_refusal_is_told_with_the_others(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
+        "ler": {**BUTTONS["ler"], "program": "regar"}},
+        "reactions": {"x": {"name": "X", "when": "nothing", "to": "on"}}}})
+    assert "buttons: ler: regar is not an executable program of this device" in caplog.text
+    assert "reactions: x: nothing is not an entity key of this device" in caplog.text
+
+
 # --- the device ----------------------------------------------------------------
 
 

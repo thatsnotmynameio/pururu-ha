@@ -51,6 +51,20 @@ def washer(**blocks: Any) -> dict[str, Any]:
         "programs: switch_nope is not an entity key of another feature of this device",
         id="a program's step"),
     pytest.param(
+        {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "buttons": {
+            "clean": {"entity": "sensor.remote_action", "state": "1_single", "name": "Clean",
+                      "program": "regar"}}}}},
+        ["devices", "greenhouse", "buttons", "clean"],
+        "buttons: clean: regar is not an executable program of this device",
+        id="a button's program"),
+    pytest.param(
+        {"devices": {"greenhouse": {"name": "Greenhouse", "buttons": {
+            "clean": {"entity": "sensor.remote_action", "state": "1_single", "name": "Clean"},
+            "wash": {"entity": "sensor.remote_action", "state": "1_single", "name": "Wash"}}}}},
+        ["devices", "greenhouse", "buttons", "wash"],
+        "buttons: wash: sensor.remote_action at 1_single is already button clean",
+        id="two buttons on one value"),
+    pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "lights": {
             "sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}}}},
         ["devices", "greenhouse", "switches"],

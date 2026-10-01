@@ -10,7 +10,7 @@ from a real reading (see `pressed`). A value written again never does: a
 sensor that holds its value and is rewritten would press by itself.
 """
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Iterator, Mapping
 from datetime import timedelta
 import logging
 from typing import Any, override
@@ -40,14 +40,18 @@ from homeassistant.helpers.event import async_track_state_change_event
 # Not `from ..aspects.programs import …`: the package import reaches this module
 # through features/__init__ while aspects.programs is still loading
 from ..aspects import programs
+from ..const import CONF_DEVICES
 from ..core.entity import PururuEntity
 from ..core.feature import TEXT, Device, Feature, state_text
 from ..core.generated import SCRIPTS
+from ..core.resolve import Index
 from ..core.roles import Configured
 from . import standing
 
 _LOGGER = logging.getLogger(__name__)
 
+# The feature's key in a device's configuration
+CONF_BUTTONS = "buttons"
 # What a sensor shows while it has no reading: no person presses it
 NO_READING = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 # How long a sensor stays unknown before its first value can be a press: a
@@ -190,6 +194,32 @@ def build(
             continue
         buttons.append(Button(device, entity_key, button))
     return buttons
+
+
+def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
+    """Refuse a button's program that isn't its device's, and one value pressing two buttons.
+
+    A button starts one of its own device's executable programs. Two buttons
+    of a device on the same sensor and value would be pressed together.
+    """
+    for key, device in house[CONF_DEVICES].items():
+        pressing: dict[tuple[str, str], str] = {}
+        for button_key, button in device.get(CONF_BUTTONS, {}).items():
+            path: list[Hashable] = [CONF_DEVICES, key, CONF_BUTTONS, button_key]
+            program = button.get("program")
+            if program is not None and program not in programs.executable(device):
+                yield vol.Invalid(
+                    f"buttons: {button_key}: {program} is not an executable program "
+                    "of this device",
+                    path=path,
+                )
+            value = (button["entity"], button["state"])
+            if (other := pressing.setdefault(value, button_key)) != button_key:
+                yield vol.Invalid(
+                    f"buttons: {button_key}: {value[0]} at {value[1]} is already "
+                    f"button {other}",
+                    path=path,
+                )
 
 
 BUTTONS = Feature(
