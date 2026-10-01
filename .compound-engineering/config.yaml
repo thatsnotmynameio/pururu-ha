@@ -71,7 +71,7 @@
 # on your session model and the run says so. Invalid/commented/missing -> no
 # elevation.
 
-# plan_model: fable              # model alias for plan authoring; candidate preference when a Bake-off runs (no default)
+plan_model: fable                # model alias for plan authoring; candidate preference when a Bake-off runs (no default)
 # brainstorm_model: fable        # model alias for approach generation; candidate preference when a Bake-off runs (no default)
 
 # --- PR concept teaching (ce-commit-push-pr) ---
@@ -91,7 +91,7 @@
 # opt out standing (per-run override: the babysit:off token). This governs that
 # standing watch only -- lfg's in-pipeline babysit is bounded (3 fix rounds) and
 # still runs, since it is how that pipeline reaches "CI decided".
-# auto_babysit: false            # true | false (default: true)
+auto_babysit: true               # true | false (default: true)
 
 # --- ce-plan scoping confirmation ---
 # By default /ce-plan pauses before research/plan-write to show a scoping
