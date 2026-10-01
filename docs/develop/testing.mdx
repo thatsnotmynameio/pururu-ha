@@ -102,7 +102,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_release.py`, `test_fetch_hassfest.py` | The release and hassfest scripts |
 | `test_changes.py` | `changes.py`: which checks a pull request's changed files run, and every check off a pull request |
 | `test_sharding.py` | `PURURU_SHARD`: N shards cover every file once, stable whatever the order, a wrong value refused |
-| `tools/dispatcher/test_dispatcher.py` | The issue dispatcher, beside its script: the queue (order, blocked, slots), a session's end, promotion, the `gh` calls with recorded replies, worktrees and the session's command line, the lock, start, stop, the loop and its signals |
+| `tools/dispatcher/tests/test_dispatcher.py` | The issue dispatcher, in a `tests/` folder beside its script: the queue (order, blocked, slots), a session's end, promotion, the `gh` calls with recorded replies, worktrees and the session's command line, the usage limit (read from the log, the pause and its marker, the hold, the resume, across a restart), the lock, start, stop, the loop and its signals |
 
 ## `test_code.py`: core's checks
 
