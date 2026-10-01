@@ -20,8 +20,8 @@ PROGRAM: dict[str, Any] = {
     "other": {"statistics": {"runtime": ["week"]}},
 }
 APPLIANCE: dict[str, Any] = {
-    "power": "sensor.dummy_plug_power",
-    "energy": "sensor.dummy_plug_energy",
+    "power": "homeassistant.sensor.dummy_plug_power",
+    "energy": "homeassistant.sensor.dummy_plug_energy",
     "running_program": PROGRAM,
     "statistics": {"idle_energy": ["year"]},
 }
@@ -85,7 +85,7 @@ def test_a_place_that_isnt_a_map_is_refused_cleanly(
     """vol.Invalid at its path, not a KeyError or TypeError from taking the aspect's key out."""
     schema = module("setup.schema").CONFIG_SCHEMA
     house = {"devices": {"washer": {"name": "Washer", "appliance": {
-        "power": "sensor.dummy_plug_power", "running_program": program}}}}
+        "power": "homeassistant.sensor.dummy_plug_power", "running_program": program}}}}
     with pytest.raises(vol.Invalid) as refused:
         schema({DOMAIN: house})
     paths = ([error.path for error in refused.value.errors]
@@ -105,7 +105,7 @@ def test_a_refusal_at_a_place_says_where(ha: HomeAssistant) -> None:
 def test_keys_lists_the_meters_at_every_place(ha: HomeAssistant) -> None:
     """The appliance's own (runtime_today), each phase's as its item's (phase_resfriar_*), other's (phase_other_*)."""
     catalogue = module("setup.catalogue")
-    rows = {key: (by, item) for _, key, _, by, item in catalogue.keys({"appliance": mount(APPLIANCE)})}
+    rows = {key: (by, item) for _, key, _, by, item, _ in catalogue.keys({"appliance": mount(APPLIANCE)})}
     assert rows["runtime_today"] == ("statistics", None)
     assert rows["idle_energy_year"] == ("statistics", None)
     assert rows["phase_resfriar_energy_month"] == ("statistics", "phase_resfriar")
@@ -115,7 +115,7 @@ def test_keys_lists_the_meters_at_every_place(ha: HomeAssistant) -> None:
 
 
 # The appliance without statistics: the made-up aspects below replace ASPECTS
-PLAIN: dict[str, Any] = {"power": "sensor.dummy_plug_power", "running_program": {"above": 4}}
+PLAIN: dict[str, Any] = {"power": "homeassistant.sensor.dummy_plug_power", "running_program": {"above": 4}}
 
 
 def made_up(key: str, path: tuple[str, ...], schema: Any, **place: Any) -> Any:
@@ -187,27 +187,142 @@ def test_a_check_inside_another_aspect_gets_its_container_put_back(ha: HomeAssis
 
 
 def test_keys_lists_what_a_place_derives(ha: HomeAssistant) -> None:
-    """Place.derived: the keys an aspect's validated value adds, by the aspect and no item's; none while it's absent."""
+    """Place.derived: the keys an aspect's validated value adds, by the aspect and no item's; none while it's absent.
+
+    Each at its path from the aspect's value, under the aspect's key.
+    """
     catalogue = module("setup.catalogue")
+    born = module("core.feature").Born
     derives = made_up("made", (), vol.Schema({str: int}),
-                      derived=lambda value: [(f"{key}_seen", Platform.SENSOR) for key in value])
+                      derived=lambda value: [(f"{key}_seen", born(Platform.SENSOR, (key, "seen"))) for key in value])
     appliance = catalogue.builders()["appliance"]
     with patch.object(catalogue, "ASPECTS", (derives,)):
-        rows = {key: (by, item) for _, key, _, by, item in catalogue.keys(
+        rows = {key: (by, item, path) for _, key, _, by, item, path in catalogue.keys(
             {"appliance": catalogue.mount(appliance, "appliance", {**PLAIN, "made": {"cotton": 1}})})}
         absent = {key for _, key, *_ in catalogue.keys(
             {"appliance": catalogue.mount(appliance, "appliance", PLAIN)})}
-    assert rows["cotton_seen"] == ("made", None)
+    assert rows["cotton_seen"] == ("made", None, "appliance.made.cotton.seen")
     assert not {key for key in absent if key.endswith("_seen")}
 
 
 def test_keys_lists_a_key_derived_twice_twice(ha: HomeAssistant) -> None:
     """Place.derived gives pairs, not a map: a key two items derive comes twice, for checks.keys_distinct."""
     catalogue = module("setup.catalogue")
+    born = module("core.feature").Born
     derives = made_up("made", (), vol.Schema({str: int}),
-                      derived=lambda value: [("same", Platform.SENSOR) for _ in value])
+                      derived=lambda value: [("same", born(Platform.SENSOR, (key,))) for key in value])
     appliance = catalogue.builders()["appliance"]
     with patch.object(catalogue, "ASPECTS", (derives,)):
         block = catalogue.mount(appliance, "appliance", {**PLAIN, "made": {"cotton": 1, "linen": 2}})
         listed = [key for _, key, *_ in catalogue.keys({"appliance": block})]
     assert listed.count("same") == 2
+
+
+# --- each row's path: its node in the YAML, from the block key (catalogue.keys' sixth field) ---
+
+# A device with every builder that creates entities, each at its deepest places
+WASHER: dict[str, Any] = {
+    "name": "Washer",
+    "appliance": {
+        **APPLIANCE,
+        "running_program": {**PROGRAM, "phases": {**PROGRAM["phases"], "warming": {"name": "Warming", "above": 40}}},
+        "alerts": {"offline": None},
+        "programs": {"detected": {"cotton": {
+            "name": "Cotton", "above": 1500,
+            "phases": {"rinsing": {"name": "Rinsing", "above": 1800}},
+            "other": {"statistics": {"energy": ["month"]}},
+        }}},
+    },
+    "door": {"contact": "homeassistant.binary_sensor.washer_door", "alerts": {"long_opening": {"for": {"minutes": 5}}}},
+    "switches": {"sprinkler": {"entity": "homeassistant.switch.sprinkler", "name": "Sprinkler"}},
+    "buttons": {"ler": {"entity": "homeassistant.sensor.remote_action", "state": "1_single", "name": "Ler"}},
+    "programs": {"executable": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switches.sprinkler"}]}}},
+    "reactions": {"morning": {"name": "Morning", "at": "07:00"}},
+    "alerts": {"long_cycle": {"name": "Long cycle", "when": "appliance.running_program", "state": "on"}},
+}
+
+
+def washer_paths() -> dict[tuple[str, str], str]:
+    """(builder, local key) -> its path, for the validated WASHER."""
+    devices = module("setup.schema").CONFIG_SCHEMA({DOMAIN: {"devices": {"washer": WASHER}}})[DOMAIN]["devices"]
+    return {(name, key): path for name, key, *_, path in module("setup.catalogue").keys(devices["washer"])}
+
+
+@pytest.mark.parametrize(("builder", "key", "path"), [
+    pytest.param("appliance", "power", "appliance.power", id="a written setting's entity"),
+    pytest.param("appliance", "energy_total", "appliance.energy", id="the energy mirror at its setting"),
+    pytest.param("appliance", "idle_energy_total", "appliance.idle_energy_total", id="born at the block"),
+    pytest.param("appliance", "idle_energy_month", "appliance.statistics.idle_energy.month", id="a block's meter"),
+    pytest.param("appliance", "running", "appliance.running_program", id="the running program"),
+    pytest.param("appliance", "last_cycle_end", "appliance.running_program.last_cycle_end",
+                 id="born under the running program"),
+    pytest.param("appliance", "cycles_total", "appliance.running_program.cycles_total", id="its total"),
+    pytest.param("appliance", "runtime_today", "appliance.running_program.statistics.runtime.today",
+                 id="its meter"),
+    pytest.param("appliance", "phase_current", "appliance.running_program.phase_current", id="its current phase"),
+    pytest.param("appliance", "phase_warming", "appliance.running_program.phases.warming", id="a phase"),
+    pytest.param("appliance", "phase_warming_cycles_total", "appliance.running_program.phases.warming.cycles_total",
+                 id="a phase's total"),
+    pytest.param("appliance", "phase_resfriar_energy_month",
+                 "appliance.running_program.phases.resfriar.statistics.energy.month", id="a phase's meter"),
+    pytest.param("appliance", "phase_other", "appliance.running_program.other", id="other"),
+    pytest.param("appliance", "phase_other_runtime_total", "appliance.running_program.other.runtime_total",
+                 id="other's total"),
+    pytest.param("appliance", "phase_other_cycles_week", "appliance.running_program.other.statistics.cycles.week",
+                 id="other's meter"),
+    pytest.param("appliance", "alert_offline", "appliance.alerts.offline", id="a ready-made alert"),
+    pytest.param("appliance", "cotton", "appliance.programs.detected.cotton", id="a detected program"),
+    pytest.param("appliance", "cotton_last_cycle_end", "appliance.programs.detected.cotton.last_cycle_end",
+                 id="a detected program's cycle"),
+    pytest.param("appliance", "cotton_phase_current", "appliance.programs.detected.cotton.phase_current",
+                 id="a detected program's current phase"),
+    pytest.param("appliance", "cotton_phase_rinsing", "appliance.programs.detected.cotton.phases.rinsing",
+                 id="a detected program's phase"),
+    pytest.param("appliance", "cotton_phase_rinsing_energy_total",
+                 "appliance.programs.detected.cotton.phases.rinsing.energy_total", id="its phase's total"),
+    pytest.param("appliance", "cotton_cycles_today", "appliance.programs.detected.cotton.statistics.cycles.today",
+                 id="a detected program's meter"),
+    pytest.param("appliance", "cotton_phase_other_energy_month",
+                 "appliance.programs.detected.cotton.other.statistics.energy.month", id="its other's meter"),
+    pytest.param("door", "open", "door.open", id="a door's own"),
+    pytest.param("door", "last_opened_by", "door.last_opened_by", id="a door's event field"),
+    pytest.param("door", "openings_today", "door.statistics.openings.today", id="a door's meter"),
+    pytest.param("door", "alert_no_opening", "door.alerts.no_opening", id="a door's ready-made alert"),
+    pytest.param("switches", "sprinkler", "switches.sprinkler", id="a switch"),
+    pytest.param("buttons", "ler", "buttons.ler", id="a button"),
+    pytest.param("buttons", "ler_triggered_total", "buttons.ler.triggered_total", id="a button's presses"),
+    pytest.param("buttons", "ler_triggered_week", "buttons.ler.statistics.triggered.week", id="a button's meter"),
+    pytest.param("programs", "executable_clean_cycles_total", "programs.executable.clean.cycles_total",
+                 id="a program's runs"),
+    pytest.param("programs", "executable_clean_runtime_month", "programs.executable.clean.statistics.runtime.month",
+                 id="a program's meter"),
+    pytest.param("reactions", "morning_triggered_total", "reactions.morning.triggered_total",
+                 id="a reaction's runs"),
+    pytest.param("reactions", "morning_triggered_today", "reactions.morning.statistics.triggered.today",
+                 id="a reaction's meter"),
+    pytest.param("alerts", "long_cycle", "alerts.long_cycle", id="a hand-written alert"),
+])
+def test_keys_gives_each_key_its_path(ha: HomeAssistant, builder: str, key: str, path: str) -> None:
+    assert washer_paths()[builder, key] == path
+
+
+def test_the_paths_are_the_keys_one_to_one(ha: HomeAssistant) -> None:
+    """Each listed key has one path, and no two keys share one."""
+    paths = washer_paths()
+    assert len(set(paths.values())) == len(paths)
+
+
+def test_a_meters_path_is_listed_whatever_the_periods(ha: HomeAssistant) -> None:
+    """Every counter's every period, asked or not, as its key is (KTD5)."""
+    statistics = module("aspects.statistics")
+    paths = set(washer_paths().values())
+    for period in statistics.PERIODS:
+        assert f"appliance.running_program.statistics.runtime.{period}" in paths
+        assert f"buttons.ler.statistics.triggered.{period}" in paths
+
+
+def test_no_current_phase_without_phases(ha: HomeAssistant) -> None:
+    """appliance.running_program.phase_current is listed only with phases, as appliance_phase_current."""
+    paths = {path for *_, path in module("setup.catalogue").keys({"appliance": mount(PLAIN)})}
+    assert "appliance.running_program" in paths
+    assert "appliance.running_program.phase_current" not in paths

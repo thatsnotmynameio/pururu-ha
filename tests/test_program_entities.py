@@ -39,7 +39,7 @@ RUNNING_PROGRAM: dict[str, Any] = {
     },
 }
 DEVICES = {KEY: {"name": "Dummy station",
-                 "appliance": {"power": POWER, "energy": ENERGY,
+                 "appliance": {"power": f"homeassistant.{POWER}", "energy": f"homeassistant.{ENERGY}",
                                "running_program": RUNNING_PROGRAM}}}
 LAST_CYCLE = ("last_cycle_start", "last_cycle_end", "last_cycle_duration", "last_cycle_energy")
 SUFFIXES = (*LAST_CYCLE, "cycles_total", "runtime_total", "energy_total")
@@ -105,7 +105,7 @@ async def test_its_entities_and_their_ids(ha: HomeAssistant) -> None:
 
 
 async def test_without_energy_no_energy_per_phase(ha: HomeAssistant) -> None:
-    appliance = {"power": POWER, "running_program": RUNNING_PROGRAM}
+    appliance = {"power": f"homeassistant.{POWER}", "running_program": RUNNING_PROGRAM}
     assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": appliance}})
     assert ha.states.get(sensor("phase_resfriar_energy_total")) is None
     assert ha.states.get(sensor("phase_resfriar_last_cycle_energy")) is None
@@ -113,7 +113,7 @@ async def test_without_energy_no_energy_per_phase(ha: HomeAssistant) -> None:
 
 
 async def test_without_phases_no_phase_entity(ha: HomeAssistant) -> None:
-    appliance = {"power": POWER, "running_program": {"above": 4}}
+    appliance = {"power": f"homeassistant.{POWER}", "running_program": {"above": 4}}
     assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": appliance}})
     assert held(ha, KEY) == {RUNNING, *(sensor(key) for key in (
         "power", *LAST_CYCLE[:3], "cycles_total", "runtime_total"))}
@@ -229,7 +229,7 @@ async def test_a_late_timer_ends_the_phases_before_the_next_cycle(ha: HomeAssist
     quick = {"above": 4, "off_delay": {"minutes": 2},
              "phases": {"resfriar": {"name": "Resfriar", "above": 40, "off_delay": {"minutes": 5}}}}
     assert await setup(ha, {KEY: {"name": "Dummy station",
-                                  "appliance": {"power": POWER, "running_program": quick}}})
+                                  "appliance": {"power": f"homeassistant.{POWER}", "running_program": quick}}})
     await watts(ha, IDLE_W)
     await watts(ha, 120)
     assert (state(ha, RUNNING), state(ha, RESFRIAR), state(ha, CURRENT)) == ("on", "on", "resfriar")
@@ -251,7 +251,7 @@ async def test_a_late_timer_ends_a_phase_alone_before_it_starts_again(
     quick = {"above": 4, "off_delay": {"minutes": 10},
              "phases": {"resfriar": {"name": "Resfriar", "above": 40, "off_delay": {"minutes": 2}}}}
     assert await setup(ha, {KEY: {"name": "Dummy station",
-                                  "appliance": {"power": POWER, "running_program": quick}}})
+                                  "appliance": {"power": f"homeassistant.{POWER}", "running_program": quick}}})
     await watts(ha, IDLE_W)
     await watts(ha, 120)
     assert (state(ha, RUNNING), state(ha, RESFRIAR)) == ("on", "on")
@@ -394,7 +394,7 @@ async def test_meters_per_phase(ha: HomeAssistant, freezer: Any) -> None:
     program = {**RUNNING_PROGRAM, "phases": {key: {**phase, "statistics": periods}
                                              for key, phase in RUNNING_PROGRAM["phases"].items()}}
     assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": {
-        "power": POWER, "energy": ENERGY, "running_program": program}}})
+        "power": f"homeassistant.{POWER}", "energy": f"homeassistant.{ENERGY}", "running_program": program}}})
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     for _ in range(2):
@@ -511,7 +511,7 @@ async def test_a_restart_ending_a_phase_at_once_counts_its_cycle(
         now_running: str) -> None:
     """The reading already ends the restored phase: its cycle reaches its entities, as every view listens before the carrier's first step."""
     devices = {KEY: {"name": "Dummy station",
-                     "appliance": {"power": POWER, "running_program": AT_ONCE}}}
+                     "appliance": {"power": f"homeassistant.{POWER}", "running_program": AT_ONCE}}}
     since = (dt_util.utcnow() - timedelta(minutes=20)).isoformat()
     phase_since = dt_util.utcnow() - timedelta(minutes=10)
     ha.states.async_set(POWER, str(watts_now))
@@ -538,7 +538,7 @@ async def test_the_program_ends_after_its_phases(ha: HomeAssistant, freezer: Any
                           "resfriar": {**RUNNING_PROGRAM["phases"]["resfriar"],
                                     "off_delay": {"minutes": 1}}}}
     assert await setup(ha, {KEY: {"name": "Dummy station", "appliance": {
-        "power": POWER, "running_program": program}}})
+        "power": f"homeassistant.{POWER}", "running_program": program}}})
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 35)
     await cool(ha, freezer)
@@ -764,7 +764,7 @@ def with_alert(**alert: Any) -> dict[str, Any]:
 
 
 async def test_an_alert_can_watch_the_current_phase(ha: HomeAssistant, freezer: Any) -> None:
-    assert await setup(ha, with_alert(when="appliance_phase_current", **{"state": "quente"}))
+    assert await setup(ha, with_alert(when="appliance.running_program.phase_current", **{"state": "quente"}))
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     assert state(ha, HOT) == "off"
@@ -774,7 +774,7 @@ async def test_an_alert_can_watch_the_current_phase(ha: HomeAssistant, freezer: 
 
 
 async def test_an_alert_can_watch_a_phases_binary_sensor(ha: HomeAssistant, freezer: Any) -> None:
-    assert await setup(ha, with_alert(when="appliance_phase_quente", **{"state": "on"}))
+    assert await setup(ha, with_alert(when="appliance.running_program.phases.quente", **{"state": "on"}))
     await watts(ha, IDLE_W)
     await tick(ha, freezer, 125)
     assert state(ha, HOT) == "off"
@@ -784,37 +784,36 @@ async def test_an_alert_can_watch_a_phases_binary_sensor(ha: HomeAssistant, free
 
 
 async def test_an_alert_can_watch_a_phases_total(ha: HomeAssistant) -> None:
-    assert await setup(ha, with_alert(when="appliance_phase_quente_cycles_total", above=10))
+    assert await setup(ha, with_alert(when="appliance.running_program.phases.quente.cycles_total", above=10))
     assert state(ha, HOT) == "off"
 
 
 async def test_a_reaction_can_watch_a_phase(ha: HomeAssistant) -> None:
     devices = {KEY: {**DEVICES[KEY], "reactions": {
-        "hot": {"name": "Quente", "when": "appliance_phase_quente", "to": "on"}}}}
+        "hot": {"name": "Quente", "when": "appliance.running_program.phases.quente", "to": "on"}}}}
     assert await setup(ha, devices)
     assert generated(ha)[0]["triggers"][0]["entity_id"] == QUENTE
 
 
 @pytest.mark.parametrize("when", [
-    pytest.param("appliance_phase_morno_cycles_total", id="a phase not configured"),
-    pytest.param("appliance_phase_morno", id="its binary sensor"),
+    pytest.param("appliance.running_program.phases.morno.cycles_total", id="a phase not configured"),
+    pytest.param("appliance.running_program.phases.morno", id="its binary sensor"),
 ])
 async def test_a_reference_to_a_phase_not_configured_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, when: str) -> None:
     assert not await setup(ha, with_alert(when=when, above=10))
-    assert f"alerts: {when} is not an entity key of another feature of this device" in caplog.text
+    assert f"alerts: {when} is not an entity of this device" in caplog.text
 
 
 async def test_no_phase_keys_without_phases(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """Without phases the appliance creates no phase entity, so none can be named."""
     devices = {KEY: {"name": "Dummy station",
-                     "appliance": {"power": POWER, "running_program": {"above": 4}},
-                     "alerts": {"hot": {"name": "Esquentando", "when": "appliance_phase_current",
+                     "appliance": {"power": f"homeassistant.{POWER}", "running_program": {"above": 4}},
+                     "alerts": {"hot": {"name": "Esquentando", "when": "appliance.running_program.phase_current",
                                         "state": "quente"}}}}
     assert not await setup(ha, devices)
-    assert ("alerts: appliance_phase_current is not an entity key of another feature "
-            "of this device") in caplog.text
+    assert "alerts: appliance.running_program.phase_current is not an entity of this device" in caplog.text
 
 
 async def test_a_renamed_phase_is_followed(purifier: HomeAssistant, freezer: Any) -> None:

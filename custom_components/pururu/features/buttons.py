@@ -52,7 +52,7 @@ from ..const import CONF_DEVICES
 from ..core.entity import PururuEntity
 from ..core.feature import EACH, TEXT, Device, Feature, Item, Path, at, state_of
 from ..core.generated import SCRIPTS
-from ..core.resolve import local_key
+from ..core.resolve import HOME_ASSISTANT, key_alone
 from ..core.roles import Configured, Counted, Counters, Items
 from ..core.vocabulary import NO_READING
 from . import standing
@@ -100,8 +100,8 @@ ITEM = vol.Schema(
         vol.Required("state"): pressed_state,
         # A blank name would show the button as its device's name alone
         vol.Required("name"): TEXT,
-        # Its own device's program, as a reaction's then: a dot is another device's
-        vol.Optional("program"): local_key,
+        # Its own device's executable program, by its key alone, as a reaction's then
+        vol.Optional("program"): key_alone("program"),
     }
 )
 
@@ -112,7 +112,7 @@ PER_BUTTON: dict[str, Platform] = {"triggered_total": Platform.SENSOR}
 
 
 def _item(key: str, button: Mapping[str, Any]) -> Item:
-    return Item(slug=key, name=button["name"])
+    return Item(slug=key, name=button["name"], path=(key,))
 
 
 def _item_at(block: Any, path: Path) -> Item:
@@ -285,13 +285,14 @@ def check(house: Mapping[str, Any], *_: Any) -> Iterator[vol.Invalid]:
                 yield vol.Invalid(
                     f"buttons: {button_key}: {program} is not an executable program "
                     "of this device",
-                    path=path,
+                    path=[*path, "program"],
                 )
             value = (button["entity"], button["state"])
             if (other := pressing.setdefault(value, button_key)) != button_key:
+                # Quoted as written: the schema took homeassistant. off
                 yield vol.Invalid(
-                    f"buttons: {button_key}: {value[0]} at {value[1]} is already "
-                    f"button {other}",
+                    f"buttons: {button_key}: {HOME_ASSISTANT}.{value[0]} at "
+                    f"{value[1]} is already button {other}",
                     path=path,
                 )
 
@@ -302,7 +303,7 @@ BUTTONS = Feature(
     build=build,
     example={
         "read": {
-            "entity": "sensor.dummy_remote_action",
+            "entity": "homeassistant.sensor.dummy_remote_action",
             "state": "1_single",
             "name": "Read",
         }

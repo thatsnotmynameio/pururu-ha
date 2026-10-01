@@ -1,7 +1,7 @@
 """Every builder of a device, the aspects mounted in its blocks, and the entity keys they can create."""
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, NamedTuple
 
 import voluptuous as vol
 
@@ -20,7 +20,7 @@ from ..core.feature import (
     walk,
 )
 from ..core.resolve import Index, Target
-from ..core.roles import Actions, Configured, Derived, Items
+from ..core.roles import Actions, Configured, Derived, Items, Nodes
 from ..device_keys import DEVICE_KEYS
 from ..features import FEATURES
 
@@ -178,45 +178,95 @@ def _flat(errors: list[vol.Invalid]) -> list[vol.Invalid]:
     ]
 
 
-def keys(
-    device: dict[str, Any],
-) -> Iterator[tuple[str, str, Platform, str | None, str | None]]:
-    """(builder, local entity key, platform, by, item) of every entity the device's builders can create.
+class Row(NamedTuple):
+    """A row of keys(): an entity key a device's builder can create, and where."""
+
+    builder: str
+    # Local: in the builder's namespace
+    entity_key: str
+    platform: Platform
+    by: str | None
+    item: str | None
+    path: str
+
+
+def _dotted(name: str, *path: str) -> str:
+    """A path from the builder's key in the device, as the author reads it: appliance.running_program."""
+    return ".".join((name, *path))
+
+
+def _node(nodes: Nodes | None, entity_key: str) -> Path:
+    """Where a fixed entity key sits in its builder's block (Nodes); at the block under its own name unless the builder says."""
+    return (entity_key,) if nodes is None else nodes.of.get(entity_key, (entity_key,))
+
+
+def keys(device: dict[str, Any]) -> Iterator[Row]:
+    """(builder, local entity key, platform, by, item, path) of every entity the device's builders can create.
 
     `by` is the key of the aspect adding it ("alerts" for a ready-made
     alert's, "statistics" for a meter's), None for the builder's own; `item`
     the item owning the key (an Items item, or a container an aspect's place
-    makes one: a phase).
+    makes one: a phase). `path` is its node in the device's YAML, from the
+    builder's key, as each key is born: a fixed key's node (Nodes), a block
+    key's own, a derived key's (Born), an item's suffix under the item, an
+    aspect's under its key in the container.
     """
     for name, feature in builders().items():
         if name not in device:
             continue
+        nodes = feature.role(Nodes)
         yield from (
-            (name, entity_key, platform, None, None)
+            Row(
+                name,
+                entity_key,
+                platform,
+                None,
+                None,
+                _dotted(name, *_node(nodes, entity_key)),
+            )
             for entity_key, platform in feature.entity_keys.items()
         )
         if (configured := feature.role(Configured)) is not None:
             yield from (
-                (name, entity_key, configured.platform, None, None)
+                Row(
+                    name,
+                    entity_key,
+                    configured.platform,
+                    None,
+                    None,
+                    _dotted(name, entity_key),
+                )
                 for entity_key in device[name]
             )
         if (derived := feature.role(Derived)) is not None:
             yield from (
-                (name, entity_key, platform, None, None)
-                for entity_key, platform in derived.of(device[name]).items()
+                Row(
+                    name,
+                    entity_key,
+                    born.platform,
+                    None,
+                    None,
+                    _dotted(name, *born.path),
+                )
+                for entity_key, born in derived.of(device[name]).items()
             )
         if (items := feature.role(Items)) is not None:
             yield from (
-                (name, item.key(suffix), platform, None, item.slug)
+                Row(
+                    name,
+                    item.key(suffix),
+                    platform,
+                    None,
+                    item.slug,
+                    _dotted(name, *item.path, suffix),
+                )
                 for item in items.of(device[name])
                 for suffix, platform in items.keys.items()
             )
         yield from _aspects_keys(name, feature, device[name])
 
 
-def _aspects_keys(
-    name: str, feature: Feature, block: Any
-) -> Iterator[tuple[str, str, Platform, str | None, str | None]]:
+def _aspects_keys(name: str, feature: Feature, block: Any) -> Iterator[Row]:
     """keys()' rows for the keys each aspect it offers adds, at each container of each of its places.
 
     Its fixed keys (Place.keys) at every container, as an item's where the
@@ -230,40 +280,54 @@ def _aspects_keys(
 
 def _place_keys(
     name: str, aspect: Aspect, place: Place, block: Any, path: Path, container: Any
-) -> Iterator[tuple[str, str, Platform, str | None, str | None]]:
-    """_aspects_keys' rows for one container at `path`: the place's fixed keys, then what it derives."""
+) -> Iterator[Row]:
+    """_aspects_keys' rows for one container at `path`: the place's fixed keys, then what it derives.
+
+    Each under the aspect's key in the container: a fixed key at its leaf
+    (Place.leaves), a derived one at its Born path.
+    """
     item = None if place.item is None else place.item(block, path)
     yield from (
-        (
+        Row(
             name,
             item_key(entity_key, item),
             platform,
             aspect.key,
             None if item is None else item.slug,
+            _dotted(name, *path, aspect.key, *place.leaves[entity_key]),
         )
         for entity_key, platform in place.keys.items()
     )
     if place.derived is not None and aspect.key in container:
         yield from (
-            (name, entity_key, platform, aspect.key, None)
-            for entity_key, platform in place.derived(container[aspect.key])
+            Row(
+                name,
+                entity_key,
+                born.platform,
+                aspect.key,
+                None,
+                _dotted(name, *path, aspect.key, *born.path),
+            )
+            for entity_key, born in place.derived(container[aspect.key])
         )
 
 
 def targets(key: str, config: dict[str, Any]) -> dict[str, Target]:
-    """Every entity key device `key` can create, qualified, and what it is."""
+    """Every entity device `key` can create, by its path, and what it is."""
     found: dict[str, Target] = {}
-    for name, entity_key, platform, by, item in keys(config):
-        feature = builders()[name]
+    every = builders()
+    for row in keys(config):
+        feature = every[row.builder]
         device = Device(key=key, name=config[CONF_NAME], namespace=feature.namespace)
         actions = feature.role(Actions)
-        found[device.qualified(entity_key)] = Target(
+        found[row.path] = Target(
             device=device,
-            key=device.qualified(entity_key),
-            platform=platform,
-            builder=name,
-            by=by,
-            item=item,
+            key=device.qualified(row.entity_key),
+            path=row.path,
+            platform=row.platform,
+            builder=row.builder,
+            by=row.by,
+            item=row.item,
             actions=actions.services if actions else (),
         )
     return found

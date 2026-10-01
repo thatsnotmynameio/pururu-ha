@@ -22,6 +22,7 @@ from homeassistant.helpers import (
 
 from ..const import CONF_ALIASES, CONF_AREAS, CONF_FLOOR, CONF_FLOORS, CONF_LEVEL
 from ..core.feature import TEXT
+from ..core.resolve import key_alone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ FLOOR_SCHEMA = vol.Schema(
 AREA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_NAME): TEXT,
-        vol.Optional(CONF_FLOOR): cv.slug,
+        vol.Optional(CONF_FLOOR): key_alone(CONF_FLOOR),
         vol.Optional(CONF_ICON): cv.icon,
         vol.Optional(CONF_ALIASES, default=[]): _ALIASES,
     }

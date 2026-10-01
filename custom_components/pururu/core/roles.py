@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.const import Platform
 
 if TYPE_CHECKING:  # feature.py imports this module
-    from .feature import Happening, Item, Preset
+    from .feature import Born, Happening, Item, Path, Preset
     from .resolve import Ref
 
 
@@ -23,14 +23,28 @@ class Configured:
 
 
 @dataclass(frozen=True)
+class Nodes:
+    """Where its fixed entity keys (entity_keys) sit in its block, by key; one it doesn't name, at the block under its own name.
+
+    A path (feature.Path) from the block: a written setting's is the entity
+    derived from it (the appliance's energy_total, at energy), a declared
+    thing's is the thing (running, at running_program), an unwritten key's is
+    the node it is born under, then its name (running_program, last_cycle_end).
+    """
+
+    of: Mapping[str, tuple[str, ...]]
+
+
+@dataclass(frozen=True)
 class Derived:
     """Entity keys its validated block adds beyond entity_keys: the appliance's phases'.
 
-    `of` takes the validated block. catalogue.keys lists them, so the index
-    knows them: an alert, a reaction or a `when:` can name one.
+    `of` takes the validated block, and gives each key born at its path from
+    the block (feature.Born). catalogue.keys lists them, so the index knows
+    them: an alert, a reaction or a `when:` can name one.
     """
 
-    of: Callable[[Any], Mapping[str, Platform]]
+    of: Callable[[Any], Mapping[str, Born]]
 
 
 @dataclass(frozen=True)
@@ -92,13 +106,17 @@ class Counters:
 
 @dataclass(frozen=True)
 class Refers:
-    """Entity keys of other features its validated block names.
+    """Entities of other features its validated block names, each a path, with the field that names it.
 
-    Validated against the device; build() gets their current entity IDs in
-    `inputs`, by each reference as written (Ref.text).
+    `of` gives (the field's path in the block, the reference) pairs:
+    (("stuck", "when"), appliance.running_program). Validated against the
+    device, refused at the field (checks.references); build() gets their
+    current entity IDs in `inputs`, by each reference as written (Ref.text).
+    Only this device's: another device's (device.<device>.…) and a Home
+    Assistant entity are refused.
     """
 
-    of: Callable[[Any], Iterable[Ref]]
+    of: Callable[[Any], Iterable[tuple[Path, Ref]]]
 
 
 @dataclass(frozen=True)
@@ -132,6 +150,7 @@ class Generates:
 
 type Role = (
     Configured
+    | Nodes
     | Derived
     | Programs
     | Actions

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 import math
-from typing import Any
+from typing import Any, override
 
 from homeassistant.const import ATTR_RESTORED, Platform
 from homeassistant.core import HomeAssistant, State
@@ -11,6 +11,10 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.util import dt as dt_util
 
 from .feature import Device, Item, item_key
+from .resolve import Owner, Ref
+
+# The state attribute showing an entity's reference: from inside its device, and from another
+REFERENCE = "reference"
 
 
 def reading(state: State | None) -> float | None:
@@ -58,18 +62,54 @@ def other_holder(
 
 
 class PururuEntity(Entity):
-    """An entity of a configured device, named after its entity key."""
+    """An entity of a configured device, named after its entity key, showing its reference."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    # Static, and kept in the registry entry: history needn't repeat it
+    _unrecorded_attributes = frozenset({REFERENCE})
     # Entity keys of its own device it takes its value from: without them it isn't created
     sources: tuple[str, ...] = ()
-    # Entity keys of other features of its device, in their namespace, it reads:
-    # without them it isn't created either
+    # Paths of other features' entities of its device it reads
+    # (appliance.running_program): without them it isn't created either
     follows: tuple[str, ...] = ()
-    # Its entity key in its namespace (appliance_running), and <device key>.<that key>
+    # Its entity key in its namespace (appliance_running)
     key: str
-    reference: str
+    # Its node in its device's YAML (appliance.running_program): stamped by
+    # build from the index once it is built
+    path: str
+    # Its device's key: taken with its identity (_identify)
+    device_key: str
+
+    @override
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Leave out of history what any base leaves out, and the reference.
+
+        Entity reads the one `_unrecorded_attributes` the class finds first:
+        PururuEntity comes before GroupEntity (entity_id, group_entities) and
+        UtilityMeterSensor (next_reset), so its own set alone would hide
+        theirs, and history would keep them.
+        """
+        cls._unrecorded_attributes = frozenset[str]().union(
+            *(vars(base).get("_unrecorded_attributes", ()) for base in cls.__mro__)
+        )
+        super().__init_subclass__(**kwargs)
+
+    @property
+    @override
+    def capability_attributes(self) -> dict[str, Any]:
+        """Its base's, and its reference in both forms.
+
+        A capability attribute: HA writes it while the entity is unavailable
+        too, when it is most needed (an alert on an offline plug).
+        """
+        return {
+            **(super().capability_attributes or {}),
+            REFERENCE: {
+                "inside": self.path,
+                "outside": Ref(Owner.DEVICE, self.device_key, self.path).text,
+            },
+        }
 
     def _identify(
         self,
@@ -81,7 +121,7 @@ class PururuEntity(Entity):
         item: Item | None = None,
         translation: str | None = None,
     ) -> None:
-        """Take `device`'s entity ID, unique ID and device for `entity_key`, and a name.
+        """Take `device`'s key, entity ID, unique ID and device for `entity_key`, and a name.
 
         The name is `name` when given (an entity key from the configuration has
         no translation, even when the base class brings one, as LightGroup's
@@ -93,8 +133,8 @@ class PururuEntity(Entity):
         translation key's, the item's name as the placeholder {item}.
         """
         key = item_key(entity_key, item)
+        self.device_key = device.key
         self.key = device.qualified(key)
-        self.reference = f"{device.key}.{self.key}"
         self.entity_id = device.entity_id(platform, key)
         self._attr_unique_id = device.object_id(key)
         self._attr_device_info = device.info

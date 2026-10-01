@@ -31,7 +31,8 @@ def build(
     """Every entity of the device's features, with the unique IDs of the device's entities it follows.
 
     A builder's own entities, then those of the aspects it offers (its
-    ready-made alerts, the meters of its totals), all in its namespace.
+    ready-made alerts, the meters of its totals), all in its namespace, each
+    stamped with its path from the index, where its key is born.
     Each feature sees the device in its own namespace; what it refers to is
     in the owning feature's. Also the entity ID of each entity some entity
     watches (`follows`), by unique ID: the settings may never build it, and
@@ -40,6 +41,7 @@ def build(
     ID.
     """
     found = index[key]
+    paths = {target.key: path for path, target in found.items()}
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
     for name, feature in catalogue.builders().items():
@@ -53,9 +55,10 @@ def build(
             for entity in aspect.build(hass, device, feature, config[name], texts)
         )
         for entity in (*feature.build(hass, device, config[name], inputs), *aspects):
+            entity.path = paths[entity.key]
             follows = set()
-            for reference in entity.follows:
-                target = found[reference]
+            for path in entity.follows:
+                target = found[path]
                 follows.add(target.unique_id)
                 watched[target.unique_id] = target.current_entity_id(hass)
             built.append((entity, {*map(device.object_id, entity.sources), *follows}))
@@ -85,7 +88,7 @@ def _inputs(
         }
     inputs: dict[str, str] = {}
     refers = feature.role(Refers)
-    for ref in refers.of(config[name]) if refers else ():
+    for _, ref in refers.of(config[name]) if refers else ():
         target = find(index, key, ref)
         assert target is not None  # the schema checked it (checks.references)
         inputs[ref.text] = target.current_entity_id(hass)

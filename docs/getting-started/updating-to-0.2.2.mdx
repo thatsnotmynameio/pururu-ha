@@ -1,0 +1,417 @@
+---
+title: Updating to 0.2.2
+description: Move a configuration from 0.2.1 to 0.2.2 by hand, once, in this order. There is no automatic migration.
+---
+
+0.2.2 changes how the `pururu:` block names an entity pururu creates. In 0.2.1 a reference was the end of the entity ID (`appliance_running`, `clothes_washer.appliance_running`); in 0.2.2 it is the **path** through the YAML you wrote, from the block it's in: `appliance.running_program`, and `device.clothes_washer.appliance.running_program` from another device. You read it in your own YAML, without knowing how pururu names its entities.
+
+Everything Home Assistant owns starts with `homeassistant.`, in every field that names it: `power: homeassistant.sensor.washer_plug_power`, `notify: homeassistant.notify.mobile_app_phone`. A reaction on a Home Assistant entity names it in its `when`, as any other reaction.
+
+**There is no automatic migration.** pururu ships no aliases, no deprecation warnings and no migration code: a 0.2.1 reference is refused, with its place (`appliance_running is not a path: write it from its block, <block>.<key> for dictionary value 'pururu->devices->clothes_washer->alerts->stuck->when'`). You rewrite the `pururu:` block once, following this page in order.
+
+Updating from 0.1.23 or 0.2.0? Follow [Updating to 0.2.1](https://github.com/thatsnotmynameio/pururu-ha/blob/v0.2.1/docs/getting-started/updating-to-0.2.1.mdx) first, then this page.
+
+**Entity IDs don't change.** Only what you write in the YAML does: every entity keeps its ID, its history and its statistics, and nothing starts over (see [What doesn't change](#what-doesnt-change)). What reads pururu's [events](/concepts/events) from outside does change: see [Update what reads pururu's events](#after-the-restart).
+
+## Before you update
+
+Still on 0.2.1:
+
+<Steps>
+  <Step title="Back up">
+    Make a full backup (**Settings → System → Backups**), or copy `configuration.yaml`, the `pururu/` folder next to it, and `.storage/`: your way back to the version you run now.
+  </Step>
+</Steps>
+
+## Update
+
+<Steps>
+  <Step title="Download 0.2.2, but don't restart yet">
+    In HACS, open **Pururu** and download 0.2.2 (or copy the new `custom_components/pururu/` by hand). Don't restart and don't reload pururu until the `pururu:` block below is rewritten: the old version refuses the new references, and the new one the old ones. A refused reload loses nothing (pururu keeps everything as it was), but it's confusing.
+  </Step>
+</Steps>
+
+## Rewrite the `pururu:` block
+
+Home Assistant validates the whole block at once: make every change below before you restart. Each change shows 0.2.1, then 0.2.2.
+
+<Steps>
+  <Step title="An entity of the same device is its path">
+    An alert's `when`, a program's steps and a reaction's `when` name an entity by its path: the block key you wrote under the device, then every level down to the entity, each separated by a dot. [From each 0.2.1 reference to its path](#from-each-021-reference-to-its-path) lists them all.
+
+    ```yaml title="0.2.1"
+    stuck:
+      name: Travada
+      when: appliance_phase_current
+      state: wringing
+    ```
+
+    ```yaml title="0.2.2"
+    stuck:
+      name: Travada
+      when: appliance.running_program.phase_current
+      state: wringing
+    ```
+
+    A program's steps too:
+
+    ```yaml title="0.2.1"
+    clean:
+      name: Limpar
+      sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
+    ```
+
+    ```yaml title="0.2.2"
+    clean:
+      name: Limpar
+      sequence: [{turn_on: switches.sprinkler}, {delay: {hours: 2}}, {turn_off: switches.sprinkler}]
+    ```
+
+    A missed one is refused, and all of pururu stays down until it's fixed: `appliance_phase_current is not a path: write it from its block, <block>.<key>`. A path that names nothing is refused with its place too: `alerts: appliance.running_program.above is not an entity of this device`.
+  </Step>
+
+  <Step title="Another device's entity is device.device_key.path">
+    A reaction on another device's entity writes `device.`, that device's key, then the path as that device writes it.
+
+    ```yaml title="0.2.1"
+    washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off"}
+    ```
+
+    ```yaml title="0.2.2"
+    washer_done: {name: Lavadora terminou, when: device.clothes_washer.appliance.running_program, from: "on", to: "off"}
+    ```
+
+    A 0.2.1 reference to another device reads as a path from a block of this device, and is refused: `reactions: washer_done: clothes_washer.appliance_running: clothes_washer is not a block of this device`.
+
+    Inside a device, `device.` names another device only. A device naming itself is refused with the form to write: `alerts: device.clothes_washer.appliance.running_program.phase_current is this device's: write appliance.running_program.phase_current`. An alert and a program's steps still name only their own device.
+  </Step>
+
+  <Step title="An alert light group lists each light as from another device">
+    Each member is `device.<device>.lights.<key>`.
+
+    ```yaml title="0.2.1"
+    groups:
+      default: [biblioteca.light_teto]
+      externas: [biblioteca.light_teto, biblioteca.light_abajur]
+    ```
+
+    ```yaml title="0.2.2"
+    groups:
+      default: [device.biblioteca.lights.teto]
+      externas: [device.biblioteca.lights.teto, device.biblioteca.lights.abajur]
+    ```
+
+    A 0.2.1 member is refused at its place: `biblioteca.light_teto needs its device: device.<device>.lights.<key>`.
+  </Step>
+
+  <Step title="Home Assistant's entities start with homeassistant.">
+    `power`, `energy`, `contact`, the `entity` of a switch, a light or a button, and a door's or window's `event_entities` name a Home Assistant entity: write `homeassistant.` before its entity ID.
+
+    ```yaml title="0.2.1"
+    appliance:
+      power: sensor.washer_plug_power
+      energy: sensor.washer_plug_energy
+    ```
+
+    ```yaml title="0.2.2"
+    appliance:
+      power: homeassistant.sensor.washer_plug_power
+      energy: homeassistant.sensor.washer_plug_energy
+    ```
+
+    A switch, a light or a button too, and a door's `contact`:
+
+    ```yaml title="0.2.1"
+    teto: {entity: light.biblioteca_teto, name: Teto}
+    ```
+
+    ```yaml title="0.2.2"
+    teto: {entity: homeassistant.light.biblioteca_teto, name: Teto}
+    ```
+
+    ```yaml title="0.2.1"
+    door: {contact: binary_sensor.porta_biblioteca}
+    ```
+
+    ```yaml title="0.2.2"
+    door: {contact: homeassistant.binary_sensor.porta_biblioteca}
+    ```
+
+    A missed one is refused at its place: `sensor.washer_plug_power is not a Home Assistant entity: homeassistant.<domain>.<object_id>`.
+  </Step>
+
+  <Step title="A reaction on a Home Assistant entity names it in when">
+    A reaction has no `entity:` anymore: its `when` takes the Home Assistant entity, with `homeassistant.`.
+
+    ```yaml title="0.2.1"
+    pantry: {name: Despensa abriu, entity: binary_sensor.porta_despensa, to: "on"}
+    ```
+
+    ```yaml title="0.2.2"
+    pantry: {name: Despensa abriu, when: homeassistant.binary_sensor.porta_despensa, to: "on"}
+    ```
+
+    A reaction still on `entity:` is refused: `'entity' is an invalid option for 'pururu', check: pururu->devices->biblioteca->reactions->pantry->entity`. An entity pururu creates is written by its path, never as Home Assistant's: `when: homeassistant.binary_sensor.pururu_clothes_washer_appliance_running` is refused, saying to write `device.clothes_washer.appliance.running_program`.
+  </Step>
+
+  <Step title="A notify action starts with homeassistant.">
+    `config: notify`, and a reaction's or a ready-made notification's own `notify`:
+
+    ```yaml title="0.2.1"
+    notify: notify.mobile_app_phone
+    ```
+
+    ```yaml title="0.2.2"
+    notify: homeassistant.notify.mobile_app_phone
+    ```
+
+    A missed one is refused: `notify.mobile_app_phone is not a notify action: homeassistant.notify.<name>`.
+  </Step>
+
+  <Step title="A field that takes one kind of thing keeps its key alone">
+    A reaction's `then`, a button's `program`, a device's `area`, an area's `floor` and an alert's `lights` name one kind of thing each, so they take its key alone, as in 0.2.1: `then: clean`. A path there is refused, naming the key to write: `then is its program's key alone: clean`.
+  </Step>
+
+  <Step title="Restart Home Assistant">
+    Home Assistant checks the configuration before it restarts, still with the old version's code: pururu's new references may show there as warnings, which don't stop the restart. To check the new block before restarting, run Home Assistant's check in a new process, which loads 0.2.2 from disk: `ha core check` on Home Assistant OS, or `python -m homeassistant --script check_config -c /config` where Home Assistant runs.
+  </Step>
+</Steps>
+
+## After the restart
+
+<Steps>
+  <Step title="Check that pururu set up">
+    If it refused the block, Home Assistant logs `Invalid config for 'pururu'` in **Settings → System → Logs**, each refused reference with its place. [Troubleshooting](/reference/troubleshooting#the-reload-changed-nothing) lists each refusal. pururu doesn't start, so there is no `pururu.reload`: fix the block, run **Developer tools → YAML → Check configuration**, then restart again.
+
+    Run **Check configuration** only after this restart: until then, Home Assistant still runs the old version's code, which checks the block against 0.2.1's references.
+  </Step>
+
+  <Step title="Update what reads pururu's events">
+    Only with `config: events:`. If something outside pururu reads its [events](/concepts/events) (an automation of yours, a `rest_command` webhook and what receives it), three fields now name an entity by its reference, not by its entity key:
+
+    - `event_name` was `<device>.<entity key>`, and is the entity's reference from another device: `clothes_washer.appliance_last_cycle_end` → `device.clothes_washer.appliance.running_program.last_cycle_end`.
+    - `key` was the entity key, and is its path inside the device: `appliance_running` → `appliance.running_program`.
+    - The keys of `states` are those paths too.
+
+    Update every filter on `event_name` or `key`, and any mapping you stored keyed by them:
+
+    ```yaml
+    # 0.2.1
+    event_data:
+      event_name: clothes_washer.appliance_last_cycle_end
+    # 0.2.2
+    event_data:
+      event_name: device.clothes_washer.appliance.running_program.last_cycle_end
+    ```
+
+    The keys of `states` are flat strings with dots, not nested objects: read each by its whole path, with brackets, `trigger.event.data.states['appliance.running_program.last_cycle_energy']`. The old `trigger.event.data.states.appliance_last_cycle_energy` is now undefined, with no error, so a template still on it shows nothing. A receiver must never expand the dots into nested objects: `appliance.running_program` holds `on`, so it can't also hold `last_cycle_end`.
+
+    Each entity's `reference` attribute shows both names (`inside`, as `key`; `outside`, as `event_name`), even while it's unavailable; events leave it out of their `attributes`. See [References](/concepts/entity-ids#the-reference-attribute).
+  </Step>
+</Steps>
+
+## What doesn't change
+
+Nothing starts over. Every entity, script and automation keeps its ID, so their history, long-term statistics, dashboards, and the automations and scripts you wrote against them keep working as they are. So do the settings you made in the UI (a name, an icon, an area, hidden or disabled), the reactions' and notifications' automations, the programs' scripts, the alerts (and their Alert2 names and acknowledgements), floors and areas, and the `/pururu` dashboard. Only what you write in the `pururu:` block, and what pururu's events call an entity, change.
+
+## From each 0.2.1 reference to its path
+
+`<key>` is a key you wrote, `<phase>` a phase, `<program>` a detected program, `<period>` a period under `statistics:`. A path of another device starts with `device.<device>.`.
+
+| 0.2.1 | 0.2.2 |
+|---|---|
+| `appliance_power` | `appliance.power` |
+| `appliance_energy_total` | `appliance.energy` |
+| `appliance_idle_energy_total` | `appliance.idle_energy_total` |
+| `appliance_idle_energy_<period>` | `appliance.statistics.idle_energy.<period>` |
+| `appliance_running` | `appliance.running_program` |
+| `appliance_last_cycle_start`, `_end`, `_duration`, `_energy` | `appliance.running_program.last_cycle_start`, `.last_cycle_end`, `.last_cycle_duration`, `.last_cycle_energy` |
+| `appliance_cycles_total`, `appliance_runtime_total` | `appliance.running_program.cycles_total`, `appliance.running_program.runtime_total` |
+| `appliance_runtime_<period>`, `appliance_cycles_<period>` | `appliance.running_program.statistics.runtime.<period>`, `appliance.running_program.statistics.cycles.<period>` |
+| `appliance_phase_current`, `appliance_phase_last` | `appliance.running_program.phase_current`, `appliance.running_program.phase_last` |
+| `appliance_phase_<phase>`, `appliance_phase_<phase>_cycles_total`, `appliance_phase_<phase>_last_cycle_end` | `appliance.running_program.phases.<phase>`, `appliance.running_program.phases.<phase>.cycles_total`, `appliance.running_program.phases.<phase>.last_cycle_end` |
+| `appliance_phase_<phase>_runtime_<period>` | `appliance.running_program.phases.<phase>.statistics.runtime.<period>` |
+| `appliance_phase_other`, `appliance_phase_other_cycles_total`, `appliance_phase_other_energy_<period>` | `appliance.running_program.other`, `appliance.running_program.other.cycles_total`, `appliance.running_program.other.statistics.energy.<period>` |
+| `appliance_alert_<key>` | `appliance.alerts.<key>` |
+| `appliance_<program>`, `appliance_<program>_last_cycle_end`, `appliance_<program>_cycles_<period>` | `appliance.programs.detected.<program>`, `appliance.programs.detected.<program>.last_cycle_end`, `appliance.programs.detected.<program>.statistics.cycles.<period>` |
+| `appliance_<program>_phase_current`, `appliance_<program>_phase_last` | `appliance.programs.detected.<program>.phase_current`, `appliance.programs.detected.<program>.phase_last` |
+| `appliance_<program>_phase_<phase>`, `appliance_<program>_phase_other_energy_<period>` | `appliance.programs.detected.<program>.phases.<phase>`, `appliance.programs.detected.<program>.other.statistics.energy.<period>` |
+| `door_<key>`: `door_open`, `door_last_opened`, `door_last_opened_by`, `door_openings_total` | `door.<key>`: `door.open`, `door.last_opened`, `door.last_opened_by`, `door.openings_total` (a window's, `window.<key>`) |
+| `door_openings_<period>`, `door_alert_<key>` | `door.statistics.openings.<period>`, `door.alerts.<key>` |
+| `switch_<key>`, `light_<key>` | `switches.<key>`, `lights.<key>` |
+| `button_<key>`, `button_<key>_triggered_total`, `button_<key>_triggered_<period>` | `buttons.<key>`, `buttons.<key>.triggered_total`, `buttons.<key>.statistics.triggered.<period>` |
+| `program_executable_<key>_last_cycle_end`, `program_executable_<key>_cycles_total`, `program_executable_<key>_cycles_<period>` | `programs.executable.<key>.last_cycle_end`, `programs.executable.<key>.cycles_total`, `programs.executable.<key>.statistics.cycles.<period>` |
+| `reaction_<key>_triggered_total`, `reaction_<key>_triggered_<period>` | `reactions.<key>.triggered_total`, `reactions.<key>.statistics.triggered.<period>` |
+| `alert_<key>` | `alerts.<key>` |
+| `<device>.<key>` | `device.<device>.` and the path, such as `device.clothes_washer.appliance.running_program` |
+| A light group's `<device>.light_<key>` | `device.<device>.lights.<key>` |
+| A Home Assistant entity in `power`, `energy`, `contact`, `entity`: `sensor.washer_plug_power` | `homeassistant.sensor.washer_plug_power` |
+| A reaction's `entity: binary_sensor.porta_despensa` | `when: homeassistant.binary_sensor.porta_despensa` |
+| A door's or window's event entity: `entity: event.porta_frente_access` | `entity: homeassistant.event.porta_frente_access` |
+| A notify action: `notify.mobile_app_phone` | `homeassistant.notify.mobile_app_phone` |
+| `then: clean`, `program: clean`, `area: despensa`, `floor: terreo`, `lights: default` | unchanged: a field that names one kind of thing keeps its key alone |
+| An event's `event_name`: `clothes_washer.appliance_last_cycle_end` | `device.clothes_washer.appliance.running_program.last_cycle_end` |
+| An event's `key`, and the keys of its `states`: `appliance_last_cycle_end` | `appliance.running_program.last_cycle_end` |
+
+A reaction can't watch a reaction: `reactions.<key>` is refused, pointing to what counts it, `reactions.<key>.triggered_total`. It can follow an executable program, new in 0.2.2: `when: programs.executable.<key>` (`device.<device>.programs.executable.<key>` from another device) is its script, `on` while the program runs, so `from: "on"`, `to: "off"` fires when it finishes. An alert's `when` and a program's steps can't name a program: `alerts: programs.executable.clean is an executable program: only a reaction's when follows it`.
+
+## The whole example
+
+Every step at once, on one house: 0.2.1's block, then 0.2.2's.
+
+<Tabs groupId="version">
+  <TabItem label="0.2.1" value="before">
+    ```yaml title="0.2.1: configuration.yaml"
+    pururu:
+      config:
+        notify: notify.mobile_app_phone
+        events: [state_changed, reading]
+        alerts:
+          lights:
+            groups:
+              default: [biblioteca.light_teto]
+              externas: [biblioteca.light_teto, biblioteca.light_abajur]
+            resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}
+      devices:
+        clothes_washer:
+          name: Tanquinho
+          appliance:
+            power: sensor.washer_plug_power
+            energy: sensor.washer_plug_energy
+            running_program:
+              above: 4
+              on_delay: {minutes: 1}
+              off_delay: {minutes: 2}
+              statistics:
+                runtime: [today, month]
+                cycles: [today, month]
+              phases:
+                warming: {name: Aquecendo, above: 1000}
+                wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+            statistics:
+              idle_energy: [month]
+            alerts:
+              long_cycle: {for: {hours: 3}, lights: externas, message: Demorou., done_message: Terminou.}
+            notifications:
+              finished:
+          alerts:
+            stuck:
+              name: Travada
+              when: appliance_phase_current
+              state: wringing
+              for: {hours: 1}
+              lights: default
+              message: Travada!
+              done_message: Destravou.
+        greenhouse:
+          name: Estufa
+          switches:
+            sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+          buttons:
+            clean: {entity: sensor.controle_estufa_action, state: 1_single, name: Limpar, program: clean}
+          programs:
+            executable:
+              clean:
+                name: Limpar
+                sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
+          reactions:
+            morning: {name: Manhã, at: "07:00", then: clean}
+        biblioteca:
+          name: Biblioteca
+          lights:
+            teto: {entity: light.biblioteca_teto, name: Teto}
+            abajur: {entity: switch.sonoff_abajur, name: Abajur}
+          door:
+            contact: binary_sensor.porta_biblioteca
+            event_entities:
+              - entity: event.porta_biblioteca_access
+                types: {access_granted: opening}
+                fields: {who: actor}
+          reactions:
+            washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off"}
+            pantry: {name: Despensa abriu, entity: binary_sensor.porta_despensa, to: "on"}
+
+    automation pururu: !include_dir_merge_list pururu/automations
+    script pururu: !include_dir_merge_named pururu/scripts
+    alert2:
+      alerts: !include_dir_merge_list pururu/alert2
+    ```
+  </TabItem>
+  <TabItem label="0.2.2" value="after">
+    ```yaml title="0.2.2: configuration.yaml"
+    pururu:
+      config:
+        notify: homeassistant.notify.mobile_app_phone
+        events: [state_changed, reading]
+        alerts:
+          lights:
+            groups:
+              default: [device.biblioteca.lights.teto]
+              externas: [device.biblioteca.lights.teto, device.biblioteca.lights.abajur]
+            resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}
+      devices:
+        clothes_washer:
+          name: Tanquinho
+          appliance:
+            power: homeassistant.sensor.washer_plug_power
+            energy: homeassistant.sensor.washer_plug_energy
+            running_program:
+              above: 4
+              on_delay: {minutes: 1}
+              off_delay: {minutes: 2}
+              statistics:
+                runtime: [today, month]
+                cycles: [today, month]
+              phases:
+                warming: {name: Aquecendo, above: 1000}
+                wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+            statistics:
+              idle_energy: [month]
+            alerts:
+              long_cycle: {for: {hours: 3}, lights: externas, message: Demorou., done_message: Terminou.}
+            notifications:
+              finished:
+          alerts:
+            stuck:
+              name: Travada
+              when: appliance.running_program.phase_current
+              state: wringing
+              for: {hours: 1}
+              lights: default
+              message: Travada!
+              done_message: Destravou.
+        greenhouse:
+          name: Estufa
+          switches:
+            sprinkler: {entity: homeassistant.switch.greenhouse_sprinkler, name: Irrigador}
+          buttons:
+            clean: {entity: homeassistant.sensor.controle_estufa_action, state: 1_single, name: Limpar, program: clean}
+          programs:
+            executable:
+              clean:
+                name: Limpar
+                sequence: [{turn_on: switches.sprinkler}, {delay: {hours: 2}}, {turn_off: switches.sprinkler}]
+          reactions:
+            morning: {name: Manhã, at: "07:00", then: clean}
+        biblioteca:
+          name: Biblioteca
+          lights:
+            teto: {entity: homeassistant.light.biblioteca_teto, name: Teto}
+            abajur: {entity: homeassistant.switch.sonoff_abajur, name: Abajur}
+          door:
+            contact: homeassistant.binary_sensor.porta_biblioteca
+            event_entities:
+              - entity: homeassistant.event.porta_biblioteca_access
+                types: {access_granted: opening}
+                fields: {who: actor}
+          reactions:
+            washer_done: {name: Lavadora terminou, when: device.clothes_washer.appliance.running_program, from: "on", to: "off"}
+            pantry: {name: Despensa abriu, when: homeassistant.binary_sensor.porta_despensa, to: "on"}
+
+    automation pururu: !include_dir_merge_list pururu/automations
+    script pururu: !include_dir_merge_named pururu/scripts
+    alert2:
+      alerts: !include_dir_merge_list pururu/alert2
+    ```
+  </TabItem>
+</Tabs>

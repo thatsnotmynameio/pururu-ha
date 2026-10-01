@@ -24,6 +24,7 @@ from homeassistant.util.signal_type import SignalType
 
 from ...core.entity import PururuEntity, as_time
 from ...core.feature import TEXT, Device
+from ...core.resolve import homeassistant_entity
 
 OPENING = "opening"
 DENIED = "denied"
@@ -47,7 +48,7 @@ ENTITY_KEYS: dict[str, Platform] = {
 # One event entity; schemas of their own, so unknown keys are refused
 SCHEMA = vol.Schema(
     {
-        vol.Required("entity"): cv.entity_domain("event"),
+        vol.Required("entity"): homeassistant_entity(Platform.EVENT),
         vol.Required("types"): vol.All(
             vol.Schema({cv.string: vol.In(MEANINGS)}), vol.Length(min=1)
         ),

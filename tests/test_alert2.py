@@ -18,11 +18,11 @@ from helpers import module, reload, setup
 KEY = "dummy_washer"
 POWER = "sensor.dummy_plug_power"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
+    "power": f"homeassistant.{POWER}",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 TEXTS = {"message": "Overload!", "done_message": "Back to normal."}
-OVERLOAD = {"name": "Overload", "when": "appliance_power", "above": 2500}
+OVERLOAD = {"name": "Overload", "when": "appliance.power", "above": 2500}
 FILE = "pururu/alert2/alerts.yaml"
 INCLUDE = "alerts: !include_dir_merge_list pururu/alert2"
 SENSOR = "binary_sensor.pururu_dummy_washer_alert_overload"
@@ -109,7 +109,7 @@ async def test_the_conditions_follow_a_renamed_alert(ha: HomeAssistant) -> None:
 
 
 async def test_an_alert_not_created_is_not_written(ha: HomeAssistant) -> None:
-    month = {"name": "Month", "when": "appliance_runtime_month", "above": 1, **TEXTS}
+    month = {"name": "Month", "when": "appliance.running_program.statistics.runtime.month", "above": 1, **TEXTS}
     assert await setup(ha, devices(month=month, overload={**OVERLOAD, **TEXTS}))
     assert [entry["name"] for entry in written(ha)] == ["dummy_washer_alert_overload"]
 

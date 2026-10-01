@@ -68,7 +68,12 @@ SWITCHES = Feature(
     schema=standing.schema(Platform.SWITCH),
     entity_keys={},
     build=build,
-    example={"sprinkler": {"entity": "switch.dummy_sprinkler", "name": "Sprinkler"}},
+    example={
+        "sprinkler": {
+            "entity": "homeassistant.switch.dummy_sprinkler",
+            "name": "Sprinkler",
+        }
+    },
     namespace="switch",
     roles=(Configured(Platform.SWITCH), Actions(("turn_on", "turn_off", "toggle"))),
 )

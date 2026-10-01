@@ -31,7 +31,7 @@ from ..core.feature import (
     presets_of,
     qualified,
 )
-from ..core.resolve import Index, Ref, find
+from ..core.resolve import Index, Owner, Ref, find
 from ..core.roles import Configured, Refers
 from ..core.texts import Texts
 from .elapsed import ElapsedAlert
@@ -56,34 +56,38 @@ def _build(
             priority=alert["priority"],
             messages=_texts(alert),
             lights=alert.get("lights"),
+            # A path of this device (checks.references)
             follows=(alert["when"],),
         )
         for entity_key, alert in config.items()
     ]
 
 
-def _refers(config: dict[str, Any]) -> set[Ref]:
-    """The entity keys the alerts watch, on this device."""
-    return {Ref(None, alert["when"]) for alert in config.values()}
+def _refers(config: dict[str, Any]) -> list[tuple[tuple[str, ...], Ref]]:
+    """What each alert watches, at its when: a path of this device."""
+    return [
+        ((alert_key, "when"), Ref.parse(alert["when"]))
+        for alert_key, alert in config.items()
+    ]
 
 
 def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
     """Refuse an alert watching a ready-made alert (a schema check): an alert can't watch another.
 
-    What isn't another feature's entity key is checks.references' refusal, so
-    each reference is refused once.
+    What isn't another block's entity of this device is checks.references'
+    refusal, so each reference is refused once.
     """
     for key, device in house[CONF_DEVICES].items():
-        for ref in _refers(device.get(CONF_ALERTS, {})):
-            target = find(index, key, ref)
+        for where, ref in _refers(device.get(CONF_ALERTS, {})):
+            target = find(index, key, ref) if ref.owner is Owner.HERE else None
             if (
                 target is not None
                 and target.builder != CONF_ALERTS
                 and target.by == ASPECT.key
             ):
                 yield vol.Invalid(
-                    f"{CONF_ALERTS}: {ref.key} is an alert: an alert can't watch another",
-                    path=[CONF_DEVICES, key, CONF_ALERTS],
+                    f"{CONF_ALERTS}: {ref.text} is an alert: an alert can't watch another",
+                    path=[CONF_DEVICES, key, CONF_ALERTS, *where],
                 )
 
 
@@ -92,7 +96,11 @@ ALERTS = Feature(
     entity_keys={},
     build=_build,
     example={
-        "too_long": {"name": "Too long", "when": "appliance_running", "state": "on"}
+        "too_long": {
+            "name": "Too long",
+            "when": "appliance.running_program",
+            "state": "on",
+        }
     },
     namespace="alert",
     roles=(Configured(Platform.BINARY_SENSOR), Refers(_refers)),
@@ -161,6 +169,8 @@ def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
         Place(
             schema=settings_schema(presets),
             keys={f"alert_{name}": Platform.BINARY_SENSOR for name in presets},
+            # Each where it is enabled: alerts.<name>
+            leaves={f"alert_{name}": (name,) for name in presets},
             named=partial(qualified, builder.namespace),
             example=_example(presets),
         ),

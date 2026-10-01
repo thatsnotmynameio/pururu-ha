@@ -11,7 +11,7 @@ pururu:
     front_door:
       name: Porta da frente
       openings:
-        sensor: binary_sensor.front_door_contact
+        sensor: homeassistant.binary_sensor.front_door_contact
 ```
 
 ## 1. The module
@@ -30,14 +30,16 @@ import voluptuous as vol
 from homeassistant.components.sensor import RestoreSensor, SensorStateClass
 from homeassistant.const import STATE_OFF, STATE_ON, Platform
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_state_change_event
 
 from ..core.entity import PururuEntity
 from ..core.feature import Device, Feature
+from ..core.resolve import homeassistant_entity
 
-# vol.Schema refuses unknown keys by default: keep it that way
-SCHEMA = vol.Schema({vol.Required("sensor"): cv.entity_id})
+# vol.Schema refuses unknown keys by default: keep it that way. A Home
+# Assistant entity is written homeassistant.<domain>.<object_id>; the field
+# hands build() the bare entity ID
+SCHEMA = vol.Schema({vol.Required("sensor"): homeassistant_entity(Platform.BINARY_SENSOR)})
 
 
 class Openings(PururuEntity, RestoreSensor):
@@ -95,7 +97,7 @@ OPENINGS = Feature(
     schema=SCHEMA,
     entity_keys={"total": Platform.SENSOR},
     build=build,
-    example={"sensor": "binary_sensor.dummy_contact"},
+    example={"sensor": "homeassistant.binary_sensor.dummy_contact"},
     namespace="openings",
 )
 ```
@@ -106,6 +108,7 @@ The pieces:
 - **`entity_keys`** lists **every** entity key the feature can create, even those that only exist with some settings, mapped to its platform.
 - **`build()`** returns the entities for one device's validated block. Each entity calls `self._identify(device, platform, entity_key)`, which gives it its entity ID, unique ID, device and translated name.
 - **`example`** is a minimal valid block. The contract test validates it.
+- **Paths.** Every entity key gets a path, how the YAML names it: the feature's key in the device, then where the key sits in its block. A fixed key sits at the block under its own name unless the feature says otherwise, so `total` is `openings.total`, `sensor.pururu_front_door_openings_total`'s path. A fixed key that belongs under a node of the block, as the appliance's cycle entities under `running_program`, is placed by `Nodes(of)` (`core/roles.py`: entity key → its path from the block; a written setting's entity at the setting, `energy_total` at `energy`). `setup/catalogue.keys` gives every key its path, the index is keyed by it, and `build.build` stamps it on each built entity (`PururuEntity.path`, shown in the `reference` attribute): the contract test checks each key has one, distinct within its device. See [References](/concepts/entity-ids#references).
 - **`namespace`** is where the feature's entity keys live in an entity ID: `total` becomes `sensor.pururu_front_door_openings_total`. It's a slug no other feature uses, and not another feature's namespace followed by `_`. There's no exception for an entity key that is the same word as the namespace, so don't name one that way: an entity key `appliance` under the `appliance` namespace would read `sensor.pururu_<key>_appliance_appliance`. `build()` gets a `device` already in this namespace, so the feature only ever writes its own entity keys.
 
 ## 2. Register it
@@ -149,15 +152,15 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 ## 4. Depending on another entity
 
-**On an entity of the same device:** set `sources` on the entity to the entity keys of its own feature it reads. If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another entity key's entity, use `device.current_entity_id(hass, platform, entity_key)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `features/cycle/totals.py` is an example.
+**On an entity of the same device:** set `sources` on the entity to the entity keys of its own feature it reads (entity keys, not paths: they're its own). If one of those isn't created because its ID is taken, this entity is dropped too, with a logged error. When you read another entity key's entity, use `device.current_entity_id(hass, platform, entity_key)`, never the default ID, so that you follow a rename. `RuntimeTotal` in `features/cycle/totals.py` is an example.
 
 A feature reads another feature's entity only through `Refers`, never by hard-coding its name or taking a capability from it.
 
-**On one entity of another feature, named in the configuration:** add `Refers(of)`, `of` a function that returns, from the validated block, a `Ref` (`core/resolve.py`) for each entity key it names, in their namespace: `Ref(None, "appliance_power")` on this device. `checks.references` checks each is another feature's entity key, and `build()` receives its current ID in `inputs` under the reference as written (`Ref.text`, `appliance_power`). Set `follows` on each entity to the keys it reads. [`alerts`](/concepts/alerts) (`aspects/alerts.py`, the device key `ALERTS`) is the example.
+**On one entity of another feature, named in the configuration:** validate the field with `core/resolve.py`'s `path` (a path of this device, `device.<device>.…` or `homeassistant.…`), and add `Refers(of)`, `of` a function that yields, from the validated block, `(the field's path in the block, Ref)` for each reference it names: `(("stuck", "when"), Ref.parse("appliance.power"))`. `checks.references` refuses, at that field, one that isn't another feature's entity of this device: another device's and a Home Assistant entity are never one. `build()` receives its current ID in `inputs` under the reference as written (`Ref.text`, `appliance.power`). Set `follows` on each entity to the paths it reads. [`alerts`](/concepts/alerts) (`aspects/alerts.py`, the device key `ALERTS`) is the example.
 
-**Entity keys the block adds.** A feature whose validated block decides more entity keys than `entity_keys` lists (the appliance's phases, from its `running_program`'s `phases`) adds `Derived(of)` (`core/roles.py`): `of` takes the validated block and returns the entity keys it adds, by platform. `setup/catalogue.keys` lists them too, so an alert, a reaction or a `when:` can name one; they're never in `entity_keys` itself, since they depend on the block. `program.keys_of` is the example: every entity key a program block's phases create, `other`'s too, none without phases.
+**Entity keys the block adds.** A feature whose validated block decides more entity keys than `entity_keys` lists (the appliance's phases, from its `running_program`'s `phases`) adds `Derived(of)` (`core/roles.py`): `of` takes the validated block and returns the entity keys it adds, each a `Born` (`core/feature.py`: its platform and its path from the block, `running_program, phases, warming` for `phase_warming`). `setup/catalogue.keys` lists them too, so an alert, a reaction or a `when:` can name one; they're never in `entity_keys` itself, since they depend on the block. `program.keys_of` is the example: every entity key a program block's phases create, `other`'s too, none without phases.
 
-**Detected programs.** A feature reading a sensor can take `programs: detected:` by adding `Programs(reading, energy)` (`core/roles.py`: the settings of its block giving the reading and each cycle's kWh, `energy` `None` for none; the appliance's `Programs("power", "energy")`) and `*program.counted_each(program.DETECTED_AT)` to its `Counters`: the programs aspect (`aspects/programs.py`, `ASPECT`) does the rest. It mounts `programs:` (its schema, each program a band with a `name`, phases and `other`), lists each program's keys (`Place.derived`: `<key>`, `<key>_<suffix>`, `<key>_phase_…`, in the feature's namespace, so `checks.keys_distinct` refuses one the feature or another program creates) and builds each (`program.build_detected`). Their names and icons are the detector's, once for every builder (`DETECTED_NAMED`, with `{item}`): nothing to add to the translations. The contract test checks both (`test_a_programs_builder_counts_its_detected_programs`, `test_a_detected_programs_keys_are_named`).
+**Detected programs.** A feature reading a sensor can take `programs: detected:` by adding `Programs(reading, energy)` (`core/roles.py`: the settings of its block giving the reading and each cycle's kWh, `energy` `None` for none; the appliance's `Programs("power", "energy")`) and `*program.counted_each(program.DETECTED_AT)` to its `Counters`: the programs aspect (`aspects/programs.py`, `ASPECT`) does the rest. It mounts `programs:` (its schema, each program a band with a `name`, phases and `other`), lists each program's keys (`Place.derived`: `<key>`, `<key>_<suffix>`, `<key>_phase_…`, each with its `Born` path under `programs.detected.<key>`, in the feature's namespace, so `checks.keys_distinct` refuses one the feature or another program creates) and builds each (`program.build_detected`). Their names and icons are the detector's, once for every builder (`DETECTED_NAMED`, with `{item}`): nothing to add to the translations. The contract test checks both (`test_a_programs_builder_counts_its_detected_programs`, `test_a_detected_programs_keys_are_named`).
 
 **Being acted on:** a feature whose entities a [program](/concepts/programs) can act on has `Actions(...)`, the services of its platform they take: `SWITCHES` and `LIGHTS` have `Actions(("turn_on", "turn_off", "toggle"))`.
 
@@ -173,9 +176,9 @@ Some features create one entity per key the user writes, such as [`switches`](/f
 
 For a feature that stands for real entities of one domain, build each entity on Home Assistant's group entity of that domain, with the real entity as its only member: `Switch` in `features/switches.py` is a `SwitchGroup` of one, and `Light` in `features/lights.py` a `LightGroup` of one, as `Mirror` is a `SensorGroup` of one. The group already follows the real entity's state and passes every command on, with everything its domain offers. One feature per domain of the entity pururu creates: a light gets `lights`, not a place in `switches`. When a feature takes several domains of real entity, a mapping from each domain to its class (`KINDS` in `lights.py`) gives both the schema's domains and the class to build: `lights` takes a `switch.*` as a `SwitchLight`, on `GroupEntity`, on and off only. In one device, a real entity is in one configured feature at most.
 
-**Entity keys repeated per item.** Some features create the same set of entities for every item of their block: the executable programs (`programs: executable:`) give each program its own last cycle, totals and meters. Add `Items(keys, of)`: `keys` the suffixes (suffix → platform), `of` a function that returns, from the validated block, its items as `Item(slug, name)` (`core/feature.py`). With `Configured`, items only add keys beside the block's own, one item per block key, its slug the key (a button's `<key>_triggered_total`):
+**Entity keys repeated per item.** Some features create the same set of entities for every item of their block: the executable programs (`programs: executable:`) give each program its own last cycle, totals and meters. Add `Items(keys, of)`: `keys` the suffixes (suffix → platform), `of` a function that returns, from the validated block, its items as `Item(slug, name, path)` (`core/feature.py`; `path` where the item sits in the block, `("executable", "clean")`, its keys' paths under it: `programs.executable.clean.cycles_total`). With `Configured`, items only add keys beside the block's own, one item per block key, its slug the key (a button's `<key>_triggered_total`):
 
-- An item's entity key is `<slug>_<suffix>` (`executable_clean_cycles_total`), so `sensor.pururu_<key>_program_executable_clean_cycles_total`. The device schema, references, reactions and stale removal see them as any other entity key.
+- An item's entity key is `<slug>_<suffix>` (`executable_clean_cycles_total`), so `sensor.pururu_<key>_program_executable_clean_cycles_total`, and its path the item's then the suffix (`programs.executable.clean.cycles_total`). The device schema, references, reactions and stale removal see them as any other entity key.
 - Each is named by its suffix's translation, `<namespace>_<suffix>` (`program_cycles_total`), with the item's `name` as the placeholder named after the namespace: `"{program} cycles"`, `"Ciclos de {program}"`.
 - Each entity calls `self._identify(device, platform, suffix, item=item)`.
 
@@ -212,7 +215,9 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 | `test_every_platform_is_set_up` | Every entity key's platform, and a configured feature's platform, is in `PLATFORMS` |
 | `test_what_a_last_cycle_follows_is_a_cycle_source` | Each `LastCycleValue`'s source is a `CycleSource`, built by the builder and its aspects from the full example: the appliance's `running` and each phase, a detected program's carrier and its phases, a door's or a window's `open`, an executable program's `executable_<key>_cycles_total` (`Runs`) |
 | `test_a_derived_key_is_in_the_index` | What a validated block adds (`Derived`) is listed by `catalogue.keys`, and the example builds only listed keys |
-| `test_refers_names_entity_keys_as_in_an_entity_id` | What `Refers` returns for the example names slugs, as entity keys in their namespace |
+| `test_refers_names_paths_as_written` | What `Refers` returns for the example is a path that reads back as written (`path`, `Ref.parse`), each at a field |
+| `test_every_listed_key_has_one_path` | Each key `catalogue.keys` lists for the full example has one path of dotted slugs, distinct within the device, never at a setting's value |
+| `test_every_built_entity_carries_its_path` | Set up as a device, every entity carries the path `build.build` stamped from the index, which resolves back to its key, and shows it in its `reference` attribute, from inside and from another device |
 | `test_every_action_is_a_service_of_its_platform` | A feature with `Actions` is configured, and its platform has a service for each action |
 | `test_it_takes_turn_on_turn_off_and_toggle` | `switches` and `lights` have exactly `("turn_on", "turn_off", "toggle")` |
 | `test_items_have_suffixes_and_slugs` | `Items` has suffixes, and the example's items are slugs |

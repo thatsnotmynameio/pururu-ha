@@ -14,7 +14,7 @@ from helpers import capture, fake, held, reload, restart, setup, snapshot, tick
 KEY = "dummy_washer"
 POWER = "sensor.dummy_plug_power"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
+    "power": f"homeassistant.{POWER}",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 
@@ -55,7 +55,7 @@ OFFLINE_TEXTS = f"an alert needs message and done_message, or neither for dictio
     pytest.param({"offline": {"done_message": "d"}}, OFFLINE_TEXTS, id="a done_message without message"),
     pytest.param({"offline": {"notify": {"message": "m", "done_message": "d"}}},
                  f"'notify' is an invalid option for 'pururu', check: {OFFLINE_PATH}->notify",
-                 id="notify: {message, done_message}, as before 0.2.1"),
+                 id="notify: {message, done_message}, as 0.1.23 wrote it"),
     pytest.param({}, "length of value must be at least 1", id="empty"),
     pytest.param({"offline": {"for": {"minutes": -1}}}, "offline", id="negative for"),
 ])
@@ -82,13 +82,13 @@ async def test_without_alerts_none_is_enabled(ha: HomeAssistant) -> None:
 
 async def test_a_hand_written_alert_cannot_watch_a_ready_made_one(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    watching = {"it": {"name": "It", "when": "appliance_alert_offline", "state": "on"}}
+    watching = {"it": {"name": "It", "when": "appliance.alerts.offline", "state": "on"}}
     assert not await setup(ha, devices({"offline": None}, alerts=watching))
-    assert "appliance_alert_offline is an alert: an alert can't watch another" in caplog.text
+    assert "alerts: appliance.alerts.offline is an alert: an alert can't watch another" in caplog.text
 
 
 async def test_a_reaction_can_react_to_a_ready_made_alert(ha: HomeAssistant) -> None:
-    reaction = {"off": {"name": "Offline", "when": "appliance_alert_offline", "to": "on"}}
+    reaction = {"off": {"name": "Offline", "when": "appliance.alerts.offline", "to": "on"}}
     assert await setup(ha, devices({"offline": None}, reactions=reaction))
 
 

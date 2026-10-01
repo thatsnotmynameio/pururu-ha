@@ -8,7 +8,7 @@ This tutorial turns a washing machine on a smart plug into a pururu device. Each
 **You need:**
 
 - pururu [installed](/getting-started/install).
-- A plug that measures power, with its power sensor in Home Assistant. Below it's called `sensor.washer_plug_power`; use your own entity ID.
+- A plug that measures power, with its power sensor in Home Assistant. Below it's called `sensor.washer_plug_power`; use your own entity ID. The YAML writes it `homeassistant.sensor.washer_plug_power`: `homeassistant.` says it's Home Assistant's entity, not one pururu creates.
 - Optionally, the plug's energy counter (kWh), here `sensor.washer_plug_energy`.
 
 ## Step 1: when is it running?
@@ -32,7 +32,7 @@ pururu:
     clothes_washer:                 # the device's key: it becomes part of every entity ID
       name: Tanquinho        # the name Home Assistant shows
       appliance:                    # a feature: an appliance on a power-measuring plug
-        power: sensor.washer_plug_power
+        power: homeassistant.sensor.washer_plug_power
         running_program:
           above: 4                  # in the power sensor's unit, usually W
           on_delay: {minutes: 1}
@@ -41,17 +41,19 @@ pururu:
 
 Reload with **Developer tools → YAML → Pururu**. Open **Settings → Devices & services → Devices** and you'll find **Tanquinho** with these entities:
 
-| Entity | |
-|---|---|
-| `sensor.pururu_clothes_washer_appliance_power` | The plug's power, repeated inside this device |
-| `binary_sensor.pururu_clothes_washer_appliance_running` | On while a cycle runs |
-| `sensor.pururu_clothes_washer_appliance_last_cycle_start` | When the last cycle started |
-| `sensor.pururu_clothes_washer_appliance_last_cycle_end` | When it ended |
-| `sensor.pururu_clothes_washer_appliance_last_cycle_duration` | How long it took, in minutes |
-| `sensor.pururu_clothes_washer_appliance_cycles_total` | Cycles counted since you added the device |
-| `sensor.pururu_clothes_washer_appliance_runtime_total` | Hours it has run since you added the device |
+| Entity | Path | |
+|---|---|---|
+| `sensor.pururu_clothes_washer_appliance_power` | `appliance.power` | The plug's power, repeated inside this device |
+| `binary_sensor.pururu_clothes_washer_appliance_running` | `appliance.running_program` | On while a cycle runs |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_start` | `appliance.running_program.last_cycle_start` | When the last cycle started |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_end` | `appliance.running_program.last_cycle_end` | When it ended |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_duration` | `appliance.running_program.last_cycle_duration` | How long it took, in minutes |
+| `sensor.pururu_clothes_washer_appliance_cycles_total` | `appliance.running_program.cycles_total` | Cycles counted since you added the device |
+| `sensor.pururu_clothes_washer_appliance_runtime_total` | `appliance.running_program.runtime_total` | Hours it has run since you added the device |
 
 Every entity ID follows the same pattern, `<platform>.pururu_<device key>_<namespace>_<entity key>`, where the namespace is the feature's (`appliance` here), so you can predict it before it exists. See [Entity IDs](/concepts/entity-ids).
+
+The path is how the YAML names the entity, in an [alert](/concepts/alerts) or a [reaction](/concepts/reactions): the keys you wrote, from the block in the device down to the entity, each separated by a dot. `running` is `appliance.running_program`, the program running, and its last cycle sits under it. Each entity also shows its path in its `reference` attribute. See [References](/concepts/entity-ids#references).
 
 The `last_cycle_*` sensors stay `unknown` until the first cycle ends. Run a wash, or wait for the next one.
 
@@ -65,8 +67,8 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
-        energy: sensor.washer_plug_energy
+        power: homeassistant.sensor.washer_plug_power
+        energy: homeassistant.sensor.washer_plug_energy
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -78,12 +80,14 @@ pururu:
 
 After a reload, the device also has:
 
-| Entity | |
-|---|---|
-| `sensor.pururu_clothes_washer_appliance_energy_total` | The plug's energy counter, repeated inside this device |
-| `sensor.pururu_clothes_washer_appliance_last_cycle_energy` | Energy the last cycle used, always in kWh |
-| `sensor.pururu_clothes_washer_appliance_runtime_week`, `_runtime_month` | Hours run this week and this month |
-| `sensor.pururu_clothes_washer_appliance_cycles_month`, `_cycles_year` | Cycles this month and this year |
+| Entity | Path | |
+|---|---|---|
+| `sensor.pururu_clothes_washer_appliance_energy_total` | `appliance.energy` | The plug's energy counter, repeated inside this device |
+| `sensor.pururu_clothes_washer_appliance_last_cycle_energy` | `appliance.running_program.last_cycle_energy` | Energy the last cycle used, always in kWh |
+| `sensor.pururu_clothes_washer_appliance_runtime_week`, `_runtime_month` | `appliance.running_program.statistics.runtime.week`, `.month` | Hours run this week and this month |
+| `sensor.pururu_clothes_washer_appliance_cycles_month`, `_cycles_year` | `appliance.running_program.statistics.cycles.month`, `.year` | Cycles this month and this year |
+
+A period's path ends with the period, under the `statistics:` you wrote it in.
 
 Each period restarts on its own: `today` at midnight, `week` on Monday, `month` on the 1st and `year` on 1 January.
 
@@ -97,8 +101,8 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
-        energy: sensor.washer_plug_energy
+        power: homeassistant.sensor.washer_plug_power
+        energy: homeassistant.sensor.washer_plug_energy
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -114,7 +118,7 @@ pururu:
 - Each **phase** is a band of the same power sensor. `warming` holds as soon as the power goes above 1000 W. `wringing` holds once the power has stayed between 50 and 1000 W for 3 minutes (`on_delay`, as the program's own).
 - **Bands may overlap**, and when both hold at once, both phases run: nothing picks a winner. When neither holds, the phase is `other`, the built-in phase for the program's band outside every one you named. Outside a cycle, the phase is `idle`.
 
-You now have `sensor.pururu_clothes_washer_appliance_phase_current`. It shows `idle` outside a cycle, `warming` or `wringing` while one of those holds, and `other` in between. Its `name` attribute is the running phase's `name` ("Aquecendo"), and its `seen` attribute lists the phases the current (or last) cycle went through, and `binary_sensor.pururu_clothes_washer_appliance_phase_warming` is on while `warming` runs.
+You now have `sensor.pururu_clothes_washer_appliance_phase_current` (`appliance.running_program.phase_current`). It shows `idle` outside a cycle, `warming` or `wringing` while one of those holds, and `other` in between. Its `name` attribute is the running phase's `name` ("Aquecendo"), and its `seen` attribute lists the phases the current (or last) cycle went through, and `binary_sensor.pururu_clothes_washer_appliance_phase_warming` (`appliance.running_program.phases.warming`) is on while `warming` runs.
 
 Watch a wash in **History** and tune the bands to your machine. [Phases](/concepts/programs#phases) covers overlapping bands, dips and idle gaps in full. A kind of wash the power alone tells apart, such as a cotton wash that heats harder, can be a [detected program](/concepts/programs#more-detected-programs) of its own, with its own cycles and totals.
 
@@ -137,8 +141,8 @@ pururu:
       name: Tanquinho
       area: despensa
       appliance:
-        power: sensor.washer_plug_power
-        energy: sensor.washer_plug_energy
+        power: homeassistant.sensor.washer_plug_power
+        energy: homeassistant.sensor.washer_plug_energy
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -164,7 +168,7 @@ The shortest way is a [ready-made notification](/concepts/notifications): your p
 ```yaml title="configuration.yaml"
 pururu:
   config:
-    notify: notify.mobile_app_phone
+    notify: homeassistant.notify.mobile_app_phone
   devices:
     clothes_washer:
       # ... as above

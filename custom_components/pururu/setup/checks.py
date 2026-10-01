@@ -5,52 +5,61 @@ reactions.check, programs.check, alerts.check, alert_lights.check,
 places.floors_exist.
 """
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Hashable, Iterator, Mapping
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.const import CONF_NAME
 
-from ..aspects import notifications
+from ..aspects import notifications, programs
 from ..const import (
     CONF_AREA,
     CONF_AREAS,
     CONF_CONFIG,
     CONF_DEVICES,
+    CONF_EXECUTABLE,
     CONF_MESSAGE,
     CONF_NOTIFICATIONS,
     CONF_NOTIFY,
+    CONF_PROGRAMS,
     CONF_REACTIONS,
 )
 from ..core import generated
 from ..core.feature import Device, Feature
-from ..core.resolve import Index, Ref, find
+from ..core.resolve import HOME_ASSISTANT, Index, Owner, Ref
 from ..core.roles import Configured, Generates, Refers
+from ..device_keys import reactions
 from . import catalogue
 
 
 def references(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> Iterator[vol.Invalid]:
-    """Refuse a reference that isn't another feature's entity key (an alert watching an alert: alerts.check)."""
-    for key, device in house[CONF_DEVICES].items():
+    """Refuse a reference that isn't another block's entity, within its reach, at its field (an alert watching an alert: alerts.check).
+
+    An executable program is followed by a reaction's when only: it is no
+    entity pururu creates, so an alert can't follow it.
+    """
+    devices = house[CONF_DEVICES]
+    for key, device in devices.items():
         for name, feature in builders.items():
             if name in device and (refers := feature.role(Refers)) is not None:
-                yield from _refused_refs(index, key, name, refers.of(device[name]))
+                yield from _refused_refs(index, devices, key, name, refers)
 
 
 def _refused_refs(
-    index: Index, key: str, name: str, refs: Iterable[Ref]
+    index: Index, devices: Mapping[str, Any], key: str, name: str, refers: Refers
 ) -> Iterator[vol.Invalid]:
-    """Builder `name`'s references on device `key` that it can't have: one refusal each."""
-    for ref in refs:
-        target = find(index, key, ref)
-        if target is None or target.builder == name:
+    """Builder `name`'s references on device `key` that it can't have: one refusal each, at its field."""
+    for where, ref in refers.of(devices[key][name]):
+        path: list[Hashable] = [CONF_DEVICES, key, name, *where]
+        found = programs.reach(index, devices, key, ref)
+        if isinstance(found, str):
+            yield vol.Invalid(f"{name}: {found}", path=path)
+        elif found.builder == name:
             yield vol.Invalid(
-                f"{name}: {ref.key} is not an entity key of another feature "
-                "of this device",
-                path=[CONF_DEVICES, key, name],
+                f"{name}: {ref.text} is not another block's entity", path=path
             )
 
 
@@ -75,10 +84,85 @@ def _shared_real_entities(
             None, (item.get("entity") for item in device[name].values())
         ):
             if owners.setdefault(entity, name) != name:
+                # Quoted as written: the schema took homeassistant. off
                 yield vol.Invalid(
-                    f"{name}: {entity} is already in {owners[entity]}",
+                    f"{name}: {HOME_ASSISTANT}.{entity} is already in {owners[entity]}",
                     path=[CONF_DEVICES, key, name],
                 )
+
+
+def pururus_own_as_home_assistants(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> Iterator[vol.Invalid]:
+    """Refuse a reaction's when naming as Home Assistant's what pururu creates or generates, with what to write.
+
+    One way to write each thing: its path follows a rename in the UI, and a
+    reaction (reactions.<key>) is refused for what counts it. Matched against
+    the IDs as pururu creates them; any other pururu_ ID, a helper of the
+    user's, is Home Assistant's.
+    """
+    # (device, reaction, its when) of each when naming Home Assistant's
+    watching = [
+        (key, reaction_key, ref)
+        for key, device in house[CONF_DEVICES].items()
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items()
+        if "when" in reaction
+        and (ref := Ref.parse(reaction["when"])).owner is Owner.HOME_ASSISTANT
+    ]
+    if not watching:
+        return
+    pururus = _pururus(house, index, builders)
+    for key, reaction_key, ref in watching:
+        if ref.path not in pururus:
+            continue
+        owner = pururus[ref.path]
+        if owner is None:
+            why = "is a ready-made notification: a reaction can't watch it"
+        else:
+            written = Ref(Owner.DEVICE, *owner)
+            if written.device == key:
+                written = Ref(Owner.HERE, None, written.path)
+            why = f"is pururu's: write {written.text}"
+        yield vol.Invalid(
+            f"reactions: {reaction_key}: {ref.text} {why}",
+            path=[CONF_DEVICES, key, CONF_REACTIONS, reaction_key, "when"],
+        )
+
+
+def _pururus(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> dict[str, tuple[str, str] | None]:
+    """Entity ID as created -> (device, the path to write), of all pururu creates and generates; None: nothing to write.
+
+    A program's script is followed by its path (programs.executable.<key>),
+    a reaction's automation by what counts it; a ready-made notification's
+    automation by nothing.
+    """
+    pururus: dict[str, tuple[str, str] | None] = {
+        target.entity_id(): (key, path)
+        for key, targets in index.items()
+        for path, target in targets.items()
+    }
+    for key, device in house[CONF_DEVICES].items():
+        for program in programs.executable(device):
+            pururus[
+                f"{generated.SCRIPTS.domain}.{programs.script_id(key, program)}"
+            ] = (
+                key,
+                f"{CONF_PROGRAMS}.{CONF_EXECUTABLE}.{program}",
+            )
+        for reaction in device.get(CONF_REACTIONS, {}):
+            automation = reactions.automation_id(key, reaction)
+            pururus[f"{generated.AUTOMATIONS.domain}.{automation}"] = (
+                key,
+                f"{CONF_REACTIONS}.{reaction}.triggered_total",
+            )
+        for _, feature, notification, _ in notifications.enabled(device, builders):
+            automation = notifications.automation_id(
+                key, feature.namespace, notification
+            )
+            pururus[f"{generated.AUTOMATIONS.domain}.{automation}"] = None
+    return pururus
 
 
 def areas_exist(
@@ -99,7 +183,7 @@ def keys_distinct(
 ) -> Iterator[vol.Invalid]:
     """Refuse two entities of one device with one unique ID, whatever their platforms.
 
-    The index keeps one entity per qualified key and would lose the other. A
+    Home Assistant keeps one entity per unique ID and would lose the other. A
     phase keyed resfriar_cycles_today has the binary sensor
     phase_resfriar_cycles_today, phase resfriar's meter's key.
     """

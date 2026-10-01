@@ -21,20 +21,23 @@ from helpers import capture, fake, generated, generated_scripts, module, reload,
 
 WASHER = "washer"
 LIGHTS = "lights"
+# Home Assistant's entities, as faked; the YAML writes them with homeassistant.
 POWER = "sensor.dummy_plug_power"
 DOOR = "binary_sensor.dummy_door"
 TETO = "light.dummy_teto"
+POWER_REF = f"homeassistant.{POWER}"
+DOOR_REF = f"homeassistant.{DOOR}"
 MIRROR = "sensor.pururu_washer_appliance_power"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
+    "power": POWER_REF,
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-DOOR_OPENS = {"name": "Porta abriu", "entity": DOOR, "to": "on"}
-OVERLOAD = {"name": "Sobrecarga", "when": f"{WASHER}.appliance_power", "above": 2500}
+DOOR_OPENS = {"name": "Porta abriu", "when": DOOR_REF, "to": "on"}
+OVERLOAD = {"name": "Sobrecarga", "when": f"device.{WASHER}.appliance.power", "above": 2500}
 
 
 def devices(**reactions: dict[str, Any]) -> dict[str, Any]:
-    lights: dict[str, Any] = {"name": "Luzes", "lights": {"teto": {"entity": TETO, "name": "Teto"}}}
+    lights: dict[str, Any] = {"name": "Luzes", "lights": {"teto": {"entity": f"homeassistant.{TETO}", "name": "Teto"}}}
     if reactions:
         lights["reactions"] = reactions
     return {WASHER: {"name": "Washer", "appliance": APPLIANCE}, LIGHTS: lights}
@@ -44,14 +47,13 @@ def devices(**reactions: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("reaction", [
-    pytest.param({"name": "Teto", "when": "light_teto", "to": "on"}, id="own entity"),
-    pytest.param({"name": "Teto", "when": f"{LIGHTS}.light_teto", "to": "on"},
-                 id="own device named"),
+    pytest.param({"name": "Teto", "when": "lights.teto", "to": "on"}, id="own entity"),
     pytest.param(OVERLOAD, id="other device"),
     pytest.param({**DOOR_OPENS, "from": "off", "for": {"minutes": 5}}, id="real entity"),
     pytest.param({"name": "Noite", "at": "22:00"}, id="time"),
     pytest.param({"name": "Anoitecer", "sun": "sunset", "offset": {"minutes": -30}}, id="sun"),
-    pytest.param({"name": "Mês", "when": f"{WASHER}.appliance_runtime_month", "to": "1"},
+    pytest.param({"name": "Mês", "when": f"device.{WASHER}.appliance.running_program.statistics.runtime.month",
+                  "to": "1"},
                  id="an entity the settings don't build"),
     pytest.param({"name": "Tarde", "at": "13:00", "retry": {"times": 3, "every": {"hours": 1}}},
                  id="retry on a time"),
@@ -68,24 +70,26 @@ PATH = "'pururu->devices->lights->reactions->it"
 
 
 @pytest.mark.parametrize(("reaction", "reason"), [
-    pytest.param({"entity": DOOR, "to": "on"}, "required key 'name' not provided", id="no name"),
+    pytest.param({"when": DOOR_REF, "to": "on"}, "required key 'name' not provided", id="no name"),
     pytest.param({**DOOR_OPENS, "name": " "}, f"length of value must be at least 1 for dictionary "
                  f"value {PATH}->name'", id="blank name"),
-    pytest.param({"name": "X"}, "a reaction needs one source: when, entity, at or sun",
+    pytest.param({"name": "X"}, "a reaction needs one source: when, at or sun",
                  id="no source"),
     pytest.param({**DOOR_OPENS, "at": "22:00"},
-                 "a reaction needs one source: when, entity, at or sun", id="two sources"),
-    pytest.param({"name": "X", "device": WASHER, "when": "appliance_power", "to": "on"},
+                 "a reaction needs one source: when, at or sun", id="two sources"),
+    pytest.param({"name": "X", "device": WASHER, "when": "appliance.power", "to": "on"},
                  f"'device' is an invalid option for 'pururu', check: {PATH[1:]}->device",
-                 id="device and when, as before 0.2.1"),
-    pytest.param({"name": "X", "when": f"{WASHER}.", "to": "on"},
-                 "washer. is neither an entity key nor <device>.<key>", id="a device without a key"),
-    pytest.param({"name": "X", "when": f"{WASHER}.appliance.power", "to": "on"},
-                 "washer.appliance.power is neither an entity key nor <device>.<key>", id="two dots"),
-    pytest.param({"name": "X", "when": "Washer.appliance_power", "to": "on"},
+                 id="device and when, as 0.1.23 wrote it"),
+    pytest.param({"name": "X", "when": f"device.{WASHER}.", "to": "on"},
+                 "device.washer. is not a path: write it from its block, <block>.<key>",
+                 id="a device without a path"),
+    pytest.param({"name": "X", "when": f"device.{WASHER}.appliance", "to": "on"},
+                 "device.washer.appliance is not a path of another device: device.<device>.<block>.<key>",
+                 id="a device with a block alone"),
+    pytest.param({"name": "X", "when": "device.Washer.appliance.power", "to": "on"},
                  "invalid slug Washer", id="a device not a slug"),
-    pytest.param({"name": "X", "at": "22:00", "then": "greenhouse.clean"},
-                 "greenhouse.clean must be of this device", id="then of another device"),
+    pytest.param({"name": "X", "at": "22:00", "then": "device.greenhouse.programs.executable.clean"},
+                 "then is its program's key alone, never another device's", id="then of another device"),
     pytest.param({"name": "X", "at": "22:00", "offset": {"minutes": 1}},
                  "a reaction's offset goes with sun", id="offset without sun"),
     pytest.param({"name": "X", "at": "22:00", "for": {"minutes": 1}},
@@ -94,7 +98,7 @@ PATH = "'pururu->devices->lights->reactions->it"
     pytest.param({"name": "X", "sun": "sunset", "to": "on"},
                  "a reaction on at or sun takes no to, from, above, below or for",
                  id="to on the sun"),
-    pytest.param({"name": "X", "entity": DOOR},
+    pytest.param({"name": "X", "when": DOOR_REF},
                  "a reaction on a state needs to, or above and/or below, not both", id="no condition"),
     pytest.param({**DOOR_OPENS, "above": 1},
                  "a reaction on a state needs to, or above and/or below, not both",
@@ -114,43 +118,51 @@ PATH = "'pururu->devices->lights->reactions->it"
                  f'or quote the state as the entity shows it ("1.0") for dictionary value '
                  f"{PATH}->to'",
                  id="a time YAML reads as a number"),
-    pytest.param({"name": "X", "entity": DOOR, "state": "on"},
+    pytest.param({"name": "X", "when": DOOR_REF, "state": "on"},
                  f"'state' is an invalid option for 'pururu', check: {PATH[1:]}->state",
                  id="an alert's state"),
-    pytest.param({"name": "X", "entity": POWER, "above": 1, "from": "0"},
+    pytest.param({"name": "X", "when": POWER_REF, "above": 1, "from": "0"},
                  "a reaction's from goes with to", id="from without to"),
-    pytest.param({"name": "X", "entity": POWER, "above": 2, "below": 1},
+    pytest.param({"name": "X", "when": POWER_REF, "above": 2, "below": 1},
                  "a reaction's above must be lower than its below", id="above not lower"),
     pytest.param({**DOOR_OPENS, "sun": "noon"}, "value must be one of ['sunrise', 'sunset']",
                  id="unknown sun event"),
-    pytest.param({**DOOR_OPENS, "entity": "door"}, "Entity ID door is an invalid entity ID",
-                 id="entity not an entity ID"),
+    pytest.param({"name": "X", "entity": DOOR, "to": "on"},
+                 f"'entity' is an invalid option for 'pururu', check: {PATH[1:]}->entity",
+                 id="entity, as before 0.2.2"),
     pytest.param({**DOOR_OPENS, "colour": "red"},
                  f"'colour' is an invalid option for 'pururu', check: {PATH[1:]}->colour",
                  id="unknown key"),
-    pytest.param({"name": "X", "when": "appliance_power", "to": "on"},
-                 "reactions: it: appliance_power is not an entity key of this device",
+    pytest.param({"name": "X", "when": "appliance.power", "to": "on"},
+                 "reactions: it: appliance.power: appliance is not a block of this device",
                  id="when of another device, without device"),
-    pytest.param({"name": "X", "when": "reaction_other", "to": "on"},
-                 "reactions: it: reaction_other is not an entity key of this device",
+    pytest.param({"name": "X", "when": "reactions.other", "to": "on"},
+                 "reactions: it: reactions.other is a reaction: watch reactions.other.triggered_total",
                  id="when a reaction"),
-    pytest.param({"name": "X", "when": "dryer.appliance_power", "to": "on"},
-                 "device lights: reactions: it: device dryer is not in devices",
+    pytest.param({"name": "X", "when": "device.dryer.appliance.power", "to": "on"},
+                 "reactions: it: device.dryer.appliance.power: device dryer is not in devices",
                  id="device not in devices"),
     pytest.param({"name": "X", "when": DOOR, "to": "on"},
-                 f"device lights: reactions: it: device binary_sensor is not in devices ({DOOR} is "
-                 f"an entity ID: watch a real entity with entity: {DOOR})",
+                 f"reactions: it: {DOOR}: binary_sensor is not a block of this device",
                  id="a real entity ID in when"),
     pytest.param({"name": "X", "when": MIRROR, "to": "on"},
-                 f"device lights: reactions: it: device sensor is not in devices ({MIRROR} is an "
-                 "entity ID: write washer.appliance_power)",
+                 f"reactions: it: {MIRROR}: sensor is not a block of this device",
                  id="a pururu entity ID in when"),
-    pytest.param({"name": "X", "when": f"{WASHER}.light_teto", "to": "on"},
-                 "device lights: reactions: it: light_teto is not an entity key of device washer",
+    pytest.param({"name": "X", "when": f"device.{WASHER}.lights.teto", "to": "on"},
+                 "reactions: it: device.washer.lights.teto: lights is not a block of device washer",
                  id="when not of that device"),
+    pytest.param({"name": "X", "when": f"device.{LIGHTS}.lights.teto", "to": "on"},
+                 "reactions: it: device.lights.lights.teto is this device's: write lights.teto",
+                 id="own device named"),
+    pytest.param({"name": "X", "when": f"{WASHER}.appliance_power", "to": "on"},
+                 "reactions: it: washer.appliance_power: washer is not a block of this device",
+                 id="when of another device, as before 0.2.2"),
+    pytest.param({"name": "X", "when": "appliance_power", "to": "on"},
+                 "appliance_power is not a path: write it from its block, <block>.<key>",
+                 id="when an entity key, as before 0.2.2"),
     pytest.param({**DOOR_OPENS, "retry": {"times": 1, "every": {"hours": 1}}},
                  "a reaction's retry goes with at or sun", id="retry on an entity"),
-    pytest.param({"name": "X", "when": "light_teto", "to": "on",
+    pytest.param({"name": "X", "when": "lights.teto", "to": "on",
                   "retry": {"times": 1, "every": {"hours": 1}}},
                  "a reaction's retry goes with at or sun", id="retry on when"),
     pytest.param({"name": "X", "at": "13:00", "retry": {"times": 0, "every": {"hours": 1}}},
@@ -188,14 +200,17 @@ async def test_an_empty_block_is_refused(ha: HomeAssistant) -> None:
     assert not await setup(ha, config)
 
 
+# A notify action, as the generated automation calls it; the YAML writes it with homeassistant.
 PHONE = "notify.phone"
+PHONE_REF = f"homeassistant.{PHONE}"
 TOLD = {**DOOR_OPENS, "message": "A porta abriu."}
 
 
 @pytest.mark.parametrize(("reaction", "config"), [
-    pytest.param(TOLD, {"notify": PHONE}, id="the default"),
-    pytest.param({**TOLD, "notify": PHONE}, None, id="its own"),
-    pytest.param({**TOLD, "notify": [PHONE, "notify.tablet"]}, {"notify": "notify.x"}, id="its own list"),
+    pytest.param(TOLD, {"notify": PHONE_REF}, id="the default"),
+    pytest.param({**TOLD, "notify": PHONE_REF}, None, id="its own"),
+    pytest.param({**TOLD, "notify": [PHONE_REF, "homeassistant.notify.tablet"]},
+                 {"notify": "homeassistant.notify.x"}, id="its own list"),
 ])
 async def test_a_message_that_goes_somewhere_is_accepted(
         ha: HomeAssistant, reaction: dict[str, Any], config: dict[str, Any] | None) -> None:
@@ -204,9 +219,12 @@ async def test_a_message_that_goes_somewhere_is_accepted(
 
 @pytest.mark.parametrize(("reaction", "reason"), [
     pytest.param({**DOOR_OPENS, "message": " "}, "length of value must be at least 1", id="blank message"),
-    pytest.param({**DOOR_OPENS, "notify": PHONE}, "a reaction's notify goes with message",
+    pytest.param({**DOOR_OPENS, "notify": PHONE_REF}, "a reaction's notify goes with message",
                  id="notify without message"),
-    pytest.param({**TOLD, "notify": "phone"}, "a notify action is notify.<name>", id="not a notify action"),
+    pytest.param({**TOLD, "notify": "phone"}, "phone is not a notify action: homeassistant.notify.<name>",
+                 id="not a notify action"),
+    pytest.param({**TOLD, "notify": PHONE}, "notify.phone is not a notify action: homeassistant.notify.<name>",
+                 id="a notify action without homeassistant, as before 0.2.2"),
     pytest.param(TOLD, "device lights: reactions: it: message needs notify, here or in config.notify",
                  id="nowhere to go"),
 ])
@@ -219,7 +237,7 @@ async def test_a_message_that_cant_go_is_refused(ha: HomeAssistant, caplog: pyte
 
 async def test_config_notify_is_a_notify_action(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     assert not await setup(ha, devices(it=TOLD), config={"notify": "phone"})
-    assert "a notify action is notify.<name>" in caplog.text
+    assert "phone is not a notify action: homeassistant.notify.<name>" in caplog.text
 
 
 async def test_reactions_alone_are_not_a_feature(ha: HomeAssistant,
@@ -239,7 +257,7 @@ async def test_two_reactions_with_one_automation_id_are_refused(
     """lights' b_reaction_c and lights_reaction_b's c would both be pururu_lights_reaction_b_reaction_c."""
     config = devices(b_reaction_c=DOOR_OPENS)
     config["lights_reaction_b"] = {
-        "name": "Outras", "lights": {"x": {"entity": "light.dummy_x", "name": "X"}},
+        "name": "Outras", "lights": {"x": {"entity": "homeassistant.light.dummy_x", "name": "X"}},
         "reactions": {"c": DOOR_OPENS},
     }
     assert not await setup(ha, config)
@@ -247,7 +265,7 @@ async def test_two_reactions_with_one_automation_id_are_refused(
             "a reaction of device lights") in caplog.text
 
 
-CLEAN_PROGRAM = {"name": "Limpar", "sequence": [{"turn_on": "light_teto"}]}
+CLEAN_PROGRAM = {"name": "Limpar", "sequence": [{"turn_on": "lights.teto"}]}
 
 
 def with_program(**reactions: dict[str, Any]) -> dict[str, Any]:
@@ -279,7 +297,7 @@ async def test_then_not_a_program_of_the_device_is_refused(
 async def test_an_empty_then_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """An empty then names nothing: refused at its path, with a subject."""
     assert not await setup(ha, with_program(it={**DOOR_OPENS, "then": ""}))
-    assert f"an entity key can't be empty for dictionary value {PATH}->then'" in caplog.text
+    assert f"then can't be empty for dictionary value {PATH}->then'" in caplog.text
 
 
 async def test_then_another_devices_program_is_refused(
@@ -324,7 +342,7 @@ def test_a_quoted_number_in_to_is_text(ha: HomeAssistant) -> None:
 
 
 def test_above_and_below_are_numeric_state(ha: HomeAssistant) -> None:
-    assert translated(ha, {"name": "X", "entity": POWER, "above": 10, "below": 2500,
+    assert translated(ha, {"name": "X", "when": POWER_REF, "above": 10, "below": 2500,
                            "for": {"hours": 1, "seconds": 5}}, POWER) == [{
         "trigger": "numeric_state", "entity_id": POWER, "above": 10.0, "below": 2500.0,
         "for": "01:00:05",
@@ -518,9 +536,51 @@ async def test_when_is_the_current_entity_id_of_the_watched_entity(ha: HomeAssis
     assert generated(ha)[0]["triggers"][0]["entity_id"] == "sensor.washer_power"
 
 
+async def test_a_reaction_on_another_devices_running_program(ha: HomeAssistant) -> None:
+    """device.<device>. then the path as that device writes it: the washer's running program."""
+    done = {"name": "Lavou", "when": f"device.{WASHER}.appliance.running_program", "from": "on", "to": "off"}
+    assert await setup(ha, devices(done=done))
+    assert generated(ha)[0]["triggers"][0]["entity_id"] == "binary_sensor.pururu_washer_appliance_running"
+
+
+@pytest.mark.parametrize("entity_id", [
+    pytest.param("binary_sensor.porta_despensa", id="a real entity"),
+    pytest.param("input_boolean.pururu_guest", id="a helper of the user's, named pururu_"),
+])
+async def test_a_reaction_on_home_assistants_entity(ha: HomeAssistant, entity_id: str) -> None:
+    """when: homeassistant.<entity ID> watches that entity: the automation's trigger names it without homeassistant."""
+    assert await setup(ha, devices(it={"name": "X", "when": f"homeassistant.{entity_id}", "to": "on"}))
+    assert generated(ha)[0]["triggers"][0]["entity_id"] == entity_id
+
+
+@pytest.mark.parametrize(("when", "write"), [
+    pytest.param(f"homeassistant.binary_sensor.pururu_{WASHER}_appliance_running",
+                 f"is pururu's: write device.{WASHER}.appliance.running_program", id="another device's entity"),
+    pytest.param("homeassistant.light.pururu_lights_light_teto", "is pururu's: write lights.teto",
+                 id="this device's entity"),
+    pytest.param(f"homeassistant.script.pururu_{WASHER}_program_executable_clean",
+                 f"is pururu's: write device.{WASHER}.programs.executable.clean", id="a program's script"),
+    pytest.param(f"homeassistant.automation.pururu_{WASHER}_reaction_morning",
+                 f"is pururu's: write device.{WASHER}.reactions.morning.triggered_total",
+                 id="a reaction's automation"),
+    pytest.param(f"homeassistant.automation.pururu_{WASHER}_appliance_notification_finished",
+                 "is a ready-made notification: a reaction can't watch it", id="a notification's automation"),
+])
+async def test_pururus_own_written_as_home_assistants_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, when: str, write: str) -> None:
+    """What pururu creates or generates, by its ID as created, is refused with what to write: one way to write it."""
+    config = devices(it={"name": "X", "when": when, "to": "on"})
+    config[WASHER]["appliance"] = {**APPLIANCE, "notifications": {"finished": None}}
+    config[WASHER]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    config[WASHER]["reactions"] = {"morning": {"name": "Manhã", "at": "07:00"}}
+    assert not await setup(ha, config, config={"notify": PHONE_REF})
+    assert f"reactions: it: {when} {write} {PATH}->when'" in caplog.text
+
+
 async def test_a_reaction_on_an_entity_not_created_is_not_generated(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    month = {"name": "Mês", "when": f"{WASHER}.appliance_runtime_month", "to": "1"}
+    month = {"name": "Mês", "when": f"device.{WASHER}.appliance.running_program.statistics.runtime.month",
+             "to": "1"}
     assert await setup(ha, devices(month=month, door=DOOR_OPENS))
     assert [a["id"] for a in generated(ha)] == ["pururu_lights_reaction_door"]
     assert ("automation.pururu_lights_reaction_month follows "
@@ -546,8 +606,8 @@ async def test_a_state_reaction_fires(ha: HomeAssistant, automations: None) -> N
 
 
 async def test_the_default_or_its_own_notify(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(door=TOLD, mine={**TOLD, "notify": "notify.tablet"}),
-                       config={"notify": [PHONE]})
+    assert await setup(ha, devices(door=TOLD, mine={**TOLD, "notify": "homeassistant.notify.tablet"}),
+                       config={"notify": [PHONE_REF]})
     told = {a["id"]: [action["action"] for action in a["actions"][0]["parallel"]] for a in generated(ha)}
     assert told == {"pururu_lights_reaction_door": [PHONE],
                     "pururu_lights_reaction_mine": ["notify.tablet"]}
@@ -558,7 +618,7 @@ async def test_a_message_is_text(ha: HomeAssistant, automations: None) -> None:
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, DOOR, "off")
     assert await setup(ha, devices(door={**TOLD, "message": "Porta {{ aberta }} {% raw %}"}),
-                       config={"notify": PHONE})
+                       config={"notify": PHONE_REF})
     await fake(ha, DOOR, "on")
     await ha.async_block_till_done()
     assert [call.data for call in calls] == [{"title": "Luzes", "message": "Porta {{ aberta }} {% raw %}"}]
@@ -569,7 +629,7 @@ async def test_a_phone_gone_does_not_keep_the_next_from_being_told(ha: HomeAssis
     """An unpaired phone's notify action doesn't exist: HA stops a sequence on it, whatever continue_on_error."""
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, DOOR, "off")
-    assert await setup(ha, devices(door=TOLD), config={"notify": ["notify.gone", PHONE]})
+    assert await setup(ha, devices(door=TOLD), config={"notify": ["homeassistant.notify.gone", PHONE_REF]})
     await fake(ha, DOOR, "on")
     await ha.async_block_till_done()
     assert [call.data for call in calls] == [{"title": "Luzes", "message": "A porta abriu."}]
@@ -588,7 +648,7 @@ async def test_for_waits(ha: HomeAssistant, freezer: Any, automations: None) -> 
 async def test_coming_back_from_unavailable_does_not_fire(ha: HomeAssistant,
                                                           automations: None) -> None:
     await fake(ha, DOOR, "on")
-    assert await setup(ha, devices(closed={"name": "Fechou", "entity": DOOR, "to": "off"}))
+    assert await setup(ha, devices(closed={"name": "Fechou", "when": DOOR_REF, "to": "off"}))
     await fake(ha, DOOR, "unavailable")
     await fake(ha, DOOR, "off")
     assert not fired(ha, "closed")
@@ -606,7 +666,7 @@ async def test_another_devices_entity_fires(ha: HomeAssistant, automations: None
 
 async def test_its_own_entity_fires(ha: HomeAssistant, automations: None) -> None:
     await fake(ha, TETO, "off")
-    assert await setup(ha, devices(teto={"name": "Teto", "when": "light_teto", "to": "on"}))
+    assert await setup(ha, devices(teto={"name": "Teto", "when": "lights.teto", "to": "on"}))
     await fake(ha, TETO, "on")
     assert fired(ha, "teto")
 
@@ -637,13 +697,13 @@ REAL_SPRINKLER = "switch.greenhouse_sprinkler"
 SPRINKLER = "switch.pururu_greenhouse_switch_sprinkler"
 CLEAN = "script.pururu_greenhouse_program_executable_clean"
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
-    {"turn_on": "switch_sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switch_sprinkler"}]}
+    {"turn_on": "switches.sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switches.sprinkler"}]}
 
 
 def greenhouse(**reactions: dict[str, Any]) -> dict[str, Any]:
     """The greenhouse: its sprinkler, its cleaning, and reactions to the door; `clean` also a reaction key."""
     return {GREENHOUSE: {"name": "Estufa",
-                   "switches": {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}},
+                   "switches": {"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"}},
                    "programs": {"executable": {"clean": CLEANING}},
                    "reactions": reactions or {"clean": {**DOOR_OPENS, "then": "clean"}}}}
 
@@ -689,7 +749,7 @@ async def test_a_missing_notify_action_does_not_keep_the_program_from_starting(
     await fake(ha, DOOR, "off")
     await fake(ha, REAL_SPRINKLER, "off")
     assert await setup(ha, greenhouse(clean={**DOOR_OPENS, "then": "clean", "message": "Limpando",
-                                       "notify": "notify.nobody"}))
+                                       "notify": "homeassistant.notify.nobody"}))
     await fake(ha, DOOR, "on")
     await settle()
     assert script_state(ha) == "on"
@@ -794,11 +854,182 @@ async def test_renaming_ones_own_script_reloads_nothing(ha: HomeAssistant) -> No
 
 
 async def test_a_reaction_on_another_device_starts_its_own_program(ha: HomeAssistant) -> None:
-    config = greenhouse(power={"name": "Potência", "when": f"{WASHER}.appliance_power",
+    config = greenhouse(power={"name": "Potência", "when": f"device.{WASHER}.appliance.power",
                          "above": 10, "then": "clean"})
     config[WASHER] = {"name": "Washer", "appliance": APPLIANCE}
     assert await setup(ha, config)
     assert generated(ha)[0]["actions"] == module("device_keys.reactions").actions(CLEAN)
+
+
+# --- when: a program running -------------------------------------------------------------
+
+# A reaction on the greenhouse's cleaning finishing: its script, on then off
+CLEANED = {"name": "Limpou", "when": "programs.executable.clean", "from": "on", "to": "off"}
+BIBLIOTECA = "biblioteca"
+
+
+def biblioteca(**reactions: dict[str, Any]) -> dict[str, Any]:
+    """The greenhouse, its door starting its cleaning, and the library reacting to it."""
+    config = greenhouse()
+    config[BIBLIOTECA] = {"name": "Biblioteca", "lights": {"teto": {"entity": f"homeassistant.{TETO}", "name": "Teto"}},
+                          "reactions": reactions}
+    return config
+
+
+def triggered(ha: HomeAssistant, entity_id: str) -> bool:
+    """Whether the automation has fired."""
+    state = ha.states.get(entity_id)
+    assert state is not None, f"no {entity_id}"
+    return state.attributes["last_triggered"] is not None
+
+
+async def clean_once(ha: HomeAssistant) -> None:
+    """The door opens, the cleaning starts; then it's stopped, its script off."""
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert script_state(ha) == "on"
+    await ha.services.async_call("script", "turn_off", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+
+
+@pytest.mark.parametrize("reaction", [
+    pytest.param(CLEANED, id="its own device's"),
+    pytest.param({**CLEANED, "then": "clean"}, id="with then, its own program"),
+])
+async def test_a_reaction_on_its_devices_program_is_accepted(ha: HomeAssistant, reaction: dict[str, Any]) -> None:
+    assert await setup(ha, greenhouse(done=reaction))
+
+
+async def test_a_reaction_follows_its_devices_program(ha: HomeAssistant, both: None) -> None:
+    """when: programs.executable.clean is its script: the reaction fires when the cleaning finishes."""
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse(clean={**DOOR_OPENS, "then": "clean"}, done=CLEANED))
+    done = generated(ha)[1]
+    assert done["id"] == "pururu_greenhouse_reaction_done"
+    assert done["triggers"][0]["entity_id"] == CLEAN
+    await fake(ha, DOOR, "on")
+    await settle()
+    assert not triggered(ha, "automation.pururu_greenhouse_reaction_done")
+    await ha.services.async_call("script", "turn_off", {"entity_id": CLEAN}, blocking=True)
+    await settle()
+    assert triggered(ha, "automation.pururu_greenhouse_reaction_done")
+
+
+async def test_a_reaction_follows_another_devices_program(ha: HomeAssistant, both: None) -> None:
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, biblioteca(done={**CLEANED, "when": f"device.{GREENHOUSE}.programs.executable.clean"}))
+    assert generated(ha)[1]["triggers"][0]["entity_id"] == CLEAN
+    await clean_once(ha)
+    assert triggered(ha, "automation.pururu_biblioteca_reaction_done")
+
+
+@pytest.mark.parametrize(("when", "reason"), [
+    pytest.param("programs.executable.wash", "programs.executable.wash is not an executable program of this device",
+                 id="no such program"),
+    pytest.param(f"device.{GREENHOUSE}.programs.executable.wash",
+                 f"device.{GREENHOUSE}.programs.executable.wash is not an executable program of device {GREENHOUSE}",
+                 id="no such program of another device"),
+    pytest.param(f"device.{GREENHOUSE}.reactions.clean",
+                 f"device.{GREENHOUSE}.reactions.clean is a reaction: "
+                 f"watch device.{GREENHOUSE}.reactions.clean.triggered_total",
+                 id="another device's reaction"),
+    pytest.param(f"device.{BIBLIOTECA}.programs.executable.clean",
+                 f"device.{BIBLIOTECA}.programs.executable.clean is this device's: write programs.executable.clean",
+                 id="its own device named"),
+])
+async def test_a_reaction_on_no_program_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                                   when: str, reason: str) -> None:
+    config = biblioteca(done={**CLEANED, "when": when})
+    config[BIBLIOTECA]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    assert not await setup(ha, config)
+    assert f"reactions: done: {reason}" in caplog.text
+
+
+# A program's script is on while it runs, off otherwise: no other state, no reading
+ON_OR_OFF = 'is a program, on while it runs: a reaction follows it with to and from "on" or "off"'
+OWN_CLEAN = "programs.executable.clean"
+OTHER_CLEAN = f"device.{GREENHOUSE}.programs.executable.clean"
+
+
+@pytest.mark.parametrize("when", [
+    pytest.param(OWN_CLEAN, id="its own device's"),
+    pytest.param(OTHER_CLEAN, id="another device's"),
+])
+@pytest.mark.parametrize(("conditions", "field"), [
+    pytest.param({"above": 0}, "above", id="above"),
+    pytest.param({"below": 1}, "below", id="below"),
+    pytest.param({"to": "running"}, "to", id="to running"),
+    pytest.param({"from": "idle", "to": "off"}, "from", id="from idle"),
+])
+async def test_a_reaction_on_a_program_takes_on_or_off(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                                       when: str, conditions: dict[str, Any], field: str) -> None:
+    """A script is on or off: any other condition would never fire, so it's refused at its field."""
+    config = biblioteca(done={"name": "Limpou", "when": when, **conditions})
+    config[BIBLIOTECA]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    assert not await setup(ha, config)
+    assert f"reactions: done: {when} {ON_OR_OFF} 'pururu->devices->{BIBLIOTECA}->reactions->done->{field}'" \
+        in caplog.text
+
+
+@pytest.mark.parametrize("when", [
+    pytest.param(OWN_CLEAN, id="its own device's"),
+    pytest.param(OTHER_CLEAN, id="another device's"),
+])
+@pytest.mark.parametrize("conditions", [
+    pytest.param({"from": "on", "to": "off"}, id="quoted"),
+    pytest.param(parse_yaml("from: on\nto: off"), id="unquoted, YAML's booleans"),
+    pytest.param({"to": "on", "for": {"minutes": 5}}, id="on for a while"),
+])
+async def test_a_reaction_on_a_program_on_or_off_is_accepted(ha: HomeAssistant, when: str,
+                                                             conditions: dict[str, Any]) -> None:
+    config = biblioteca(done={"name": "Limpou", "when": when, **conditions})
+    config[BIBLIOTECA]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    assert await setup(ha, config)
+
+
+async def test_a_reaction_on_a_program_not_generated_is_not_generated(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The sprinkler's ID is taken: the cleaning isn't generated, nor the reaction that follows it."""
+    er.async_get(ha).async_get_or_create(
+        "switch", "template", "someone_else", suggested_object_id="pururu_greenhouse_switch_sprinkler")
+    night = {"name": "Noite", "at": "22:00"}
+    assert await setup(ha, greenhouse(done=CLEANED, night=night))
+    assert [a["id"] for a in generated(ha)] == ["pururu_greenhouse_reaction_night"]
+    assert ("automation.pururu_greenhouse_reaction_done follows script.pururu_greenhouse_program_executable_clean, "
+            "which is not generated; not generating it") in caplog.text
+
+
+async def test_a_held_program_holds_the_reaction_following_it(ha: HomeAssistant, freezer: Any,
+                                                              both: None) -> None:
+    """The sprinkler disabled: the cleaning is held, and so is the reaction following it, its rename kept."""
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, greenhouse(done=CLEANED))
+    registry = er.async_get(ha)
+    registry.async_update_entity("automation.pururu_greenhouse_reaction_done",
+                                 new_entity_id="automation.estufa_limpa")
+    await ha.async_block_till_done()
+    await disable(ha, SPRINKLER)
+    await tick(ha, freezer, 31)
+    await ha.async_block_till_done()
+    assert generated(ha) == []
+    assert registry.async_get("automation.estufa_limpa") is not None
+    await disable(ha, SPRINKLER, disabled=False)
+    await tick(ha, freezer, 31)
+    await ha.async_block_till_done()
+    assert [a["id"] for a in generated(ha)] == ["pururu_greenhouse_reaction_done"]
+    assert registry.async_get("automation.estufa_limpa") is not None
+
+
+async def test_a_reaction_follows_the_program_renamed(ha: HomeAssistant, both: None) -> None:
+    """The script renamed in the UI: the entry reloads, and the reaction follows the new ID."""
+    await fake(ha, DOOR, "off")
+    await fake(ha, REAL_SPRINKLER, "off")
+    assert await setup(ha, biblioteca(done={**CLEANED, "when": f"device.{GREENHOUSE}.programs.executable.clean"}))
+    er.async_get(ha).async_update_entity(CLEAN, new_entity_id="script.limpar_estufa")
+    await ha.async_block_till_done()
+    assert generated(ha)[1]["triggers"][0]["entity_id"] == "script.limpar_estufa"
 
 
 async def test_a_script_not_written_drops_its_reaction(
@@ -866,25 +1097,23 @@ async def test_its_meters_are_asked_for(ha: HomeAssistant) -> None:
     assert ha.states.get("sensor.pururu_greenhouse_reaction_clean_triggered_today") is None
 
 
-@pytest.mark.parametrize("named", [{}, {"when": f"{LIGHTS}.reaction_it_triggered_total"}],
-                         ids=["its device implied", "named"])
 async def test_a_reaction_on_its_own_counter_is_refused(
-        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, named: dict[str, Any]) -> None:
-    it = {"name": "Eu", "when": "reaction_it_triggered_total", "above": 3, **named}
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    it = {"name": "Eu", "when": "reactions.it.triggered_total", "above": 3}
     assert not await setup(ha, devices(it=it))
-    assert "reactions: it: reaction_it_triggered_total is its own statistic" in caplog.text
+    assert "reactions: it: reactions.it.triggered_total is its own statistic" in caplog.text
 
 
 async def test_a_reaction_on_its_own_meter_is_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """A meter the statistics aspect adds is the reaction's own too."""
-    it = {"name": "Eu", "when": "reaction_it_triggered_today", "above": 3}
+    it = {"name": "Eu", "when": "reactions.it.statistics.triggered.today", "above": 3}
     assert not await setup(ha, devices(it=it))
-    assert "reactions: it: reaction_it_triggered_today is its own statistic" in caplog.text
+    assert "reactions: it: reactions.it.statistics.triggered.today is its own statistic" in caplog.text
 
 
 async def test_a_reaction_on_a_programs_statistic(ha: HomeAssistant) -> None:
-    done = {"name": "Limpou", "when": "program_executable_clean_last_cycle_end", "to": "unknown"}
+    done = {"name": "Limpou", "when": "programs.executable.clean.last_cycle_end", "to": "unknown"}
     assert await setup(ha, greenhouse(done=done))
     trigger = generated(ha)[0]["triggers"][0]
     assert trigger["entity_id"] == "sensor.pururu_greenhouse_program_executable_clean_last_cycle_end"
@@ -1074,7 +1303,7 @@ async def test_a_busy_programs_message_is_told_once(ha: HomeAssistant, freezer: 
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, REAL_SPRINKLER, "off")
     assert await setup(ha, greenhouse(clean={"name": "Logo", "at": "10:05", "then": "clean",
-                                       "message": "Limpando", "notify": PHONE,
+                                       "message": "Limpando", "notify": PHONE_REF,
                                        "retry": {"times": 3, "every": {"hours": 1}}}))
     await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
     await settle()

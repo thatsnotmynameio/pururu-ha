@@ -16,7 +16,7 @@
       "pages": [
         { "title": "What is pururu", "href": "/" },
         { "title": "Install", "href": "/getting-started/install" },
-        { "title": "Updating to 0.2.1", "href": "/getting-started/updating-to-0.2.1" },
+        { "title": "Updating to 0.2.2", "href": "/getting-started/updating-to-0.2.2" },
         { "title": "Your first device", "href": "/getting-started/first-device" }
       ]
     },

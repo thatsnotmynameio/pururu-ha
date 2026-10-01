@@ -24,15 +24,15 @@ BULB = {"supported_color_modes": ["hs"], "color_mode": "hs", "brightness": 255,
         "supported_features": 44}
 # The house's switches: turning one on raises the alert watching it
 REAL = {name: f"switch.casa_{name}" for name in ("gate", "smoke", "mail", "leak")}
-GROUPS = {"default": ["greenhouse.light_lantern"], "porch": ["varanda.light_rele"],
-          "both": ["greenhouse.light_lantern", "varanda.light_rele"]}
+GROUPS = {"default": ["device.greenhouse.lights.lantern"], "porch": ["device.varanda.lights.rele"],
+          "both": ["device.greenhouse.lights.lantern", "device.varanda.lights.rele"]}
 CONFIG = {"alerts": {"lights": {"groups": GROUPS}}}
 RED = {"color_name": "red", "brightness_pct": 100, "effect": "breathe"}
 ORANGE = {"color_name": "orange", "brightness_pct": 100, "effect": "breathe"}
 BLUE = {"color_name": "blue", "brightness_pct": 100, "effect": "breathe"}
 GREEN = {"color_name": "green", "brightness_pct": 50}
 APPLIANCE: dict[str, Any] = {
-    "power": "sensor.lavadora_power",
+    "power": "homeassistant.sensor.lavadora_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 
@@ -43,7 +43,7 @@ def alert(name: str) -> str:
 
 def raised(name: str, priority: str, lights: Any = "default") -> dict[str, Any]:
     """An alert on while the house's switch `name` is on; lights None: no lights key."""
-    block: dict[str, Any] = {"name": name.title(), "when": f"switch_{name}", "state": "on",
+    block: dict[str, Any] = {"name": name.title(), "when": f"switches.{name}", "state": "on",
                              "priority": priority}
     if lights is not None:
         block["lights"] = lights
@@ -53,14 +53,14 @@ def raised(name: str, priority: str, lights: Any = "default") -> dict[str, Any]:
 def devices(**alerts: dict[str, Any]) -> dict[str, Any]:
     house: dict[str, Any] = {
         "name": "Casa",
-        "switches": {name: {"entity": real, "name": name.title()} for name, real in REAL.items()},
+        "switches": {name: {"entity": f"homeassistant.{real}", "name": name.title()} for name, real in REAL.items()},
     }
     if alerts:
         house["alerts"] = alerts
     return {
-        "greenhouse": {"name": "Estufa", "lights": {"lantern": {"entity": REAL_LANTERN, "name": "LANTERN"}}},
+        "greenhouse": {"name": "Estufa", "lights": {"lantern": {"entity": f"homeassistant.{REAL_LANTERN}", "name": "LANTERN"}}},
         "varanda": {"name": "Varanda",
-                    "lights": {"rele": {"entity": REAL_RELAY, "name": "Relé"}}},
+                    "lights": {"rele": {"entity": f"homeassistant.{REAL_RELAY}", "name": "Relé"}}},
         HOUSE: house,
     }
 
@@ -146,41 +146,43 @@ def lights_block(**block: Any) -> dict[str, Any]:
                  id="unknown key in alerts"),
     pytest.param(lights_block(colours={}), "'colours' is an invalid option",
                  id="unknown key in lights"),
-    pytest.param(lights_block(groups={"Porch": ["varanda.light_rele"]}), "invalid slug Porch",
+    pytest.param(lights_block(groups={"Porch": ["device.varanda.lights.rele"]}), "invalid slug Porch",
                  id="group not a slug"),
     pytest.param(lights_block(groups={"porch": []}), "length of value must be at least 1",
                  id="empty group"),
-    pytest.param(lights_block(groups={"porch": ["varanda.light_rele", "varanda.light_rele"]}),
+    pytest.param(lights_block(groups={"porch": ["device.varanda.lights.rele", "device.varanda.lights.rele"]}),
                  "a light is listed twice", id="a light twice"),
-    pytest.param(lights_block(groups={"porch": "varanda.light_rele"}), "expected a list",
+    pytest.param(lights_block(groups={"porch": "device.varanda.lights.rele"}), "expected a list",
                  id="not a list"),
     pytest.param(lights_block(groups={"porch": {"varanda": ["rele"]}}), "expected a list",
-                 id="a map of devices, as before 0.2.1"),
+                 id="a map of devices, as 0.1.23 wrote it"),
+    pytest.param(lights_block(groups={"porch": ["lights.rele"]}),
+                 "lights.rele needs its device: device.<device>.lights.<key>", id="no device"),
+    pytest.param(lights_block(groups={"porch": ["varanda.light_rele"]}),
+                 "varanda.light_rele needs its device: device.<device>.lights.<key>",
+                 id="a light, as before 0.2.2"),
     pytest.param(lights_block(groups={"porch": ["light_rele"]}),
-                 "light_rele needs its device: <device>.light_rele", id="no device"),
-    pytest.param(lights_block(groups={"porch": ["garagem.light_rele"]}),
-                 "config.alerts.lights.groups: porch: device garagem is not in devices",
+                 "light_rele is not a path: write it from its block, <block>.<key>", id="a key alone"),
+    pytest.param(lights_block(groups={"porch": ["device.garagem.lights.rele"]}),
+                 "config.alerts.lights.groups: porch: device.garagem.lights.rele: device garagem is not in devices",
                  id="unknown device"),
     pytest.param(lights_block(groups={"porch": ["light.pururu_varanda_light_rele"]}),
-                 "config.alerts.lights.groups: porch: device light is not in devices "
-                 "(light.pururu_varanda_light_rele is an entity ID: write varanda.light_rele)",
+                 "light.pururu_varanda_light_rele needs its device: device.<device>.lights.<key>",
                  id="a pururu light's entity ID"),
     pytest.param(lights_block(groups={"porch": [REAL_LANTERN]}),
-                 f"config.alerts.lights.groups: porch: device light is not in devices ({REAL_LANTERN} "
-                 "is an entity ID: a group lists <device>.light_<key> of a device's lights)",
+                 f"{REAL_LANTERN} needs its device: device.<device>.lights.<key>",
                  id="a real light's entity ID"),
-    pytest.param(lights_block(groups={"porch": ["input_boolean.porch_mode"]}),
-                 "config.alerts.lights.groups: porch: device input_boolean is not in devices "
-                 "(input_boolean.porch_mode is an entity ID: a group lists <device>.light_<key> of a device's lights)",
-                 id="a helper's entity ID"),
-    pytest.param(lights_block(groups={"porch": ["varanda.light_teto"]}),
-                 "config.alerts.lights.groups: porch: varanda.light_teto is not a light",
+    pytest.param(lights_block(groups={"porch": ["homeassistant.light.greenhouse_lantern"]}),
+                 "homeassistant.light.greenhouse_lantern needs its device: device.<device>.lights.<key>",
+                 id="Home Assistant's light"),
+    pytest.param(lights_block(groups={"porch": ["device.varanda.lights.teto"]}),
+                 "config.alerts.lights.groups: porch: device.varanda.lights.teto is not a light",
                  id="unknown light"),
-    pytest.param(lights_block(groups={"porch": ["varanda.rele"]}),
-                 "config.alerts.lights.groups: porch: varanda.rele is not a light",
-                 id="a light without its namespace"),
-    pytest.param(lights_block(groups={"porch": ["casa.switch_gate"]}),
-                 "config.alerts.lights.groups: porch: casa.switch_gate is not a light",
+    pytest.param(lights_block(groups={"porch": ["device.varanda.lights.rele.entity"]}),
+                 "config.alerts.lights.groups: porch: device.varanda.lights.rele.entity is not a light",
+                 id="a light's setting"),
+    pytest.param(lights_block(groups={"porch": ["device.casa.switches.gate"]}),
+                 "config.alerts.lights.groups: porch: device.casa.switches.gate is not a light",
                  id="a switch, not a light"),
     pytest.param(lights_block(high={"turn_on": {"entity_id": LANTERN}}),
                  "'entity_id' is an invalid option", id="entity_id in turn_on"),
@@ -204,7 +206,7 @@ def lights_block(**block: Any) -> dict[str, Any]:
     pytest.param(lights_block(resolved={"turn_on": {}}),
                  "required key 'lasts' not provided", id="resolved without lasts"),
     pytest.param(lights_block(resolved={"turn_on": {}, "for": {"seconds": 120}}),
-                 "'for' is an invalid option", id="resolved's for, as before 0.2.1"),
+                 "'for' is an invalid option", id="resolved's for, as 0.1.23 wrote it"),
     pytest.param(lights_block(resolved={"turn_on": {}, "lasts": {"seconds": 5},
                                         "repeat": {"seconds": 5}}),
                  "'repeat' is an invalid option", id="repeat on resolved"),
@@ -225,13 +227,13 @@ def test_only_a_lights_own_key_is_a_light(ha: HomeAssistant, by: str | None, ref
     """lights offers no aspect today: should it gain one, the keys it adds aren't lights."""
     resolve = module("core.resolve")
     device = module("core.feature").Device(key="varanda", name="Varanda", namespace="light")
-    target = resolve.Target(device=device, key="light_alert_x", platform=Platform.LIGHT, builder="lights",
-                            by=by, item=None, actions=())
+    target = resolve.Target(device=device, key="light_alert_x", path="lights.alerts.x", platform=Platform.LIGHT,
+                            builder="lights", by=by, item=None, actions=())
     why = module("outputs.alert_lights")._group_refused(
-        {"varanda": {}}, {"varanda": {"light_alert_x": target}}, "porch", ["varanda.light_alert_x"])
+        {"varanda": {}}, {"varanda": {"lights.alerts.x": target}}, "porch", ["device.varanda.lights.alerts.x"])
     assert (why is not None) is refused
     if refused:
-        assert (why.msg, why.path) == ("config.alerts.lights.groups: porch: varanda.light_alert_x is not a light",
+        assert (why.msg, why.path) == ("config.alerts.lights.groups: porch: device.varanda.lights.alerts.x is not a light",
                                        ["config", "alerts", "lights", "groups", "porch", 0])
 
 
@@ -253,8 +255,8 @@ async def test_an_alert_without_lights_has_no_group(house: HomeAssistant) -> Non
     assert "lights" not in attributes(house, alert("gate"))
 
 
-@pytest.mark.parametrize("lights", [pytest.param(True, id="true, as before 0.2.1"),
-                                    pytest.param(False, id="false, as before 0.2.1")])
+@pytest.mark.parametrize("lights", [pytest.param(True, id="true, as 0.1.23 wrote it"),
+                                    pytest.param(False, id="false, as 0.1.23 wrote it")])
 async def test_an_alerts_lights_is_a_groups_name(
         house: HomeAssistant, caplog: pytest.LogCaptureFixture, lights: bool) -> None:
     assert not await setup(house, devices(gate=raised("gate", "medium", lights)), config=CONFIG)
@@ -267,7 +269,7 @@ NO_DEFAULT = ("device casa: alerts: gate: there is no default group in "
 
 
 @pytest.mark.parametrize(("config", "lights", "reason"), [
-    pytest.param(lights_block(groups={"porch": ["varanda.light_rele"]}), "default", NO_DEFAULT,
+    pytest.param(lights_block(groups={"porch": ["device.varanda.lights.rele"]}), "default", NO_DEFAULT,
                  id="no default group"),
     pytest.param(None, "default", NO_DEFAULT, id="no config"),
     pytest.param(CONFIG, "outside",
@@ -745,7 +747,7 @@ async def test_a_light_out_of_every_group_is_handed_back(
     events = capture(house, "call_service")
     await restart(house, devices(mail=raised("mail", "low", "porch")),
                   (State(LANTERN, "on"), {"alert": "high"}),
-                  config={"alerts": {"lights": {"groups": {"porch": ["varanda.light_rele"]}}}})
+                  config={"alerts": {"lights": {"groups": {"porch": ["device.varanda.lights.rele"]}}}})
     assert calls(events, LANTERN) == [("turn_on", GREEN)]
     await tick(house, freezer, 120)
     assert [event.data for event in released] == [{"entity_id": LANTERN}]

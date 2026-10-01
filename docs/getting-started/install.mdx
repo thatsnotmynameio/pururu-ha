@@ -34,7 +34,9 @@ pururu needs **Home Assistant 2026.9.0 or later**. It has no Python requirements
 </Tabs>
 
 <Info>
-  Updating from 0.1.23 or 0.2.0? Follow [Updating to 0.2.1](/getting-started/updating-to-0.2.1): its `pururu:` block is rewritten before the restart.
+  Updating from 0.2.1? Follow [Updating to 0.2.2](/getting-started/updating-to-0.2.2): its `pururu:` block is rewritten before the restart.
+
+  Updating from 0.1.23 or 0.2.0? Follow [Updating to 0.2.1](https://github.com/thatsnotmynameio/pururu-ha/blob/v0.2.1/docs/getting-started/updating-to-0.2.1.mdx) first, then [Updating to 0.2.2](/getting-started/updating-to-0.2.2).
 </Info>
 
 ## 2. Add a `pururu:` block
@@ -47,11 +49,11 @@ pururu:
     dishwasher:
       name: Lava-louças
       appliance:
-        power: sensor.dishwasher_plug_power
+        power: homeassistant.sensor.dishwasher_plug_power
         running_program: {above: 3, on_delay: {minutes: 1}, off_delay: {minutes: 5}}
 ```
 
-Replace `sensor.dishwasher_plug_power` with the power sensor of one of your plugs. [Your first device](/getting-started/first-device) explains every line.
+Replace `sensor.dishwasher_plug_power` with the power sensor of one of your plugs, keeping `homeassistant.` in front: it says the entity is Home Assistant's, not one pururu creates. [Your first device](/getting-started/first-device) explains every line.
 
 Then **restart Home Assistant** once. A restart is needed the first time because it's what loads pururu. After that:
 

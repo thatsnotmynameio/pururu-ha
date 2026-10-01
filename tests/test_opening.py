@@ -14,7 +14,9 @@ from helpers import capture, fake, held, reload, restart, setup, tick
 
 KEY = "porta_frente"
 NAME = "Porta da frente"
+# The contact, as faked; the YAML writes it with homeassistant.
 CONTACT = "binary_sensor.porta_frente"
+CONTACT_REF = f"homeassistant.{CONTACT}"
 
 
 @pytest.fixture(params=["door", "window"])
@@ -24,7 +26,7 @@ def kind(request: pytest.FixtureRequest) -> str:
 
 
 def devices(kind: str, **block: Any) -> dict[str, Any]:
-    return {KEY: {"name": NAME, kind: {"contact": CONTACT, **block}}}
+    return {KEY: {"name": NAME, kind: {"contact": CONTACT_REF, **block}}}
 
 
 def entity(kind: str, entity_key: str, platform: str = "sensor") -> str:
@@ -70,14 +72,15 @@ async def door(ha: HomeAssistant, kind: str) -> HomeAssistant:
 
 @pytest.mark.parametrize("block", [
     pytest.param({}, id="no contact"),
-    pytest.param({"contact": "sensor.porta_frente"}, id="not a binary sensor"),
-    pytest.param({"contact": "binary_sensor.pururu_outra_door_open"}, id="a pururu binary sensor"),
-    pytest.param({"contact": CONTACT, "statistics": {"openings": ["today", "today"]}},
+    pytest.param({"contact": "homeassistant.sensor.porta_frente"}, id="not a binary sensor"),
+    pytest.param({"contact": "homeassistant.binary_sensor.pururu_outra_door_open"}, id="a pururu binary sensor"),
+    pytest.param({"contact": CONTACT}, id="without homeassistant, as before 0.2.2"),
+    pytest.param({"contact": CONTACT_REF, "statistics": {"openings": ["today", "today"]}},
                  id="repeated period"),
-    pytest.param({"contact": CONTACT, "statistics": {"open_time": ["daily"]}}, id="unknown period"),
-    pytest.param({"contact": CONTACT, "statistics": {"closings": ["today"]}},
+    pytest.param({"contact": CONTACT_REF, "statistics": {"open_time": ["daily"]}}, id="unknown period"),
+    pytest.param({"contact": CONTACT_REF, "statistics": {"closings": ["today"]}},
                  id="unknown counter"),
-    pytest.param({"contact": CONTACT, "sensor": CONTACT}, id="unknown key"),
+    pytest.param({"contact": CONTACT_REF, "sensor": CONTACT_REF}, id="unknown key"),
 ])
 async def test_invalid_block_is_refused(ha: HomeAssistant, kind: str,
                                         block: dict[str, Any]) -> None:
@@ -85,11 +88,14 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, kind: str,
 
 
 @pytest.mark.parametrize(("contact_id", "message"), [
-    pytest.param("sensor.porta_frente", "sensor.porta_frente is not a binary_sensor",
+    pytest.param("homeassistant.sensor.porta_frente", "homeassistant.sensor.porta_frente is not a binary_sensor",
                  id="another domain"),
-    pytest.param("binary_sensor.pururu_outra_door_open",
-                 "binary_sensor.pururu_outra_door_open is a pururu binary_sensor: name the real one",
+    pytest.param("homeassistant.binary_sensor.pururu_outra_door_open",
+                 "homeassistant.binary_sensor.pururu_outra_door_open is a pururu binary_sensor: name the real one",
                  id="a pururu binary sensor"),
+    pytest.param(CONTACT, f"{CONTACT} is not a Home Assistant entity: homeassistant.<domain>.<object_id> "
+                 f"for dictionary value 'pururu->devices->{KEY}->",
+                 id="without homeassistant, as before 0.2.2"),
 ])
 async def test_the_error_names_what_is_wrong(ha: HomeAssistant, kind: str,
                                              caplog: pytest.LogCaptureFixture,
@@ -101,8 +107,8 @@ async def test_the_error_names_what_is_wrong(ha: HomeAssistant, kind: str,
 
 async def test_a_door_and_a_window_in_one_device(ha: HomeAssistant) -> None:
     """Their IDs differ by namespace."""
-    assert await setup(ha, {KEY: {"name": NAME, "door": {"contact": CONTACT},
-                                  "window": {"contact": "binary_sensor.janela"}}})
+    assert await setup(ha, {KEY: {"name": NAME, "door": {"contact": CONTACT_REF},
+                                  "window": {"contact": "homeassistant.binary_sensor.janela"}}})
     assert ha.states.get(entity("door", "open", "binary_sensor")) is not None
     assert ha.states.get(entity("window", "open", "binary_sensor")) is not None
 
@@ -301,7 +307,7 @@ async def test_the_last_opening_restores(ha: HomeAssistant, kind: str) -> None:
 # --- a pururu contact, and what builds on the door -----------------------------------
 
 WASHER = {"name": "Lavadora", "appliance": {
-    "power": "sensor.lavadora_power",
+    "power": "homeassistant.sensor.lavadora_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }}
 
@@ -310,7 +316,7 @@ async def test_a_renamed_pururu_contact_stands_for_nothing(
         ha: HomeAssistant, kind: str, caplog: pytest.LogCaptureFixture) -> None:
     """Renamed in the UI, a pururu binary sensor gets past the schema: the registry knows it."""
     config = {"lavadora": WASHER,
-              KEY: {"name": NAME, kind: {"contact": "binary_sensor.lavadora_rodando"}}}
+              KEY: {"name": NAME, kind: {"contact": "homeassistant.binary_sensor.lavadora_rodando"}}}
     assert await setup(ha, config)
     er.async_get(ha).async_update_entity("binary_sensor.pururu_lavadora_appliance_running",
                                          new_entity_id="binary_sensor.lavadora_rodando")
@@ -330,8 +336,8 @@ DOORBELL = "event.porta_frente_doorbell"
 ACCESS_TYPES = {"access_granted": "opening", "access_denied": "denied"}
 ACCESS_FIELDS = {"who": "actor", "how": "authentication", "direction": "direction"}
 EVENTS = [
-    {"entity": ACCESS, "types": ACCESS_TYPES, "fields": ACCESS_FIELDS},
-    {"entity": DOORBELL, "types": {"ring": "ring"}},
+    {"entity": f"homeassistant.{ACCESS}", "types": ACCESS_TYPES, "fields": ACCESS_FIELDS},
+    {"entity": f"homeassistant.{DOORBELL}", "types": {"ring": "ring"}},
 ]
 # What an access controller sends
 ENTRY = {"actor": "Alex Doe", "authentication": "PIN_CODE", "direction": "entry",
@@ -368,15 +374,18 @@ async def front_door(ha: HomeAssistant, kind: str) -> HomeAssistant:
 
 @pytest.mark.parametrize("block", [
     pytest.param({"event_entities": []}, id="no event"),
-    pytest.param({"event_entities": [{"entity": "sensor.x", "types": ACCESS_TYPES}]}, id="not an event"),
-    pytest.param({"event_entities": [{"entity": ACCESS, "types": {}}]}, id="no type"),
-    pytest.param({"event_entities": [{"entity": ACCESS, "types": {"access_granted": "opened"}}]},
+    pytest.param({"event_entities": [{"entity": "homeassistant.sensor.x", "types": ACCESS_TYPES}]},
+                 id="not an event"),
+    pytest.param({"event_entities": [{"entity": ACCESS, "types": ACCESS_TYPES}]},
+                 id="without homeassistant, as before 0.2.2"),
+    pytest.param({"event_entities": [{"entity": f"homeassistant.{ACCESS}", "types": {}}]}, id="no type"),
+    pytest.param({"event_entities": [{"entity": f"homeassistant.{ACCESS}", "types": {"access_granted": "opened"}}]},
                  id="unknown meaning"),
-    pytest.param({"event_entities": [{"entity": ACCESS, "types": ACCESS_TYPES,
+    pytest.param({"event_entities": [{"entity": f"homeassistant.{ACCESS}", "types": ACCESS_TYPES,
                                       "fields": {"user": "actor"}}]}, id="unknown field"),
-    pytest.param({"event_entities": [{"entity": ACCESS, "types": ACCESS_TYPES,
+    pytest.param({"event_entities": [{"entity": f"homeassistant.{ACCESS}", "types": ACCESS_TYPES,
                                       "fields": {"who": " "}}]}, id="blank attribute"),
-    pytest.param({"event_entities": [{"entity": ACCESS, "types": ACCESS_TYPES, "extra": 1}]},
+    pytest.param({"event_entities": [{"entity": f"homeassistant.{ACCESS}", "types": ACCESS_TYPES, "extra": 1}]},
                  id="unknown key"),
     pytest.param({"event_entities": [{"types": ACCESS_TYPES}]}, id="no entity"),
     pytest.param({"match": "soon"}, id="match not a period"),
@@ -389,7 +398,7 @@ async def test_invalid_events_are_refused(ha: HomeAssistant, kind: str,
 async def test_the_old_events_key_is_refused_at_its_path(
         ha: HomeAssistant, kind: str, caplog: pytest.LogCaptureFixture) -> None:
     """A door's or window's events: is event_entities: since 0.2.1."""
-    config = devices(kind, events=[{"entity": ACCESS, "types": ACCESS_TYPES}])
+    config = devices(kind, events=[{"entity": f"homeassistant.{ACCESS}", "types": ACCESS_TYPES}])
     assert not await setup(ha, config)
     assert (f"'events' is an invalid option for 'pururu', check: pururu->devices->{KEY}->{kind}->events"
             in caplog.text)

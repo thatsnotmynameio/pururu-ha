@@ -11,11 +11,19 @@ import voluptuous as vol
 
 from homeassistant.const import CONF_NAME, STATE_OFF, STATE_ON, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Device, Feature
-from ...core.roles import Counted, Counters, Derived, Happenings, Presets, Programs
+from ...core.resolve import homeassistant_entity
+from ...core.roles import (
+    Counted,
+    Counters,
+    Derived,
+    Happenings,
+    Nodes,
+    Presets,
+    Programs,
+)
 from ..cycle import program
 from ..cycle.last import LAST_CYCLE, LastCycleValue
 from ..cycle.totals import CyclesTotal, IdleEnergyTotal, RuntimeTotal
@@ -40,24 +48,37 @@ def _unnamed(block: Any) -> Any:
 
 SCHEMA = vol.Schema(
     {
-        vol.Required("power"): cv.entity_id,
-        vol.Optional("energy"): cv.entity_id,
+        # Any entity of Home Assistant's, homeassistant.<entity ID>: a pururu sensor too
+        vol.Required("power"): homeassistant_entity(),
+        vol.Optional("energy"): homeassistant_entity(),
         vol.Required(RUNNING_PROGRAM): vol.All(_unnamed, program.SCHEMA),
     }
 )
+
+# The running program's own cycle entities, beside its carrier: born under it
+PROGRAM_KEYS: dict[str, Platform] = {
+    **{description.key: Platform.SENSOR for description in LAST_CYCLE},
+    "cycles_total": Platform.SENSOR,
+    "runtime_total": Platform.SENSOR,
+}
 
 ENTITY_KEYS: dict[str, Platform] = {
     "power": Platform.SENSOR,
     "energy_total": Platform.SENSOR,
     CARRIER: Platform.BINARY_SENSOR,
-    "last_cycle_start": Platform.SENSOR,
-    "last_cycle_end": Platform.SENSOR,
-    "last_cycle_duration": Platform.SENSOR,
-    "last_cycle_energy": Platform.SENSOR,
-    "cycles_total": Platform.SENSOR,
-    "runtime_total": Platform.SENSOR,
+    **PROGRAM_KEYS,
     "idle_energy_total": Platform.SENSOR,
 }
+
+# Where they sit, the rest at the block: the energy mirror is its setting's
+# entity, the carrier is running_program, its cycle entities are born under it
+NODES = Nodes(
+    {
+        "energy_total": ("energy",),
+        CARRIER: (RUNNING_PROGRAM,),
+        **{key: (RUNNING_PROGRAM, key) for key in PROGRAM_KEYS},
+    }
+)
 
 
 def build(
@@ -104,7 +125,7 @@ APPLIANCE = Feature(
     entity_keys=ENTITY_KEYS,
     build=build,
     example={
-        "power": "sensor.dummy_plug_power",
+        "power": "homeassistant.sensor.dummy_plug_power",
         # One phase and other: the contract test reaches every derived key
         RUNNING_PROGRAM: {
             "above": 4,
@@ -116,8 +137,13 @@ APPLIANCE = Feature(
     },
     namespace="appliance",
     roles=(
-        # Its running program's phases' keys (none without phases)
-        Derived(lambda config: program.keys_of(config[RUNNING_PROGRAM])),
+        NODES,
+        # Its running program's phases' keys (none without phases), under it
+        Derived(
+            lambda config: program.keys_of(
+                config[RUNNING_PROGRAM], node=(RUNNING_PROGRAM,)
+            )
+        ),
         # More detected programs of its power, in `programs: detected:` (the programs aspect)
         Programs("power", "energy"),
         # Metered by the statistics aspect: idle energy in the block (it needs

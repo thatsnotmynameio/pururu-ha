@@ -1,11 +1,11 @@
 config:
-  notify: notify.mobile_app_phone
+  notify: homeassistant.notify.mobile_app_phone
   events: [state_changed, reading]
   alerts:
     lights:
       groups:
-        default: [biblioteca.light_teto]
-        externas: [biblioteca.light_teto, biblioteca.light_abajur]
+        default: [device.biblioteca.lights.teto]
+        externas: [device.biblioteca.lights.teto, device.biblioteca.lights.abajur]
       high: {turn_on: {color_name: red, effect: breathe}, repeat: "00:00:15"}
       resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}
 floors:
@@ -18,8 +18,8 @@ devices:
     name: Tanquinho
     area: despensa
     appliance:
-      power: sensor.washer_plug_power
-      energy: sensor.washer_plug_energy
+      power: homeassistant.sensor.washer_plug_power
+      energy: homeassistant.sensor.washer_plug_energy
       running_program:
         above: 4
         on_delay: {minutes: 1}
@@ -66,19 +66,19 @@ devices:
     alerts:
       stuck:
         name: Travada
-        when: appliance_phase_current
+        when: appliance.running_program.phase_current
         state: wringing
         for: {hours: 1}
         priority: medium
         lights: externas
         message: Travada!
         done_message: Destravou.
-      overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
+      overload: {name: Sobrecarga, when: appliance.power, above: 2500, for: {minutes: 1}, priority: high}
   water_station:
     name: Purificador
     appliance:
-      power: sensor.station_plug_power
-      energy: sensor.station_plug_energy
+      power: homeassistant.sensor.station_plug_power
+      energy: homeassistant.sensor.station_plug_energy
       running_program:
         above: 2.9
         on_delay: {seconds: 1}
@@ -104,16 +104,16 @@ devices:
     name: Porta da frente
     area: entrada
     door:
-      contact: binary_sensor.porta_frente
+      contact: homeassistant.binary_sensor.porta_frente
       match: {seconds: 5}
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
       event_entities:
-        - entity: event.porta_frente_access
+        - entity: homeassistant.event.porta_frente_access
           types: {access_granted: opening, access_denied: denied}
           fields: {who: actor, how: authentication, direction: direction}
-        - entity: event.porta_frente_doorbell
+        - entity: homeassistant.event.porta_frente_doorbell
           types: {ring: ring}
       alerts:
         long_opening: {for: {minutes: 10}}
@@ -121,7 +121,7 @@ devices:
   janela_quarto:
     name: Janela do quarto
     window:
-      contact: binary_sensor.janela_quarto
+      contact: homeassistant.binary_sensor.janela_quarto
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
@@ -131,18 +131,18 @@ devices:
   greenhouse:
     name: Estufa
     switches:
-      sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+      sprinkler: {entity: homeassistant.switch.greenhouse_sprinkler, name: Irrigador}
     buttons:
-      clean: {entity: sensor.greenhouse_remote_action, state: 1_single, name: Limpar, program: clean}
-      bell: {entity: sensor.greenhouse_remote_action, state: 2_single, name: Sino}
+      clean: {entity: homeassistant.sensor.greenhouse_remote_action, state: 1_single, name: Limpar, program: clean}
+      bell: {entity: homeassistant.sensor.greenhouse_remote_action, state: 2_single, name: Sino}
     programs:
       executable:
         clean:
           name: Limpar
           sequence:
-            - turn_on: switch_sprinkler
+            - turn_on: switches.sprinkler
             - delay: {hours: 2}
-            - turn_off: switch_sprinkler
+            - turn_off: switches.sprinkler
           statistics:
             runtime: [today, week, month, year]
             cycles: [today, week, month, year]
@@ -156,12 +156,12 @@ devices:
   biblioteca:
     name: Biblioteca
     lights:
-      teto: {entity: light.biblioteca_teto, name: Teto}
-      abajur: {entity: switch.sonoff_abajur, name: Abajur}
+      teto: {entity: homeassistant.light.biblioteca_teto, name: Teto}
+      abajur: {entity: homeassistant.switch.sonoff_abajur, name: Abajur}
     reactions:
       washer_done:
         name: Lavadora terminou
-        when: clothes_washer.appliance_running
+        when: device.clothes_washer.appliance.running_program
         from: "on"
         to: "off"
       night: {name: Noite, at: "22:00", message: Hora de apagar as luzes.}

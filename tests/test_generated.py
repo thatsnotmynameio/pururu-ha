@@ -87,7 +87,7 @@ AUTOMATION = Case(
     one="an automation", plural="automations", source="reactions and notifications",
     kind="AUTOMATIONS", empty=[],
     device="lights", prefix="reaction", block="reactions",
-    feature={"lights": {"teto": {"entity": "light.dummy_teto", "name": "Teto"}}},
+    feature={"lights": {"teto": {"entity": "homeassistant.light.dummy_teto", "name": "Teto"}}},
     item={"name": "Noite", "at": "22:00"},
     process="homeassistant.components.automation._async_process_config",
 )
@@ -96,8 +96,8 @@ SCRIPT = Case(
     merge="named", issue="scripts_not_included", data_key="scripts",
     one="a script", plural="scripts", source="programs", kind="SCRIPTS", empty={},
     device="greenhouse", prefix="program_executable", block="programs",
-    feature={"switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}},
-    item={"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}]},
+    feature={"switches": {"sprinkler": {"entity": "homeassistant.switch.greenhouse_sprinkler", "name": "Irrigador"}}},
+    item={"name": "Limpar", "sequence": [{"turn_on": "switches.sprinkler"}]},
     process="homeassistant.components.script._async_process_config",
     group="executable",
 )

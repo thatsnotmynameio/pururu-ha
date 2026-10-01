@@ -11,8 +11,8 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
-        energy: sensor.washer_plug_energy
+        power: homeassistant.sensor.washer_plug_power
+        energy: homeassistant.sensor.washer_plug_energy
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -32,14 +32,14 @@ pururu:
 
 ## Settings
 
-<Property name="power" type="entity ID" required>
-  The plug's power sensor. Its value is compared with `running_program`'s band, in the sensor's own unit (usually W).
+<Property name="power" type="homeassistant.<domain>.<object_id>" required>
+  The plug's power sensor, written with `homeassistant.` before its entity ID, as everything Home Assistant owns: `homeassistant.sensor.washer_plug_power`. Its value is compared with `running_program`'s band, in the sensor's own unit (usually W).
 </Property>
 
 ---
 
-<Property name="energy" type="entity ID" optional>
-  The plug's **lifetime** energy counter, the one that only goes up. Any energy unit works (Wh, kWh, MWh…); a counter with no unit is read as kWh. Without it, the device has no `energy_total`, no `last_cycle_energy`, no `idle_energy_total`, and no phase's or detected program's `energy_total` or `last_cycle_energy`.
+<Property name="energy" type="homeassistant.<domain>.<object_id>" optional>
+  The plug's **lifetime** energy counter (`homeassistant.sensor.washer_plug_energy`), the one that only goes up. Any energy unit works (Wh, kWh, MWh…); a counter with no unit is read as kWh. Without it, the device has no `energy_total`, no `last_cycle_energy`, no `idle_energy_total`, and no phase's or detected program's `energy_total` or `last_cycle_energy`.
 </Property>
 
 ---
@@ -51,7 +51,7 @@ pururu:
 ---
 
 <Property name="programs.detected" type="map" optional>
-  More [detected programs](/concepts/programs#more-detected-programs) of the plug's power, each with its `name`, a band, `statistics`, `phases` and `other`. Each is `binary_sensor.pururu_<key>_appliance_<program>`.
+  More [detected programs](/concepts/programs#more-detected-programs) of the plug's power, each with its `name`, a band, `statistics`, `phases` and `other`. Each is `binary_sensor.pururu_<key>_appliance_<program>`, whose path is `appliance.programs.detected.<program>`.
 </Property>
 
 ---
@@ -85,25 +85,25 @@ A `below` band reads the same way, the other way round. That affects what the cy
 
 ## Entities
 
-`<key>` is the device's key. Entities marked *with `energy`* exist only when `energy` is set.
+`<key>` is the device's key. Entities marked *with `energy`* exist only when `energy` is set. The path is how an alert or a reaction names the entity, from the `appliance` block: `power` and `energy` name the entity they make, and the cycle's entities sit under `running_program`, the program running.
 
-| Entity | Unit | What it is |
-|---|---|---|
-| `sensor.pururu_<key>_appliance_power` | the plug's | The plug's power, with its unit and classes, inside this device |
-| `sensor.pururu_<key>_appliance_energy_total` | the plug's | The plug's energy counter, inside this device. *With `energy`.* |
-| `binary_sensor.pururu_<key>_appliance_running` | | On while a cycle runs. Device class `running`. Its attribute `cycle_start` is the running cycle's start, present while it runs; `cycle_end`, while `off_delay` runs, is when the power went down. |
-| `binary_sensor.pururu_<key>_appliance_alert_<alert>` | | A [ready-made alert](#ready-made-alerts), for each one enabled. Device class `problem`. |
-| `sensor.pururu_<key>_appliance_last_cycle_start` | timestamp | When the last cycle started |
-| `sensor.pururu_<key>_appliance_last_cycle_end` | timestamp | When the last cycle ended. **Written last**: trigger on it. |
-| `sensor.pururu_<key>_appliance_last_cycle_duration` | min | How long the last cycle took |
-| `sensor.pururu_<key>_appliance_last_cycle_energy` | kWh | Energy the last cycle used. *With `energy`.* |
-| `sensor.pururu_<key>_appliance_cycles_total` | cycles | Cycles finished, all time |
-| `sensor.pururu_<key>_appliance_runtime_total` | h | Hours run, all time |
-| `sensor.pururu_<key>_appliance_idle_energy_total` | kWh | Energy used while not running, all time. *With `energy`.* |
-| `sensor.pururu_<key>_appliance_runtime_<period>` | h | Hours run this period, one per `running_program.statistics.runtime` entry |
-| `sensor.pururu_<key>_appliance_cycles_<period>` | cycles | Cycles finished this period, one per `running_program.statistics.cycles` entry |
-| `sensor.pururu_<key>_appliance_idle_energy_<period>` | kWh | Energy used while idle this period, one per `statistics.idle_energy` entry |
-| `binary_sensor.pururu_<key>_appliance_<program>`, `sensor.pururu_<key>_appliance_<program>_…` | | Each of `programs.detected`: on while it runs, its last cycle, totals, meters and phases. See [Programs](/concepts/programs#entities). |
+| Entity | Path | Unit | What it is |
+|---|---|---|---|
+| `sensor.pururu_<key>_appliance_power` | `appliance.power` | the plug's | The plug's power, with its unit and classes, inside this device |
+| `sensor.pururu_<key>_appliance_energy_total` | `appliance.energy` | the plug's | The plug's energy counter, inside this device. *With `energy`.* |
+| `binary_sensor.pururu_<key>_appliance_running` | `appliance.running_program` | | On while a cycle runs. Device class `running`. Its attribute `cycle_start` is the running cycle's start, present while it runs; `cycle_end`, while `off_delay` runs, is when the power went down. |
+| `binary_sensor.pururu_<key>_appliance_alert_<alert>` | `appliance.alerts.<alert>` | | A [ready-made alert](#ready-made-alerts), for each one enabled. Device class `problem`. |
+| `sensor.pururu_<key>_appliance_last_cycle_start` | `appliance.running_program.last_cycle_start` | timestamp | When the last cycle started |
+| `sensor.pururu_<key>_appliance_last_cycle_end` | `appliance.running_program.last_cycle_end` | timestamp | When the last cycle ended. **Written last**: trigger on it. |
+| `sensor.pururu_<key>_appliance_last_cycle_duration` | `appliance.running_program.last_cycle_duration` | min | How long the last cycle took |
+| `sensor.pururu_<key>_appliance_last_cycle_energy` | `appliance.running_program.last_cycle_energy` | kWh | Energy the last cycle used. *With `energy`.* |
+| `sensor.pururu_<key>_appliance_cycles_total` | `appliance.running_program.cycles_total` | cycles | Cycles finished, all time |
+| `sensor.pururu_<key>_appliance_runtime_total` | `appliance.running_program.runtime_total` | h | Hours run, all time |
+| `sensor.pururu_<key>_appliance_idle_energy_total` | `appliance.idle_energy_total` | kWh | Energy used while not running, all time. *With `energy`.* |
+| `sensor.pururu_<key>_appliance_runtime_<period>` | `appliance.running_program.statistics.runtime.<period>` | h | Hours run this period, one per `running_program.statistics.runtime` entry |
+| `sensor.pururu_<key>_appliance_cycles_<period>` | `appliance.running_program.statistics.cycles.<period>` | cycles | Cycles finished this period, one per `running_program.statistics.cycles` entry |
+| `sensor.pururu_<key>_appliance_idle_energy_<period>` | `appliance.statistics.idle_energy.<period>` | kWh | Energy used while idle this period, one per `statistics.idle_energy` entry |
+| `binary_sensor.pururu_<key>_appliance_<program>`, `sensor.pururu_<key>_appliance_<program>_…` | `appliance.programs.detected.<program>`, `appliance.programs.detected.<program>.…` | | Each of `programs.detected`: on while it runs, its last cycle, totals, meters and phases. See [Programs](/concepts/programs#entities). |
 
 With `running_program.phases`, the running phase (its `name` as an attribute), the last one, and each phase's own entities: see [Programs](/concepts/programs#entities).
 
@@ -136,7 +136,7 @@ An appliance offers alerts for what usually goes wrong. They're **off** until yo
 
 ```yaml
 appliance:
-  power: sensor.washer_plug_power
+  power: homeassistant.sensor.washer_plug_power
   running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   alerts:
     offline:                          # every default
@@ -155,7 +155,7 @@ appliance:
 - `offline:` alone, with nothing after it, enables it with every default.
 - `no_power` is for an appliance that always draws something, such as a fridge. A washer between cycles reads 0 W, so it would be on almost always.
 - `long_cycle` counts from the cycle's start, and `no_cycle` from the last cycle's end, so a restart in between starts nothing over. Until a first cycle ends, `no_cycle` counts from when you enabled it.
-- Each one is `binary_sensor.pururu_<key>_appliance_alert_<alert>`, device class `problem`, shown as **Tanquinho Sem conexão** and so on, with the attributes of any [alert](/concepts/alerts#entity). A [reaction](/concepts/reactions) can react to one (`when: appliance_alert_offline`); another alert can't watch it.
+- Each one is `binary_sensor.pururu_<key>_appliance_alert_<alert>`, device class `problem`, shown as **Tanquinho Sem conexão** and so on, with the attributes of any [alert](/concepts/alerts#entity). A [reaction](/concepts/reactions) can react to one (`when: appliance.alerts.offline`); another alert can't watch it.
 - For anything else, such as a band of your own or another entity, write an [alert](/concepts/alerts) yourself.
 
 | Alert | Default message | Default done message |
@@ -173,7 +173,7 @@ An appliance offers one notification, off until you enable it in its `notificati
 
 ```yaml
 appliance:
-  power: sensor.washer_plug_power
+  power: homeassistant.sensor.washer_plug_power
   running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   notifications:
     finished:

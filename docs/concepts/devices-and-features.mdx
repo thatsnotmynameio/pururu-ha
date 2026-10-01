@@ -16,7 +16,7 @@ pururu:
       name: Tanquinho # required
       area: despensa       # optional: a key of areas:
       appliance:             # one or more features
-        power: sensor.washer_plug_power
+        power: homeassistant.sensor.washer_plug_power
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -53,6 +53,10 @@ Each feature appears at most once per device, and everything under its key is th
 ## Every feature stands alone
 
 A feature reads only the real entities and settings in its own block; it never reads another feature's. What used to be split into separate `phases` and `modes` features, each following another feature's cycle, is now the appliance's own `running_program`: its `phases` are bands of the same power the appliance already reads. A detected program of its own, `programs: detected:`, sits in the same block and reads the same power. See [Programs](/concepts/programs#detected-programs).
+
+## Naming an entity in the YAML
+
+An alert, a program's step or a reaction names an entity by its **path**: the keys you wrote, from the block in the device down to the entity, each separated by a dot. In the device above, the washer running is `appliance.running_program`, the `warming` phase `appliance.running_program.phases.warming`, and the power `appliance.power`. Another device's entity starts with `device.` and its key (`device.clothes_washer.appliance.running_program`), and an entity of Home Assistant's with `homeassistant.` (`homeassistant.sensor.washer_plug_power`, as `power` writes it). See [References](/concepts/entity-ids#references).
 
 ## Two devices, one plug?
 

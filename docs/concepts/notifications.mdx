@@ -10,19 +10,19 @@ A **notification** is simple news, told **once**: the washer finished. It has no
 ```yaml title="configuration.yaml"
 pururu:
   config:
-    notify: notify.mobile_app_phone          # where every message goes
+    notify: homeassistant.notify.mobile_app_phone          # where every message goes
   devices:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
+        power: homeassistant.sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
         notifications:
           finished:                           # "The cycle finished."
       reactions:
         door_open:
           name: Porta aberta
-          entity: binary_sensor.porta_despensa
+          when: homeassistant.binary_sensor.porta_despensa
           to: "on"
           message: A porta da despensa abriu.
 
@@ -34,7 +34,7 @@ Your phone gets **Tanquinho** / **The cycle finished.** when a wash ends, and **
 ## Where a message goes
 
 <Property name="config.notify" type="notify action or list" optional>
-  Where every message goes: a `notify` action such as `notify.mobile_app_phone`, or a list of them. A reaction's or a notification's own `notify` replaces it.
+  Where every message goes: a `notify` action, written with `homeassistant.` as everything Home Assistant owns (`homeassistant.notify.mobile_app_phone`), or a list of them. A reaction's or a notification's own `notify` replaces it.
 </Property>
 
 A message with no `notify` of its own and no `config.notify` is a configuration error: `device clothes_washer: reactions: door_open: message needs notify, here or in config.notify`.
@@ -65,16 +65,16 @@ A feature may offer notifications for what happens to it. Enable one with one ke
 
 | Notification | Told when | Name | Default message |
 |---|---|---|---|
-| `appliance: notifications: finished` | a cycle ends (`appliance_running` goes from `on` to `off`) | Finished / Terminou | The cycle finished. / O ciclo terminou. |
+| `appliance: notifications: finished` | a cycle ends (`appliance.running_program` goes from `on` to `off`) | Finished / Terminou | The cycle finished. / O ciclo terminou. |
 
 Each one takes `message`, which replaces its text, and `notify`, which replaces `config.notify`. `finished:` alone, with nothing after it, is every default.
 
 ```yaml
 appliance:
-  power: sensor.washer_plug_power
+  power: homeassistant.sensor.washer_plug_power
   running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   notifications:
-    finished: {message: Roupa pronta!, notify: notify.mobile_app_tablet}
+    finished: {message: Roupa pronta!, notify: homeassistant.notify.mobile_app_tablet}
 ```
 
 - Each one is `automation.pururu_<key>_<feature namespace>_notification_<notification>`, shown as the device's name and its own: `automation.pururu_clothes_washer_appliance_notification_finished`, **Tanquinho Finished** (in your Home Assistant's language).

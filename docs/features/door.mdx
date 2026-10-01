@@ -14,15 +14,15 @@ pururu:
       name: Porta da frente
       area: entrada
       door:
-        contact: binary_sensor.porta_frente
+        contact: homeassistant.binary_sensor.porta_frente
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
         event_entities:
-          - entity: event.porta_frente_access
+          - entity: homeassistant.event.porta_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
-          - entity: event.porta_frente_doorbell
+          - entity: homeassistant.event.porta_frente_doorbell
             types: {ring: ring}
 ```
 
@@ -30,8 +30,8 @@ This creates `binary_sensor.pururu_porta_frente_door_open`, shown as **Porta da 
 
 ## Settings
 
-<Property name="contact" type="entity ID" required>
-  The door's contact sensor, a `binary_sensor.*`: `on` is open, `off` is closed. It can't be one of pururu's own binary sensors, even one you renamed in the UI.
+<Property name="contact" type="homeassistant.binary_sensor.*" required>
+  The door's contact sensor, written with `homeassistant.` before its entity ID, as everything Home Assistant owns (`homeassistant.binary_sensor.porta_frente`), a `binary_sensor.*`: `on` is open, `off` is closed. It can't be one of pururu's own binary sensors, even one you renamed in the UI.
 </Property>
 
 ---
@@ -51,7 +51,7 @@ This creates `binary_sensor.pururu_porta_frente_door_open`, shown as **Porta da 
 <Property name="event_entities" type="list" optional>
   Event entities (`event.*`) that tell pururu more about the door. pururu knows no integration, so you say what each event means for the door and where its details are. Each item has:
 
-  - `entity`: required, the `event.*` entity.
+  - `entity`: required, the `event.*` entity, with `homeassistant.` before it (`homeassistant.event.porta_frente_access`).
   - `types`: required, at least one: each `event_type` of that entity you care about → what it means for the door. The meanings are `opening` (someone opened the door: the event describes an opening), `denied` (someone tried and was refused) and `ring` (someone rang). Other event types are ignored.
   - `fields`: optional, where the details are: `who`, `how` and `direction`, each → the name of the event's attribute that holds it.
 </Property>
@@ -81,28 +81,28 @@ An `opening` event describes the opening whose start is at most `match` from the
 
 ## Entities
 
-`<key>` is the device's key.
+`<key>` is the device's key. The path is how an alert or a reaction names the entity: `when: door.open`.
 
-| Entity | Unit | What it is |
-|---|---|---|
-| `binary_sensor.pururu_<key>_door_open` | | Open or closed. Device class `door`, whatever the contact's. While open, its `cycle_start` attribute is when the opening started, kept across restarts. |
-| `binary_sensor.pururu_<key>_door_alert_<alert>` | | A [ready-made alert](#ready-made-alerts), for each one enabled. Device class `problem`. |
-| `sensor.pururu_<key>_door_last_opened` | timestamp | When the last opening started |
-| `sensor.pururu_<key>_door_last_closed` | timestamp | When it ended. **Written last**: trigger on it. |
-| `sensor.pururu_<key>_door_last_open_duration` | s | How long it lasted |
-| `sensor.pururu_<key>_door_openings_total` | openings | Openings, all time |
-| `sensor.pururu_<key>_door_open_time_total` | h | Hours open, all time, brought up to date every minute |
-| `sensor.pururu_<key>_door_<counter>_<period>` | | `openings` or `open_time` this period, one per entry of `statistics` |
+| Entity | Path | Unit | What it is |
+|---|---|---|---|
+| `binary_sensor.pururu_<key>_door_open` | `door.open` | | Open or closed. Device class `door`, whatever the contact's. While open, its `cycle_start` attribute is when the opening started, kept across restarts. |
+| `binary_sensor.pururu_<key>_door_alert_<alert>` | `door.alerts.<alert>` | | A [ready-made alert](#ready-made-alerts), for each one enabled. Device class `problem`. |
+| `sensor.pururu_<key>_door_last_opened` | `door.last_opened` | timestamp | When the last opening started |
+| `sensor.pururu_<key>_door_last_closed` | `door.last_closed` | timestamp | When it ended. **Written last**: trigger on it. |
+| `sensor.pururu_<key>_door_last_open_duration` | `door.last_open_duration` | s | How long it lasted |
+| `sensor.pururu_<key>_door_openings_total` | `door.openings_total` | openings | Openings, all time |
+| `sensor.pururu_<key>_door_open_time_total` | `door.open_time_total` | h | Hours open, all time, brought up to date every minute |
+| `sensor.pururu_<key>_door_<counter>_<period>` | `door.statistics.<counter>.<period>` | | `openings` or `open_time` this period, one per entry of `statistics` |
 
 With `event_entities`, only what they give:
 
-| Entity | Created when | What it is |
-|---|---|---|
-| `sensor.pururu_<key>_door_last_opened_by` | an `opening` type and `fields.who` | Who made the last opening |
-| `sensor.pururu_<key>_door_last_opened_via` | an `opening` type and `fields.how` | How the last opening was made |
-| `sensor.pururu_<key>_door_last_direction` | an `opening` type and `fields.direction` | Which way the last opening went |
-| `sensor.pururu_<key>_door_last_denied` | a `denied` type | When the last denied attempt was, with attributes `who`, `how` and `direction` (those mapped) |
-| `sensor.pururu_<key>_door_last_ring` | a `ring` type | When the door last rang |
+| Entity | Path | Created when | What it is |
+|---|---|---|---|
+| `sensor.pururu_<key>_door_last_opened_by` | `door.last_opened_by` | an `opening` type and `fields.who` | Who made the last opening |
+| `sensor.pururu_<key>_door_last_opened_via` | `door.last_opened_via` | an `opening` type and `fields.how` | How the last opening was made |
+| `sensor.pururu_<key>_door_last_direction` | `door.last_direction` | an `opening` type and `fields.direction` | Which way the last opening went |
+| `sensor.pururu_<key>_door_last_denied` | `door.last_denied` | a `denied` type | When the last denied attempt was, with attributes `who`, `how` and `direction` (those mapped) |
+| `sensor.pururu_<key>_door_last_ring` | `door.last_ring` | a `ring` type | When the door last rang |
 
 - Every entity keeps its value across restarts. The totals are `total_increasing`, and the per-period sensors are [statistics](/concepts/statistics).
 - `last_denied` and `last_ring` only move forward: an older event, replayed after a restart, doesn't replace them.
@@ -113,7 +113,7 @@ A door offers alerts for an opening that lasts too long and for one that doesn't
 
 ```yaml
 door:
-  contact: binary_sensor.porta_frente
+  contact: homeassistant.binary_sensor.porta_frente
   alerts:
     long_opening: {for: {minutes: 10}}
     no_opening: {for: {days: 1}}
@@ -128,7 +128,7 @@ door:
 - Without Alert2, they still work as binary sensors, for a [reaction](/concepts/reactions) or your own automations, and their own texts log nothing.
 - `long_opening` counts from the opening's start, and `no_opening` from the last closing, so a restart in between starts nothing over. Until a first closing, `no_opening` counts from when you enabled it.
 - `no_opening` is for a door that should open every so often, such as a mailbox or a pet door.
-- Each one is `binary_sensor.pururu_<key>_door_alert_<alert>`, device class `problem`, shown as **Porta da frente Aberta há muito tempo** and so on, with the attributes of any [alert](/concepts/alerts#entity). A [reaction](/concepts/reactions) can react to one (`when: door_alert_long_opening`); another alert can't watch it.
+- Each one is `binary_sensor.pururu_<key>_door_alert_<alert>`, device class `problem`, shown as **Porta da frente Aberta há muito tempo** and so on, with the attributes of any [alert](/concepts/alerts#entity). A [reaction](/concepts/reactions) can react to one (`when: door.alerts.long_opening`); another alert can't watch it.
 
 | Alert | Default message | Default done message |
 |---|---|---|
@@ -139,4 +139,4 @@ In Portuguese they read "Está aberta há tempo demais.", "Foi aberta." and so o
 
 ## Alerts and reactions
 
-Each opening is a **cycle**, carried by `open`: recorded in its last opening and its totals, above. For an opening that lasts too long or doesn't come, enable a [ready-made alert](#ready-made-alerts). For anything else, [`alerts`](/concepts/alerts) can watch `door_open` (`when: door_open`, `state: "on"`, `for: {minutes: 10}`), and a [reaction](/concepts/reactions) can react to it opening or closing.
+Each opening is a **cycle**, carried by `open`: recorded in its last opening and its totals, above. For an opening that lasts too long or doesn't come, enable a [ready-made alert](#ready-made-alerts). For anything else, [`alerts`](/concepts/alerts) can watch `open` (`when: door.open`, `state: "on"`, `for: {minutes: 10}`), and a [reaction](/concepts/reactions) can react to it opening or closing.

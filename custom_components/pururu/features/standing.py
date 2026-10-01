@@ -15,22 +15,22 @@ from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
 from ..const import DOMAIN, ENTITY_PREFIX
+from ..core.resolve import homeassistant_entity
 
 
 def real_entity(*domains: Platform) -> Callable[[Any], str]:
-    """One entity ID of one of `domains`, not one of pururu's own.
+    """One Home Assistant entity of one of `domains`, homeassistant.<entity ID>, not one of pururu's own; its bare entity ID.
 
     An entity standing for itself would call itself forever, and one standing
     for another pururu entity would stand for what that one already stands for.
     """
+    entity = homeassistant_entity(*domains)
 
     def validate(value: Any) -> str:
-        entity_id: str = cv.entity_id(value)
+        entity_id = entity(value)
         domain, object_id = split_entity_id(entity_id)
-        if domain not in domains:
-            raise vol.Invalid(f"{entity_id} is not a {' or '.join(domains)}")
         if object_id.startswith(f"{ENTITY_PREFIX}_"):
-            raise vol.Invalid(f"{entity_id} is a pururu {domain}: name the real one")
+            raise vol.Invalid(f"{value} is a pururu {domain}: name the real one")
         return entity_id
 
     return validate

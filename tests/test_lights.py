@@ -14,8 +14,8 @@ REAL_TETO = "light.biblioteca_teto"
 REAL_ABAJUR = "light.biblioteca_abajur"
 TETO = "light.pururu_biblioteca_light_teto"
 ABAJUR = "light.pururu_biblioteca_light_abajur"
-LIGHTS: dict[str, Any] = {"teto": {"entity": REAL_TETO, "name": "Teto"},
-                          "abajur": {"entity": REAL_ABAJUR, "name": "Abajur"}}
+LIGHTS: dict[str, Any] = {"teto": {"entity": f"homeassistant.{REAL_TETO}", "name": "Teto"},
+                          "abajur": {"entity": f"homeassistant.{REAL_ABAJUR}", "name": "Abajur"}}
 DEVICES = {KEY: {"name": "Biblioteca", "lights": LIGHTS}}
 # A colour bulb: hs colour (so brightness), two effects, EFFECT | FLASH | TRANSITION
 BULB = {"supported_color_modes": ["hs"], "color_mode": "hs", "brightness": 128,
@@ -24,7 +24,7 @@ BULB = {"supported_color_modes": ["hs"], "color_mode": "hs", "brightness": 128,
 ONOFF = {"supported_color_modes": ["onoff"], "color_mode": "onoff"}
 REAL_ARANDELA = "switch.sonoff_arandela"
 ARANDELA = "light.pururu_biblioteca_light_arandela"
-ARANDELA_BLOCK = {"entity": REAL_ARANDELA, "name": "Arandela"}
+ARANDELA_BLOCK = {"entity": f"homeassistant.{REAL_ARANDELA}", "name": "Arandela"}
 
 
 def state(hass: HomeAssistant, entity_id: str) -> str:
@@ -60,18 +60,18 @@ async def forwarded(hass: HomeAssistant, entity_id: str, service: str, data: dic
 
 
 @pytest.mark.parametrize("block", [
-    pytest.param({"teto": {"entity": "sensor.biblioteca_teto", "name": "Teto"}}, id="another domain"),
-    pytest.param({"teto": {"entity": REAL_TETO}}, id="no name"),
-    pytest.param({"teto": {"entity": REAL_TETO, "name": ""}}, id="empty name"),
-    pytest.param({"teto": {"entity": REAL_TETO, "name": "  "}}, id="blank name"),
+    pytest.param({"teto": {"entity": "homeassistant.sensor.biblioteca_teto", "name": "Teto"}}, id="another domain"),
+    pytest.param({"teto": {"entity": f"homeassistant.{REAL_TETO}"}}, id="no name"),
+    pytest.param({"teto": {"entity": f"homeassistant.{REAL_TETO}", "name": ""}}, id="empty name"),
+    pytest.param({"teto": {"entity": f"homeassistant.{REAL_TETO}", "name": "  "}}, id="blank name"),
     pytest.param({"teto": REAL_TETO}, id="just the entity"),
     pytest.param({"teto": {"entity": [REAL_TETO, REAL_ABAJUR], "name": "Teto"}}, id="a list"),
-    pytest.param({"teto": {"entity": REAL_TETO, "name": "Teto", "icon": "mdi:lamp"}},
+    pytest.param({"teto": {"entity": f"homeassistant.{REAL_TETO}", "name": "Teto", "icon": "mdi:lamp"}},
                  id="unknown key"),
     pytest.param({}, id="no light"),
-    pytest.param({"Teto": {"entity": REAL_TETO, "name": "Teto"}}, id="key not a slug"),
-    pytest.param({"teto": {"entity": TETO, "name": "Teto"}}, id="a pururu light"),
-    pytest.param({"teto": {"entity": "switch.pururu_greenhouse_switch_sprinkler", "name": "Teto"}},
+    pytest.param({"Teto": {"entity": f"homeassistant.{REAL_TETO}", "name": "Teto"}}, id="key not a slug"),
+    pytest.param({"teto": {"entity": f"homeassistant.{TETO}", "name": "Teto"}}, id="a pururu light"),
+    pytest.param({"teto": {"entity": "homeassistant.switch.pururu_greenhouse_switch_sprinkler", "name": "Teto"}},
                  id="a pururu switch"),
 ])
 async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]) -> None:
@@ -79,11 +79,14 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
 
 
 @pytest.mark.parametrize(("entity", "message"), [
-    pytest.param("sensor.biblioteca_teto", "sensor.biblioteca_teto is not a light or switch",
+    pytest.param("homeassistant.sensor.biblioteca_teto", "homeassistant.sensor.biblioteca_teto is not a light or switch",
                  id="another domain"),
-    pytest.param(TETO, f"{TETO} is a pururu light: name the real one", id="a pururu light"),
-    pytest.param("switch.pururu_greenhouse_switch_sprinkler",
-                 "switch.pururu_greenhouse_switch_sprinkler is a pururu switch: name the real one",
+    pytest.param(f"homeassistant.{TETO}", f"homeassistant.{TETO} is a pururu light: name the real one",
+                 id="a pururu light"),
+    pytest.param(REAL_TETO, f"{REAL_TETO} is not a Home Assistant entity: homeassistant.<domain>.<object_id>",
+                 id="without homeassistant, as before 0.2.2"),
+    pytest.param("homeassistant.switch.pururu_greenhouse_switch_sprinkler",
+                 "homeassistant.switch.pururu_greenhouse_switch_sprinkler is a pururu switch: name the real one",
                  id="a pururu switch"),
 ])
 async def test_the_error_names_what_is_wrong(
@@ -108,7 +111,7 @@ async def test_a_switch_and_a_light_can_share_a_key(ha: HomeAssistant) -> None:
     assert await setup(ha, {KEY: {
         "name": "Biblioteca",
         "lights": {"sprinkler": LIGHTS["teto"]},
-        "switches": {"sprinkler": {"entity": "switch.biblioteca_sprinkler", "name": "Irrigador"}},
+        "switches": {"sprinkler": {"entity": "homeassistant.switch.biblioteca_sprinkler", "name": "Irrigador"}},
     }})
     assert held(ha, KEY) == {"light.pururu_biblioteca_light_sprinkler", "switch.pururu_biblioteca_switch_sprinkler"}
 
@@ -123,7 +126,7 @@ async def test_a_device_with_only_lights(biblioteca: HomeAssistant) -> None:
 async def test_one_real_light_twice_in_a_device(ha: HomeAssistant) -> None:
     await fake(ha, REAL_TETO, "on", ONOFF)
     assert await setup(ha, {KEY: {"name": "Biblioteca", "lights": {
-        "teto": LIGHTS["teto"], "teto_2": {"entity": REAL_TETO, "name": "Teto 2"}}}})
+        "teto": LIGHTS["teto"], "teto_2": {"entity": f"homeassistant.{REAL_TETO}", "name": "Teto 2"}}}})
     assert state(ha, TETO) == "on"
     assert state(ha, "light.pururu_biblioteca_light_teto_2") == "on"
 
@@ -373,7 +376,7 @@ async def test_one_real_entity_in_two_features_of_a_device_is_refused(
     switches = ("switches", {"arandela": ARANDELA_BLOCK})
     blocks = dict([lights, switches] if lights_first else [switches, lights])
     assert not await setup(ha, {KEY: {"name": "Biblioteca", **blocks}})
-    assert f"switches: {REAL_ARANDELA} is already in lights" in caplog.text
+    assert f"switches: homeassistant.{REAL_ARANDELA} is already in lights" in caplog.text
 
 
 async def test_one_real_switch_as_a_light_and_as_a_switch_in_two_devices(
@@ -418,7 +421,7 @@ async def test_a_renamed_pururu_entity_is_not_a_real_one(
     """Renamed in the UI, it no longer starts with pururu_: the registry still knows it."""
     extra = {}
     if renamed.startswith("switch."):
-        extra = {"switches": {"sprinkler": {"entity": "switch.biblioteca_sprinkler", "name": "Irrigador"}}}
+        extra = {"switches": {"sprinkler": {"entity": "homeassistant.switch.biblioteca_sprinkler", "name": "Irrigador"}}}
         await fake(biblioteca, "switch.biblioteca_sprinkler", "off")
         await reload(biblioteca, {KEY: {"name": "Biblioteca", "lights": LIGHTS, **extra}})
     er.async_get(biblioteca).async_update_entity(renamed, new_entity_id=new_id)
@@ -427,7 +430,7 @@ async def test_a_renamed_pururu_entity_is_not_a_real_one(
     domain = new_id.split(".")[0]
     await reload(biblioteca, {KEY: {"name": "Biblioteca", **extra, "lights": {
         "teto": LIGHTS["teto"],
-        "abajur": {"entity": new_id, "name": "Abajur"},
+        "abajur": {"entity": f"homeassistant.{new_id}", "name": "Abajur"},
     }}})
     assert biblioteca.states.get(ABAJUR) is None
     assert ABAJUR not in held(biblioteca, KEY)
@@ -441,7 +444,7 @@ async def test_a_light_renamed_to_what_it_stands_for_stays_as_it_is(
     """Renamed in the UI to its own entity: kept with its rename, unavailable, at every reload."""
     await fake(ha, REAL_TETO, "on", BULB)
     devices = {KEY: {"name": "Biblioteca", "lights": {
-        "teto": LIGHTS["teto"], "abajur": {"entity": "light.biblioteca_luminaria", "name": "Abajur"}}}}
+        "teto": LIGHTS["teto"], "abajur": {"entity": "homeassistant.light.biblioteca_luminaria", "name": "Abajur"}}}}
     assert await setup(ha, devices)
     er.async_get(ha).async_update_entity(ABAJUR, new_entity_id="light.biblioteca_luminaria")
     await ha.async_block_till_done()
@@ -459,7 +462,7 @@ async def test_a_light_renamed_to_what_it_stands_for_stays_as_it_is(
 async def test_a_light_standing_for_itself_passes_nothing_on(ha: HomeAssistant) -> None:
     """Its state set by hand (developer tools) makes it neither available nor calling itself."""
     devices = {KEY: {"name": "Biblioteca", "lights": {
-        "abajur": {"entity": "light.biblioteca_luminaria", "name": "Abajur"}}}}
+        "abajur": {"entity": "homeassistant.light.biblioteca_luminaria", "name": "Abajur"}}}}
     assert await setup(ha, devices)
     er.async_get(ha).async_update_entity(ABAJUR, new_entity_id="light.biblioteca_luminaria")
     await ha.async_block_till_done()

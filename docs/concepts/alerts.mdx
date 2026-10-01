@@ -19,19 +19,19 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
+        power: homeassistant.sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
       alerts:
         long_cycle:
           name: Ciclo longo
-          when: appliance_running
+          when: appliance.running_program
           state: "on"
           for: {hours: 3}
           priority: medium
           message: A máquina passou de 3 horas ligada!
           done_message: A máquina terminou.
-        overload: {name: Sobrecarga, when: appliance_power, above: 2500, for: {minutes: 1}, priority: high}
-        plug_offline: {name: Tomada offline, when: appliance_power, state: unavailable, for: {minutes: 10}}
+        overload: {name: Sobrecarga, when: appliance.power, above: 2500, for: {minutes: 1}, priority: high}
+        plug_offline: {name: Tomada offline, when: appliance.power, state: unavailable, for: {minutes: 10}}
 ```
 
 This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **Tanquinho Ciclo longo**, and one alert for each other key.
@@ -46,8 +46,8 @@ This creates `binary_sensor.pururu_clothes_washer_alert_long_cycle`, shown as **
 
 ---
 
-<Property name="when" type="entity key" required>
-  The entity of **this device** the alert watches, written as its entity ID ends after the device key: `appliance_running`, `appliance_power`, `appliance_phase_current`, `appliance_cotton` (a [detected program](/concepts/programs#referring-to-a-program-or-a-phase)), `switch_sprinkler`. It must be an entity of another feature of the device, or an executable program's or a reaction's statistic (`program_executable_clean_cycles_total`); not an alert. A `<device>.` before it is refused (`<x> must be of this device…`): an alert watches its own device. See [Entity IDs](/concepts/entity-ids#the-pattern).
+<Property name="when" type="path" required>
+  The entity of **this device** the alert watches, by its [path](/concepts/entity-ids#references): the block it's in, then every level you wrote down to it, each separated by a dot. `appliance.running_program`, `appliance.power`, `appliance.running_program.phase_current`, `appliance.programs.detected.cotton` (a [detected program](/concepts/programs#referring-to-a-program-or-a-phase)), `switches.sprinkler`. It must be an entity of another block of the device, or an executable program's or a reaction's statistic (`programs.executable.clean.cycles_total`, `reactions.morning.triggered_total`); not an alert. A path that names nothing is refused with its place: `alerts: appliance.running_program.nothing is not an entity of this device`. An alert watches its own device only: another device's (`device.<device>.…`) or Home Assistant's (`homeassistant.…`) is refused (`alerts: device.biblioteca.lights.teto is not of this device`), and so is an executable program itself (`alerts: programs.executable.clean is an executable program: only a reaction's when follows it`).
 </Property>
 
 ---
@@ -105,7 +105,7 @@ A feature may offer alerts for what usually goes wrong, such as the appliance's 
 
 ```yaml
 appliance:
-  power: sensor.washer_plug_power
+  power: homeassistant.sensor.washer_plug_power
   running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   alerts:
     offline:                                          # every default
@@ -115,21 +115,21 @@ appliance:
 - Each one takes `for`, `priority`, `message` and `done_message`, and `lights`, as a written alert does, and nothing else. What it watches and when it's on are the ready-made alert's own.
 - Its defaults are its own too: its `for` (some need one), its `priority`, and texts of its own in Home Assistant's language, which `message` and `done_message` replace.
 - Each one is `binary_sensor.pururu_<key>_<namespace>_alert_<name>`, in the feature's namespace: `binary_sensor.pururu_clothes_washer_appliance_alert_offline`.
-- A [reaction](/concepts/reactions) may watch one (`when: appliance_alert_offline`). An alert can't: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
+- A [reaction](/concepts/reactions) may watch one (`when: appliance.alerts.offline`). An alert can't: `alerts: appliance.alerts.offline is an alert: an alert can't watch another`.
 - Which ones a feature offers, what each watches and its defaults: each feature's page, such as the [appliance's](/features/appliance#ready-made-alerts) and the [door's](/features/door#ready-made-alerts) (a window's are the door's).
 
 ## Entity
 
-| Entity | What it is |
-|---|---|
-| `binary_sensor.pururu_<key>_alert_<alert key>` | An alert you wrote. On while the problem lasts. Device class `problem`. |
-| `binary_sensor.pururu_<key>_<namespace>_alert_<name>` | A [ready-made alert](#ready-made-alerts) you enabled in a feature's block. The same, in that feature's namespace. |
+| Entity | Path | What it is |
+|---|---|---|
+| `binary_sensor.pururu_<key>_alert_<alert key>` | `alerts.<alert key>` | An alert you wrote. On while the problem lasts. Device class `problem`. |
+| `binary_sensor.pururu_<key>_<namespace>_alert_<name>` | `<feature>.alerts.<name>` | A [ready-made alert](#ready-made-alerts) you enabled in a feature's block. The same, in that feature's namespace: `appliance.alerts.offline`. |
 
 Its attributes are **`priority`** and **`watches`**, the entity it watches; with `message` and `done_message`, **`message`** and **`done_message`**, which a ready-made alert always has, its own texts without them; with `lights`, **`lights`**, the name of the group it borrows. It's in the device, so it's in the device's area.
 
 ## Needs
 
-An alert needs the entity it watches. If that entity isn't created (its ID is already taken, or the device's settings don't create it, as `appliance_runtime_month` without `statistics`), the alert isn't created either, and the log says why. If you rename the watched entity in the UI, the alert follows it.
+An alert needs the entity it watches. If that entity isn't created (its ID is already taken, or the device's settings don't create it, as `appliance.running_program.statistics.runtime.month` without `month` in its `statistics`), the alert isn't created either, and the log says why. If you rename the watched entity in the UI, the alert follows it.
 
 ## Getting notified
 

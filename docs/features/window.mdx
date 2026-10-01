@@ -12,7 +12,7 @@ pururu:
       name: Janela do quarto
       area: quarto
       window:
-        contact: binary_sensor.janela_quarto_contact
+        contact: homeassistant.binary_sensor.janela_quarto_contact
         statistics:
           open_time: [today, week]
 ```
@@ -21,4 +21,4 @@ This creates `binary_sensor.pururu_janela_quarto_window_open`, shown as **Janela
 
 A window rarely has events, but it takes `event_entities` as a door does, with the same meanings: `opening`, `denied` and `ring`. See [`door`](/features/door#settings) for every setting.
 
-A device can be both a door and a window, such as a door with a window of its own: their entities differ by namespace (`door_open`, `window_open`).
+A device can be both a door and a window, such as a door with a window of its own: their entities differ by namespace (`binary_sensor.pururu_<key>_door_open`, `binary_sensor.pururu_<key>_window_open`) and by path (`door.open`, `window.open`). A window's paths are a door's with `window` for `door`: `window.open`, `window.last_opened`, `window.statistics.open_time.today`, `window.alerts.long_opening`.

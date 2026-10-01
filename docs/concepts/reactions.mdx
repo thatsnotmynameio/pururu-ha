@@ -11,21 +11,22 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
+        power: homeassistant.sensor.washer_plug_power
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
     laundry_lights:
       name: Luzes da despensa
       lights:
-        teto: {entity: light.despensa_teto, name: Teto}
+        teto: {entity: homeassistant.light.despensa_teto, name: Teto}
       programs:
         executable:
           blink:
             name: Piscar
-            sequence: [{turn_on: light_teto}, {delay: 2}, {turn_off: light_teto}]
+            sequence: [{turn_on: lights.teto}, {delay: 2}, {turn_off: lights.teto}]
       reactions:
-        teto_on:     {name: Teto acendeu, when: light_teto, to: "on"}
-        washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off", then: blink}
-        door:        {name: Porta abriu, entity: binary_sensor.porta_despensa, to: "on", for: {minutes: 5}}
+        teto_on:     {name: Teto acendeu, when: lights.teto, to: "on"}
+        washer_done: {name: Lavadora terminou, when: device.clothes_washer.appliance.running_program, from: "on", to: "off", then: blink}
+        door:        {name: Porta abriu, when: homeassistant.binary_sensor.porta_despensa, to: "on", for: {minutes: 5}}
+        blinked:     {name: Piscou, when: programs.executable.blink, from: "on", to: "off"}
         night:       {name: Noite, at: "22:00"}
         dusk:        {name: Anoitecer, sun: sunset, offset: {minutes: -30}}
 
@@ -61,27 +62,43 @@ Until the line is there, the automations exist only in the file. **Settings → 
 
 A reaction listens to **exactly one** of these sources.
 
-### An entity of the device
+### An entity
 
-<Property name="when" type="entity key">
-  An entity of **this device**, written as its entity ID ends after the device key: `light_teto`, `appliance_running`, `appliance_cotton` (a [detected program](/concepts/programs#referring-to-a-program-or-a-phase)), `alert_overload`. See [Entity IDs](/concepts/entity-ids#the-pattern).
+`when` names what the reaction listens to by its [reference](/concepts/entity-ids#references). Its first word says whose it is:
+
+<Property name="when" type="path">
+  An entity of **this device**, by its path: the block it's in, then every level you wrote down to it, each separated by a dot. `lights.teto`, `appliance.running_program`, `appliance.programs.detected.cotton` (a [detected program](/concepts/programs#referring-to-a-program-or-a-phase)), `alerts.overload`, `appliance.alerts.offline`.
 </Property>
 
-### An entity of another device
+---
 
-<Property name="when" type="device.entity key">
-  An entity of **another device**: its device key, a dot, and its entity key, as above: `when: clothes_washer.appliance_running`. Its own device written out (`laundry_lights.light_teto`) is the same as `light_teto`.
+<Property name="when" type="device.<device>.<path>">
+  An entity of **another device**: `device.`, its device key, then the path as that device writes it: `when: device.clothes_washer.appliance.running_program`. Its own device written that way is refused, with the form to write: `reactions: teto_on: device.laundry_lights.lights.teto is this device's: write lights.teto`.
 </Property>
 
-### Any entity
+---
 
-<Property name="entity" type="entity ID">
-  Any entity in Home Assistant: `binary_sensor.porta_despensa`.
+<Property name="when" type="homeassistant.<domain>.<object_id>">
+  Any entity of **Home Assistant's**: `homeassistant.`, then its entity ID: `when: homeassistant.binary_sensor.porta_despensa`. An entity ID without `homeassistant.` reads as a path of this device, and is refused (`reactions: door: binary_sensor.porta_despensa: binary_sensor is not a block of this device`). An entity pururu creates is written by its path, never as Home Assistant's: `when: homeassistant.binary_sensor.pururu_clothes_washer_appliance_running` is refused (`… is pururu's: write device.clothes_washer.appliance.running_program`).
 </Property>
+
+A path that names nothing is refused with its place: `reactions: washer_done: device.clothes_washer.appliance.nothing is not an entity of device clothes_washer`. A reaction has no `entity:` key: since 0.2.2, a Home Assistant entity goes in `when`.
+
+### An executable program
+
+<Property name="when" type="programs.executable.<key>">
+  An [executable program](/concepts/programs#executable-programs) running: its script, `on` while it runs and `off` once it ends. `when: programs.executable.blink`, `from: "on"`, `to: "off"` fires when `blink` finishes; `to: "on"` when it starts. Another device's program is `device.<device>.programs.executable.<key>`. One the device doesn't have is refused: `reactions: blinked: programs.executable.wash is not an executable program of this device`. A script shows no other state and no reading, so `above`, `below`, or a `to` or `from` other than `"on"` or `"off"` would never fire, and is refused at that field: `reactions: blinked: programs.executable.blink is a program, on while it runs: a reaction follows it with to and from "on" or "off"`.
+</Property>
+
+A program's script that isn't generated (an entity it acts on isn't created, or its ID is taken) leaves the reaction that follows it ungenerated too, and one waiting for a disabled entity holds the reaction with it, as `then` does: see [Starting a program](#starting-a-program).
+
+A reaction that follows a program and starts the same one, `when: programs.executable.blink`, `from: "on"`, `to: "off"`, `then: blink`, runs it again each time it ends: a loop, until you turn the automation off. pururu doesn't refuse it, as it doesn't refuse `then: blink` on `programs.executable.blink.last_cycle_end`.
+
+A reaction can't watch a reaction: `reactions.<key>` is refused, pointing to what counts it (`reactions: blinked: reactions.teto_on is a reaction: watch reactions.teto_on.triggered_total`).
 
 ### What an entity must do
 
-For `when` and `entity`, give **either** `to` **or** `above`/`below`:
+For `when`, give **either** `to` **or** `above`/`below`:
 
 <Property name="to" type="state" optional>
   The state it changes to: `"on"`, `"off"`, `wringing`. `on` and `off` work with or without quotes. Any other value is compared as text, as Home Assistant does: `to: "1"` matches a state of `1`, not `1.0`. So a number without quotes is refused: `to: YAML reads it as the number 1: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. For a number, write `above`/`below`, or the state in quotes as the entity shows it.
@@ -138,7 +155,7 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 ### What it does
 
 <Property name="then" type="program key" optional>
-  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. A detected program (it can't be started), a key that isn't a program of this device, or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`. Another device's program or a script's entity ID (anything with a dot) is one too: `greenhouse.clean must be of this device: its entity key, without <device>. or <domain>.`
+  A key of **this device's** [executable programs](/concepts/programs#executable-programs) (`programs: executable:`): the reaction starts it when it fires, unless it's already running. Without `then`, the reaction fires and does nothing: its trace still shows when and why. A detected program (it can't be started), a key that isn't a program of this device, or a list is a configuration error: `reactions: morning: clean is not an executable program of this device`. `then` takes the program's key alone, as `then` only ever names one of this device's executable programs: a path (`programs.executable.clean`) or a script's entity ID is refused, naming the key to write: `then is its program's key alone: clean`. Another device's program (`device.greenhouse.programs.executable.clean`) is refused without a key to write, as this device may have a program of its own by that key: `then is its program's key alone, never another device's`.
 </Property>
 
 ---
@@ -150,7 +167,7 @@ For `when` and `entity`, give **either** `to` **or** `above`/`below`:
 ---
 
 <Property name="notify" type="notify action or list" optional>
-  Where this message goes, such as `notify.mobile_app_phone`, instead of `config.notify`. Only with `message`: `a reaction's notify goes with message`. A message with neither is a configuration error.
+  Where this message goes, such as `homeassistant.notify.mobile_app_phone`, instead of `config.notify`. Only with `message`: `a reaction's notify goes with message`. A message with neither is a configuration error.
 </Property>
 
 With `then` and `message`, the program starts first, then the message is told.
@@ -189,7 +206,7 @@ A reaction with `then` starts its program's script, but only if it isn't running
 | You disabled the program's script | The reaction still fires, and the `if` isn't taken |
 | You renamed the program's script | Followed: pururu reloads and rewrites the automation with its new ID |
 
-A reaction always runs its **own** device's program, even when it listens to another device (`when: clothes_washer.appliance_running`). Programs run one at a time for now: a program already running isn't started again, nor queued.
+A reaction always runs its **own** device's program, even when it listens to another device (`when: device.clothes_washer.appliance.running_program`). Programs run one at a time for now: a program already running isn't started again, nor queued.
 
 ## Trying again
 
@@ -261,7 +278,8 @@ Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reacti
 - **The automation turned off** in the UI doesn't fire, so it counts nothing.
 - **Renaming the automation** in the UI is followed: pururu reloads and counts under its new ID.
 - **An automation ID someone else holds**: the reaction isn't generated, and it counts nothing. It never counts an automation pururu doesn't manage.
-- **A reaction can't watch its own counter** (`when: reaction_morning_triggered_total` in `morning`): `reactions: morning: reaction_morning_triggered_total is its own statistic`. It can watch another reaction's, or a program's.
+- **Its path** is `reactions.<reaction>.triggered_total`, and a meter's `reactions.<reaction>.statistics.triggered.<period>`: a reaction itself, `reactions.<reaction>`, is no entity to watch.
+- **A reaction can't watch its own counter** (`when: reactions.morning.triggered_total` in `morning`): `reactions: morning: reactions.morning.triggered_total is its own statistic`. It can watch another reaction's, or a program's.
 
 ## The automation
 
@@ -277,6 +295,6 @@ Every reaction counts its triggers, with no setting: `sensor.pururu_<key>_reacti
 - **Two reactions with one ID:** device `lights` with the reaction `b_reaction_c` and device `lights_reaction_b` with the reaction `c` would both be `automation.pururu_lights_reaction_b_reaction_c`. That's a configuration error: rename a device key or a reaction key.
 - **A reload that didn't take:** if reloading automations fails, or the include was missing, pururu reloads them again at its next reload, even when the file hasn't changed. An automation you dropped from the YAML that Home Assistant still runs keeps its ID until a reload drops it.
 - **A pururu entity renamed in the UI:** `when` follows it, because pururu writes the entity's current ID into the file at every reload.
-- **A pururu entity that isn't created** (its ID is taken, or the device's settings don't create it, as `appliance_runtime_month` without `statistics`): its reactions aren't generated, and the log says why.
+- **A pururu entity that isn't created** (its ID is taken, or the device's settings don't create it, as `appliance.running_program.statistics.runtime.month` without `month` in its `statistics`): its reactions aren't generated, and the log says why.
 - **A reaction removed from the YAML:** its automation leaves the file, and its entity leaves Home Assistant.
 - **Removing pururu:** the file becomes an empty list, so its automations go. The line can stay until you remove it. If the file can't be written, its automations keep running with their IDs: delete the file by hand.

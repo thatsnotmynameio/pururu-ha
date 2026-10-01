@@ -45,6 +45,7 @@ from ..core.entity import PururuEntity
 from ..core.feature import (
     EACH,
     Aspect,
+    Born,
     Device,
     Feature,
     Item,
@@ -54,7 +55,7 @@ from ..core.feature import (
     qualified,
 )
 from ..core.generated import SCRIPTS, Planned
-from ..core.resolve import Index, Ref, Target, find, local_key
+from ..core.resolve import Index, Owner, Ref, Target, path, resolve
 from ..core.roles import Counted, Counters, Generates, Items, Programs
 from ..features.cycle import Cycle, CycleSource
 from ..features.cycle.last import LAST_CYCLE, LastCycleValue
@@ -77,7 +78,8 @@ ACTIONS = ("turn_on", "turn_off", "toggle")
 STEP = vol.Schema(
     {
         vol.Optional(DELAY): cv.positive_time_period,
-        **{vol.Optional(action): local_key for action in ACTIONS},
+        # A path of this device: switches.sprinkler
+        **{vol.Optional(action): path for action in ACTIONS},
     }
 )
 
@@ -100,7 +102,7 @@ def slug(program_key: str) -> str:
 
 
 def _item(key: str, program: Mapping[str, Any]) -> Item:
-    return Item(slug=slug(key), name=program[CONF_NAME])
+    return Item(slug=slug(key), name=program[CONF_NAME], path=(CONF_EXECUTABLE, key))
 
 
 def _item_at(block: Any, path: Path) -> Item:
@@ -162,7 +164,7 @@ SCHEMA = vol.All(
 
 
 def targets(program: Mapping[str, Any]) -> Iterator[tuple[str, str]]:
-    """(action, entity key) of each step that acts on an entity, in order."""
+    """(action, path) of each step that acts on an entity, in order: a path of its device."""
     for step in program["sequence"]:
         yield from ((action, key) for action, key in step.items() if action != DELAY)
 
@@ -176,6 +178,54 @@ def executable(device: Mapping[str, Any]) -> Mapping[str, Any]:
     """A validated device's executable programs, by key; none without `programs`."""
     found: Mapping[str, Any] = device.get(CONF_PROGRAMS, {}).get(CONF_EXECUTABLE, {})
     return found
+
+
+# Why a field other than a reaction's when can't name an executable program
+RUNNING = "is an executable program: only a reaction's when follows it"
+
+
+def named(here: str, ref: Ref) -> tuple[str, str] | None:
+    """(device, program key) when `ref`, written in device `here`, is an executable program's path; None when it isn't.
+
+    programs.executable.<key>, of this device or another (device.<device>.):
+    its script, running or not, which a reaction's when follows
+    (reactions.plan). A script isn't an entity pururu creates, so it isn't in
+    the index; whether the device has that program is the caller's
+    (`executable`). This device named with device. is none: resolve refuses
+    it with the form to write.
+    """
+    if ref.owner is Owner.HOME_ASSISTANT or (
+        ref.owner is Owner.DEVICE and ref.device == here
+    ):
+        return None
+    segments = ref.path.split(".")
+    if len(segments) != 3 or segments[:2] != [CONF_PROGRAMS, CONF_EXECUTABLE]:
+        return None
+    return ref.device or here, segments[2]
+
+
+def running(devices: Mapping[str, Any], here: str, ref: Ref) -> bool:
+    """Whether `ref`, written in device `here`, names an executable program its device has (`named`)."""
+    if (program := named(here, ref)) is None or program[0] not in devices:
+        return False
+    return program[1] in executable(devices[program[0]])
+
+
+def reach(
+    index: Index, devices: Mapping[str, Any], here: str, ref: Ref
+) -> Target | str:
+    """What `ref`, written in device `here`, names within a field's reach; else why it can't, after the field's place.
+
+    A field reaches its own device's entities only: never another device's,
+    nor Home Assistant's, nor an executable program (RUNNING).
+    """
+    if ref.owner is Owner.HOME_ASSISTANT or (
+        ref.owner is Owner.DEVICE and ref.device != here
+    ):
+        return f"{ref.text} is not of this device"
+    if running(devices, here, ref):
+        return f"{ref.text} {RUNNING}"
+    return resolve(index, here, ref)
 
 
 def _translated(
@@ -199,7 +249,7 @@ def script(
     program: Mapping[str, Any],
     entity_ids: Mapping[str, str],
 ) -> dict[str, Any]:
-    """The script of a program; `entity_ids` maps each entity key it acts on to its current ID.
+    """The script of a program; `entity_ids` maps each path it acts on to its current ID.
 
     single: a start while it runs is ignored, and HA logs it.
     """
@@ -306,30 +356,50 @@ PROGRAMS = Feature(
 
 
 def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
-    """Refuse a step on what isn't another feature's entity key of the device taking its action (a schema check)."""
-    for key, device in house[CONF_DEVICES].items():
+    """Refuse a step on what isn't another feature's entity of the device taking its action (a schema check), at the step's action."""
+    devices = house[CONF_DEVICES]
+    for key, device in devices.items():
         for program_key, program in executable(device).items():
-            path: list[Hashable] = [
+            if (
+                refused := _refused_step(index, devices, key, program_key, program)
+            ) is not None:
+                yield refused
+
+
+def _refused_step(
+    index: Index,
+    devices: Mapping[str, Any],
+    key: str,
+    program_key: str,
+    program: Mapping[str, Any],
+) -> vol.Invalid | None:
+    """Why the program's first step that can't be can't be; None when all can.
+
+    A step acts on its own device only, on an entity taking its action: an
+    executable program takes none, a reaction's when follows it.
+    """
+    for position, step in enumerate(program["sequence"]):
+        for action, text in step.items():
+            if action == DELAY:
+                continue
+            place: list[Hashable] = [
                 CONF_DEVICES,
                 key,
                 CONF_PROGRAMS,
                 CONF_EXECUTABLE,
                 program_key,
+                "sequence",
+                position,
+                action,
             ]
-            for action, entity_key in targets(program):
-                target = find(index, key, Ref(None, entity_key))
-                if target is None:
-                    yield vol.Invalid(
-                        f"programs: {entity_key} is not an entity key of another "
-                        "feature of this device",
-                        path=path,
-                    )
-                    break
-                if action not in target.actions:
-                    yield vol.Invalid(
-                        f"programs: {entity_key} does not take {action}", path=path
-                    )
-                    break
+            found = reach(index, devices, key, Ref.parse(text))
+            if isinstance(found, str):
+                return vol.Invalid(f"programs: {found}", path=place)
+            if action not in found.actions:
+                return vol.Invalid(
+                    f"programs: {text} does not take {action}", path=place
+                )
+    return None
 
 
 def plan(
@@ -376,7 +446,10 @@ def _acted_on(
     program: Mapping[str, Any],
     created: Collection[str],
 ) -> dict[str, str] | None:
-    """Each entity key the program acts on -> its current entity ID; None, logged, when one isn't created."""
+    """Each path the program acts on -> its current entity ID; None, logged, when one isn't created.
+
+    `found` is its device's targets, by path: a step names its own device's.
+    """
     entity_ids: dict[str, str] = {}
     for _, key in targets(program):
         target = found[key]
@@ -451,14 +524,14 @@ DETECTED_BLOCK = vol.All(
 )
 
 
-def _derived(value: Mapping[str, Any]) -> Iterator[tuple[str, Platform]]:
-    """Every entity key the detected programs of a validated `programs:` create.
+def _derived(value: Mapping[str, Any]) -> Iterator[tuple[str, Born]]:
+    """Every entity key the detected programs of a validated `programs:` create, each under its program's node (detected.<key>).
 
     A key two of them create comes twice: checks.keys_distinct refuses it
     (cotton's cotton_cycles_total beside a program keyed cotton_cycles_total).
     """
     for key, config in value[CONF_DETECTED].items():
-        yield from detected_keys(key, config).items()
+        yield from detected_keys(key, config, node=(CONF_DETECTED, key)).items()
 
 
 # A detected program with a phase and other: the programs aspect's example

@@ -1,42 +1,81 @@
-"""A reference to an entity key a device can create, and the index it is found in."""
+"""What a field of the YAML names, and the index of every entity a device can create it is found in.
 
-from collections.abc import Mapping
+A reference is a path through a device's YAML, from the block key the author
+wrote (appliance.running_program); another device's starts with
+device.<device>. (device.washer.appliance.running_program), a Home
+Assistant entity with homeassistant. (homeassistant.binary_sensor.door). The
+schema checks a reference's form (`path`); the checks resolve it in the index
+(`resolve`), as the first word's meaning depends on the device.
+"""
+
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, valid_entity_id
 from homeassistant.helpers import config_validation as cv
 
 from .feature import Device
 
+# The first words that say whose a reference is: another device's, Home Assistant's
+DEVICE = "device"
+HOME_ASSISTANT = "homeassistant"
+
+
+class Owner(StrEnum):
+    """Whose entity a reference names."""
+
+    HERE = "here"
+    DEVICE = DEVICE
+    HOME_ASSISTANT = HOME_ASSISTANT
+
 
 @dataclass(frozen=True)
 class Ref:
-    """An entity key of a device, as a block names it: on this device when `device` is None."""
+    """What a field names: a path of this device or another, or a Home Assistant entity."""
 
+    owner: Owner
+    # Another device's key; None for this device's and Home Assistant's
     device: str | None
-    # Qualified, as the entity ID ends after the device key: appliance_running
-    key: str
+    # The path in its device (appliance.running_program); Home Assistant's
+    # entity ID (binary_sensor.door)
+    path: str
 
     @classmethod
     def parse(cls, text: str) -> Ref:
-        """The reference `text` writes: appliance_running, or washer.appliance_running.
+        """The reference `text` writes, as `path` validated it.
 
-        `text` is as `reference` or `device_reference` validated it: any other
-        is a programming error, as it wouldn't read back as written.
+        Any other text is a programming error, as it wouldn't read back as
+        written.
         """
-        device, dot, key = text.partition(".")
-        if not device or (dot and (not key or "." in key)):
+        first, _, rest = text.partition(".")
+        if first == HOME_ASSISTANT:
+            ref = cls(Owner.HOME_ASSISTANT, None, rest)
+        elif first == DEVICE:
+            device, _, path = rest.partition(".")
+            ref = cls(Owner.DEVICE, device, path)
+        else:
+            ref = cls(Owner.HERE, None, text)
+        # Two segments at least (<block>.<key>, Home Assistant's
+        # <domain>.<object_id>), and device.<device>. names its device
+        first_segment, _, rest_of_path = ref.path.partition(".")
+        two_segments = bool(first_segment and rest_of_path)
+        if not two_segments or ref.device == "":
             raise ValueError(f"{text!r} is not a validated reference")
-        return cls(device, key) if dot else cls(None, device)
+        return ref
 
     @property
     def text(self) -> str:
         """The reference as written; a builder's inputs are keyed by it."""
-        return self.key if self.device is None else f"{self.device}.{self.key}"
+        if self.owner is Owner.HOME_ASSISTANT:
+            return f"{HOME_ASSISTANT}.{self.path}"
+        if self.owner is Owner.DEVICE:
+            return f"{DEVICE}.{self.device}.{self.path}"
+        return self.path
 
 
 @dataclass(frozen=True)
@@ -47,6 +86,8 @@ class Target:
     device: Device
     # Qualified: appliance_running
     key: str
+    # Its node in the device's YAML, from the builder's key: appliance.running_program
+    path: str
     platform: Platform
     # The builder's key in the device: appliance, switches, programs
     builder: str
@@ -77,87 +118,123 @@ class Target:
         return self.device.current_entity_id(hass, self.platform, self.local)
 
 
-# Device key -> qualified entity key -> what it is
+# Device key -> path -> what it is
 type Index = Mapping[str, Mapping[str, Target]]
 
 
-def find(index: Index, here: str, ref: Ref) -> Target | None:
-    """What `ref`, written in device `here`, names; None when that device can't create it.
+def find(index: Index, here: str | None, ref: Ref) -> Target | None:
+    """What `ref`, written in device `here`, names; None when no device creates it.
 
-    The caller says why, in its own words.
+    Home Assistant's entities aren't in the index. The caller says why, in its
+    own words, or asks `resolve`.
     """
-    return index.get(here if ref.device is None else ref.device, {}).get(ref.key)
+    device = here if ref.owner is Owner.HERE else ref.device
+    if ref.owner is Owner.HOME_ASSISTANT or device is None:
+        return None
+    return index.get(device, {}).get(ref.path)
 
 
-# The domains an entity ID begins with, to tell one from <device>.<key>: HA's
-# platforms, and the helpers and generated items that aren't one (pururu's own
-# scripts and automations among them). A device keyed as a domain is still a
-# device: the hint is asked only of a reference whose device isn't in devices.
-_DOMAINS = frozenset(platform.value for platform in Platform) | {
-    "automation",
-    "counter",
-    "group",
-    "input_boolean",
-    "input_button",
-    "input_datetime",
-    "input_number",
-    "input_select",
-    "input_text",
-    "person",
-    "schedule",
-    "script",
-    "timer",
-    "zone",
-}
+def resolve(index: Index, here: str | None, ref: Ref) -> Target | str:
+    """What `ref`, a device's path written in device `here`, names; else why it names nothing.
 
-
-def entity_id_hint(index: Index, ref: Ref, real: str) -> str:
-    """Why `ref`, whose device isn't one, may be an entity ID, in parentheses; "" when it isn't.
-
-    An entity ID was the way to name an entity before 0.2.1: a pururu
-    entity's (as created) says its reference; a real one's, told by its
-    domain, says `real`, the caller's advice.
+    The reason starts with the reference as written, for the caller to put
+    after its place. `here` is None outside a device (a light group): no
+    device names itself there. A device naming itself with device. is
+    refused with the form to write: copied under another key, it would still
+    name the original. Home Assistant's entities are the caller's to refuse.
     """
-    for device, targets in index.items():
-        for target in targets.values():
-            if target.entity_id() == ref.text:
-                return f" ({ref.text} is an entity ID: write {device}.{target.key})"
-    if ref.device in _DOMAINS:
-        return f" ({ref.text} is an entity ID: {real})"
-    return ""
+    if ref.owner is Owner.DEVICE and ref.device == here:
+        return f"{ref.text} is this device's: write {ref.path}"
+    device = here if ref.owner is Owner.HERE else ref.device
+    if device is None or device not in index:
+        return f"{ref.text}: device {device} is not in devices"
+    if (target := index[device].get(ref.path)) is not None:
+        return target
+    whose = "this device" if ref.owner is Owner.HERE else f"device {device}"
+    block = ref.path.partition(".")[0]
+    if not any(path.partition(".")[0] == block for path in index[device]):
+        return f"{ref.text}: {block} is not a block of {whose}"
+    return f"{ref.text} is not an entity of {whose}"
 
 
-def _text(value: Any) -> str:
-    """A reference's text: never empty, which would name nothing."""
+def path(value: Any) -> str:
+    """A reference, as written: a path of this device or of another, or a Home Assistant entity.
+
+    Its segments are slugs: at least two in this device
+    (appliance.running_program), the path after device.<device>. in another
+    (device.washer.appliance.running_program), exactly a domain and an object
+    ID after homeassistant. (homeassistant.binary_sensor.door). Whose it may
+    be, and what it names, the checks decide.
+    """
     text = cv.string(value)
     if not text:
-        raise vol.Invalid("an entity key can't be empty")
-    return text
-
-
-def reference(value: Any) -> str:
-    """An entity key, of this device (appliance_running) or of another (washer.appliance_running)."""
-    text = _text(value)
-    parts = text.split(".")
-    if len(parts) > 2 or not all(parts):
-        raise vol.Invalid(f"{text} is neither an entity key nor <device>.<key>")
-    return ".".join(str(cv.slug(part)) for part in parts)
-
-
-def local_key(value: Any) -> str:
-    """An entity key of this device: an alert's when, a program's step, a reaction's then."""
-    text = _text(value)
-    if "." in text:
+        raise vol.Invalid("a path can't be empty")
+    segments = text.split(".")
+    if len(segments) < 2 or not all(segments):
         raise vol.Invalid(
-            f"{text} must be of this device: its entity key, without <device>. "
-            "or <domain>."
+            f"{text} is not a path: write it from its block, <block>.<key>"
         )
-    return str(cv.slug(text))
-
-
-def device_reference(value: Any) -> str:
-    """An entity key of a named device, as a light group's: always washer.appliance_running."""
-    text = reference(value)
-    if "." not in text:
-        raise vol.Invalid(f"{text} needs its device: <device>.{text}")
+    for segment in segments:
+        cv.slug(segment)
+    if segments[0] == HOME_ASSISTANT and len(segments) != 3:
+        raise vol.Invalid(
+            f"{text} is not a Home Assistant entity: "
+            f"{HOME_ASSISTANT}.<domain>.<object_id>"
+        )
+    if segments[0] == DEVICE and len(segments) < 4:
+        raise vol.Invalid(
+            f"{text} is not a path of another device: {DEVICE}.<device>.<block>.<key>"
+        )
     return text
+
+
+def homeassistant_entity(*domains: str) -> Callable[[Any], str]:
+    """A field that takes only Home Assistant's entity: homeassistant.<domain>.<object_id>, of one of `domains` (any without).
+
+    It hands its consumer the bare entity ID (sensor.plug_power), as Home
+    Assistant names it; a refusal quotes what the author wrote, homeassistant.
+    included.
+    """
+
+    def validate(value: Any) -> str:
+        text = cv.string(value)
+        first, _, written = text.partition(".")
+        # Lowered, as Home Assistant's cv.entity_id does
+        entity_id = written.lower()
+        if first != HOME_ASSISTANT or not valid_entity_id(entity_id):
+            raise vol.Invalid(
+                f"{text} is not a Home Assistant entity: "
+                f"{HOME_ASSISTANT}.<domain>.<object_id>"
+            )
+        if domains and entity_id.partition(".")[0] not in domains:
+            raise vol.Invalid(f"{text} is not a {' or '.join(domains)}")
+        return entity_id
+
+    return validate
+
+
+def key_alone(field: str, of: str | None = None) -> Callable[[Any], str]:
+    """A field that takes one kind of thing, by its key alone: an area's, a program's.
+
+    The field's name says what it is, so a path is refused, naming the key
+    to write (then: programs.executable.blink is blink). Another device's
+    (device.<device>.) names no key: this device may have another thing by
+    that key, so its key would name the wrong one. `of` is what the key is
+    of, the field's own name without.
+    """
+    whose = field if of is None else of
+
+    def validate(value: Any) -> str:
+        if value == "":
+            raise vol.Invalid(f"{field} can't be empty")
+        if isinstance(value, str) and value.startswith(f"{DEVICE}."):
+            raise vol.Invalid(
+                f"{field} is its {whose}'s key alone, never another device's"
+            )
+        if isinstance(value, str) and "." in value:
+            raise vol.Invalid(
+                f"{field} is its {whose}'s key alone: {value.rpartition('.')[2]}"
+            )
+        return str(cv.slug(value))
+
+    return validate

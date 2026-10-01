@@ -11,7 +11,7 @@ from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 
 from ....const import CONF_DETECTED, CONF_PROGRAMS
-from ....core.feature import EACH, TEXT, Item, Path, at, bounded, finite_float
+from ....core.feature import EACH, TEXT, Born, Item, Path, at, bounded, finite_float
 from ....core.roles import Counted
 from ....core.vocabulary import band
 from ..last import LAST_CYCLE
@@ -157,37 +157,56 @@ def counted_each(where: Path) -> tuple[Counted, ...]:
     )
 
 
-def detected_keys(key: str, config: Mapping[str, Any]) -> dict[str, Platform]:
-    """Every entity key detected program `key` can create: its carrier, its cycle entities, then its phases'."""
+def _cycle(slug: str, node: Path) -> dict[str, Born]:
+    """A cycle source's entity keys: its binary sensor `slug` at `node`, then each cycle entity under it (<node>.<suffix>)."""
     return {
-        key: Platform.BINARY_SENSOR,
-        **{f"{key}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
-        **keys_of(config, of=key),
+        slug: Born(Platform.BINARY_SENSOR, node),
+        **{
+            f"{slug}_{suffix}": Born(platform, (*node, suffix))
+            for suffix, platform in SUFFIXES.items()
+        },
     }
 
 
-def phase_keys(key: str, of: str | None = None) -> dict[str, Platform]:
-    """Every entity key phase `key` (of detected program `of`) can create: its binary sensor, then its cycle entities."""
-    slug = phase_slug(key, of)
-    return {
-        slug: Platform.BINARY_SENSOR,
-        **{f"{slug}_{suffix}": platform for suffix, platform in SUFFIXES.items()},
-    }
+def detected_keys(
+    key: str, config: Mapping[str, Any], node: Path = ()
+) -> dict[str, Born]:
+    """Every entity key detected program `key` can create: its carrier, its cycle entities, then its phases'.
+
+    `node` is the program's, from where its keys are listed: each is born under it.
+    """
+    return {**_cycle(key, node), **keys_of(config, of=key, node=node)}
 
 
-def keys_of(config: Mapping[str, Any], of: str | None = None) -> dict[str, Platform]:
+def phase_keys(key: str, of: str | None = None, node: Path = ()) -> dict[str, Born]:
+    """Every entity key phase `key` (of detected program `of`) can create: its binary sensor, then its cycle entities.
+
+    `node` is its program's: a phase sits at <node>.phases.<key>, other at <node>.other.
+    """
+    at_phase = (*node, OTHER) if key == OTHER else (*node, "phases", key)
+    return _cycle(phase_slug(key, of), at_phase)
+
+
+def keys_of(
+    config: Mapping[str, Any], of: str | None = None, node: Path = ()
+) -> dict[str, Born]:
     """Every entity key a program block's phases create, other's too: none without phases.
 
     `of`: a detected program's key, before each (<of>_phase_current, …).
+    `node`: the program's, each key born under it (<node>.phase_current,
+    <node>.phases.<key>, <node>.other).
     """
     if "phases" not in config:
         return {}
     return {
-        **{_of(key, of): platform for key, platform in FIXED.items()},
         **{
-            entity_key: platform
+            _of(key, of): Born(platform, (*node, key))
+            for key, platform in FIXED.items()
+        },
+        **{
+            entity_key: born
             for key in (*config["phases"], OTHER)
-            for entity_key, platform in phase_keys(key, of).items()
+            for entity_key, born in phase_keys(key, of, node).items()
         },
     }
 

@@ -11,7 +11,7 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
+        power: homeassistant.sensor.washer_plug_power
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -65,6 +65,8 @@ A counter under **Needs** takes no periods without that other setting: `applianc
 Each meter is `sensor.pururu_<key>_<namespace>_<counter>_<period>`, for a block's own counter, or `sensor.pururu_<key>_<namespace>_<item>_<counter>_<period>` for a phase's, a program's, a reaction's or a button's, `<item>` its slug (`phase_<key>`, `phase_other`; a detected program's phase `<program>_phase_<key>`, `<program>_phase_other`; an executable program `executable_<key>`) or its key (a detected program, a reaction, a button).
 
 It's named after the device, the counter and the period: **Tanquinho Runtime today**. Per item, the item's own name goes between the device's name and the counter's, as in a phase's meters, [`programs`](/concepts/programs#statistics), [`reactions`](/concepts/reactions#statistics) and [`buttons`](/features/buttons#statistics): **Tanquinho Aquecendo cycles today**, or a detected program's, **Tanquinho Algodão cycles today**. `other`'s meters are named by their own translations instead: **Tanquinho Other phase cycles today**; a detected program's `other`'s carry its name: **Tanquinho Algodão other phase cycles today**.
+
+Its [path](/concepts/entity-ids#references), the way an alert or a reaction names it, follows the YAML: the block's path, then `statistics`, the counter and the period, as you wrote them. `runtime: [today]` in the washer's `running_program` is `appliance.running_program.statistics.runtime.today`; the `warming` phase's `cycles: [month]` is `appliance.running_program.phases.warming.statistics.cycles.month`; a reaction's `triggered: [month]` is `reactions.<reaction>.statistics.triggered.month`.
 
 Every meter's unique ID is its entity ID without the platform, and it survives restarts and reloads: it's Home Assistant's `utility_meter`, seeded from the total's current value the first time it's added, so it doesn't sit at `unknown` until the total next changes.
 

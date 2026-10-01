@@ -13,10 +13,10 @@ REAL_SPRINKLER = "switch.greenhouse_sprinkler"
 REAL_HEATER = "switch.greenhouse_heater"
 SPRINKLER = "switch.pururu_greenhouse_switch_sprinkler"
 HEATER = "switch.pururu_greenhouse_switch_heater"
-SWITCHES: dict[str, Any] = {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"},
-                            "heater": {"entity": REAL_HEATER, "name": "Aquecedor"}}
+SWITCHES: dict[str, Any] = {"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"},
+                            "heater": {"entity": f"homeassistant.{REAL_HEATER}", "name": "Aquecedor"}}
 DEVICES = {KEY: {"name": "Estufa", "switches": SWITCHES}}
-APPLIANCE = {"power": "sensor.greenhouse_sprinkler_power",
+APPLIANCE = {"power": "homeassistant.sensor.greenhouse_sprinkler_power",
              "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
 
 
@@ -46,16 +46,16 @@ async def forwarded(hass: HomeAssistant, service: str, context: Context) -> list
 
 
 @pytest.mark.parametrize("block", [
-    pytest.param({"sprinkler": {"entity": "light.greenhouse_light", "name": "Irrigador"}}, id="another domain"),
-    pytest.param({"sprinkler": {"entity": REAL_SPRINKLER}}, id="no name"),
-    pytest.param({"sprinkler": {"entity": REAL_SPRINKLER, "name": ""}}, id="empty name"),
-    pytest.param({"sprinkler": {"entity": REAL_SPRINKLER, "name": "  "}}, id="blank name"),
+    pytest.param({"sprinkler": {"entity": "homeassistant.light.greenhouse_light", "name": "Irrigador"}}, id="another domain"),
+    pytest.param({"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}"}}, id="no name"),
+    pytest.param({"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": ""}}, id="empty name"),
+    pytest.param({"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "  "}}, id="blank name"),
     pytest.param({"sprinkler": REAL_SPRINKLER}, id="just the entity"),
-    pytest.param({"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador", "icon": "mdi:sprinkler"}}, id="unknown key"),
+    pytest.param({"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador", "icon": "mdi:sprinkler"}}, id="unknown key"),
     pytest.param({}, id="no switch"),
-    pytest.param({"Sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}}, id="key not a slug"),
-    pytest.param({"sprinkler": {"entity": SPRINKLER, "name": "Irrigador"}}, id="a pururu switch"),
-    pytest.param({"sprinkler": {"entity": "switch.pururu_orchard_valve", "name": "Irrigador"}},
+    pytest.param({"Sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"}}, id="key not a slug"),
+    pytest.param({"sprinkler": {"entity": f"homeassistant.{SPRINKLER}", "name": "Irrigador"}}, id="a pururu switch"),
+    pytest.param({"sprinkler": {"entity": "homeassistant.switch.pururu_orchard_valve", "name": "Irrigador"}},
                  id="another device's pururu switch"),
 ])
 async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]) -> None:
@@ -63,8 +63,14 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
 
 
 @pytest.mark.parametrize(("entity", "message"), [
-    pytest.param("light.greenhouse_light", "light.greenhouse_light is not a switch", id="another domain"),
-    pytest.param(SPRINKLER, f"{SPRINKLER} is a pururu switch: name the real one", id="a pururu switch"),
+    pytest.param("homeassistant.light.greenhouse_light", "homeassistant.light.greenhouse_light is not a switch",
+                 id="another domain"),
+    pytest.param(f"homeassistant.{SPRINKLER}", f"homeassistant.{SPRINKLER} is a pururu switch: name the real one",
+                 id="a pururu switch"),
+    pytest.param(REAL_SPRINKLER, f"{REAL_SPRINKLER} is not a Home Assistant entity: "
+                 "homeassistant.<domain>.<object_id> for dictionary value "
+                 f"'pururu->devices->{KEY}->switches->sprinkler->entity'",
+                 id="without homeassistant, as before 0.2.2"),
 ])
 async def test_the_error_names_what_is_wrong(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, entity: str, message: str) -> None:
@@ -78,7 +84,7 @@ async def test_the_error_names_what_is_wrong(
 async def test_a_key_of_another_feature_is_accepted(ha: HomeAssistant, entity_key: str) -> None:
     """The switch is in the switch namespace, the appliance's entities in theirs."""
     await fake(ha, REAL_SPRINKLER, "on")
-    switches = {entity_key: {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
+    switches = {entity_key: {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"}}
     assert await setup(ha, {KEY: {"name": "Estufa", "appliance": APPLIANCE,
                                   "switches": switches}})
     assert state(ha, f"switch.pururu_greenhouse_switch_{entity_key}") == "on"
@@ -222,7 +228,7 @@ async def test_a_renamed_pururu_switch_is_not_a_real_one(
     await greenhouse.async_block_till_done()
     caplog.clear()
     await reload(greenhouse, {KEY: {"name": "Estufa", "switches": {
-        "sprinkler": {"entity": "switch.aquecedor", "name": "Irrigador"},
+        "sprinkler": {"entity": "homeassistant.switch.aquecedor", "name": "Irrigador"},
         "heater": SWITCHES["heater"],
     }}})
     assert greenhouse.states.get(SPRINKLER) is None
@@ -237,7 +243,7 @@ async def test_a_switch_renamed_to_what_it_stands_for_stays_as_it_is(
     """Renamed in the UI to its own entity: kept with its rename, unavailable, at every reload."""
     await fake(ha, REAL_SPRINKLER, "on")
     devices = {KEY: {"name": "Estufa", "switches": {
-        "sprinkler": SWITCHES["sprinkler"], "heater": {"entity": "switch.aquecedor", "name": "Aquecedor"}}}}
+        "sprinkler": SWITCHES["sprinkler"], "heater": {"entity": "homeassistant.switch.aquecedor", "name": "Aquecedor"}}}}
     assert await setup(ha, devices)
     er.async_get(ha).async_update_entity(HEATER, new_entity_id="switch.aquecedor")
     await ha.async_block_till_done()
@@ -255,7 +261,7 @@ async def test_a_switch_renamed_to_what_it_stands_for_stays_as_it_is(
 async def test_a_switch_standing_for_itself_passes_nothing_on(ha: HomeAssistant) -> None:
     """Its state set by hand (developer tools) makes it neither available nor calling itself."""
     devices = {KEY: {"name": "Estufa", "switches": {
-        "heater": {"entity": "switch.aquecedor", "name": "Aquecedor"}}}}
+        "heater": {"entity": "homeassistant.switch.aquecedor", "name": "Aquecedor"}}}}
     assert await setup(ha, devices)
     er.async_get(ha).async_update_entity(HEATER, new_entity_id="switch.aquecedor")
     await ha.async_block_till_done()
