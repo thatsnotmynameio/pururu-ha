@@ -1008,8 +1008,9 @@ class Dispatcher:
         """Say what it watches, create the missing labels, mark the issues left in progress.
 
         Each one's status comment fails the stage it held; a failure to read or write it is
-        reported and the start goes on. The hold comes back from the paused issues' markers; one
-        without a valid marker is left to the first resume, which moves it to needs attention.
+        reported, waits in `pending` for the first poll, and the start goes on. The hold comes
+        back from the paused issues' markers; one without a valid marker is left to the first
+        resume, which moves it to needs attention.
         """
         self.say(f"dispatcher: watching the open issues {self.gh.login()} opened and labelled "
                  f"`ready`, up to {self.slots} sessions at once")
@@ -1024,7 +1025,10 @@ class Dispatcher:
             self.say(f"dispatcher: #{issue.number} was left in progress with no session running:"
                      " it needs attention")
         for action in orphans(stranded, self.sessions.worktrees() if stranded else {}):
-            self.apply(action)
+            if isinstance(action, Report):
+                self.final(action)  # no later poll reads an issue that needs attention
+            else:
+                self.apply(action)
         now = self.clock()
         markers = [marker for issue, _ in self.gh.issues(PAUSED)
                    if (marker := self.gh.marker(issue.number))]

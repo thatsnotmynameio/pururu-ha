@@ -2125,7 +2125,11 @@ def test_a_failing_running_report_is_only_logged(tmp_path: Path) -> None:
 
 
 def test_an_orphan_at_start_fails_the_stage_its_comment_held(tmp_path: Path) -> None:
-    """R9: #75's comment said implementation; listing #74's fails, is said, and start goes on."""
+    """R9: #75's comment said implementation; listing #74's fails, is said, and start goes on.
+
+    No later poll reads an issue that needs attention, so #74's report waits in `pending` and
+    lands at the first poll.
+    """
     gh = FakeGitHub({IN_PROGRESS: [(Issue(74, frozenset({IN_PROGRESS})), ()),
                                    (Issue(75, frozenset({IN_PROGRESS})), ())],
                      PAUSED: [(paused(70), ())]},
@@ -2141,6 +2145,9 @@ def test_an_orphan_at_start_fails_the_stage_its_comment_held(tmp_path: Path) -> 
     assert shown(gh, 75) == [(NEEDS_ATTENTION, marks("done", "done", "failed"))]
     assert "dispatcher: #74 status: gh list #74: HTTP 502" in lines
     assert any("no session starts until" in line for line in lines)
+    boss.poll()
+    assert shown(gh, 74) == [(NEEDS_ATTENTION, marks("failed"))]
+    assert boss.pending == []
 
 
 def test_a_session_that_cannot_start_shows_the_plan_failed(tmp_path: Path) -> None:
