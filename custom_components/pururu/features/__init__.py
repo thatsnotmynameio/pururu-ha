@@ -2,6 +2,7 @@
 
 from ..core.feature import Feature
 from .appliance import APPLIANCE
+from .buttons import BUTTONS
 from .lights import LIGHTS
 from .opening import DOOR, WINDOW
 from .switches import SWITCHES
@@ -12,4 +13,5 @@ FEATURES: dict[str, Feature] = {
     "window": WINDOW,
     "lights": LIGHTS,
     "switches": SWITCHES,
+    "buttons": BUTTONS,
 }
