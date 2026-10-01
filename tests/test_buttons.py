@@ -219,6 +219,24 @@ async def test_a_sensor_appearing_with_the_value_is_no_press(
     assert not [r for r in caplog.records if r.levelname == "ERROR"]
 
 
+async def test_a_sensor_removed_is_no_press(
+        library: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """Its removal has no new state; coming back after it has no old one: neither presses.
+
+    Time moves before each, as a press written again in the same instant looks unchanged.
+    """
+    await write(library, "1_single")
+    pressed = state(library, LER)
+    await tick(library, freezer, 1)
+    library.states.async_remove(REMOTE)
+    await settle()
+    assert state(library, LER) == pressed
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+    await tick(library, freezer, 1)
+    await write(library, "1_single")
+    assert state(library, LER) == pressed
+
+
 async def test_from_a_restored_state_is_no_press(ha: HomeAssistant) -> None:
     await fake(ha, REMOTE, "", {"restored": True})
     assert await setup(ha, DEVICES)
@@ -443,6 +461,24 @@ async def test_a_press_whose_program_is_not_generated_starts_nothing(
     assert started(calls) == []
 
 
+async def test_a_press_whose_program_is_dropped_starts_nothing(
+        scripts: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Its target's ID held by another integration, the program is dropped: no script at all."""
+    er.async_get(scripts).async_get_or_create(
+        "switch", "template", "someone_else", suggested_object_id="pururu_greenhouse_switch_sprinkler")
+    await fake(scripts, REAL_SPRINKLER, "off")
+    await fake(scripts, GREENHOUSE_REMOTE, "")
+    assert await setup(scripts, GREENHOUSE_DEVICES)
+    assert generated_scripts(scripts) == {}
+    assert er.async_get(scripts).async_get_entity_id("script", "script", "pururu_greenhouse_program_executable_clean") is None
+    caplog.clear()
+    calls = capture(scripts, "call_service")
+    await press(scripts, CLEAN_BUTTON)
+    assert state(scripts, CLEAN_BUTTON) == now()
+    assert started(calls) == []
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
 async def test_a_press_before_the_scripts_run_starts_nothing(ha: HomeAssistant) -> None:
     """HA's scripts not loaded (as at startup, before pururu writes them): no script to start."""
     await fake(ha, REAL_SPRINKLER, "off")
@@ -470,6 +506,20 @@ async def test_the_program_runs_with_the_press_context(greenhouse: HomeAssistant
     real = [event for event in calls if REAL_SPRINKLER in _ids(event.data["service_data"].get("entity_id"))]
     assert real
     assert all(context.id in (event.context.id, event.context.parent_id) for event in real)
+
+
+async def test_the_sensor_press_runs_the_program_with_the_sensor_context(
+        greenhouse: HomeAssistant) -> None:
+    """The logbook follows the remote: the program's calls descend from the sensor's write."""
+    context = Context()
+    calls = capture(greenhouse, "call_service")
+    greenhouse.states.async_set(GREENHOUSE_REMOTE, "1_single", context=context)
+    await settle()
+    button = greenhouse.states.get(CLEAN_BUTTON).context
+    assert button.parent_id == context.id
+    real = [event for event in calls if REAL_SPRINKLER in _ids(event.data["service_data"].get("entity_id"))]
+    assert real
+    assert all(event.context.parent_id in (context.id, button.id) for event in real)
 
 
 @pytest.fixture

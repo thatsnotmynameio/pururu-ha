@@ -51,7 +51,7 @@ pururu knows nothing about remotes, integrations or vendors. You name a sensor a
 ---
 
 <Property name="program" type="string">
-  One of the device's [executable programs](/concepts/programs#executable-programs), by its key. Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button.
+  One of the device's [executable programs](/concepts/programs#executable-programs), by its key. Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button, as [Reacting to a press](#reacting-to-a-press) says.
 </Property>
 
 Several buttons can read one sensor, each with its own value. Two buttons of one device with the same `entity` and `state` are refused: one press would press both.
@@ -64,6 +64,29 @@ Several buttons can read one sensor, each with its own value. Two buttons of one
 - **It keeps its last press** across restarts and reloads, and it stays available while its sensor is unavailable or missing: you can still press it.
 - **A press while its program runs** records the time and starts nothing. The running program goes on.
 - **A program that isn't generated** starts nothing either, such as one whose target is disabled. The press is still recorded.
+
+### Reacting to a press
+
+A reload (`pururu.reload`, or one pururu does after a rename or after you disable an entity it follows) and a restart remove the button and add it back with its last press. For a moment its state goes from the time to `unavailable` and back to the time. Nobody pressed it.
+
+Home Assistant's "pressed" trigger on the device page is a plain state trigger with no `from` or `to`, so it fires on that change too. For an automation of yours, use the `button.pressed` trigger, which ignores a change from `unavailable`, or a state trigger that leaves out `unavailable` and `unknown`:
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: button.pururu_biblioteca_button_extra
+    not_from: [unavailable]
+    not_to: [unavailable, unknown]
+```
+
+The `button.pressed` trigger takes the button in its `target`:
+
+```yaml
+triggers:
+  - trigger: button.pressed
+    target:
+      entity_id: button.pururu_biblioteca_button_extra
+```
 
 ## When the sensor presses
 
