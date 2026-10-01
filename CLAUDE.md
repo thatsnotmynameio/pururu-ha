@@ -13,7 +13,7 @@ uv run pytest                                   # all tests but the docs tests, 
 uv run pytest -m docs                           # the docs tests (tests/docs/): the tests that read docs/
 uv run pytest tests/test_places.py -n 0 -q      # one file, single process
 uv run pytest "tests/test_places.py::test_name[param id]" -n 0
-PURURU_SHARD=1/3 uv run pytest                  # one of CI's three test shards
+PURURU_SHARD=1/3 uv run pytest --ignore=tests/test_code.py   # one of CI's three test shards
 uv run ruff check --fix custom_components/pururu
 uv run ruff format custom_components/pururu
 uv run mypy custom_components/pururu
@@ -88,7 +88,7 @@ git diff --name-only origin/main... | python3 changes.py pull_request   # the ch
   - `tick` and `fake` drive time and real-entity states.
   - `device_of` and `held` inspect the registries.
   - `snapshot(since, *, since_energy, until, **phases)` is the carrier's restored extra data: a program run from `since`, and phases' runs by key.
-- **Docs tests and shards:** a test that reads `docs/` goes in `tests/docs/` (see Commands). `PURURU_SHARD=i/N` (`tests/sharding.py`, applied in `tests/conftest.py`) keeps one of N stable sets of whole test files, as CI's three test jobs do; a wrong value is a usage error.
+- **Docs tests and shards:** a test that reads `docs/` goes in `tests/docs/` (see Commands). `PURURU_SHARD=i/N` (`tests/sharding.py`, applied in `tests/conftest.py`) keeps one of N sets of whole test files, stable for the same selection, as CI's three test jobs do (without `tests/test_code.py`, which Build's lint job runs: see Commands); a wrong value is a usage error.
 
 ## Docs
 

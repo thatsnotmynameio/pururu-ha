@@ -158,9 +158,9 @@ uv run pytest                                      # everything but the docs tes
 uv run pytest -m docs                              # the docs tests
 uv run pytest tests/test_appliance.py -n 0 -q      # one file, one process
 uv run pytest "tests/test_places.py::test_name[param id]" -n 0
-PURURU_SHARD=2/3 uv run pytest                     # the second of three shards
+PURURU_SHARD=2/3 uv run pytest --ignore=tests/test_code.py   # the second of CI's three shards
 ```
 
 Use `-n 0`, not `-p no:xdist`, to run in a single process (see [Getting set up](/develop#commands)).
 
-`PURURU_SHARD=i/N` keeps one of N sets of whole test files (`tests/sharding.py`): the files with the most tests go first, each to the lightest set, so every run, and every xdist worker, gets the same sets. CI's Build workflow runs the tests as three shards in parallel (`tests/test_code.py` apart, in its lint job). A value other than `i/N` with `1 <= i <= N` stops the run before collection.
+`PURURU_SHARD=i/N` keeps one of N sets of whole test files (`tests/sharding.py`): the files with the most tests go first, each to the lightest set, so the sets depend only on the files selected: every run of the same selection, and every xdist worker, gets the same sets. CI's Build workflow runs the tests as three shards in parallel, without `tests/test_code.py` (it runs in Build's lint job), so a shard matches CI's only with `--ignore=tests/test_code.py`, as above. A value other than `i/N` with `1 <= i <= N` stops the run before collection.

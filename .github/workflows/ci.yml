@@ -3,11 +3,12 @@
 # integration, tests, the Python and Sonar settings) runs Build and Docs; docs
 # pages run Docs; hacs.json, the manifest or README.md run Validate (HACS);
 # agent and planning files (.claude/, CLAUDE.md, docs/plans/...) run nothing;
-# a workflow, or any file in no group, runs everything. A check is skipped by
-# its job's own condition, never by a path filter: a skipped job counts as
-# passed, a skipped workflow would leave a required check pending. "CI ok" is
-# the one check the ruleset requires: it fails when a check that ran failed or
-# was cancelled. CodeQL runs apart, on GitHub's default setup.
+# a workflow, or any file in no group, runs everything, as changes.py itself
+# does, decided here without running it. A check is skipped by its job's own
+# condition, never by a path filter: a skipped job counts as passed, a skipped
+# workflow would leave a required check pending. "CI ok" is the one check the
+# ruleset requires: it fails when a check that ran failed or was cancelled.
+# CodeQL runs apart, on GitHub's default setup.
 name: CI
 
 on:
@@ -42,7 +43,13 @@ jobs:
         shell: bash
         run: |
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            git diff --name-only --no-renames HEAD^1 HEAD | python3 changes.py pull_request >> "$GITHUB_OUTPUT"
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD)
+            # changes.py never judges its own change: a broken fallback would skip the tests that catch it
+            if grep -qxF changes.py <<< "$files"; then
+              printf 'build=true\ndocs=true\nhacs=true\n' >> "$GITHUB_OUTPUT"
+            else
+              printf '%s\n' "$files" | python3 changes.py pull_request >> "$GITHUB_OUTPUT"
+            fi
           else
             python3 changes.py "$GITHUB_EVENT_NAME" >> "$GITHUB_OUTPUT"
           fi

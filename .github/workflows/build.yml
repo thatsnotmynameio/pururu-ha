@@ -1,7 +1,8 @@
 # The integration's tests and core's checks at the Home Assistant version
 # pyproject.toml pins, in three stages. Lint: release.py check, then
 # tests/test_code.py (ruff, format, mypy, hassfest, quality scale, the layer
-# table, the docs guard). Tests: the rest of the suite split by file into three
+# table, the docs guard), and outside pull requests (where Docs runs them) the
+# docs tests, tests/docs. Tests: the rest of the suite split by file into three
 # parallel jobs (PURURU_SHARD), each keeping its coverage data. SonarQube: the
 # three combined into coverage.xml, then SonarQube Cloud's analysis, which on a
 # pull request waits for the quality gate and fails with it. CI calls it on pull
@@ -40,6 +41,10 @@ jobs:
       # --locked: fail if uv.lock is out of date (every package pinned by hash). Not
       # --no-build: mock-open, a dependency of the HA test plugin, ships only as sdist.
       - run: uv run --locked pytest tests/test_code.py
+      # The docs tests (addopts deselects them): on pull requests Docs runs them; on
+      # main and manual starts Build does, so Release still publishes only after them
+      - if: github.event_name != 'pull_request'
+        run: uv run --locked pytest -m docs tests/docs -n 0
 
   tests:
     name: Tests (${{ matrix.shard }}/3)
