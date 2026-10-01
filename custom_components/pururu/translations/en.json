@@ -166,6 +166,7 @@
       "program_cycles_total": {"name": "{program} cycles", "unit_of_measurement": "cycles"},
       "program_runtime_total": {"name": "{program} runtime"},
       "reaction_triggered_total": {"name": "{reaction} triggers", "unit_of_measurement": "triggers"},
+      "button_triggered_total": {"name": "{button} triggers", "unit_of_measurement": "triggers"},
       "runtime_today": {"name": "Runtime today"},
       "runtime_week": {"name": "Runtime this week"},
       "runtime_month": {"name": "Runtime this month"},

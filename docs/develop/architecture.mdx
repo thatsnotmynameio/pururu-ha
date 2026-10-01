@@ -79,7 +79,7 @@ A builder is its roles (the Extension Object pattern), so `Feature` never gains 
 
 | Role | What it says |
 |---|---|
-| `Configured(platform)` | Its entity keys are its block's keys, on this platform, named by each block's `name` |
+| `Configured(platform)` | Its block's keys are entity keys on this platform, named by each block's `name`; items may add keys beside them, one item per key |
 | `Derived(of)` | Entity keys its validated block adds beyond `entity_keys`: the appliance's running program's phases |
 | `Programs(reading, energy)` | The settings a detected program in its block reads (`reading`, and `energy` for each cycle's kWh, `None` for none; the appliance's `power` and `energy`): the programs aspect mounts `programs: detected:` |
 | `Actions(services)` | Services its entities take on their platform (`turn_on`, `turn_off`, `toggle` for `switches` and `lights`), which a program can call |
@@ -90,7 +90,7 @@ A builder is its roles (the Extension Object pattern), so `Feature` never gains 
 | `Happenings(offered)` | Ready-made notifications it offers |
 | `Generates(what, ids)` | The scripts or automations it writes (`programs`, `reactions`) |
 
-The contract test holds the rules between roles: each at most once, `Configured` and `Items` never together, no device key has `Actions` or `Derived`.
+The contract test holds the rules between roles: each at most once, a `Configured` builder's items one per block key and its aspects only inside them, no device key has `Actions` or `Derived`.
 
 ### Detected programs
 

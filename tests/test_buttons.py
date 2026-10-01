@@ -16,6 +16,8 @@ KEY = "biblioteca"
 REMOTE = "sensor.controle_biblioteca_action"
 LER = "button.pururu_biblioteca_button_ler"
 EXTRA = "button.pururu_biblioteca_button_extra"
+LER_TOTAL = "sensor.pururu_biblioteca_button_ler_triggered_total"
+EXTRA_TOTAL = "sensor.pururu_biblioteca_button_extra_triggered_total"
 BUTTONS: dict[str, Any] = {"ler": {"entity": REMOTE, "state": "1_single", "name": "Ler"},
                            "extra": {"entity": REMOTE, "state": "2_single", "name": "Extra"}}
 DEVICES = {KEY: {"name": "Biblioteca", "buttons": BUTTONS}}
@@ -128,7 +130,7 @@ async def test_an_unquoted_on_is_the_state_on(ha: HomeAssistant) -> None:
     """YAML reads an unquoted on as true: the button's state is still `on`."""
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
         "ler": {"entity": REMOTE, "state": True, "name": "Ler"}}}})
-    assert held(ha, KEY) == {LER}
+    assert held(ha, KEY) == {LER, LER_TOTAL}
 
 
 # --- what a block refers to (buttons.check) -------------------------------------------
@@ -146,7 +148,8 @@ async def test_one_value_in_two_devices_is_accepted(ha: HomeAssistant) -> None:
     """A remote may press a button of each of two devices: each starts its own program."""
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {"ler": BUTTONS["ler"]}},
                             "sala": {"name": "Sala", "buttons": {"ler": BUTTONS["ler"]}}})
-    assert held(ha, "sala") == {"button.pururu_sala_button_ler"}
+    assert held(ha, "sala") == {"button.pururu_sala_button_ler",
+                                "sensor.pururu_sala_button_ler_triggered_total"}
 
 
 async def test_a_refusal_is_told_with_the_others(
@@ -162,7 +165,7 @@ async def test_a_refusal_is_told_with_the_others(
 
 
 async def test_each_key_is_a_button_of_the_device(library: HomeAssistant) -> None:
-    assert held(library, KEY) == {LER, EXTRA}
+    assert held(library, KEY) == {LER, EXTRA, LER_TOTAL, EXTRA_TOTAL}
 
 
 async def test_a_button_is_named_by_its_name(library: HomeAssistant) -> None:
@@ -173,7 +176,8 @@ async def test_a_button_is_named_by_its_name(library: HomeAssistant) -> None:
 async def test_a_button_keyed_button_repeats_it(ha: HomeAssistant) -> None:
     """No exception to the pattern: the namespace, then the key, even when they are alike."""
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {"button": BUTTONS["ler"]}}})
-    assert held(ha, KEY) == {"button.pururu_biblioteca_button_button"}
+    assert held(ha, KEY) == {"button.pururu_biblioteca_button_button",
+                             "sensor.pururu_biblioteca_button_button_triggered_total"}
 
 
 async def test_a_button_never_pressed_is_unknown(library: HomeAssistant) -> None:
@@ -370,7 +374,8 @@ async def test_follows_its_own_rename(library: HomeAssistant) -> None:
     await library.async_block_till_done()
     await press(library, "button.ler_livro")
     assert state(library, "button.ler_livro") == now()
-    assert held(library, KEY) == {"button.ler_livro", EXTRA}
+    assert held(library, KEY) == {"button.ler_livro", EXTRA, LER_TOTAL, EXTRA_TOTAL}
+    assert state(library, LER_TOTAL) == "1"
 
 
 async def test_an_id_already_taken_is_an_error(
@@ -380,9 +385,10 @@ async def test_an_id_already_taken_is_an_error(
     assert other.entity_id == LER
     await fake(ha, REMOTE, "")
     assert await setup(ha, DEVICES)
-    assert held(ha, KEY) == {EXTRA}
+    assert held(ha, KEY) == {EXTRA, EXTRA_TOTAL}
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(LER in message and "template" in message for message in errors), errors
+    assert f"{LER_TOTAL} follows {LER}, which is not created; not creating it" in errors
 
 
 async def test_a_renamed_pururu_sensor_is_not_a_real_one(
@@ -582,3 +588,176 @@ async def greenhouse_remote_at_value(scripts: HomeAssistant) -> Any:
     await restart(scripts, GREENHOUSE_DEVICES, (State(CLEAN_BUTTON, PRESSED), {}))
     await settle()
     return scripts, calls
+
+
+# --- counting: each button's presses, all time, and per period --------------------------
+
+
+def total(hass: HomeAssistant, entity_id: str = LER_TOTAL) -> str:
+    return state(hass, entity_id)
+
+
+async def test_a_new_total_is_zero(library: HomeAssistant) -> None:
+    assert total(library) == "0"
+    assert total(library, EXTRA_TOTAL) == "0"
+
+
+async def test_every_press_counts(library: HomeAssistant, freezer: Any) -> None:
+    """Covers AE1: two presses of the remote and one in Home Assistant."""
+    await write(library, "1_single")
+    await write(library, "")
+    await tick(library, freezer, 1)
+    await write(library, "1_single")
+    await press(library, LER)
+    assert total(library) == "3"
+    assert total(library, EXTRA_TOTAL) == "0"
+
+
+async def test_two_presses_at_one_instant_count_twice(library: HomeAssistant) -> None:
+    """Counted from the press, not from the button's state: both are the same time."""
+    await press(library, LER)
+    await press(library, LER)
+    assert total(library) == "2"
+
+
+async def test_a_write_that_is_no_press_counts_nothing(library: HomeAssistant) -> None:
+    await write(library, "1_single")
+    await write(library, "1_single", force_update=True)
+    await write(library, "1_hold")
+    assert total(library) == "1"
+
+
+async def test_a_restart_keeps_the_total(ha: HomeAssistant) -> None:
+    """Covers AE3: restoring is no press; the next one counts on from it."""
+    await fake(ha, REMOTE, "")
+    await restart(ha, DEVICES, (State(LER_TOTAL, "7"),
+                                {"native_value": 7, "native_unit_of_measurement": None}))
+    assert total(ha) == "7"
+    await press(ha, LER)
+    assert total(ha) == "8"
+
+
+async def test_a_reload_keeps_the_total(library: HomeAssistant) -> None:
+    await press(library, LER)
+    await reload(library, DEVICES)
+    assert total(library) == "1"
+
+
+async def test_a_disabled_button_counts_nothing(library: HomeAssistant) -> None:
+    """R4: a disabled button follows no sensor, so it presses nothing."""
+    er.async_get(library).async_update_entity(LER, disabled_by=er.RegistryEntryDisabler.USER)
+    await reload(library, DEVICES)
+    await write(library, "1_single")
+    assert library.states.get(LER) is None
+    assert total(library) == "0"
+
+
+@pytest.mark.parametrize(("language", "expected"), [
+    pytest.param("en", "Biblioteca Ler triggers", id="en"),
+    pytest.param("pt-BR", "Biblioteca Disparos de Ler", id="pt-BR"),
+])
+async def test_the_total_is_named_by_its_button(ha: HomeAssistant, language: str, expected: str) -> None:
+    ha.config.language = language
+    await fake(ha, REMOTE, "")
+    assert await setup(ha, DEVICES)
+    assert ha.states.get(LER_TOTAL).attributes["friendly_name"] == expected
+    assert er.async_get(ha).async_get(LER_TOTAL).translation_key == "button_triggered_total"
+
+
+async def test_statistics_meter_the_total(ha: HomeAssistant) -> None:
+    """Covers AE4: the periods asked, each counting the press; none other."""
+    await fake(ha, REMOTE, "")
+    buttons = {**BUTTONS, "ler": {**BUTTONS["ler"], "statistics": {"triggered": ["today", "month"]}}}
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": buttons}})
+    await press(ha, LER)
+    meter = "sensor.pururu_biblioteca_button_ler_triggered_{}"
+    assert state(ha, meter.format("today")) == "1"
+    assert state(ha, meter.format("month")) == "1"
+    assert ha.states.get(meter.format("week")) is None
+    assert ha.states.get(meter.format("year")) is None
+    assert ha.states.get(meter.format("today")).attributes["friendly_name"] == "Biblioteca Ler triggers today"
+
+
+@pytest.mark.parametrize("statistics", [
+    pytest.param({"presses": ["today"]}, id="unknown counter"),
+    pytest.param({"triggered": ["daily"]}, id="unknown period"),
+    pytest.param({"triggered": ["today", "today"]}, id="a period twice"),
+])
+async def test_wrong_statistics_are_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, statistics: dict[str, Any]) -> None:
+    """Covers AE5."""
+    buttons = {"ler": {**BUTTONS["ler"], "statistics": statistics}}
+    assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": buttons}})
+    assert "statistics" in caplog.text
+
+
+async def test_a_key_alike_another_buttons_total_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    buttons = {"ler": BUTTONS["ler"], "ler_triggered_total": BUTTONS["extra"]}
+    assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": buttons}})
+    assert "would be two entities" in caplog.text
+
+
+async def test_a_button_whose_id_is_taken_has_no_statistics(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Its total follows it, and its meters follow the total: none is created, each told."""
+    er.async_get(ha).async_get_or_create(
+        "button", "template", "someone_else", suggested_object_id="pururu_biblioteca_button_ler")
+    await fake(ha, REMOTE, "")
+    buttons = {**BUTTONS, "ler": {**BUTTONS["ler"], "statistics": {"triggered": ["today"]}}}
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": buttons}})
+    meter = "sensor.pururu_biblioteca_button_ler_triggered_today"
+    assert held(ha, KEY) == {EXTRA, EXTRA_TOTAL}
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert f"{meter} follows {LER_TOTAL}, which is not created; not creating it" in errors
+
+
+async def test_a_button_on_a_pururu_sensor_has_no_total(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Its meters watch a total the build skipped: dropped, and told."""
+    er.async_get(ha).async_get_or_create("sensor", "pururu", "pururu_x_appliance_power",
+                                         suggested_object_id="potencia")
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {"ler": {
+        "entity": "sensor.potencia", "state": "1_single", "name": "Ler",
+        "statistics": {"triggered": ["today"]}}}}})
+    assert ha.states.get(LER_TOTAL) is None
+    assert ha.states.get("sensor.pururu_biblioteca_button_ler_triggered_today") is None
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert any("triggered_today watches" in message and "settings don't create" in message
+               for message in errors), errors
+
+
+async def test_a_press_while_its_program_runs_still_counts(
+        greenhouse: HomeAssistant, freezer: Any) -> None:
+    """Covers AE2: the program isn't started again; the press is counted."""
+    await press(greenhouse, CLEAN_BUTTON)
+    await tick(greenhouse, freezer, 60)
+    calls = capture(greenhouse, "call_service")
+    await press(greenhouse, CLEAN_BUTTON)
+    assert started(calls) == []
+    assert state(greenhouse, "sensor.pururu_greenhouse_button_clean_triggered_total") == "2"
+
+
+async def test_a_press_without_a_program_counts(greenhouse: HomeAssistant) -> None:
+    await press(greenhouse, BELL)
+    assert state(greenhouse, "sensor.pururu_greenhouse_button_bell_triggered_total") == "1"
+
+
+async def test_an_alert_watches_a_buttons_meter(ha: HomeAssistant) -> None:
+    """A button's meter is an entity key of its device (`key`), as any other feature's."""
+    await fake(ha, REMOTE, "")
+    buttons = {**BUTTONS, "ler": {**BUTTONS["ler"], "statistics": {"triggered": ["today"]}}}
+    busy = {"name": "Muito lida", "when": "button_ler_triggered_today", "above": 20}
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": buttons,
+                                  "alerts": {"busy": busy}}})
+    assert ha.states.get("binary_sensor.pururu_biblioteca_alert_busy") is not None
+
+
+async def test_another_devices_reaction_watches_a_buttons_total(ha: HomeAssistant) -> None:
+    """Another device names it as `<device>.<key>`, the one reference form."""
+    await fake(ha, REMOTE, "")
+    sala = {"name": "Sala", "lights": {"teto": {"entity": "light.dummy_sala", "name": "Teto"}},
+            "reactions": {"leitura": {"name": "Leitura", "when": f"{KEY}.button_ler_triggered_total",
+                                      "above": 2}}}
+    assert await setup(ha, {**DEVICES, "sala": sala})
+    assert ha.states.get("sensor.pururu_sala_reaction_leitura_triggered_total") is not None

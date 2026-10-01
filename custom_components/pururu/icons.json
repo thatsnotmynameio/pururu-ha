@@ -98,6 +98,7 @@
       "program_cycles_total": {"default": "mdi:counter"},
       "program_runtime_total": {"default": "mdi:timer-sand"},
       "reaction_triggered_total": {"default": "mdi:gesture-tap"},
+      "button_triggered_total": {"default": "mdi:gesture-tap"},
       "runtime_today": {"default": "mdi:timer-sand"},
       "runtime_week": {"default": "mdi:timer-sand"},
       "runtime_month": {"default": "mdi:timer-sand"},
