@@ -405,7 +405,7 @@ def test_the_paused_issues_marker_is_the_users_valid_one() -> None:
         pause_comment("me", "--dangerously-skip-permissions", "issue-70", 1759350600),
         pause_comment("me", OTHER, "issue-71", 1759350600),
         pause_comment("me", SESSION, "issue-70-2", 1759350600)))
-    assert gh.markers(70) == Marker(SESSION, "issue-70-2", 1759350600)
+    assert gh.marker(70) == Marker(SESSION, "issue-70-2", 1759350600)
     assert fake.calls[-1] == ["issue", "view", "70", "--json", "comments"]
 
 
@@ -415,14 +415,14 @@ def test_a_paused_issue_without_the_users_valid_marker_has_none() -> None:
         pause_comment("me", "--dangerously-skip-permissions", "issue-70", 1759350600),
         pause_comment("me", OTHER, "issue-71", 1759350600),
         comment("me", "Looking into it.")))
-    assert gh.markers(70) is None
+    assert gh.marker(70) is None
 
 
 def test_the_newest_marker_wins() -> None:
     """A retry after a failed swap repeats the comment; a re-pause records a new one."""
     gh, _ = github(comments_reply(pause_comment("me", OTHER, "issue-70", 1759350600),
                                   pause_comment("me", SESSION, "issue-70", None)))
-    assert gh.markers(70) == Marker(SESSION, "issue-70", None)
+    assert gh.marker(70) == Marker(SESSION, "issue-70", None)
 
 
 def test_a_marker_round_trips_through_its_line() -> None:
@@ -570,9 +570,9 @@ def test_the_reason_is_the_final_result_or_the_exit_code(tmp_path: Path) -> None
         json.dumps({"type": "result", "is_error": False,
                     "result": "Stopped: the plan returned blocked."}),
         "not json"]))
-    assert runner.reason(running) == "Stopped: the plan returned blocked."
+    assert runner.ending(running)[0] == "Stopped: the plan returned blocked."
     running.log.write_text(json.dumps({"type": "assistant"}) + "\n")
-    assert runner.reason(running) == "the session exited with code 1 and no final result"
+    assert runner.ending(running)[0] == "the session exited with code 1 and no final result"
 
 
 def test_a_new_attempt_never_reports_an_earlier_attempts_result(tmp_path: Path) -> None:
@@ -586,7 +586,7 @@ def test_a_new_attempt_never_reports_an_earlier_attempts_result(tmp_path: Path) 
     process.returncode = 1
     with again.log.open("a") as log:
         log.write(json.dumps({"type": "assistant"}) + "\n")
-    assert runner.reason(again) == "the session exited with code 1 and no final result"
+    assert runner.ending(again)[0] == "the session exited with code 1 and no final result"
 
 
 def event(kind: str, session: str = SESSION, **fields: object) -> str:
@@ -623,22 +623,22 @@ def slice_of(tmp_path: Path, *lines: str, before: tuple[str, ...] = ()) -> dispa
 def test_a_rejected_limit_with_an_error_result_is_a_limit_ending(tmp_path: Path) -> None:
     """AE1: the session, the branch and resetsAt from the log; with no result at all as well."""
     runner, _ = sessions(tmp_path, FakeGit())
-    assert runner.limit(slice_of(tmp_path, INIT, rejected(), result("API Error"))) == Marker(
+    assert runner.ending(slice_of(tmp_path, INIT, rejected(), result("API Error")))[1] == Marker(
         SESSION, "issue-70", 1759350600)
-    assert runner.limit(slice_of(tmp_path, INIT, rejected())) == Marker(
+    assert runner.ending(slice_of(tmp_path, INIT, rejected()))[1] == Marker(
         SESSION, "issue-70", 1759350600)
 
 
 def test_a_rejected_limit_with_a_successful_result_is_no_limit_ending(tmp_path: Path) -> None:
     """KTD1: extra usage may have covered it."""
     runner, _ = sessions(tmp_path, FakeGit())
-    assert runner.limit(slice_of(tmp_path, INIT, rejected(), result("Done.", error=False))) is None
+    assert runner.ending(slice_of(tmp_path, INIT, rejected(), result("Done.", error=False)))[1] is None
 
 
 def test_a_tool_output_quoting_the_limit_is_no_limit_ending(tmp_path: Path) -> None:
     """KTD1: only top-level events count, never the text inside them."""
     runner, _ = sessions(tmp_path, FakeGit())
-    assert runner.limit(slice_of(tmp_path, INIT, QUOTED, result("Stopped: blocked"))) is None
+    assert runner.ending(slice_of(tmp_path, INIT, QUOTED, result("Stopped: blocked")))[1] is None
 
 
 @pytest.mark.parametrize("text", [
@@ -648,7 +648,7 @@ def test_a_result_naming_the_limit_is_a_limit_ending_with_an_unknown_reset(
         tmp_path: Path, text: str) -> None:
     """R5: no rejected event, so no reset."""
     runner, _ = sessions(tmp_path, FakeGit())
-    assert runner.limit(slice_of(tmp_path, INIT, QUOTED, result(text))) == Marker(
+    assert runner.ending(slice_of(tmp_path, INIT, QUOTED, result(text)))[1] == Marker(
         SESSION, "issue-70", None)
 
 
@@ -656,7 +656,7 @@ def test_an_earlier_attempts_limit_is_not_this_sessions(tmp_path: Path) -> None:
     runner, _ = sessions(tmp_path, FakeGit())
     running = slice_of(tmp_path, INIT, result("Stopped: blocked"),
                        before=(INIT, rejected(), result("API Error")))
-    assert runner.limit(running) is None
+    assert runner.ending(running)[1] is None
 
 
 def test_the_latest_session_id_is_the_markers(tmp_path: Path) -> None:
@@ -664,15 +664,15 @@ def test_the_latest_session_id_is_the_markers(tmp_path: Path) -> None:
     runner, _ = sessions(tmp_path, FakeGit())
     running = slice_of(tmp_path, INIT, event("assistant", OTHER, message={}),
                        rejected(session=OTHER), result("API Error", session=OTHER))
-    assert runner.limit(running) == Marker(OTHER, "issue-70", 1759350600)
+    assert runner.ending(running)[1] == Marker(OTHER, "issue-70", 1759350600)
 
 
 def test_an_empty_slice_is_no_limit_ending(tmp_path: Path) -> None:
     """The process exited before any output: judged as today."""
     runner, _ = sessions(tmp_path, FakeGit())
     running = slice_of(tmp_path, before=(INIT, rejected(), result("API Error")))
-    assert runner.limit(running) is None
-    assert runner.reason(running) == "the session exited with code 1 and no final result"
+    assert runner.ending(running)[1] is None
+    assert runner.ending(running)[0] == "the session exited with code 1 and no final result"
 
 
 def test_a_resume_continues_the_conversation_headless(tmp_path: Path) -> None:
@@ -792,7 +792,7 @@ class FakeGitHub:
         self._flake("link")
         self.writes.append(link)
 
-    def markers(self, issue: int) -> Marker | None:
+    def marker(self, issue: int) -> Marker | None:
         return self.records.get(issue)
 
 

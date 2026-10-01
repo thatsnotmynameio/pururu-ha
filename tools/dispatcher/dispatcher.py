@@ -400,7 +400,7 @@ class GitHub:
                 self._ok(["label", "create", name, "--color", color, "--description",
                           description])
 
-    def markers(self, issue: int) -> Marker | None:
+    def marker(self, issue: int) -> Marker | None:
         """A paused issue's newest valid marker among the `gh` user's comments, if any.
 
         The repository is public: anyone else's marker could name a session to resume.
@@ -420,12 +420,12 @@ class GitHub:
             args += ["--remove-label", label]
         for label in move.add:
             args += ["--add-label", label]
-        comment = ["issue", "comment", str(move.issue), "--body", move.comment or ""]
-        if move.comment and move.comment_first:
-            self._ok(comment)
+        post = ["issue", "comment", str(move.issue), "--body", move.comment] if move.comment else None
+        if post and move.comment_first:
+            self._ok(post)
         self._ok(args)
-        if move.comment and not move.comment_first:
-            self._ok(comment)
+        if post and not move.comment_first:
+            self._ok(post)
 
     def link(self, link: Link) -> None:
         """Append `Closes #issue` to the pull request's body unless a closing keyword is there."""
@@ -481,6 +481,44 @@ class Running:
     process: Process
     since: int = 0  # where this session's output starts in the issue's log
     resumed: Marker | None = None  # the marker it was resumed from
+
+
+def reason_of(events: list[dict[str, Any]], running: Running) -> str:
+    """Why a session ended: its final result's text, else its exit code."""
+    for event in reversed(events):
+        if event.get("type") == "result" and event.get("result"):
+            return str(event["result"]).strip()[:2000]
+    return f"the session exited with code {running.process.returncode} and no final result"
+
+
+def limit_of(events: list[dict[str, Any]], running: Running) -> Marker | None:
+    """The marker when the usage limit stopped the session, else None.
+
+    Only top-level events count, never the text inside them, which may quote the limit. The
+    final result must be absent or an error, and the last rate limit event `rejected` or that
+    result's text name the limit; the reset is that rejected event's `resetsAt`.
+    """
+    session: str | None = None
+    status: object = None
+    resets: object = None
+    final: dict[str, Any] | None = None
+    for event in events:
+        if isinstance(event.get("session_id"), str):
+            session = event["session_id"]
+        if event.get("type") == "rate_limit_event":
+            info = event.get("rate_limit_info")
+            info = info if isinstance(info, dict) else {}
+            status, resets = info.get("status"), info.get("resetsAt")
+        elif event.get("type") == "result":
+            final = event
+    if session is None or (final is not None and not final.get("is_error")):
+        return None
+    named = final is not None and bool(LIMIT_TEXT.search(str(final.get("result") or "")))
+    if status != "rejected" and not named:
+        return None
+    reset = (int(resets) if status == "rejected" and isinstance(resets, int | float)
+             and not isinstance(resets, bool) else None)
+    return Marker(session, running.branch, reset)
 
 
 def run_git(args: list[str]) -> str:
@@ -561,41 +599,10 @@ class Sessions:
                 events.append(event)
         return events
 
-    def reason(self, running: Running) -> str:
-        """Why a session ended: its final result's text, else its exit code."""
-        for event in reversed(self._events(running)):
-            if event.get("type") == "result" and event.get("result"):
-                return str(event["result"]).strip()[:2000]
-        return f"the session exited with code {running.process.returncode} and no final result"
-
-    def limit(self, running: Running) -> Marker | None:
-        """The marker when the usage limit stopped the session, else None.
-
-        Only top-level events count, never the text inside them, which may quote the limit. The
-        final result must be absent or an error, and the last rate limit event `rejected` or that
-        result's text name the limit; the reset is that rejected event's `resetsAt`.
-        """
-        session: str | None = None
-        status: object = None
-        resets: object = None
-        final: dict[str, Any] | None = None
-        for event in self._events(running):
-            if isinstance(event.get("session_id"), str):
-                session = event["session_id"]
-            if event.get("type") == "rate_limit_event":
-                info = event.get("rate_limit_info")
-                info = info if isinstance(info, dict) else {}
-                status, resets = info.get("status"), info.get("resetsAt")
-            elif event.get("type") == "result":
-                final = event
-        if session is None or (final is not None and not final.get("is_error")):
-            return None
-        named = final is not None and bool(LIMIT_TEXT.search(str(final.get("result") or "")))
-        if status != "rejected" and not named:
-            return None
-        return Marker(session, running.branch,
-                      int(resets) if status == "rejected" and isinstance(resets, int | float)
-                      and not isinstance(resets, bool) else None)
+    def ending(self, running: Running) -> tuple[str, Marker | None]:
+        """Why a session ended, and its marker when the usage limit stopped it, from one read."""
+        events = self._events(running)
+        return reason_of(events, running), limit_of(events, running)
 
     def end(self, sessions: Iterable[Running]) -> None:
         """Terminate the sessions; kill those still running once the grace period is over."""
@@ -655,7 +662,7 @@ class Dispatcher:
             self.apply(move)
         now = self.clock()
         markers = [marker for issue, _ in self.gh.issues(PAUSED)
-                   if (marker := self.gh.markers(issue.number))]
+                   if (marker := self.gh.marker(issue.number))]
         self.held(restore(markers, now))
 
     def snapshot(self) -> tuple[Snapshot, list[Running]]:
@@ -677,10 +684,10 @@ class Dispatcher:
         Without a pull request, its log says whether the usage limit stopped it.
         """
         prs = self.gh.head(running.branch)
-        session = Ended(running.issue, str(running.worktree), str(running.log),
-                        "" if prs else self.sessions.reason(running), prs,
-                        self.gh.linked(running.issue) if prs else frozenset(),
-                        None if prs else self.sessions.limit(running), running.resumed)
+        reason, limit = ("", None) if prs else self.sessions.ending(running)
+        session = Ended(running.issue, str(running.worktree), str(running.log), reason, prs,
+                        self.gh.linked(running.issue) if prs else frozenset(), limit,
+                        running.resumed)
         if prs:
             self.branches[running.issue] = running.branch
         return session
@@ -769,7 +776,7 @@ class Dispatcher:
         Without a valid marker there is nothing to resume. A failed read or label swap raises
         before the session: the issue stays `paused` for the next poll.
         """
-        marker = self.gh.markers(issue)
+        marker = self.gh.marker(issue)
         if marker is None:
             self.apply(needs_attention(issue, "this issue is paused, but no pause record was "
                                        "found in its comments, so its session cannot resume.",
