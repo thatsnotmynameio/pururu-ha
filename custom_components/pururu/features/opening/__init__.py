@@ -20,11 +20,12 @@ from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Build, Device, Feature
-from ...core.roles import Counted, Counters
+from ...core.roles import Counted, Counters, Presets
 from .. import standing
 from ..cycle.last import LastCycleDescription, LastCycleValue
 from ..cycle.totals import CyclesTotal, RuntimeTotal
 from . import events
+from .alerts import PRESETS
 from .open import Open
 
 _LOGGER = logging.getLogger(__name__)
@@ -131,7 +132,7 @@ def _opening(namespace: str, device_class: BinarySensorDeviceClass) -> Feature:
         build=_builder(device_class),
         example={"contact": f"binary_sensor.dummy_{namespace}_contact"},
         namespace=namespace,
-        roles=(Counters((COUNTED,)),),
+        roles=(Counters((COUNTED,)), Presets(PRESETS)),
     )
 
 

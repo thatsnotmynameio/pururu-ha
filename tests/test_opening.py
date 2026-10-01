@@ -1,14 +1,16 @@
 """Features `door` and `window`: the owner's enclosure doors (UniFi Access), replayed."""
 
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 import pytest
+import yaml
 
-from helpers import fake, held, reload, restart, setup, tick
+from helpers import capture, fake, held, reload, restart, setup, tick
 
 KEY = "cercado_frente"
 NAME = "Cercado frente"
@@ -688,3 +690,174 @@ async def test_a_waiting_event_too_early_leaves_the_next_to_describe(
     await tick(enclosure, freezer, 4)
     await contact(enclosure, "on")
     assert fields(enclosure, kind) == ("Alex Doe", "PIN_CODE", "entry")
+
+
+# --- ready-made alerts ----------------------------------------------------------------
+
+
+def alert(kind: str, name: str) -> str:
+    return entity(kind, f"alert_{name}", "binary_sensor")
+
+
+def alert_state(hass: HomeAssistant, kind: str, name: str) -> str:
+    found = hass.states.get(alert(kind, name))
+    assert found is not None, alert(kind, name)
+    return found.state
+
+
+async def closed(ha: HomeAssistant, kind: str, enabled: Any) -> None:
+    """A closed door (or window) with these ready-made alerts."""
+    await contact(ha, "off")
+    assert await setup(ha, devices(kind, alerts=enabled))
+
+
+async def test_open_carries_the_opening_s_start(door: HomeAssistant, kind: str,
+                                                freezer: Any) -> None:
+    """While open, `open` says when the opening started; closed, it says nothing."""
+    await contact(door, "on")
+    started = dt_util.utcnow()
+    await tick(door, freezer, 10)
+    found = door.states.get(entity(kind, "open", "binary_sensor"))
+    assert dt_util.parse_datetime(str(found.attributes["cycle_start"])) == started
+    await contact(door, "off")
+    found = door.states.get(entity(kind, "open", "binary_sensor"))
+    assert "cycle_start" not in found.attributes
+
+
+async def test_the_opening_s_start_restores(ha: HomeAssistant, kind: str) -> None:
+    ha.states.async_set(CONTACT, "on")
+    await restart(ha, devices(kind), saved_open(kind, 30))
+    found = ha.states.get(entity(kind, "open", "binary_sensor"))
+    started = dt_util.parse_datetime(str(found.attributes["cycle_start"]))
+    assert started == dt_util.utcnow() - timedelta(seconds=30)
+
+
+@pytest.mark.parametrize(("enabled", "reason"), [
+    pytest.param({"long_opening": None}, "required key 'for' not provided", id="long_opening"),
+    pytest.param({"no_opening": {}}, "required key 'for' not provided", id="no_opening"),
+    pytest.param({"nope": None}, "nope is not a ready-made alert: long_opening, no_opening",
+                 id="unknown alert"),
+])
+async def test_invalid_alerts_are_refused(ha: HomeAssistant, kind: str,
+                                          caplog: pytest.LogCaptureFixture,
+                                          enabled: Any, reason: str) -> None:
+    assert not await setup(ha, devices(kind, alerts=enabled))
+    assert reason in caplog.text
+
+
+async def test_without_alerts_none_is_created(door: HomeAssistant) -> None:
+    assert not [entity_id for entity_id in held(door, KEY) if "_alert_" in entity_id]
+
+
+async def test_long_opening_turns_on_after_for_and_off_when_it_closes(
+        ha: HomeAssistant, kind: str, freezer: Any) -> None:
+    await closed(ha, kind, {"long_opening": {"for": {"minutes": 30}}})
+    await contact(ha, "on")
+    await tick(ha, freezer, 1799)
+    assert alert_state(ha, kind, "long_opening") == "off"
+    await tick(ha, freezer, 1)
+    assert alert_state(ha, kind, "long_opening") == "on"
+    await contact(ha, "off")
+    assert alert_state(ha, kind, "long_opening") == "off"
+
+
+async def test_long_opening_counts_the_time_before_a_restart(ha: HomeAssistant, kind: str,
+                                                             freezer: Any) -> None:
+    """Open for 20 minutes when HA restarts: on 10 minutes later, not 30."""
+    ha.states.async_set(CONTACT, "on")
+    await restart(ha, devices(kind, alerts={"long_opening": {"for": {"minutes": 30}}}),
+                  saved_open(kind, 20 * 60))
+    await tick(ha, freezer, 599)
+    assert alert_state(ha, kind, "long_opening") == "off"
+    await tick(ha, freezer, 1)
+    assert alert_state(ha, kind, "long_opening") == "on"
+
+
+async def test_no_opening_counts_from_the_last_closing(ha: HomeAssistant, kind: str,
+                                                       freezer: Any) -> None:
+    await closed(ha, kind, {"no_opening": {"for": {"hours": 24}}})
+    await opening(ha, freezer, 5)
+    await tick(ha, freezer, 24 * 3600 - 1)
+    assert alert_state(ha, kind, "no_opening") == "off"
+    await tick(ha, freezer, 1)
+    assert alert_state(ha, kind, "no_opening") == "on"
+    await contact(ha, "on")
+    assert alert_state(ha, kind, "no_opening") == "off"
+
+
+async def test_no_opening_counts_from_its_creation_without_an_opening(
+        ha: HomeAssistant, kind: str, freezer: Any) -> None:
+    await closed(ha, kind, {"no_opening": {"for": {"hours": 24}}})
+    await tick(ha, freezer, 24 * 3600 - 1)
+    assert alert_state(ha, kind, "no_opening") == "off"
+    await tick(ha, freezer, 1)
+    assert alert_state(ha, kind, "no_opening") == "on"
+
+
+async def test_no_opening_counts_across_a_restart(ha: HomeAssistant, kind: str,
+                                                  freezer: Any) -> None:
+    """Closed 50 minutes before a restart, `for` an hour: on 10 minutes after it."""
+    end = (dt_util.utcnow() - timedelta(minutes=50)).isoformat()
+    ha.states.async_set(CONTACT, "off")
+    await restart(ha, devices(kind, alerts={"no_opening": {"for": {"hours": 1}}}),
+                  (State(entity(kind, "open", "binary_sensor"), "off"),
+                   {"since": None, "since_energy": None}),
+                  (State(entity(kind, "last_closed"), end),
+                   {"native_value": {"__type": "<class 'datetime.datetime'>", "isoformat": end},
+                    "native_unit_of_measurement": None}))
+    await tick(ha, freezer, 599)
+    assert alert_state(ha, kind, "no_opening") == "off"
+    await tick(ha, freezer, 1)
+    assert alert_state(ha, kind, "no_opening") == "on"
+
+
+async def test_no_opening_does_not_flicker_at_a_closing(ha: HomeAssistant, kind: str,
+                                                        freezer: Any) -> None:
+    """`open` goes off before `last_closed` is written: the old closing must not turn it on."""
+    await closed(ha, kind, {"no_opening": {"for": {"hours": 1}}})
+    await opening(ha, freezer, 5)
+    await tick(ha, freezer, 3600)
+    assert alert_state(ha, kind, "no_opening") == "on"
+    await contact(ha, "on")
+    changes = capture(ha, "state_changed")
+    await tick(ha, freezer, 5)
+    await contact(ha, "off")
+    assert [event.data["new_state"].state for event in changes
+            if event.data["entity_id"] == alert(kind, "no_opening")] == []
+
+
+async def test_its_name_attributes_and_default_texts(ha: HomeAssistant, kind: str) -> None:
+    await closed(ha, kind, {"long_opening": {"for": {"minutes": 30}},
+                            "no_opening": {"for": {"days": 1}}})
+    found = ha.states.get(alert(kind, "long_opening"))
+    assert found.attributes["friendly_name"] == f"{NAME} Long opening"
+    assert found.attributes["priority"] == "medium"
+    assert found.attributes["watches"] == entity(kind, "open", "binary_sensor")
+    assert found.attributes["message"] == "It has been open for too long."
+    assert found.attributes["done_message"] == "It's closed."
+    found = ha.states.get(alert(kind, "no_opening"))
+    assert found.attributes["friendly_name"] == f"{NAME} No opening"
+    assert found.attributes["message"] == "It hasn't been opened in a while."
+    assert found.attributes["done_message"] == "It was opened."
+
+
+async def test_default_texts_in_portuguese(ha: HomeAssistant, kind: str) -> None:
+    ha.config.language = "pt-BR"
+    await closed(ha, kind, {"long_opening": {"for": {"minutes": 30}},
+                            "no_opening": {"for": {"days": 1}}})
+    found = ha.states.get(alert(kind, "long_opening"))
+    assert found.attributes["friendly_name"] == f"{NAME} Aberta há muito tempo"
+    assert found.attributes["message"] == "Está aberta há tempo demais."
+    assert found.attributes["done_message"] == "Foi fechada."
+    found = ha.states.get(alert(kind, "no_opening"))
+    assert found.attributes["friendly_name"] == f"{NAME} Sem abrir há muito tempo"
+    assert found.attributes["message"] == "Não é aberta há um tempo."
+    assert found.attributes["done_message"] == "Foi aberta."
+
+
+async def test_an_alert_is_an_alert2_alert(ha: HomeAssistant, kind: str) -> None:
+    await closed(ha, kind, {"no_opening": {"for": {"days": 1}}})
+    path = Path(ha.config.path("pururu/alert2/alerts.yaml"))
+    [written] = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert written["name"] == f"{KEY}_{kind}_alert_no_opening"
+    assert written["message"] == "It hasn't been opened in a while."
