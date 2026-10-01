@@ -45,7 +45,7 @@ Broad or umbrella issues stay out of the queue until you add `ready`.
 
 ## Labels
 
-The labels show where each issue stands. The dispatcher creates the missing ones on its first run.
+The labels show where each issue stands. The dispatcher creates the missing ones on its first run. Each issue's [status comment](#status-comment) shows the same state, with more detail.
 
 | Label | Meaning |
 |---|---|
@@ -73,6 +73,58 @@ stateDiagram-v2
 A failed issue is never retried on its own: add `ready` again to queue it.
 
 Every poll checks the issues `in review` again, so one whose checks turn green later moves to `ready to merge`. `ready to merge` reads only the required checks. Code scanning and the pull request rules of `main` can still block the merge. Nor does it mean anyone read the review threads: `lfg` watches the pull request with `ce-babysit-pr`, which answers and resolves threads under your `gh` login.
+
+## Status comment
+
+Each issue the dispatcher queues or starts gets one status comment. It is always the same comment, edited in place, so the issue keeps one place to look. Editing a comment notifies no one, so the comments that do notify are still posted as new ones: the pull request's link, needs attention, and the pause.
+
+The comment follows the issue:
+
+- **Queued:** why it waits. It may be waiting for a free session, blocked by N open issues, or waiting for the usage limit to reset at a given time. The comment is edited only when that text changes.
+- **Running:** a checklist of `lfg`'s stages, the last sentence the session wrote, how long the session has run, and when the comment was updated. It is edited at every poll.
+- **In review** and **ready to merge:** the checklist, with the pull request done and CI current, then CI done.
+- **Needs attention:** the checklist frozen, with the stage it stopped at marked failed. This covers every reason the dispatcher moves an issue there.
+- **Paused:** the checklist frozen, with the stage it stopped at marked paused, and when the limit resets. When the session resumes, the checklist continues from there.
+
+````text
+**Dispatcher status: implementation** (running 42 min)
+
+✅ Plan
+✅ Plan review
+⏳ Implementation
+⬜ Code review
+⬜ Pull request
+⬜ CI
+
+Latest:
+```text
+U1 committed (9073eb3): 1684 tests pass. Dispatching U2, the grammar change.
+```
+
+Updated 2026-10-01 10:47 -03
+<!-- dispatcher-status {"stages": ["done", "done", "current", "pending", "pending", "pending"]} -->
+````
+
+Marks: ✅ done, ⏳ current, ⬜ pending, ➖ skipped (the route `lfg` took doesn't run that stage, for example plan on a bug fix), ❌ failed, ⏸️ paused. The last sentence is cut to 200 characters on one line, inside a code block, so nothing in it renders as Markdown or mentions anyone. The repository is public: the sentence is posted as the session wrote it, and may name local paths.
+
+The session reports nothing itself. The dispatcher reads the stages from the session's log, so the comment still says where a session stopped when it hangs or dies. Each `Skill` call `lfg` makes on its main thread moves the checklist; a sub-agent's calls move nothing. The furthest stage entered is current, and the checklist never moves back.
+
+| Stage | Skills that enter it |
+|---|---|
+| Plan | `ce-plan`, `ce-brainstorm` |
+| Plan review | `ce-doc-review` |
+| Implementation | `ce-work`, `ce-debug` |
+| Code review | `ce-simplify-code`, `ce-code-review` |
+| Pull request | `ce-commit-push-pr` |
+| CI | `ce-babysit-pr` |
+
+Other skills, such as `ce-compound` or `ce-test-browser`, move nothing. The mapping follows `lfg`'s skill names in compound-engineering 3.30.1: a renamed skill stops moving the checklist until the dispatcher's `SKILLS` follows it.
+
+The comment's last line is a hidden marker holding the checklist. The dispatcher keeps the checklist nowhere else: a resume, a restart, and a later `in review` or `ready to merge` read it back from there. It finds the comment again by that marker, among the `gh` user's comments only, so a stranger's marker counts for nothing. Some cases to know:
+
+- Only queuing or starting an issue creates its comment. An issue that was already `in review` or `needs attention` before the dispatcher had status comments never gets one.
+- Removing `ready` from a queued issue leaves its comment as it was.
+- A failed write that would leave the comment stale is retried at the next poll: in review, ready to merge, needs attention, paused. Running and queued comments are rewritten at every poll anyway.
 
 ## The pull request closes the issue
 

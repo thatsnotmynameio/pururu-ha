@@ -14,9 +14,12 @@ one gets a new worktree from origin/main under .claude/worktrees/ and a headless
 runs every SECONDS (default 300). Labels show where an issue stands: `in progress`,
 then `in review` (a pull request is open) and `ready to merge` (its required checks
 pass), or `needs attention` (the session ended without one), or `paused` (the Claude
-usage limit stopped it). A pause holds every start until a minute past the limit's
-reset, or, with no reset known, until the next poll tries one session. Past the hold,
-paused issues resume first, oldest first: the same conversation, in the same worktree.
+usage limit stopped it). Each issue also gets one status comment, edited in place: why
+it waits in the queue, then a checklist of lfg's stages read from the session's log, its
+last sentence and running time, then how it ended. A pause holds every start until a
+minute past the limit's reset, or, with no reset known, until the next poll tries one
+session. Past the hold, paused issues resume first, oldest first: the same conversation,
+in the same worktree.
 Every line it prints carries the time; each poll reports what it found. Logs and the
 lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll
 would, then stops the others and marks their issues `needs attention`; paused issues
@@ -25,7 +28,7 @@ stay paused, and the next start resumes them from GitHub alone.
 
 import argparse
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
 from pathlib import Path
@@ -46,6 +49,21 @@ NEEDS_ATTENTION = "needs attention"
 PAUSED = "paused"
 MARGIN = 60  # seconds past a limit's reset before a session starts again
 MARKER = "dispatcher-pause"  # the hidden marker's tag on a pause comment's last line
+# lfg's stages in order, and the skills that enter each (compound-engineering 3.30.1), named
+# without their plugin's prefix. A stage is marked done, current, pending, skipped, failed or
+# paused.
+STAGES = ("plan", "plan review", "implementation", "code review", "pull request", "CI")
+SKILLS = {"ce-plan": "plan", "ce-brainstorm": "plan", "ce-doc-review": "plan review",
+          "ce-work": "implementation", "ce-debug": "implementation",
+          "ce-simplify-code": "code review", "ce-code-review": "code review",
+          "ce-commit-push-pr": "pull request", "ce-babysit-pr": "CI"}
+UNSTARTED = ("pending",) * len(STAGES)
+LATEST = 200  # characters of the session's last sentence shown at most
+STATUS = "dispatcher-status"  # the hidden marker's tag on the status comment's last line
+QUEUED = "queued"  # the status comment's states beside the labels'
+RUNNING = "running"
+MARK_SIGNS = {"done": "✅", "current": "⏳", "pending": "⬜", "skipped": "➖", "failed": "❌",
+              "paused": "⏸️"}
 
 
 @dataclass(frozen=True)
@@ -84,18 +102,24 @@ MARKER_LINE = re.compile(rf"<!-- {MARKER} (\{{.*\}}) -->")
 SESSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
+def hidden(body: str, line: re.Pattern[str]) -> dict[str, Any] | None:
+    """The JSON object a comment's last line holds when it is a hidden marker `line` matches."""
+    lines = body.strip().splitlines()
+    found = line.fullmatch(lines[-1].strip()) if lines else None
+    try:
+        record = json.loads(found[1]) if found else None
+    except ValueError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
 def marker_of(body: str, issue: int) -> Marker | None:
     """The marker on a comment's last line, if its session is a UUID and its branch this issue's.
 
     The session becomes a `claude --resume` argument, and the branch a folder's name.
     """
-    lines = body.strip().splitlines()
-    found = MARKER_LINE.fullmatch(lines[-1].strip()) if lines else None
-    try:
-        record = json.loads(found[1]) if found else None
-    except ValueError:
-        return None
-    if not isinstance(record, dict):
+    record = hidden(body, MARKER_LINE)
+    if record is None:
         return None
     session, branch, reset = record.get("session"), record.get("branch"), record.get("reset")
     if (isinstance(session, str) and SESSION_ID.fullmatch(session)
@@ -133,6 +157,14 @@ class Hold:
 
 
 @dataclass(frozen=True)
+class Progress:
+    """Where a session stands in lfg: a mark per stage of `STAGES`, and its last sentence."""
+
+    marks: tuple[str, ...] = UNSTARTED
+    latest: str | None = None
+
+
+@dataclass(frozen=True)
 class Ended:
     """A session whose process exited, with what GitHub says about its branch and issue."""
 
@@ -144,6 +176,7 @@ class Ended:
     linked: frozenset[int] = frozenset()  # the pull requests GitHub links to the issue
     limit: Marker | None = None  # the usage limit stopped it, as its log says
     resumed: Marker | None = None  # the marker it was resumed from
+    progress: Progress = Progress()  # where it stood when it ended, as its log says
 
 
 @dataclass(frozen=True)
@@ -197,7 +230,7 @@ class Resume:
     issue: int
 
 
-type Action = Move | Link | Dispatch | Resume
+type Action = Move | Link | Dispatch | Resume | Report
 
 
 def local_time(epoch: float) -> str:
@@ -226,16 +259,24 @@ def pause(session: Ended, limit: Marker) -> Move:
 
 
 def judge(session: Ended) -> list[Action]:
-    """A session ended: in review with an open pull request, paused at the limit, else attention."""
+    """A session ended: in review with an open pull request, paused at the limit, else attention.
+
+    Each move is followed by its final report, from the marks the session's log left.
+    """
+    marks = session.progress.marks
     if not session.prs and session.limit:
-        return [pause(session, session.limit)]
+        return [pause(session, session.limit),
+                Report(session.issue, Status(PAUSED, marks_paused(marks),
+                                             reset=session.limit.reset))]
     if not session.prs:
         return [needs_attention(session.issue, "the session ended without a pull request.",
                                 f"Reason: {session.reason}", f"Worktree: `{session.worktree}`",
-                                f"Log: `{session.log}`")]
+                                f"Log: `{session.log}`"),
+                Report(session.issue, Status(NEEDS_ATTENTION, marks_stopped(marks)))]
     pr = session.prs[0]
     actions: list[Action] = [Move(session.issue, (IN_PROGRESS,), (IN_REVIEW,),
-                                  f"Dispatcher: pull request {pr.url} is open.")]
+                                  f"Dispatcher: pull request {pr.url} is open."),
+                             Report(session.issue, Status(IN_REVIEW, marks_opened(marks)))]
     if pr.number not in session.linked:
         actions.append(Link(pr.number, session.issue))
     return actions
@@ -256,10 +297,17 @@ def tick(snapshot: Snapshot, running: set[int], sessions: int, now: float = 0.0,
     `running` holds the issues whose sessions still run, the ended ones already out of it.
     The verdicts (`judge`) are applied apart, as a failed one is retried at the next poll.
     No session starts while `hold` holds; past it, paused issues resume before ready ones go,
-    blockers notwithstanding, and a probe starts one session only.
+    blockers notwithstanding, and a probe starts one session only. A promotion is reported ready
+    to merge on the comment's marks; the other reviews in review as their comments stand (edit
+    only), so a promoted issue's comment never goes back to CI current.
     """
-    actions: list[Action] = [Move(review.issue, (IN_REVIEW,), (READY_TO_MERGE,))
-                             for review in snapshot.reviews if review.passing]
+    actions: list[Action] = []
+    for review in snapshot.reviews:
+        if review.passing:
+            actions += [Move(review.issue, (IN_REVIEW,), (READY_TO_MERGE,)),
+                        Report(review.issue, Status(READY_TO_MERGE), marks_passed)]
+        else:
+            actions.append(Report(review.issue, Status(IN_REVIEW), marks_kept))
     if hold.holds(now):
         return actions
     free = max(sessions - len(running), 0)
@@ -301,12 +349,149 @@ def queue_lines(ready: Iterable[Issue], running: set[int], picked: list[int],
     return lines
 
 
-def orphans(in_progress: Iterable[Issue], worktrees: Mapping[int, list[str]]) -> list[Move]:
-    """At start no session runs, so every issue in progress lost its session: it needs attention."""
-    return [needs_attention(issue.number, "this issue was in progress with no session running "
-                            "(the dispatcher was stopped or crashed).",
-                            *(f"Worktree: `{path}`" for path in worktrees.get(issue.number, [])))
-            for issue in in_progress]
+def orphans(in_progress: Iterable[Issue],
+            worktrees: Mapping[int, list[str]]) -> list[Move | Report]:
+    """At start no session runs, so every issue in progress lost its session: it needs attention.
+
+    Its comment's stage fails where the comment left it.
+    """
+    actions: list[Move | Report] = []
+    for issue in in_progress:
+        actions += [needs_attention(issue.number, "this issue was in progress with no session "
+                                    "running (the dispatcher was stopped or crashed).",
+                                    *(f"Worktree: `{path}`"
+                                      for path in worktrees.get(issue.number, []))),
+                    Report(issue.number, Status(NEEDS_ATTENTION), marks_stopped)]
+    return actions
+
+
+# The status comment
+
+STATUS_LINE = re.compile(rf"<!-- {STATUS} (\{{.*\}}) -->")
+
+
+@dataclass(frozen=True)
+class Status:
+    """What an issue's status comment says: its state, the checklist, and what the state shows.
+
+    Queued shows its `reason` only; running, the checklist, the minutes since `started` and the
+    `latest` sentence; paused, the checklist and the limit's `reset` (None: unknown); in review,
+    ready to merge and needs attention, the checklist. Every one ends with the marks' marker.
+    """
+
+    state: str
+    marks: tuple[str, ...] = UNSTARTED
+    reason: str = ""
+    latest: str | None = None
+    started: float = 0.0
+    reset: float | None = None
+
+    def body(self, now: float) -> str:
+        """The comment, in English, updated at `now`, its last line the marker holding the marks."""
+        header = f"**Dispatcher status: {self.state}**"
+        if self.state == RUNNING:
+            stage = next((name for name, mark in zip(STAGES, self.marks, strict=True)
+                          if mark == "current"), RUNNING)
+            minutes = max(int((now - self.started) // 60), 0)
+            header = f"**Dispatcher status: {stage}** (running {minutes} min)"
+        parts = [header]
+        if self.state == QUEUED:
+            parts.append(self.reason[:1].upper() + self.reason[1:] + ".")
+        else:
+            parts.append("\n".join(f"{MARK_SIGNS[mark]} {name[:1].upper()}{name[1:]}"
+                                   for mark, name in zip(self.marks, STAGES, strict=True)))
+        if self.state == RUNNING and self.latest:
+            longest = max((len(run) for run in re.findall("`+", self.latest)), default=0)
+            fence = "`" * max(3, longest + 1)
+            parts.append(f"Latest:\n{fence}text\n{self.latest}\n{fence}")
+        if self.state == PAUSED:
+            parts.append("The Claude usage limit stopped the session. "
+                         + (f"It resets at {local_time(self.reset)}." if self.reset is not None
+                            else "Its reset time is unknown."))
+        stamp = f"<!-- {STATUS} {json.dumps({'stages': list(self.marks)})} -->"
+        parts.append(f"Updated {local_time(now)}\n{stamp}")
+        return "\n\n".join(parts)
+
+
+def waiting(blocked: int = 0, held: bool = False, until: float | None = None) -> str:
+    """Why a queued issue waits: its open blockers, else the usage limit until then, else a slot."""
+    if blocked:
+        return f"blocked by {blocked} open issue{'s' if blocked > 1 else ''}"
+    if held:
+        return ("waiting for the Claude usage limit to reset at "
+                + (local_time(until) if until is not None else "an unknown time"))
+    return "waiting for a free session"
+
+
+def status_marks(body: str) -> tuple[str, ...] | None:
+    """The marks in a status comment's marker, if its last line is one holding a mark per stage."""
+    record = hidden(body, STATUS_LINE)
+    stages = record.get("stages") if record is not None else None
+    if (isinstance(stages, list) and len(stages) == len(STAGES)
+            and all(isinstance(mark, str) and mark in MARK_SIGNS for mark in stages)):
+        return tuple(stages)
+    return None
+
+
+def same_status(old: str, new: str) -> bool:
+    """Whether two bodies say the same, their `Updated` lines (just above the marker) aside."""
+    def unstamped(body: str) -> list[str]:
+        lines = body.strip().splitlines()
+        if len(lines) > 1 and lines[-2].startswith("Updated "):
+            del lines[-2]
+        return lines
+    return unstamped(old) == unstamped(new)
+
+
+def marks_opened(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """A pull request opened: the stages before it done if entered, else skipped; CI current."""
+    pr = STAGES.index("pull request")
+    return tuple(("done" if mark in ("done", "current", "paused", "failed") else "skipped")
+                 for mark in marks[:pr]) + ("done", "current")
+
+
+def marks_passed(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """The pull request's required checks pass: CI done."""
+    return (*marks[:-1], "done")
+
+
+def marks_stopped(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """The session stopped: the current stage failed, else the paused one, else the plan."""
+    stage = next((index for wanted in ("current", "paused") for index, mark in enumerate(marks)
+                  if mark == wanted), 0)
+    return tuple("failed" if index == stage else mark for index, mark in enumerate(marks))
+
+
+def marks_paused(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """The usage limit stopped the session: the current stage paused."""
+    return tuple("paused" if mark == "current" else mark for mark in marks)
+
+
+def marks_kept(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """Nothing new: the marks as they are."""
+    return marks
+
+
+def marks_resumed(marks: tuple[str, ...]) -> tuple[str, ...]:
+    """The session resumed: the paused stage current again."""
+    return tuple("current" if mark == "paused" else mark for mark in marks)
+
+
+type Change = Callable[[tuple[str, ...]], tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class Report:
+    """Show `status` on the issue's status comment, posting the comment only if `create`.
+
+    With `change`, the marks are `change` of the ones the comment holds (all pending without a
+    readable marker), not the status's own.
+    """
+
+    issue: int
+    status: Status
+    change: Change | None = None
+    create: bool = False
 
 
 # GitHub, through `gh`
@@ -356,6 +541,13 @@ def run_gh(args: list[str]) -> tuple[int, str, str]:
     """Run `gh` with these arguments: exit code, stdout, stderr."""
     result = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
     return result.returncode, result.stdout, result.stderr
+
+
+def comment_id(value: Any) -> int:
+    """A REST comment's numeric id; anything else is no id."""
+    if type(value) is not int:
+        raise TypeError(f"comment id {value!r}")
+    return value
 
 
 class GitHub:
@@ -446,6 +638,43 @@ class GitHub:
                  and (marker := marker_of(comment.get("body") or "", issue))]
         return found[-1] if found else None
 
+    def _read[T](self, args: list[str], read: Callable[[Any], T]) -> T:
+        """What `read` makes of a `gh` call's JSON; output it cannot read is a GhError too."""
+        out = self._ok(args)
+        try:
+            return read(json.loads(out))
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            raise GhError(f"gh {' '.join(args[:2])}: unreadable output: {error!r}") from error
+
+    def status_comment(self, issue: int) -> tuple[int, str] | None:
+        """An issue's status comment, as its id and body: the `gh` user's newest with a marker.
+
+        The repository is public: anyone else's marker could take the comment's place.
+        """
+        login = self.login()
+
+        def newest(pages: Any) -> tuple[int, str] | None:
+            if not isinstance(pages, list) or not all(isinstance(page, list) for page in pages):
+                raise TypeError("not an array of pages")
+            found = [(comment_id(comment["id"]), comment["body"])
+                     for page in pages for comment in page  # oldest first
+                     if (comment.get("user") or {}).get("login") == login
+                     and status_marks(comment.get("body") or "") is not None]
+            return found[-1] if found else None
+        return self._read(["api", "--paginate", "--slurp",
+                           f"repos/{{owner}}/{{repo}}/issues/{issue}/comments"], newest)
+
+    def post_status(self, issue: int, body: str) -> int:
+        """Create an issue's status comment; its id."""
+        return self._read(["api", "--method", "POST",
+                           f"repos/{{owner}}/{{repo}}/issues/{issue}/comments",
+                           "-f", f"body={body}"], lambda reply: comment_id(reply["id"]))
+
+    def edit_status(self, comment: int, body: str) -> None:
+        """Replace a status comment's body (an edit notifies no one)."""
+        self._ok(["api", "--method", "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{comment}",
+                  "-f", f"body={body}"])
+
     def move(self, move: Move) -> None:
         """Swap the labels, then comment; a comment-first move comments, then swaps."""
         args = ["issue", "edit", str(move.issue)]
@@ -466,6 +695,47 @@ class GitHub:
         if not re.search(CLOSING.format(link.issue), body, re.IGNORECASE):
             self._ok(["pr", "edit", str(link.pr), "--body",
                       f"{body.rstrip()}\n\nCloses #{link.issue}\n"])
+
+
+class Board:
+    """Each issue's one status comment: looked up once per run, written when its text changes."""
+
+    def __init__(self, gh: GitHub) -> None:
+        """Read and write the comments through `gh`."""
+        self.gh = gh
+        self._comments: dict[int, tuple[int, str] | None] = {}  # issue → its comment's id, body
+
+    def _comment(self, issue: int) -> tuple[int, str] | None:
+        if issue not in self._comments:
+            self._comments[issue] = self.gh.status_comment(issue)
+        return self._comments[issue]
+
+    def marks(self, issue: int) -> tuple[str, ...] | None:
+        """The marks the issue's status comment holds; None without one."""
+        comment = self._comment(issue)
+        return status_marks(comment[1]) if comment else None
+
+    def report(self, issue: int, status: Status, now: float, create: bool) -> None:
+        """Show `status` on the issue: edit its comment, or, only if `create`, post one.
+
+        A failed write forgets the comment, so the next report lists the comments again: the
+        author may have deleted it, or a create whose reply was lost may have landed.
+        """
+        body = status.body(now)
+        comment = self._comment(issue)
+        if comment is not None and same_status(comment[1], body):
+            return
+        if comment is None and not create:
+            return
+        try:
+            if comment is None:
+                self._comments[issue] = (self.gh.post_status(issue, body), body)
+            else:
+                self.gh.edit_status(comment[0], body)
+                self._comments[issue] = (comment[0], body)
+        except GhError:
+            del self._comments[issue]
+            raise
 
 
 # Sessions: a worktree, a headless lfg run in it, its log
@@ -515,6 +785,7 @@ class Running:
     since: int = 0  # where this session's output starts in the issue's log
     started: float = 0.0  # time.time() when it started
     resumed: Marker | None = None  # the marker it was resumed from
+    start_marks: tuple[str, ...] = UNSTARTED  # the checklist a resume continues from
 
 
 def reason_of(events: list[dict[str, Any]], running: Running) -> str:
@@ -553,6 +824,41 @@ def limit_of(events: list[dict[str, Any]], running: Running) -> Marker | None:
     reset = (int(resets) if status == "rejected" and isinstance(resets, int | float)
              and not isinstance(resets, bool) else None)
     return Marker(session, running.branch, reset)
+
+
+def progress_of(events: list[dict[str, Any]], start_marks: tuple[str, ...]) -> Progress:
+    """The checklist and the last sentence after these events, from where `start_marks` left off.
+
+    Only the main thread's assistant events count, never a sub-agent's skills or words. A stage
+    is entered by a `Skill` call to one of its `SKILLS`, or by a starting mark done, current or
+    paused. The furthest stage entered is current, so it never moves back; the ones before it
+    are done if entered, else skipped; the ones after it pending. Before any, the plan is
+    current. The sentence is the last text, on one line, at most `LATEST` characters.
+    """
+    entered = {index for index, mark in enumerate(start_marks)
+               if mark in ("done", "current", "paused")}
+    latest: str | None = None
+    for event in events:
+        if event.get("type") != "assistant" or event.get("parent_tool_use_id") is not None:
+            continue
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") == "Skill":
+                arguments = block.get("input")
+                skill = arguments.get("skill") if isinstance(arguments, dict) else None
+                stage = SKILLS.get(skill.rpartition(":")[2]) if isinstance(skill, str) else None
+                if stage:
+                    entered.add(STAGES.index(stage))
+            elif (block.get("type") == "text"
+                  and (text := " ".join(str(block.get("text") or "").split()))):
+                latest = text if len(text) <= LATEST else text[:LATEST - 1] + "…"
+    current = max(entered, default=0)
+    marks = tuple("current" if index == current else "pending" if index > current
+                  else "done" if index in entered else "skipped" for index in range(len(STAGES)))
+    return Progress(marks, latest)
 
 
 def run_git(args: list[str]) -> str:
@@ -633,10 +939,18 @@ class Sessions:
                 events.append(event)
         return events
 
-    def ending(self, running: Running) -> tuple[str, Marker | None]:
-        """Why a session ended, and its marker when the usage limit stopped it, from one read."""
+    def ending(self, running: Running) -> tuple[str, Marker | None, Progress]:
+        """Why a session ended, its marker when the usage limit stopped it, and where it stood.
+
+        One read of the log; the progress continues from the marks its resume started from.
+        """
         events = self._events(running)
-        return reason_of(events, running), limit_of(events, running)
+        return (reason_of(events, running), limit_of(events, running),
+                progress_of(events, running.start_marks))
+
+    def progress(self, running: Running, start_marks: tuple[str, ...]) -> Progress:
+        """Where a running session stands, from its part of the log and these starting marks."""
+        return progress_of(self._events(running), start_marks)
 
     def end(self, sessions: Iterable[Running]) -> None:
         """Terminate the sessions; kill those still running once the grace period is over."""
@@ -680,6 +994,7 @@ class Dispatcher:
                  clock: Callable[[], float] = time.time) -> None:
         """Up to `slots` sessions; progress lines through `say`; the wall clock through `clock`."""
         self.gh = gh
+        self.board = Board(gh)  # each issue's status comment
         self.sessions = sessions
         self.slots = slots
         self.say = say
@@ -687,13 +1002,15 @@ class Dispatcher:
         self.hold = Hold()  # starts wait while the usage limit is spent
         self.running: dict[int, Running] = {}
         self.branches: dict[int, str] = {}  # issues in review: the branch their session pushed
-        self.pending: list[Action] = []  # ended sessions' verdicts that failed: the next poll's
+        self.pending: list[Action] = []  # failed actions no later poll would redo: the next's
 
     def start(self) -> None:
         """Say what it watches, create the missing labels, mark the issues left in progress.
 
-        The hold comes back from the paused issues' markers; one without a valid marker is left
-        to the first resume, which moves it to needs attention.
+        Each one's status comment fails the stage it held; a failure to read or write it is
+        reported, waits in `pending` for the first poll, and the start goes on. The hold comes
+        back from the paused issues' markers; one without a valid marker is left to the first
+        resume, which moves it to needs attention.
         """
         self.say(f"dispatcher: watching the open issues {self.gh.login()} opened and labelled "
                  f"`ready`, up to {self.slots} sessions at once")
@@ -707,8 +1024,11 @@ class Dispatcher:
         for issue in stranded:
             self.say(f"dispatcher: #{issue.number} was left in progress with no session running:"
                      " it needs attention")
-        for move in orphans(stranded, self.sessions.worktrees() if stranded else {}):
-            self.apply(move)
+        for action in orphans(stranded, self.sessions.worktrees() if stranded else {}):
+            if isinstance(action, Report):
+                self.final(action)  # no later poll reads an issue that needs attention
+            else:
+                self.apply(action)
         now = self.clock()
         markers = [marker for issue, _ in self.gh.issues(PAUSED)
                    if (marker := self.gh.marker(issue.number))]
@@ -730,22 +1050,27 @@ class Dispatcher:
     def read(self, running: Running) -> Ended:
         """An ended session with what GitHub says of its branch; one with a PR is remembered.
 
-        Without a pull request, its log says whether the usage limit stopped it.
+        Its log says where it stood and, without a pull request, why it ended and whether the
+        usage limit stopped it.
         """
         prs = self.gh.head(running.branch)
-        reason, limit = ("", None) if prs else self.sessions.ending(running)
+        reason, limit, progress = self.sessions.ending(running)
+        if prs:
+            reason, limit = "", None  # judged by its pull request alone
         session = Ended(running.issue, str(running.worktree), str(running.log), reason, prs,
                         self.gh.linked(running.issue) if prs else frozenset(), limit,
-                        running.resumed)
+                        running.resumed, progress)
         if prs:
             self.branches[running.issue] = running.branch
         return session
 
     def poll(self) -> None:
-        """One poll: retry the failed verdicts, read, hold at the limit, decide, apply.
+        """One poll: retry the failed verdicts, read, hold at the limit, decide, apply, report.
 
         A failed read skips the rest of the poll: ended sessions wait for the next one. The
         clock is read once: an unknown reset holds until this `now`, so this poll's tick too.
+        After the moves, each session still running and each ready issue left waiting is
+        reported; the next poll reports them again, so a failed report is only said.
         """
         now = self.clock()
         self.say("dispatcher: poll: reading GitHub...")
@@ -780,11 +1105,24 @@ class Dispatcher:
         self.settle(snapshot.ended)
         actions = tick(snapshot, set(self.running), self.slots, now, self.hold)
         picked = [action.issue for action in actions if isinstance(action, Dispatch | Resume)]
-        for line in queue_lines(snapshot.ready, set(self.running), picked, self.slots,
-                                self.hold.holds(now)):
+        held = self.hold.holds(now)
+        for line in queue_lines(snapshot.ready, set(self.running), picked, self.slots, held):
             self.say(f"dispatcher: {line}")
         for action in actions:
-            self.apply(action)
+            if isinstance(action, Report) and action.status.state == READY_TO_MERGE:
+                self.final(action)  # no later poll reads an issue ready to merge
+            else:
+                self.apply(action)
+        for running in list(self.running.values()):
+            if running.issue not in picked:
+                self.apply(self.running_report(running))
+        until = None if self.hold.probe else self.hold.until
+        for issue in snapshot.ready:
+            if (READY in issue.labels and not issue.labels & {IN_PROGRESS, PAUSED}
+                    and issue.number not in self.running and issue.number not in picked):
+                self.apply(Report(issue.number,
+                                  Status(QUEUED, reason=waiting(issue.blocked, held, until)),
+                                  create=True))
         if not self.hold.holds(now):
             self.hold = Hold()
 
@@ -801,7 +1139,13 @@ class Dispatcher:
     def settle(self, ended: Iterable[Ended]) -> None:
         """Apply the ended sessions' verdicts: no later poll judges them, so a failed one waits."""
         for session in ended:
-            self.pending += [action for action in judge(session) if not self.apply(action)]
+            for action in judge(session):
+                self.final(action)
+
+    def final(self, action: Action) -> None:
+        """Apply an action no later poll would redo: a failed one waits in `pending`."""
+        if not self.apply(action):
+            self.pending.append(action)
 
     def apply(self, action: Action) -> bool:
         """One action, and whether it went; a failed `gh` call is reported, the others still run."""
@@ -816,15 +1160,38 @@ class Dispatcher:
                     self.dispatch(action.issue)
                 case Resume():
                     self.resume(action.issue)
+                case Report():
+                    status = action.status
+                    if action.change is not None:
+                        stored = self.board.marks(action.issue) or UNSTARTED
+                        status = replace(status, marks=action.change(stored))
+                    self.board.report(action.issue, status, self.clock(), action.create)
         except GhError as error:
-            self.say(f"dispatcher: {action}: {error}")
+            subject = f"#{action.issue} status" if isinstance(action, Report) else action
+            self.say(f"dispatcher: {subject}: {error}")
             return False
         return True
 
+    def running_report(self, running: Running) -> Report:
+        """A live session's running report, from its log.
+
+        Only a session this run dispatched may post the comment: a resumed one is edited.
+        """
+        progress = self.sessions.progress(running, running.start_marks)
+        return Report(running.issue, Status(RUNNING, progress.marks, latest=progress.latest,
+                                            started=running.started),
+                      create=running.resumed is None)
+
+    def stopped_report(self, running: Running) -> Report:
+        """A session the dispatcher stopped: the stage its log reached fails."""
+        marks = self.sessions.progress(running, running.start_marks).marks
+        return Report(running.issue, Status(NEEDS_ATTENTION, marks_stopped(marks)))
+
     def dispatch(self, issue: int) -> None:
-        """In progress, then a session; one that cannot start needs attention.
+        """In progress, then a session, reported running; one that cannot start needs attention.
 
         A failed label swap raises before the session: the issue stays `ready` for the next poll.
+        Dispatching may post the status comment.
         """
         self.gh.move(Move(issue, (READY, NEEDS_ATTENTION), (IN_PROGRESS,)))
         self.say(f"dispatcher: #{issue} -> {IN_PROGRESS}")
@@ -836,38 +1203,48 @@ class Dispatcher:
                       and error.stderr else error)
             self.apply(needs_attention(issue,
                                        f"the session could not start: {str(detail).strip()}"))
+            self.final(Report(issue, Status(NEEDS_ATTENTION, marks_stopped(UNSTARTED)),
+                              create=True))
             return
         self.running[issue] = running
         pid = getattr(running.process, "pid", "?")
         self.say(f"dispatcher: #{issue}: claude started (PID {pid}) in {running.worktree}, "
                  f"log {running.log}")
+        self.apply(self.running_report(running))
 
     def resume(self, issue: int) -> None:
         """In progress, then the paused conversation; one that cannot resume needs attention.
 
-        Without a valid marker there is nothing to resume. A failed read or label swap raises
-        before the session: the issue stays `paused` for the next poll.
+        Without a valid marker there is nothing to resume. The checklist continues from the
+        status comment's marks. A failed read or label swap raises before the session:
+        the issue stays `paused` for the next poll.
         """
         marker = self.gh.marker(issue)
         if marker is None:
             self.apply(needs_attention(issue, "this issue is paused, but no pause record was "
                                        "found in its comments, so its session cannot resume.",
                                        remove=PAUSED))
+            self.final(Report(issue, Status(NEEDS_ATTENTION), marks_stopped))
             return
+        stored = self.board.marks(issue) or UNSTARTED
         self.gh.move(Move(issue, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,)))
         self.say(f"dispatcher: #{issue} -> {IN_PROGRESS}")
         try:
             running = self.sessions.resume(issue, marker)
         except OSError as error:
             self.apply(needs_attention(issue, f"the paused session could not resume: {error}"))
+            self.final(Report(issue, Status(NEEDS_ATTENTION), marks_stopped))
             return
+        running = replace(running, start_marks=marks_resumed(stored))
         self.running[issue] = running
         self.say(f"dispatcher: #{issue} resumed in {running.worktree}, log {running.log}")
+        self.apply(self.running_report(running))
 
     def stop(self) -> None:
         """Judge the sessions that already ended, as a poll would; end the others and mark them.
 
-        The verdicts that failed at earlier polls get one last try: no poll follows.
+        The verdicts that failed at earlier polls get one last try: no poll follows. A stopped
+        session's status comment fails the stage its log reached.
         """
         self.pending = [action for action in self.pending if not self.apply(action)]
         live: list[Running] = []
@@ -883,11 +1260,13 @@ class Dispatcher:
                                            f"was stopped before GitHub could be read: {error}",
                                            f"Worktree: `{running.worktree}`",
                                            f"Log: `{running.log}`"))
+                self.apply(self.stopped_report(running))
         self.sessions.end(live)
         for running in live:
             self.apply(needs_attention(running.issue,
                                        "the dispatcher was stopped while the session ran.",
                                        f"Worktree: `{running.worktree}`", f"Log: `{running.log}`"))
+            self.apply(self.stopped_report(running))
 
 
 def alive(pid: int) -> bool:

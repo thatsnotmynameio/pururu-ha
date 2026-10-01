@@ -15,8 +15,8 @@ import pytest
 
 import dispatcher
 from dispatcher import (IN_PROGRESS, IN_REVIEW, NEEDS_ATTENTION, PAUSED, READY, READY_TO_MERGE,
-                        Dispatch, Ended, Hold, Issue, Link, Marker, Move, PullRequest, Resume,
-                        Review, Snapshot)
+                        Dispatch, Ended, Hold, Issue, Link, Marker, Move, Progress, PullRequest,
+                        Report, Resume, Review, Snapshot, Status)
 
 PR = PullRequest(101, "https://github.com/o/r/pull/101")
 SESSION = "3f2a9c1e-8b4d-4e6f-9a0b-1c2d3e4f5a6b"
@@ -41,9 +41,9 @@ def ready(number: int, *, blocked: int = 0, also: tuple[str, ...] = ()) -> Issue
 
 def ended(issue: int, *, prs: tuple[PullRequest, ...] = (), linked: frozenset[int] = frozenset(),
           reason: str = "lfg stopped: no work source", limit: Marker | None = None,
-          resumed: Marker | None = None) -> Ended:
+          resumed: Marker | None = None, progress: Progress = Progress()) -> Ended:
     return Ended(issue, f"/repo/.claude/worktrees/issue-{issue}", "/repo/tools/dispatcher/.state/logs/x.log",
-                 reason, prs, linked, limit, resumed)
+                 reason, prs, linked, limit, resumed, progress)
 
 
 # The queue
@@ -82,8 +82,9 @@ def test_free_slots_fill_in_order() -> None:
 
 def test_a_session_that_opened_a_pull_request_goes_in_review() -> None:
     """AE4: in review with the link; the slot frees."""
-    move, = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})))
+    move, report = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})))
     assert isinstance(move, Move)
+    assert isinstance(report, Report)
     assert (move.issue, move.remove, move.add) == (74, (IN_PROGRESS,), (IN_REVIEW,))
     assert PR.url in (move.comment or "")
     assert dispatcher.tick(Snapshot(ready=(ready(75),)), set(), 1) == [Dispatch(75)]
@@ -98,8 +99,9 @@ def test_a_pull_request_not_linked_to_its_issue_gets_the_link() -> None:
 
 def test_a_session_without_a_pull_request_needs_attention() -> None:
     """AE5: the reason and the worktree in the comment."""
-    move, = dispatcher.judge(ended(74))
+    move, report = dispatcher.judge(ended(74))
     assert isinstance(move, Move)
+    assert isinstance(report, Report)
     assert (move.remove, move.add) == ((IN_PROGRESS,), (NEEDS_ATTENTION,))
     assert "lfg stopped: no work source" in (move.comment or "")
     assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
@@ -110,8 +112,9 @@ def test_a_session_without_a_pull_request_needs_attention() -> None:
 def test_a_session_stopped_by_the_limit_is_paused_with_its_marker() -> None:
     """AE1: #70 stops at 15:10 with `resets 8:30pm`: paused, the comment first, naming 20:30."""
     reset = int(at(20, 30))
-    move, = dispatcher.judge(ended(70, limit=limit(70)))
+    move, report = dispatcher.judge(ended(70, limit=limit(70)))
     assert isinstance(move, Move)
+    assert isinstance(report, Report)
     assert (move.issue, move.remove, move.add, move.comment_first) == (
         70, (IN_PROGRESS,), (PAUSED,), True)
     comment = move.comment or ""
@@ -127,8 +130,9 @@ def test_a_session_stopped_by_the_limit_is_paused_with_its_marker() -> None:
 
 def test_a_limit_with_no_reset_says_it_is_tried_again_at_the_next_poll() -> None:
     """R5: no reset in the message: the comment says so, the marker's reset is null."""
-    move, = dispatcher.judge(ended(70, limit=limit(70, reset=None)))
+    move, report = dispatcher.judge(ended(70, limit=limit(70, reset=None)))
     assert isinstance(move, Move)
+    assert isinstance(report, Report)
     assert move.add == (PAUSED,)
     comment = move.comment or ""
     assert "next poll" in comment
@@ -136,26 +140,29 @@ def test_a_limit_with_no_reset_says_it_is_tried_again_at_the_next_poll() -> None
 
 
 def test_a_limit_after_the_pull_request_is_open_is_in_review() -> None:
-    move, = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}), limit=limit(70)))
+    move, report = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}), limit=limit(70)))
     assert isinstance(move, Move)
+    assert isinstance(report, Report)
     assert move.add == (IN_REVIEW,)
 
 
 def test_a_resumed_session_that_opens_its_pull_request_is_in_review() -> None:
     """AE3: #70 resumed, then opened its pull request and ended."""
-    move, = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}), resumed=limit(70)))
+    move, report = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}),
+                                          resumed=limit(70)))
     assert isinstance(move, Move)
+    assert isinstance(report, Report)
     assert (move.remove, move.add) == ((IN_PROGRESS,), (IN_REVIEW,))
 
 
 def test_a_resumed_session_paused_again_comments_only_on_news() -> None:
     """KTD5: a new reset is news; the same session with the same reset is not."""
     unknown = limit(70, reset=None)
-    news, = dispatcher.judge(ended(70, limit=limit(70), resumed=unknown))
+    news, _ = dispatcher.judge(ended(70, limit=limit(70), resumed=unknown))
     assert isinstance(news, Move)
     assert news.add == (PAUSED,)
     assert "20:30" in (news.comment or "")
-    same, = dispatcher.judge(ended(70, limit=limit(70, reset=None), resumed=unknown))
+    same, _ = dispatcher.judge(ended(70, limit=limit(70, reset=None), resumed=unknown))
     assert same == Move(70, (IN_PROGRESS,), (PAUSED,))
 
 
@@ -169,7 +176,8 @@ def test_no_session_starts_while_the_limit_holds() -> None:
     """AE1: a free slot and a ready #74, but the hold runs to 20:31; the promotion still goes."""
     snapshot = Snapshot(reviews=(Review(72, True),), ready=(ready(74),))
     assert dispatcher.tick(snapshot, set(), 2, at(15, 10), Hold(at(20, 31))) == [
-        Move(72, (IN_REVIEW,), (READY_TO_MERGE,))]
+        Move(72, (IN_REVIEW,), (READY_TO_MERGE,)),
+        Report(72, Status(READY_TO_MERGE), dispatcher.marks_passed)]
 
 
 def test_the_hold_ends_one_second_after_its_until() -> None:
@@ -247,21 +255,48 @@ def test_an_unknown_reset_probes_whatever_order_a_past_reset_comes_in() -> None:
 def test_an_issue_in_review_whose_checks_pass_is_ready_to_merge() -> None:
     """AE4, later: every required check passes."""
     assert dispatcher.tick(Snapshot(reviews=(Review(74, True),)), set(), 1) == [
-        Move(74, (IN_REVIEW,), (READY_TO_MERGE,))]
+        Move(74, (IN_REVIEW,), (READY_TO_MERGE,)),
+        Report(74, Status(READY_TO_MERGE), dispatcher.marks_passed)]
 
 
 def test_pending_or_failing_checks_leave_it_in_review() -> None:
-    assert dispatcher.tick(Snapshot(reviews=(Review(74, False),)), set(), 1) == []
+    assert dispatcher.tick(Snapshot(reviews=(Review(74, False),)), set(), 1) == [
+        Report(74, Status(IN_REVIEW), dispatcher.marks_kept)]
+
+
+def test_each_verdict_is_followed_by_its_final_report() -> None:
+    """KTD5: in review, needs attention or paused, from the ended session's own marks; edit only."""
+    progress = Progress(marks("done", "done", "current"), AE2_SENTENCE)
+    opened = dispatcher.judge(ended(74, prs=(PR,), progress=progress))
+    assert opened[1:] == [Report(74, Status(IN_REVIEW, ("done", "done", "done", "skipped", "done",
+                                                         "current"))), Link(101, 74)]
+    failed = dispatcher.judge(ended(74, progress=progress))
+    assert failed[1:] == [Report(74, Status(NEEDS_ATTENTION, marks("done", "done", "failed")))]
+    stopped = dispatcher.judge(ended(74, limit=limit(74), progress=progress))
+    assert stopped[1:] == [Report(74, Status(PAUSED, marks("done", "done", "paused"),
+                                             reset=at(20, 30)))]
+
+
+def test_a_promotion_reports_ready_to_merge_and_the_rest_in_review_as_they_stand() -> None:
+    """AE6, AE8: CI done on the comment's marks; the others edited only, their marks kept."""
+    snapshot = Snapshot(reviews=(Review(74, True), Review(60, False)))
+    assert dispatcher.tick(snapshot, set(), 1) == [
+        Move(74, (IN_REVIEW,), (READY_TO_MERGE,)),
+        Report(74, Status(READY_TO_MERGE), dispatcher.marks_passed),
+        Report(60, Status(IN_REVIEW), dispatcher.marks_kept)]
+    assert dispatcher.marks_kept(marks("done", "current")) == marks("done", "current")
 
 
 # Start
 
 def test_an_in_progress_issue_at_start_needs_attention() -> None:
     """AE6: the orphan fails with its worktree; issues in review are not in the input at all."""
-    move, = dispatcher.orphans([Issue(74, frozenset({IN_PROGRESS}))],
-                             {74: ["/repo/.claude/worktrees/issue-74"]})
+    move, report = dispatcher.orphans([Issue(74, frozenset({IN_PROGRESS}))],
+                                      {74: ["/repo/.claude/worktrees/issue-74"]})
+    assert isinstance(move, Move)
     assert (move.issue, move.remove, move.add) == (74, (IN_PROGRESS,), (NEEDS_ATTENTION,))
     assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
+    assert report == Report(74, Status(NEEDS_ATTENTION), dispatcher.marks_stopped)
 
 
 # The gh gateway
@@ -683,6 +718,480 @@ def test_an_empty_slice_is_no_limit_ending(tmp_path: Path) -> None:
     assert runner.ending(running)[0] == "the session exited with code 1 and no final result"
 
 
+# The session's progress
+
+def marks(*given: str) -> tuple[str, ...]:
+    """These marks for the first stages, the others pending."""
+    return (*given, *("pending",) * (len(dispatcher.STAGES) - len(given)))
+
+
+def skill(name: str, parent: str | None = None) -> dict[str, Any]:
+    """An assistant event calling this lfg skill, from a sub-agent when `parent` is set."""
+    return {"type": "assistant", "parent_tool_use_id": parent, "session_id": SESSION,
+            "message": {"role": "assistant", "content": [{
+                "type": "tool_use", "id": "toolu_01", "name": "Skill",
+                "input": {"skill": f"compound-engineering:{name}", "args": "mode:pipeline"}}]}}
+
+
+def says(text: str, parent: str | None = None) -> dict[str, Any]:
+    """An assistant event narrating `text`, from a sub-agent when `parent` is set."""
+    return {"type": "assistant", "parent_tool_use_id": parent, "session_id": SESSION,
+            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
+
+
+AE2_SENTENCE = "U1 committed (9073eb3): 1684 tests pass. Dispatching U2, the grammar change."
+
+
+def test_the_furthest_stage_entered_is_current_and_the_last_text_the_latest() -> None:
+    """AE2: plan, doc review, work: the shape of a recorded lfg log."""
+    events = [skill("ce-plan"), says("Planning #74."), skill("ce-doc-review"), skill("ce-work"),
+              says(AE2_SENTENCE)]
+    assert dispatcher.progress_of(events, marks()) == dispatcher.Progress(
+        marks("done", "done", "current"), AE2_SENTENCE)
+
+
+def test_a_route_without_a_plan_skips_it() -> None:
+    """AE3: lfg's bug route starts at ce-debug."""
+    assert dispatcher.progress_of([skill("ce-debug")], marks()).marks == marks(
+        "skipped", "skipped", "current")
+
+
+def test_a_sub_agents_skills_and_words_move_nothing() -> None:
+    events = [skill("ce-plan"), says("Planning #74."), skill("ce-work", parent="toolu_02"),
+              says("A sub-agent's report.", parent="toolu_02")]
+    assert dispatcher.progress_of(events, marks()) == dispatcher.Progress(marks("current"),
+                                                                          "Planning #74.")
+
+
+def test_unmapped_skills_move_nothing() -> None:
+    events = [skill("ce-work"), skill("ce-compound"), skill("ce-noslop")]
+    assert dispatcher.progress_of(events, marks()).marks == marks("skipped", "skipped", "current")
+
+
+def test_the_checklist_never_moves_back() -> None:
+    """A plan called after the work is done as entered; the work stays current."""
+    events = [skill("ce-work"), skill("ce-plan")]
+    assert dispatcher.progress_of(events, marks()).marks == marks("done", "skipped", "current")
+
+
+def test_before_any_lfg_skill_the_plan_is_current_with_no_sentence() -> None:
+    assert dispatcher.progress_of([], marks()) == dispatcher.Progress(marks("current"), None)
+    assert dispatcher.progress_of([json.loads(INIT), skill("ce-noslop")], marks()) == (
+        dispatcher.Progress(marks("current"), None))
+
+
+def test_a_resumed_session_continues_from_its_paused_stage() -> None:
+    """AE7: paused in implementation; the resume calls ce-code-review."""
+    start = marks("done", "done", "paused")
+    assert dispatcher.progress_of([], start).marks == marks("done", "done", "current")
+    assert dispatcher.progress_of([skill("ce-code-review")], start).marks == marks(
+        "done", "done", "done", "current")
+
+
+def test_the_latest_sentence_is_one_line_of_at_most_200_characters() -> None:
+    """KTD4: whitespace collapses; a longer text is cut to 200 characters with an ellipsis."""
+    long = "Step one done.\n\n  Now step two:\t" + "x" * 300
+    latest = dispatcher.progress_of([says(long)], marks()).latest
+    assert latest == ("Step one done. Now step two: " + "x" * 300)[:199] + "…"
+    assert len(latest) == 200
+    assert dispatcher.progress_of([says("y" * 200)], marks()).latest == "y" * 200
+
+
+def test_a_missing_log_gives_the_starting_marks_unchanged(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = dispatcher.Running(70, "issue-70", tmp_path / ".claude/worktrees/issue-70",
+                                 tmp_path / "missing.log", FakeProcess())
+    start = marks("done", "done", "current")
+    assert runner.progress(running, start) == dispatcher.Progress(start, None)
+
+
+def test_a_running_sessions_progress_is_its_own_part_of_the_log(tmp_path: Path) -> None:
+    """An earlier attempt's skills and words, before `since`, are not this session's."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = slice_of(tmp_path, INIT, json.dumps(skill("ce-plan")),
+                       before=(INIT, json.dumps(skill("ce-work")), json.dumps(says("Earlier."))))
+    assert runner.progress(running, marks()) == dispatcher.Progress(marks("current"), None)
+
+
+def test_the_ending_reads_the_progress_with_the_reason_and_the_limit(tmp_path: Path) -> None:
+    """One read; the progress starts from the marks the resume seeded."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = dataclasses.replace(
+        slice_of(tmp_path, INIT, json.dumps(skill("ce-code-review")),
+                 json.dumps(says("Reviewing.")), rejected(), result("API Error")),
+        start_marks=marks("done", "done", "paused"))
+    assert runner.ending(running) == ("API Error", Marker(SESSION, "issue-70", 1759350600),
+                                      dispatcher.Progress(marks("done", "done", "done", "current"),
+                                                          "Reviewing."))
+
+
+# The status comment
+
+NOW = at(10, 47)
+UPDATED = f"Updated {dispatcher.local_time(NOW)}"
+
+
+def stamp_of(stages: tuple[str, ...]) -> str:
+    """The hidden status marker these marks make."""
+    return f'<!-- dispatcher-status {json.dumps({"stages": list(stages)})} -->'
+
+
+def test_a_running_status_shows_the_checklist_the_latest_sentence_and_its_minutes() -> None:
+    """AE2: plan and plan review done, implementation current, 42 minutes in."""
+    status = dispatcher.Status(dispatcher.RUNNING, marks("done", "done", "current"),
+                               latest=AE2_SENTENCE, started=at(10, 5))
+    assert status.body(NOW) == "\n".join((
+        "**Dispatcher status: implementation** (running 42 min)", "",
+        "✅ Plan", "✅ Plan review", "⏳ Implementation", "⬜ Code review", "⬜ Pull request",
+        "⬜ CI", "", "Latest:", "```text", AE2_SENTENCE, "```", "", UPDATED,
+        stamp_of(marks("done", "done", "current"))))
+
+
+def test_the_running_time_is_whole_minutes_since_the_start() -> None:
+    """KTD7: 59 seconds are no minute yet."""
+    status = dispatcher.Status(dispatcher.RUNNING, marks("current"), started=at(10, 46, 1))
+    assert status.body(NOW).startswith("**Dispatcher status: plan** (running 0 min)\n")
+    later = dataclasses.replace(status, started=at(9, 0))
+    assert later.body(NOW).startswith("**Dispatcher status: plan** (running 107 min)\n")
+
+
+def test_a_running_status_without_a_sentence_has_no_latest_block() -> None:
+    body = dispatcher.Status(dispatcher.RUNNING, marks("current"), started=NOW).body(NOW)
+    assert "Latest:" not in body and "```" not in body
+
+
+def test_a_latest_sentence_with_backticks_sits_in_a_longer_fence() -> None:
+    """KTD4: nothing of the session's words renders as Markdown, mentions included."""
+    sentence = "Ran ```` `uv run pytest` ```` then pinged @someone about #12 ``` done"
+    body = dispatcher.Status(dispatcher.RUNNING, marks("current"), latest=sentence,
+                             started=NOW).body(NOW)
+    assert "Latest:\n`````text\n" + sentence + "\n`````\n" in body
+    assert body.count(sentence) == 1
+
+
+def test_a_short_backtick_run_keeps_the_three_backtick_fence() -> None:
+    body = dispatcher.Status(dispatcher.RUNNING, marks("current"), latest="Ran `uv run pytest`.",
+                             started=NOW).body(NOW)
+    assert "Latest:\n```text\nRan `uv run pytest`.\n```\n" in body
+
+
+def test_a_queued_status_says_why_it_waits_with_no_checklist() -> None:
+    """AE1: blocked by 2 open issues, then by 1."""
+    body = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=2)).body(NOW)
+    assert body == "\n".join(("**Dispatcher status: queued**", "", "Blocked by 2 open issues.",
+                              "", UPDATED, stamp_of(marks())))
+    assert "Blocked by 1 open issue.\n" in dispatcher.Status(
+        dispatcher.QUEUED, reason=dispatcher.waiting(blocked=1)).body(NOW)
+
+
+def test_why_a_queued_issue_waits() -> None:
+    """R3: its blockers first, then the usage limit's reset, else a free session."""
+    assert dispatcher.waiting() == "waiting for a free session"
+    assert dispatcher.waiting(blocked=2, held=True, until=at(20, 31)) == (
+        "blocked by 2 open issues")
+    assert dispatcher.waiting(held=True, until=at(20, 31)) == (
+        f"waiting for the Claude usage limit to reset at {dispatcher.local_time(at(20, 31))}")
+    assert dispatcher.waiting(held=True) == (
+        "waiting for the Claude usage limit to reset at an unknown time")
+
+
+def test_the_same_status_at_two_times_is_the_same_text() -> None:
+    """KTD6: only the Updated line differs; a changed reason is a change."""
+    status = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=2))
+    assert status.body(NOW) != status.body(NOW + 3600)
+    assert dispatcher.same_status(status.body(NOW), status.body(NOW + 3600))
+    other = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=1))
+    assert not dispatcher.same_status(status.body(NOW), other.body(NOW))
+
+
+def test_a_sentence_starting_like_the_updated_line_still_counts() -> None:
+    """Only the line above the marker is the stamp, never the session's words."""
+    first = dispatcher.Status(dispatcher.RUNNING, marks("current"), latest="Updated the plan.",
+                              started=NOW)
+    second = dataclasses.replace(first, latest="Updated the tests.")
+    assert not dispatcher.same_status(first.body(NOW), second.body(NOW))
+
+
+def test_ending_with_a_pull_request_marks_it_done_and_ci_current() -> None:
+    """AE6: implementation done, code review never entered, pull request done, CI current."""
+    assert dispatcher.marks_opened(marks("done", "done", "current")) == (
+        "done", "done", "done", "skipped", "done", "current")
+    after_ci = ("skipped", "skipped", "done", "done", "done", "current")
+    assert dispatcher.marks_opened(after_ci) == after_ci
+
+
+def test_checks_passing_marks_ci_done() -> None:
+    """AE6: ready to merge."""
+    assert dispatcher.marks_passed(("done", "done", "done", "skipped", "done", "current")) == (
+        "done", "done", "done", "skipped", "done", "done")
+
+
+def test_stopping_fails_the_current_stage() -> None:
+    """AE4: Ctrl-C during implementation; with no stage entered, the plan fails."""
+    assert dispatcher.marks_stopped(marks("done", "done", "current")) == marks(
+        "done", "done", "failed")
+    assert dispatcher.marks_stopped(marks()) == marks("failed")
+
+
+def test_stopping_a_paused_checklist_fails_the_paused_stage_not_the_plan() -> None:
+    assert dispatcher.marks_stopped(marks("done", "done", "paused")) == marks(
+        "done", "done", "failed")
+
+
+def test_pausing_and_resuming_keep_the_stage() -> None:
+    """AE7: paused in implementation, then current again."""
+    assert dispatcher.marks_paused(marks("done", "done", "current")) == marks(
+        "done", "done", "paused")
+    assert dispatcher.marks_resumed(marks("done", "done", "paused")) == marks(
+        "done", "done", "current")
+
+
+def test_a_paused_status_keeps_the_checklist_and_says_when_the_limit_resets() -> None:
+    """AE7: implementation paused, the reset at 20:30; no running time, no sentence."""
+    status = dispatcher.Status(PAUSED, marks("done", "done", "paused"), latest=AE2_SENTENCE,
+                               started=at(10, 5), reset=at(20, 30))
+    assert status.body(NOW) == "\n".join((
+        "**Dispatcher status: paused**", "",
+        "✅ Plan", "✅ Plan review", "⏸️ Implementation", "⬜ Code review", "⬜ Pull request",
+        "⬜ CI", "", "The Claude usage limit stopped the session. It resets at "
+        f"{dispatcher.local_time(at(20, 30))}.", "", UPDATED,
+        stamp_of(marks("done", "done", "paused"))))
+
+
+def test_a_paused_status_with_an_unknown_reset_says_so() -> None:
+    body = dispatcher.Status(PAUSED, marks("done", "done", "paused")).body(NOW)
+    assert ("The Claude usage limit stopped the session. Its reset time is unknown.\n"
+            in body)
+
+
+@pytest.mark.parametrize("state, stages", [
+    (IN_REVIEW, ("done", "done", "done", "skipped", "done", "current")),
+    (READY_TO_MERGE, ("done", "done", "done", "skipped", "done", "done")),
+    (NEEDS_ATTENTION, marks("done", "done", "failed")),
+])
+def test_an_ended_status_shows_the_checklist_without_time_or_sentence(
+        state: str, stages: tuple[str, ...]) -> None:
+    """R8, R9: the checklist frozen as it ended."""
+    status = dispatcher.Status(state, stages, latest=AE2_SENTENCE, started=at(10, 5))
+    lines = [f"{dispatcher.MARK_SIGNS[mark]} {name[0].upper()}{name[1:]}"
+             for mark, name in zip(stages, dispatcher.STAGES, strict=True)]
+    assert status.body(NOW) == "\n".join((f"**Dispatcher status: {state}**", "", *lines, "",
+                                          UPDATED, stamp_of(stages)))
+    assert "❌ Implementation" in dispatcher.Status(
+        NEEDS_ATTENTION, marks("done", "done", "failed")).body(NOW)
+
+
+@pytest.mark.parametrize("status", [
+    dispatcher.Status(dispatcher.QUEUED, reason="waiting for a free session"),
+    dispatcher.Status(dispatcher.RUNNING, marks("done", "done", "current"), latest="Working.",
+                      started=0.0),
+    dispatcher.Status(IN_REVIEW, ("done", "done", "done", "skipped", "done", "current")),
+    dispatcher.Status(READY_TO_MERGE, ("done", "done", "done", "skipped", "done", "done")),
+    dispatcher.Status(NEEDS_ATTENTION, marks("done", "failed")),
+    dispatcher.Status(PAUSED, marks("done", "done", "paused"), reset=None),
+], ids=lambda status: status.state)
+def test_every_status_marker_reads_back_its_marks(status: dispatcher.Status) -> None:
+    """KTD2: the marker is the body's last line and holds the marks, and only them."""
+    body = status.body(NOW)
+    assert body.splitlines()[-1] == stamp_of(status.marks)
+    assert dispatcher.status_marks(body) == status.marks
+
+
+@pytest.mark.parametrize("body", [
+    "Dispatcher: pull request https://github.com/o/r/pull/101 is open.",
+    "",
+    stamp_of(marks("done", "started")),
+    stamp_of((*marks(), "pending")),
+    stamp_of(("done", "done")),
+    '<!-- dispatcher-status {"stages": ["done", "done", -->',
+    '<!-- dispatcher-status {"stages": "done"} -->',
+    '<!-- dispatcher-status {"marks": ["pending", "pending", "pending", "pending", "pending", '
+    '"pending"]} -->',
+    stamp_of(marks()) + "\n\nA later line.",
+    f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", "reset": null}} -->',
+], ids=["no marker", "empty", "unknown mark", "seven stages", "two stages", "invalid json",
+        "not a list", "no stages", "not the last line", "the pause marker"])
+def test_an_unreadable_status_marker_reads_as_none(body: str) -> None:
+    assert dispatcher.status_marks(body) is None
+
+
+# The status comment on GitHub
+
+COMMENTS = "repos/{owner}/{repo}/issues/74/comments"
+LIST_COMMENTS = ["api", "--paginate", "--slurp", COMMENTS]
+QUEUED_2 = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=2))
+QUEUED_1 = dispatcher.Status(dispatcher.QUEUED, reason=dispatcher.waiting(blocked=1))
+OPENED = dispatcher.Status(IN_REVIEW, ("done", "done", "done", "skipped", "done", "current"))
+
+
+def rest_comment(login: str, number: int, body: str) -> dict[str, object]:
+    """A comment as the REST issue-comments list gives it."""
+    return {"id": number, "user": {"login": login}, "body": body,
+            "created_at": "2026-10-01T15:10:00Z"}
+
+
+def pages_reply(*pages: list[dict[str, object]]) -> tuple[tuple[str, ...], int, str]:
+    """`gh api --paginate --slurp`'s reply: an array of pages, each an array of comments."""
+    return ("api", "--paginate", "--slurp"), 0, json.dumps(list(pages))
+
+
+def posted_reply(number: int) -> tuple[tuple[str, ...], int, str]:
+    return ("api", "--method", "POST"), 0, json.dumps({"id": number, "body": "…"})
+
+
+def writes(fake: FakeGh) -> list[list[str]]:
+    """The status comments `gh` was asked to create or edit."""
+    return [call for call in fake.calls if call[:2] == ["api", "--method"]]
+
+
+def lists(fake: FakeGh) -> list[list[str]]:
+    return [call for call in fake.calls if call[:3] == ["api", "--paginate", "--slurp"]]
+
+
+def test_the_status_comment_is_the_users_newest_one_with_a_status_marker() -> None:
+    """KTD1: every page counts; a stranger's marker and the user's other comments don't."""
+    own = QUEUED_2.body(NOW)
+    newer = OPENED.body(NOW)
+    gh, fake = github(pages_reply(
+        [rest_comment("me", 11, own), rest_comment("me", 12, "Dispatcher: pull request open.")],
+        [rest_comment("me", 13, newer), rest_comment("stranger", 14, QUEUED_1.body(NOW))]))
+    assert gh.status_comment(74) == (13, newer)
+    assert fake.calls[-1] == LIST_COMMENTS
+
+
+def test_an_issue_without_the_users_status_marker_has_no_status_comment() -> None:
+    gh, _ = github(pages_reply([rest_comment("stranger", 14, QUEUED_1.body(NOW)),
+                                rest_comment("me", 12, "Looking into it.")]))
+    assert gh.status_comment(74) is None
+
+
+def test_a_status_comment_is_posted_and_edited_with_its_body_as_a_field() -> None:
+    """The body goes as one `-f` argument, never through a shell."""
+    body = "**Dispatcher status: queued**\n\n`$(rm -rf ~)` {owner}\n\n" + stamp_of(marks())
+    gh, fake = github(posted_reply(9001))
+    assert gh.post_status(74, body) == 9001
+    gh.edit_status(9001, body)
+    assert fake.calls == [["api", "--method", "POST", COMMENTS, "-f", f"body={body}"],
+                          ["api", "--method", "PATCH", "repos/{owner}/{repo}/issues/comments/9001",
+                           "-f", f"body={body}"]]
+
+
+def test_a_queued_issue_gets_one_comment_edited_only_when_its_text_changes() -> None:
+    """AE1: posted at the first poll, untouched at the next, edited by id once a blocker closes."""
+    gh, fake = github(pages_reply([]), posted_reply(9001))
+    board = dispatcher.Board(gh)
+    board.report(74, QUEUED_2, NOW, create=True)
+    assert writes(fake) == [["api", "--method", "POST", COMMENTS, "-f",
+                             f"body={QUEUED_2.body(NOW)}"]]
+    calls = len(fake.calls)
+    board.report(74, QUEUED_2, NOW + 300, create=True)
+    assert len(fake.calls) == calls
+    board.report(74, QUEUED_1, NOW + 600, create=True)
+    assert writes(fake)[1:] == [["api", "--method", "PATCH",
+                                 "repos/{owner}/{repo}/issues/comments/9001", "-f",
+                                 f"body={QUEUED_1.body(NOW + 600)}"]]
+    assert lists(fake) == [LIST_COMMENTS]
+
+
+def test_after_a_restart_the_comment_is_found_by_its_marker_and_edited() -> None:
+    """AE5: no second status comment."""
+    running = dispatcher.Status(dispatcher.RUNNING, marks("done", "done", "current"),
+                                started=NOW - 600)
+    gh, fake = github(pages_reply([rest_comment("me", 9001, running.body(NOW - 300))]))
+    board = dispatcher.Board(gh)
+    assert board.marks(74) == marks("done", "done", "current")
+    board.report(74, OPENED, NOW, create=False)
+    assert writes(fake) == [["api", "--method", "PATCH",
+                             "repos/{owner}/{repo}/issues/comments/9001", "-f",
+                             f"body={OPENED.body(NOW)}"]]
+    assert lists(fake) == [LIST_COMMENTS]
+
+
+def test_an_issue_without_a_status_comment_gets_none_where_it_may_not_be_created() -> None:
+    """AE8, R12: #60 was in review before the feature; it is listed once, never written."""
+    gh, fake = github(pages_reply([]))
+    board = dispatcher.Board(gh)
+    board.report(60, OPENED, NOW, create=False)
+    board.report(60, OPENED, NOW + 300, create=False)
+    assert board.marks(60) is None
+    assert writes(fake) == []
+    assert lists(fake) == [["api", "--paginate", "--slurp",
+                            "repos/{owner}/{repo}/issues/60/comments"]]
+
+
+def test_the_newest_of_the_users_status_comments_is_edited_never_a_strangers() -> None:
+    gh, fake = github(pages_reply([rest_comment("me", 11, QUEUED_2.body(NOW)),
+                                   rest_comment("me", 13, QUEUED_2.body(NOW)),
+                                   rest_comment("stranger", 14, QUEUED_2.body(NOW))]))
+    dispatcher.Board(gh).report(74, QUEUED_1, NOW, create=True)
+    assert [call[3] for call in writes(fake)] == ["repos/{owner}/{repo}/issues/comments/13"]
+
+
+def test_a_failing_list_raises_with_its_stderr_and_the_next_report_lists_again() -> None:
+    gh, fake = github((("api", "--paginate"), 1, ""))
+    board = dispatcher.Board(gh)
+    with pytest.raises(dispatcher.GhError, match="something broke"):
+        board.report(74, QUEUED_2, NOW, create=True)
+    assert writes(fake) == []
+    fake.script = [pages_reply([]), posted_reply(9001)]
+    board.report(74, QUEUED_2, NOW, create=True)
+    assert len(lists(fake)) == 2
+    assert [call[2] for call in writes(fake)] == ["POST"]
+
+
+def test_a_failing_create_raises_with_its_stderr_and_the_next_report_tries_again() -> None:
+    """A create whose reply was lost may have landed: the next report lists before posting."""
+    gh, fake = github(pages_reply([]), (("api", "--method", "POST"), 1, ""))
+    board = dispatcher.Board(gh)
+    with pytest.raises(dispatcher.GhError, match="something broke"):
+        board.report(74, QUEUED_2, NOW, create=True)
+    fake.script = [pages_reply([]), posted_reply(9001)]
+    board.report(74, QUEUED_2, NOW, create=True)
+    assert len(lists(fake)) == 2
+    assert [call[2] for call in writes(fake)] == ["POST", "POST"]
+    board.report(74, QUEUED_1, NOW, create=True)
+    assert writes(fake)[-1][3] == "repos/{owner}/{repo}/issues/comments/9001"
+
+
+@pytest.mark.parametrize("out", [
+    "[{\"id\": 1}][{\"id\": 2}]",
+    "",
+    json.dumps({"message": "Not Found"}),
+    json.dumps([{"id": 13}]),
+    json.dumps([[{"user": {"login": "me"}, "body": stamp_of(marks())}]]),
+    json.dumps([[{"id": "13", "user": {"login": "me"}, "body": stamp_of(marks())}]]),
+], ids=["concatenated pages", "empty", "an object", "a page not an array", "no id",
+        "an id not a number"])
+def test_an_unreadable_comment_list_raises(out: str) -> None:
+    """KTD5: only a GhError is caught where the board is used."""
+    gh, fake = github((("api", "--paginate"), 0, out))
+    board = dispatcher.Board(gh)
+    with pytest.raises(dispatcher.GhError):
+        board.report(74, QUEUED_2, NOW, create=True)
+    assert writes(fake) == []
+
+
+@pytest.mark.parametrize("out", ["", json.dumps({"message": "ok"}), json.dumps({"id": None})],
+                         ids=["empty", "no id", "a null id"])
+def test_an_unreadable_create_reply_raises(out: str) -> None:
+    gh, _ = github((("api", "--method", "POST"), 0, out))
+    with pytest.raises(dispatcher.GhError):
+        gh.post_status(74, QUEUED_2.body(NOW))
+
+
+def test_a_failed_edit_forgets_the_comment_so_the_next_report_lists_again() -> None:
+    """The author deleted the comment: the edit by its cached id fails, then none is found."""
+    gh, fake = github(pages_reply([rest_comment("me", 9001, QUEUED_2.body(NOW))]),
+                      (("api", "--method", "PATCH"), 1, ""))
+    board = dispatcher.Board(gh)
+    with pytest.raises(dispatcher.GhError, match="something broke"):
+        board.report(74, QUEUED_1, NOW, create=True)
+    fake.script = [pages_reply([])]
+    board.report(74, OPENED, NOW, create=False)
+    assert len(lists(fake)) == 2
+    assert [call[2] for call in writes(fake)] == ["PATCH"]
+
+
 def test_a_resume_continues_the_conversation_headless(tmp_path: Path) -> None:
     """KTD7: the same flags as a dispatch, the limit back in the prompt."""
     (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
@@ -753,15 +1262,29 @@ def test_worktrees_by_issue(tmp_path: Path) -> None:
 
 # The command
 
+@dataclasses.dataclass(frozen=True)
+class Wrote:
+    """A status comment `gh` wrote: posted, else edited."""
+
+    issue: int
+    posted: bool
+    body: str
+
+
 class FakeGitHub:
-    """The gateway's interface over fixed answers; records the writes."""
+    """The gateway's interface over fixed answers; records the writes, status comments included.
+
+    An issue's status comment has the id 9000 + its number.
+    """
 
     def __init__(self, issues: dict[str, list[tuple[Issue, tuple[PullRequest, ...]]]] | None = None,
                  *, head: dict[str, tuple[PullRequest, ...]] | None = None,
                  linked: frozenset[int] = frozenset(), passing: bool = False,
-                 broken: int | None = None, markers: dict[int, Marker] | None = None) -> None:
+                 broken: int | None = None, markers: dict[int, Marker] | None = None,
+                 comments: dict[int, str] | None = None) -> None:
         self.answers = issues or {}
         self.records = markers or {}  # each paused issue's valid marker, as its comments hold it
+        self.comments = {issue: (9000 + issue, body) for issue, body in (comments or {}).items()}
         self.heads = head or {}
         self.linked_prs = linked
         self.checks = passing
@@ -809,9 +1332,55 @@ class FakeGitHub:
     def marker(self, issue: int) -> Marker | None:
         return self.records.get(issue)
 
+    def status_comment(self, issue: int) -> tuple[int, str] | None:
+        """The issue's status comment; `list #N` or `status #N` in `flaky` fails it once."""
+        self._flake(f"list #{issue}")
+        self._flake(f"status #{issue}")
+        return self.comments.get(issue)
+
+    def post_status(self, issue: int, body: str) -> int:
+        """Post the issue's status comment; `status #N` in `flaky` fails it once."""
+        self._flake(f"status #{issue}")
+        self.comments[issue] = (9000 + issue, body)
+        self.writes.append(Wrote(issue, True, body))
+        return 9000 + issue
+
+    def edit_status(self, comment: int, body: str) -> None:
+        """Edit a status comment; `status #N` in `flaky` fails it once."""
+        issue = comment - 9000
+        self._flake(f"status #{issue}")
+        self.comments[issue] = (comment, body)
+        self.writes.append(Wrote(issue, False, body))
+
 
 def moves(gh: FakeGitHub) -> list[tuple[int, tuple[str, ...]]]:
     return [(write.issue, write.add) for write in gh.writes if isinstance(write, Move)]
+
+
+def last_move(gh: FakeGitHub) -> Move:
+    """The last label move written."""
+    return [write for write in gh.writes if isinstance(write, Move)][-1]
+
+
+def state_of(body: str) -> str:
+    """The state a status comment shows: `running` for a stage's running header."""
+    header = body.splitlines()[0]
+    if "(running " in header:
+        return dispatcher.RUNNING
+    return header.removeprefix("**Dispatcher status: ").removesuffix("**")
+
+
+def trail(gh: FakeGitHub) -> list[tuple[int, object]]:
+    """In order, the labels each move added and the state each status comment was written with."""
+    return [(write.issue, write.add) if isinstance(write, Move)
+            else (write.issue, state_of(write.body))
+            for write in gh.writes if isinstance(write, Move | Wrote)]
+
+
+def shown(gh: FakeGitHub, issue: int) -> list[tuple[str, tuple[str, ...] | None]]:
+    """The states and marks the issue's status comment was written with, in order."""
+    return [(state_of(write.body), dispatcher.status_marks(write.body)) for write in gh.writes
+            if isinstance(write, Wrote) and write.issue == issue]
 
 
 def test_misuse_prints_the_usage(capsys: pytest.CaptureFixture[str]) -> None:
@@ -881,7 +1450,7 @@ def test_a_session_that_cannot_start_needs_attention(tmp_path: Path) -> None:
     boss = dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None)
     boss.poll()
     assert moves(gh) == [(74, (IN_PROGRESS,)), (74, (NEEDS_ATTENTION,))]
-    assert "no space" in (gh.writes[-1].comment or "")  # type: ignore[union-attr]
+    assert "no space" in (last_move(gh).comment or "")
     assert boss.running == {}
 
 
@@ -894,8 +1463,7 @@ def test_stopping_ends_the_sessions_and_marks_their_issues(tmp_path: Path) -> No
     assert isinstance(process, FakeProcess)
     boss.stop()
     assert process.signals == ["terminate"]
-    move = gh.writes[-1]
-    assert isinstance(move, Move)
+    move = last_move(gh)
     assert move.add == (NEEDS_ATTENTION,)
     assert "stopped" in (move.comment or "")
     assert boss.running == {}
@@ -990,8 +1558,7 @@ def test_stopping_judges_a_session_that_already_ended(tmp_path: Path) -> None:
     assert live.signals == ["terminate"]
     assert moves(gh)[2:] == [(74, (IN_REVIEW,)), (75, (NEEDS_ATTENTION,))]
     assert Link(101, 74) in gh.writes
-    move = gh.writes[-1]
-    assert isinstance(move, Move)
+    move = last_move(gh)
     assert "stopped while the session ran" in (move.comment or "")
     assert boss.running == {}
 
@@ -1002,8 +1569,9 @@ def test_stopping_when_github_cannot_read_an_ended_session(tmp_path: Path) -> No
     gh.flaky = {"head"}
     boss.stop()
     assert moves(gh)[2:] == [(74, (NEEDS_ATTENTION,)), (75, (NEEDS_ATTENTION,))]
-    move = gh.writes[2]
-    assert isinstance(move, Move)
+    assert trail(gh)[4:] == [(74, (NEEDS_ATTENTION,)), (74, NEEDS_ATTENTION),
+                             (75, (NEEDS_ATTENTION,)), (75, NEEDS_ATTENTION)]
+    move = [write for write in gh.writes if isinstance(write, Move)][2]
     assert "HTTP 502" in (move.comment or "")
 
 
@@ -1063,8 +1631,7 @@ def test_a_session_at_the_limit_is_paused_and_holds_every_start(tmp_path: Path) 
     exits(boss, 70, *AT_LIMIT)
     clock.now = at(15, 10)
     boss.poll()
-    pause = gh.writes[-1]
-    assert isinstance(pause, Move)
+    pause = last_move(gh)
     assert (pause.issue, pause.remove, pause.add, pause.comment_first) == (
         70, (IN_PROGRESS,), (PAUSED,), True)
     assert "20:30" in (pause.comment or "")
@@ -1098,8 +1665,10 @@ def test_paused_issues_resume_in_their_worktrees_once_the_limit_is_back(tmp_path
     assert second[:4] == ["claude", "-p", "--resume", OTHER]
     assert first_options["cwd"] == tmp_path / ".claude/worktrees/issue-70"
     assert second_options["cwd"] == tmp_path / ".claude/worktrees/issue-72"
-    assert gh.writes == [Move(70, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,)),
-                         Move(72, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,))]
+    assert [write for write in gh.writes if not isinstance(write, Wrote)] == [
+        Move(70, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,)),
+        Move(72, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,))]
+    assert trail(gh)[2:] == [(74, dispatcher.QUEUED)]
     assert {issue: running.branch for issue, running in boss.running.items()} == {
         70: "issue-70", 72: "issue-72"}
     log = tmp_path / dispatcher.STATE / "logs/issue-70.log"
@@ -1123,6 +1692,20 @@ def test_a_resumed_session_that_opens_its_pull_request_goes_in_review(tmp_path: 
     gh.checks = True
     boss.poll()
     assert moves(gh)[2:] == [(70, (READY_TO_MERGE,))]
+
+
+def test_a_session_ended_with_its_pull_request_open_carries_its_progress(tmp_path: Path) -> None:
+    """The in-review report needs the log's marks; the limit still counts only without a PR."""
+    gh = FakeGitHub({READY: [(ready(74), ())]}, head={"issue-74": (PR,)})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
+    boss.poll()
+    exits(boss, 74, INIT, *(json.dumps(skill(name)) for name in (
+        "ce-plan", "ce-doc-review", "ce-work", "ce-code-review", "ce-commit-push-pr")),
+          json.dumps(says("Pull request #101 is open.")), rejected(), result("API Error"))
+    session = boss.read(boss.running[74])
+    assert session.progress == dispatcher.Progress(marks("done", "done", "done", "done", "current"),
+                                                   "Pull request #101 is open.")
+    assert (session.reason, session.limit) == ("", None)
 
 
 def resumed_once(tmp_path: Path, marker: Marker) -> tuple[dispatcher.Dispatcher, FakeGitHub]:
@@ -1187,7 +1770,7 @@ def test_a_paused_issue_before_its_reset_holds_after_a_restart(tmp_path: Path) -
     clock.now = at(18, 5)
     boss.poll()
     assert spawn.calls == []
-    assert gh.writes == ["labels"]
+    assert [write for write in gh.writes if not isinstance(write, Wrote)] == ["labels"]
 
 
 def test_an_unknown_reset_holds_its_poll_then_probes_with_one_session(tmp_path: Path) -> None:
@@ -1329,6 +1912,299 @@ def test_a_pause_that_fails_to_write_still_holds_and_is_retried_once(tmp_path: P
     boss.poll()
     assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,))]
     assert len(spawn.calls) == 1
+
+
+# The status comment at each step
+
+AE2_EVENTS = (skill("ce-plan"), says("Planning #74."), skill("ce-doc-review"), skill("ce-work"),
+              says(AE2_SENTENCE))
+OPENED_MARKS = ("done", "done", "done", "skipped", "done", "current")
+
+
+def body_of(state: str, stages: tuple[str, ...], **details: Any) -> str:
+    """A status comment's body as an earlier run left it."""
+    return dispatcher.Status(state, stages, **details).body(at(9))
+
+
+def logs(boss: dispatcher.Dispatcher, issue: int, *events: dict[str, Any]) -> None:
+    """The issue's running session writes these events to its part of the log."""
+    with boss.running[issue].log.open("a") as log:
+        log.write("".join(json.dumps(event) + "\n" for event in events))
+
+
+def wrote(gh: FakeGitHub) -> list[Wrote]:
+    """The status comments written, in order."""
+    return [write for write in gh.writes if isinstance(write, Wrote)]
+
+
+def test_a_queued_issue_says_why_it_waits_then_runs_once_picked(tmp_path: Path) -> None:
+    """AE1: posted blocked by 2, untouched while nothing changes, blocked by 1, then running."""
+    gh = FakeGitHub({READY: [(ready(74, blocked=2), ())]})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
+    boss.poll()
+    boss.poll()
+    gh.answers = {READY: [(ready(74, blocked=1), ())]}
+    boss.poll()
+    gh.answers = {READY: [(ready(74), ())]}
+    boss.poll()
+    assert trail(gh) == [(74, dispatcher.QUEUED), (74, dispatcher.QUEUED), (74, (IN_PROGRESS,)),
+                         (74, dispatcher.RUNNING)]
+    first, second, running = wrote(gh)
+    assert first.posted
+    assert "Blocked by 2 open issues." in first.body
+    assert not second.posted
+    assert "Blocked by 1 open issue." in second.body
+    assert not running.posted
+    assert dispatcher.status_marks(running.body) == marks("current")
+
+
+def test_a_running_session_shows_its_stage_and_last_sentence(tmp_path: Path) -> None:
+    """AE2: plan and plan review done, implementation current, the sentence, 42 minutes in."""
+    gh = FakeGitHub({READY: [(ready(74), ())]})
+    clock = Clock(at(15))
+    boss, _ = boss_at(tmp_path, gh, 1, clock, [])
+    boss.poll()
+    gh.answers = {}
+    boss.running[74] = dataclasses.replace(boss.running[74], started=at(15))
+    logs(boss, 74, *AE2_EVENTS)
+    clock.now = at(15, 42)
+    boss.poll()
+    last = wrote(gh)[-1]
+    assert not last.posted
+    assert last.body.startswith("**Dispatcher status: implementation** (running 42 min)\n")
+    assert f"Latest:\n```text\n{AE2_SENTENCE}\n```" in last.body
+    assert dispatcher.status_marks(last.body) == marks("done", "done", "current")
+
+
+def test_stopping_fails_the_stage_a_live_session_was_in(tmp_path: Path) -> None:
+    """AE4: Ctrl-C in implementation: the needs-attention comment as today, then the checklist."""
+    gh = FakeGitHub({READY: [(ready(74), ())]})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
+    boss.poll()
+    logs(boss, 74, *AE2_EVENTS)
+    boss.stop()
+    assert trail(gh)[-2:] == [(74, (NEEDS_ATTENTION,)), (74, NEEDS_ATTENTION)]
+    assert "stopped while the session ran" in (last_move(gh).comment or "")
+    assert shown(gh, 74)[-1] == (NEEDS_ATTENTION, marks("done", "done", "failed"))
+
+
+def test_an_open_pull_request_shows_ci_current_then_done_once_its_checks_pass(
+        tmp_path: Path) -> None:
+    """AE6: in review after the move; ready to merge after its move, and no in-review after it."""
+    gh = FakeGitHub({READY: [(ready(74), ())]}, head={"issue-74": (PR,)})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
+    boss.poll()
+    gh.answers = {}
+    exits(boss, 74, *(json.dumps(event) for event in AE2_EVENTS))
+    boss.poll()
+    assert trail(gh)[-2:] == [(74, (IN_REVIEW,)), (74, IN_REVIEW)]
+    assert shown(gh, 74)[-1] == (IN_REVIEW, OPENED_MARKS)
+    gh.answers = {IN_REVIEW: [(Issue(74, frozenset({IN_REVIEW})), ())]}
+    before = len(gh.writes)
+    boss.poll()  # its checks are pending: nothing new to say
+    assert len(gh.writes) == before
+    gh.checks = True
+    boss.poll()
+    assert trail(gh)[-2:] == [(74, (READY_TO_MERGE,)), (74, READY_TO_MERGE)]
+    assert shown(gh, 74)[-1] == (READY_TO_MERGE, (*OPENED_MARKS[:-1], "done"))
+
+
+def test_a_ready_to_merge_report_that_fails_is_written_at_the_next_poll(tmp_path: Path) -> None:
+    """KTD5: no later poll reads a ready-to-merge issue, so the report waits in `pending`."""
+    gh = FakeGitHub({IN_REVIEW: [(Issue(74, frozenset({IN_REVIEW})), (PR,))]}, passing=True,
+                    comments={74: body_of(IN_REVIEW, OPENED_MARKS)})
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), lines)
+    gh.flaky = {"status #74"}
+    boss.poll()
+    assert trail(gh) == [(74, (READY_TO_MERGE,))]
+    assert "dispatcher: #74 status: gh status #74: HTTP 502" in lines
+    gh.answers = {}
+    boss.poll()
+    assert trail(gh) == [(74, (READY_TO_MERGE,)), (74, READY_TO_MERGE)]
+    boss.poll()
+    assert len(trail(gh)) == 2
+
+
+def test_an_issue_in_review_before_the_feature_never_gets_a_status_comment(
+        tmp_path: Path) -> None:
+    """AE8, R12: #60 has no status comment; neither in review nor ready to merge creates one."""
+    gh = FakeGitHub({IN_REVIEW: [(Issue(60, frozenset({IN_REVIEW})), (PR,))]})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
+    boss.poll()
+    boss.poll()
+    gh.checks = True
+    boss.poll()
+    assert trail(gh) == [(60, (READY_TO_MERGE,))]
+    assert boss.pending == []
+
+
+def test_a_paused_issue_also_marked_ready_keeps_its_paused_comment(tmp_path: Path) -> None:
+    """R11, R3: held, #70 is neither queued nor resumed; #74 waits for the limit's reset."""
+    both = paused(70, also=(READY,))
+    gh = FakeGitHub({PAUSED: [(both, ())], READY: [(both, ()), (ready(74), ())]},
+                    markers={70: limit(70)},
+                    comments={70: body_of(PAUSED, marks("done", "done", "paused"),
+                                          reset=at(20, 30))})
+    clock = Clock(at(18))
+    boss, spawn = boss_at(tmp_path, gh, 2, clock, [])
+    boss.start()
+    clock.now = at(18, 5)
+    boss.poll()
+    assert spawn.calls == []
+    assert trail(gh) == [(74, dispatcher.QUEUED)]
+    assert ("Waiting for the Claude usage limit to reset at "
+            f"{dispatcher.local_time(at(20, 31))}.") in wrote(gh)[-1].body
+
+
+def test_a_limit_ending_pauses_the_checklist_and_the_resume_continues_it(tmp_path: Path) -> None:
+    """AE7: implementation paused with the reset after the pause move; resumed, then reviewed."""
+    gh = FakeGitHub({READY: [(ready(70), ())]})
+    clock = Clock(at(15))
+    boss, _ = boss_at(tmp_path, gh, 1, clock, [])
+    boss.poll()
+    gh.answers = {}
+    exits(boss, 70, INIT, *(json.dumps(event) for event in AE2_EVENTS), *AT_LIMIT[1:])
+    clock.now = at(15, 10)
+    boss.poll()
+    assert trail(gh)[-2:] == [(70, (PAUSED,)), (70, PAUSED)]
+    assert shown(gh, 70)[-1] == (PAUSED, marks("done", "done", "paused"))
+    assert f"It resets at {dispatcher.local_time(at(20, 30))}." in wrote(gh)[-1].body
+    worktrees(tmp_path, "issue-70")
+    gh.answers = {PAUSED: [(paused(70), ())]}
+    gh.records[70] = limit(70)
+    clock.now = at(20, 35)
+    boss.poll()
+    assert trail(gh)[-2:] == [(70, (IN_PROGRESS,)), (70, dispatcher.RUNNING)]
+    assert shown(gh, 70)[-1] == (dispatcher.RUNNING, marks("done", "done", "current"))
+    gh.answers = {}
+    logs(boss, 70, skill("ce-code-review"))
+    boss.poll()
+    assert shown(gh, 70)[-1] == (dispatcher.RUNNING, marks("done", "done", "done", "current"))
+
+
+def test_a_final_report_that_fails_blocks_nothing_and_is_retried_at_the_next_poll(
+        tmp_path: Path) -> None:
+    """KTD5: #74's move goes, so do #75's move and report; #74's report waits in `pending`."""
+    gh = FakeGitHub({READY: [(ready(74), ()), (ready(75), ())]})
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.poll()
+    gh.answers = {}
+    exits(boss, 74, INIT, result("Stopped: blocked.", error=False))
+    exits(boss, 75, INIT, result("Stopped: blocked.", error=False))
+    gh.flaky = {"status #74"}
+    boss.poll()
+    assert trail(gh)[4:] == [(74, (NEEDS_ATTENTION,)), (75, (NEEDS_ATTENTION,)),
+                             (75, NEEDS_ATTENTION)]
+    assert "dispatcher: #74 status: gh status #74: HTTP 502" in lines
+    boss.poll()
+    assert trail(gh)[7:] == [(74, NEEDS_ATTENTION)]
+    assert shown(gh, 74)[-1] == (NEEDS_ATTENTION, marks("failed"))
+    boss.poll()
+    assert len(trail(gh)) == 8
+
+
+def test_a_failing_running_report_is_only_logged(tmp_path: Path) -> None:
+    """KTD5: the next poll recomputes it; #75's report and #76's queued one still go."""
+    gh = FakeGitHub({READY: [(ready(74), ()), (ready(75), ())]})
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.poll()
+    gh.answers = {READY: [(ready(76), ())]}
+    logs(boss, 74, skill("ce-work"))
+    logs(boss, 75, skill("ce-work"))
+    gh.flaky = {"status #74"}
+    boss.poll()
+    assert "dispatcher: #74 status: gh status #74: HTTP 502" in lines
+    assert boss.pending == []
+    assert trail(gh)[4:] == [(75, dispatcher.RUNNING), (76, dispatcher.QUEUED)]
+    boss.poll()
+    assert trail(gh)[6:] == [(74, dispatcher.RUNNING)]
+    assert shown(gh, 74)[-1] == (dispatcher.RUNNING, marks("skipped", "skipped", "current"))
+
+
+def test_an_orphan_at_start_fails_the_stage_its_comment_held(tmp_path: Path) -> None:
+    """R9: #75's comment said implementation; listing #74's fails, is said, and start goes on.
+
+    No later poll reads an issue that needs attention, so #74's report waits in `pending` and
+    lands at the first poll.
+    """
+    gh = FakeGitHub({IN_PROGRESS: [(Issue(74, frozenset({IN_PROGRESS})), ()),
+                                   (Issue(75, frozenset({IN_PROGRESS})), ())],
+                     PAUSED: [(paused(70), ())]},
+                    markers={70: limit(70)},
+                    comments={74: body_of(dispatcher.RUNNING, marks("current")),
+                              75: body_of(dispatcher.RUNNING, marks("done", "done", "current"))})
+    gh.flaky = {"list #74"}
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 2, Clock(at(18)), lines)
+    boss.sessions.git = lambda args: ""
+    boss.start()
+    assert trail(gh) == [(74, (NEEDS_ATTENTION,)), (75, (NEEDS_ATTENTION,)), (75, NEEDS_ATTENTION)]
+    assert shown(gh, 75) == [(NEEDS_ATTENTION, marks("done", "done", "failed"))]
+    assert "dispatcher: #74 status: gh list #74: HTTP 502" in lines
+    assert any("no session starts until" in line for line in lines)
+    boss.poll()
+    assert shown(gh, 74) == [(NEEDS_ATTENTION, marks("failed"))]
+    assert boss.pending == []
+
+
+def test_a_session_that_cannot_start_shows_the_plan_failed(tmp_path: Path) -> None:
+    """R9: after the needs-attention move; a failed report waits in `pending`."""
+    gh = FakeGitHub({READY: [(ready(74), ())]})
+    runner, _ = sessions(tmp_path, FakeGit(fail="worktree add"))
+    boss = dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None)
+    gh.flaky = {"status #74"}
+    boss.poll()
+    assert trail(gh) == [(74, (IN_PROGRESS,)), (74, (NEEDS_ATTENTION,))]
+    gh.answers = {}
+    boss.poll()
+    assert trail(gh)[2:] == [(74, NEEDS_ATTENTION)]
+    assert shown(gh, 74) == [(NEEDS_ATTENTION, marks("failed"))]
+
+
+def test_a_resume_that_cannot_start_fails_its_paused_stage(tmp_path: Path) -> None:
+    """R9: the worktree is gone; the comment's paused implementation fails."""
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]}, markers={70: limit(70)},
+                    comments={70: body_of(PAUSED, marks("done", "done", "paused"),
+                                          reset=at(20, 30))})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(21)), [])
+    boss.poll()
+    assert trail(gh) == [(70, (IN_PROGRESS,)), (70, (NEEDS_ATTENTION,)), (70, NEEDS_ATTENTION)]
+    assert shown(gh, 70) == [(NEEDS_ATTENTION, marks("done", "done", "failed"))]
+
+
+def test_a_resume_whose_comment_cannot_be_read_waits_for_the_next_poll(tmp_path: Path) -> None:
+    """KTD2: its marks live only there; resumed without them, the checklist would start over."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]}, markers={70: limit(70)},
+                    comments={70: body_of(PAUSED, marks("done", "done", "paused"))})
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(21)), [])
+    gh.flaky = {"list #70"}
+    boss.poll()
+    assert spawn.calls == []
+    assert trail(gh) == []
+    boss.poll()
+    assert trail(gh) == [(70, (IN_PROGRESS,)), (70, dispatcher.RUNNING)]
+    assert shown(gh, 70) == [(dispatcher.RUNNING, marks("done", "done", "current"))]
+
+
+def test_only_a_session_this_run_dispatched_gets_its_status_comment_created(
+        tmp_path: Path) -> None:
+    """R12: #70, resumed with no comment, never gets one; #74's failed create comes next poll."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({PAUSED: [(paused(70), ())], READY: [(ready(74), ())]},
+                    markers={70: limit(70)})
+    boss, _ = boss_at(tmp_path, gh, 2, Clock(at(21)), [])
+    gh.flaky = {"status #74"}
+    boss.poll()
+    assert trail(gh) == [(70, (IN_PROGRESS,)), (74, (IN_PROGRESS,))]
+    gh.answers = {}
+    logs(boss, 70, skill("ce-work"))
+    boss.poll()
+    assert trail(gh)[2:] == [(74, dispatcher.RUNNING)]
+    assert wrote(gh)[-1].posted
 
 
 # The loop and the lock
