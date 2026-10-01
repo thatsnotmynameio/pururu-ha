@@ -81,10 +81,10 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_programs.py` | Executable programs (`programs: executable:`, `script.pururu_<device>_program_executable_<key>`): the block and its refusals, the scripts file, running, stopping, held and dropped targets, reloads, renames, taken IDs, runs as cycles and their statistics |
 | `test_appliance.py` | `running_program`, cycles, energy, runtime, meters, restores |
 | `test_alerts.py` | Hand-written alerts (the `alerts` device key): the block and its refusals, a `when` of another feature (a meter, a program's statistic too), `state` (`on` and `off` however YAML reads them, a number refused, a quoted one compared as text), `above`/`below`, `for`, no reading and offline, restarts and reloads raising no false alarm, a renamed entity followed, the texts and the error logged without Alert2 |
-| `test_presets.py` | Ready-made alerts (the alerts aspect), on the appliance: enabling them and their refusals, `offline`, `no_power`, `long_cycle` and `no_cycle` (counted across restarts, no flicker at a cycle's end or a reload), default texts by language, a reaction on one, a hand-written alert on one refused, the appliance page listing each |
+| `test_presets.py` | Ready-made alerts (the alerts aspect), on the appliance: enabling them and their refusals, `offline`, `no_power`, `long_cycle` and `no_cycle` (counted across restarts, no flicker at a cycle's end or a reload), default texts by language, a reaction on one, a hand-written alert on one refused |
 | `test_alert2.py` | Alert2's file (`pururu/alert2/alerts.yaml`): an alert per alert with texts, text written as is (never a template), renames, reloading Alert2 when the file changed or it doesn't run an alert, the include's Repairs issue, failed writes and reloads, removing the entry |
-| `test_alert_lights.py` | Alert lights: `config: alerts: lights:` and its refusals, an alert's group, priorities and `repeat`, the highest priority winning, `resolved`, a change by someone else put back or taking the light back, relays, offline lights, slow and failing calls, restarts and reloads, disabling an alert or a light, the page's example and defaults |
-| `test_notifications.py` | Ready-made notifications (the notifications aspect): the block and its refusals, where a message goes, the automation and its ID, texts in Home Assistant's language, renames, a cycle's end told and a reload telling nobody, one automations file and one Repairs issue with the reactions', removing the entry, the appliance page listing each |
+| `test_alert_lights.py` | Alert lights: `config: alerts: lights:` and its refusals, an alert's group, priorities and `repeat`, the highest priority winning, `resolved`, a change by someone else put back or taking the light back, relays, offline lights, slow and failing calls, restarts and reloads, disabling an alert or a light |
+| `test_notifications.py` | Ready-made notifications (the notifications aspect): the block and its refusals, where a message goes, the automation and its ID, texts in Home Assistant's language, renames, a cycle's end told and a reload telling nobody, one automations file and one Repairs issue with the reactions', removing the entry |
 | `test_reactions.py` | Reactions: the block and its refusals, each source (`when`, `entity`, `at`, `sun`) and `retry`'s tries, `then` starting its device's program unless it runs, `message`, the automations file, renames, held and dropped programs, `triggered_total` and its meters, restarts keeping an occurrence's run |
 | `test_generated.py` | `core/generated.py` over both kinds (the programs' scripts, the automations): the file and its header, pururu's entity IDs and one someone else holds, rewriting and reloading only on change, a dropped item, the include's Repairs issue, failed writes and reloads, removing the entry |
 | `test_messages.py` | `core/messages.py`: `notify` targets as notify actions, text escaped so it renders as written, each target told the title and the message |
@@ -96,9 +96,12 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `test_dashboard.py` | The dashboard's content, refreshes, and what keeps it from being created |
 | `test_events.py` | The two classes of events, their data, what isn't fired, renames and reloads |
 | `test_entity.py` | `reading()`, `as_time()` |
-| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale; the root holds only what HA looks up; the core and the platforms import only what their layer allows, and no folder imports a later layer (`features` then `aspects` then `device_keys` and `outputs`, neither of those two importing the other, then `setup`); only the statistics aspect imports HA's `utility_meter`; no module named after a platform HA preloads; the Develop pages' examples import modules that exist |
-| `test_updating.py` | The Guide's update page (`getting-started/updating-to-0.2.1.mdx`): its examples, old and new: each step shows 0.1.23 then 0.2.1, each a part of its whole example; the whole example after sets up and the whole before is refused; each old form, as the page writes it, put back in the whole after is refused at its place, with the message the page quotes |
+| `test_code.py` | ruff, ruff format, mypy, hassfest and the quality scale; the root holds only what HA looks up; the core and the platforms import only what their layer allows, and no folder imports a later layer (`features` then `aspects` then `device_keys` and `outputs`, neither of those two importing the other, then `setup`); only the statistics aspect imports HA's `utility_meter`; no module named after a platform HA preloads; no test outside `tests/docs/` names `docs/` (the [docs tests'](#docs-tests) guard) |
+| `docs/test_updating.py` | The Guide's update page (`getting-started/updating-to-0.2.1.mdx`): its examples, old and new: each step shows 0.1.23 then 0.2.1, each a part of its whole example; the whole example after sets up and the whole before is refused; each old form, as the page writes it, put back in the whole after is refused at its place, with the message the page quotes |
+| `docs/test_pages.py` | The pages that state what the code holds: the Develop pages' examples import modules that exist; the alerts page's Alert2 include is the one pururu asks for; the alert lights page's example sets up and its defaults are the defaults; the notifications page, and the door and appliance pages, list every ready-made notification or alert |
 | `test_release.py`, `test_fetch_hassfest.py` | The release and hassfest scripts |
+| `test_changes.py` | `changes.py`: which checks a pull request's changed files run, and every check off a pull request |
+| `test_sharding.py` | `PURURU_SHARD`: N shards cover every file once, stable whatever the order, a wrong value refused |
 
 ## `test_code.py`: core's checks
 
@@ -108,6 +111,16 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 - `mypy`, strict, with `mypy.ini`.
 - **hassfest**, which validates the manifest, services, translations, icons and config flow. It comes from the pinned release's source. `fetch_hassfest.py` downloads it once into `.hassfest/`, before the HA plugin blocks sockets, and you can run it by hand with `uv run fetch_hassfest.py`.
 - **The quality scale**: `quality_scale.yaml` must list every rule of the pinned hassfest. A rule that isn't `done` needs a comment with the reason.
+
+## Docs tests
+
+The tests that read `docs/` live in `tests/docs/`. `tests/conftest.py` marks each of them `docs`, and the `addopts` in `pyproject.toml` pass `-m "not docs"`, so `uv run pytest` leaves them out. Run them with:
+
+```sh
+uv run pytest -m docs
+```
+
+CI runs them in the Docs workflow, beside docs.page's check, on a pull request that changes docs or code. A guard in `tests/test_code.py` (`test_no_test_outside_tests_docs_reads_docs`) fails when a test outside `tests/docs/` names `docs/`, so a new test that reads a page has to go there. Only `tests/conftest.py` (it marks the folder) and `tests/test_changes.py` (it holds paths as data and reads no file) may name it; docstrings don't count.
 
 ## The layer table
 
@@ -141,9 +154,13 @@ A new folder needs a row here, in `ALLOWED` (`tests/test_code.py`), or the impor
 ## Running tests
 
 ```sh
-uv run pytest                                      # everything, 4 processes
+uv run pytest                                      # everything but the docs tests, 4 processes
+uv run pytest -m docs                              # the docs tests
 uv run pytest tests/test_appliance.py -n 0 -q      # one file, one process
 uv run pytest "tests/test_places.py::test_name[param id]" -n 0
+PURURU_SHARD=2/3 uv run pytest                     # the second of three shards
 ```
 
 Use `-n 0`, not `-p no:xdist`, to run in a single process (see [Getting set up](/develop#commands)).
+
+`PURURU_SHARD=i/N` keeps one of N sets of whole test files (`tests/sharding.py`): the files with the most tests go first, each to the lightest set, so every run, and every xdist worker, gets the same sets. CI's Build workflow runs the tests as three shards in parallel (`tests/test_code.py` apart, in its lint job). A value other than `i/N` with `1 <= i <= N` stops the run before collection.

@@ -21,7 +21,7 @@ The version is `version` in `custom_components/pururu/manifest.json`. It's seman
   </Step>
 </Steps>
 
-`release.py` enforces two rules. `python3 release.py check` runs in every Build:
+`release.py` enforces two rules. `python3 release.py check` runs in every Build, in its lint job:
 
 - A version that already has its tag isn't published again.
 - A version **below** the latest release fails the checks.
@@ -32,10 +32,33 @@ All in `.github/workflows/`:
 
 | Workflow | When | What |
 |---|---|---|
-| `build.yml` (**Build**) | Pull requests, and called by Release | `release.py check`, `uv run --locked pytest --cov` (tests and core's checks), then the SonarQube Cloud scan with the coverage report |
-| `validate.yml` (**Validate**) | Pull requests, weekly, and called by Release | HACS's own validation of the repository (`hacs/action`) |
-| `docs.yml` (**Docs**) | Pull requests | `pnpm install --frozen-lockfile`, then `pnpm docs:check`: docs.page's check of this site |
-| `release.yml` (**Release**) | Every push to `main` | Build and Validate, then the tag and GitHub release |
+| `ci.yml` (**CI**) | Every pull request | `changes.py` classifies the changed files, then calls Build, Docs and Validate as they need; **CI ok** fails when a check that ran failed or was cancelled |
+| `build.yml` (**Build**) | Called by CI and by Release | Three stages. Lint: `release.py check`, then `tests/test_code.py` (core's checks, the layer table, the docs tests' guard). Tests: the rest of `uv run --locked pytest --cov` in three parallel shards (`PURURU_SHARD`). SonarQube: their coverage combined, then the SonarQube Cloud scan |
+| `docs.yml` (**Docs**) | Called by CI | Two jobs in parallel: `pnpm install --frozen-lockfile` then `pnpm docs:check` (docs.page's check of this site), and the docs tests (`uv run --locked pytest -m docs`) |
+| `validate.yml` (**Validate**) | Called by CI and by Release, and weekly | HACS's own validation of the repository (`hacs/action`) |
+| `release.yml` (**Release**) | Every push to `main` | Build and Validate in full, then the tag and GitHub release |
+
+Build, Docs and Validate have no pull request trigger of their own, and each can also be started by hand.
+
+### What runs on a pull request
+
+CI runs a check only when the pull request changes something it checks. A skipped check counts as passed, and **CI ok** is the only check the ruleset requires.
+
+| The pull request changes | What runs |
+|---|---|
+| Code: `custom_components/`, `tests/`, `pyproject.toml`, `uv.lock`, `ruff.toml`, `mypy.ini`, `fetch_hassfest.py`, `release.py`, `sonar-project.properties` | Build and Docs |
+| The site: `docs/**/*.mdx`, `docs.json`, `package.json`, `pnpm-lock.yaml` | Docs |
+| What HACS reads: `hacs.json`, `custom_components/pururu/manifest.json`, `README.md` | Validate (the manifest runs Build and Docs too, as code) |
+| Agent and planning files: `.claude/`, `.compound-engineering/`, `CLAUDE.md`, `CONCEPTS.md`, `STRATEGY.md`, `docs/plans/`, `docs/solutions/`, `docs/superpowers/`, `docs/ideation/` | Nothing but **CI ok** |
+| A workflow (`.github/workflows/`), or any file in none of these | Everything |
+
+To see what your changes run:
+
+```sh
+git diff --name-only origin/main... | python3 changes.py pull_request
+```
+
+CodeQL isn't part of CI: it runs on every pull request (see [Security](#security)).
 
 `uv run --locked` fails when `uv.lock` is out of date, so every package is pinned by hash. The same goes for `pnpm install --frozen-lockfile` and `pnpm-lock.yaml`, which pins the docs.page CLI and everything under it. pnpm's own version is `packageManager` in `package.json`.
 
@@ -51,7 +74,7 @@ Dependabot proposes the updates. Keep the SHA and the comment in sync when you u
 
 ## SonarQube
 
-SonarQube Cloud analyses every pull request. Some of its rules conflict with signatures or conventions Home Assistant requires. For example, a platform's `async_setup_entry` must be `async` and take `hass`, even when it awaits nothing and doesn't use `hass`.
+SonarQube Cloud analyses every pull request that runs Build, from the coverage of the three test shards combined. On a pull request the scan waits for the quality gate and fails with it; on `main` it doesn't wait, so a red gate never stops a release. Some of its rules conflict with signatures or conventions Home Assistant requires. For example, a platform's `async_setup_entry` must be `async` and take `hass`, even when it awaits nothing and doesn't use `hass`.
 
 Such a finding is suppressed in `sonar-project.properties`, under `sonar.issue.ignore.multicriteria`, with a comment giving the reason. It's **never** suppressed in the code. Scope each suppression to one rule and to the files where it applies.
 
@@ -75,7 +98,7 @@ This site is served by [docs.page](https://docs.page) from `docs/` and `docs.jso
 ```sh
 pnpm install         # once, and after pnpm-lock.yaml changes
 pnpm docs:preview    # live preview in the browser
-pnpm docs:check      # broken links and missing assets; the Docs workflow runs it on every pull request
+pnpm docs:check      # broken links and missing assets; the Docs workflow runs it on pull requests that change docs or code
 ```
 
 A change to pururu's behaviour updates these pages in the same pull request.
