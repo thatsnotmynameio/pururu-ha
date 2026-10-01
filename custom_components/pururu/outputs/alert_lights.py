@@ -2,7 +2,7 @@
 
 An alert with `lights` names a group of `config: alerts: lights: groups`.
 While one of a light's alerts is on, the light shows the highest priority's
-`turn_on`; once none is, `resolved`'s for its `for`, then it is turned off and
+`turn_on`; once none is, `resolved`'s for its `lasts`, then it is turned off and
 pururu_alert_lights_released says it is free. Only the light's turn_on and
 turn_off are called: the light uses what it has.
 """
@@ -22,7 +22,6 @@ from homeassistant.components.light import ATTR_COLOR_NAME, LIGHT_TURN_ON_SCHEMA
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
-    CONF_NAME,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
     STATE_OFF,
@@ -56,25 +55,18 @@ from ..const import (
     DEFAULT_ALERT_LIGHTS,
     EVENT_ALERT_LIGHTS_RELEASED,
 )
-from ..core.feature import (
-    ALERTS_KEY,
-    PRIORITIES,
-    Device,
-    Feature,
-    presets_of,
-    qualified,
-)
-from ..core.resolve import Index, Ref, find
+from ..core.feature import ALERTS_KEY, PRIORITIES, Feature, presets_of
+from ..core.resolve import Index, Ref, device_reference, entity_id_hint, find
 from ..core.runtime import Built, PururuConfigEntry
 from ..core.vocabulary import NO_READING
-from ..features.lights import LIGHTS, Borrowable
+from ..features.lights import Borrowable
 
 _LOGGER = logging.getLogger(__name__)
 
 GROUPS = "groups"
 TURN_ON = "turn_on"
 REPEAT = "repeat"
-FOR = "for"
+LASTS = "lasts"
 # What a light shows between its last alert's end and its release
 RESOLVED = "resolved"
 
@@ -93,11 +85,8 @@ def _known_colour(params: dict[str, Any]) -> dict[str, Any]:
 
 # light.turn_on's data under its own names; the light is the group's, never given here
 TURN_ON_SCHEMA = vol.All(vol.Schema(LIGHT_TURN_ON_SCHEMA), _known_colour)
-# A whole number of seconds, written {seconds: N}
-SECONDS = vol.All(
-    vol.Schema({vol.Required("seconds"): vol.All(int, vol.Range(min=1))}),
-    lambda value: timedelta(seconds=value["seconds"]),
-)
+# Any HA time period, at least a second: 0 would make repeat a busy loop
+PERIOD = vol.All(cv.positive_time_period, vol.Range(min=timedelta(seconds=1)))
 
 
 def _distinct(lights: list[str]) -> list[str]:
@@ -106,16 +95,13 @@ def _distinct(lights: list[str]) -> list[str]:
     return lights
 
 
-# Device key -> keys of that device's lights; check() checks them against the devices
-GROUP = vol.All(
-    vol.Schema({cv.slug: vol.All([cv.slug], vol.Length(min=1), _distinct)}),
-    vol.Length(min=1),
-)
+# Its lights, each <device>.light_<key>; check() checks them against the devices
+GROUP = vol.All([device_reference], vol.Length(min=1), _distinct)
 PRIORITY = vol.Schema(
-    {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Optional(REPEAT): SECONDS}
+    {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Optional(REPEAT): PERIOD}
 )
 RESOLVED_SCHEMA = vol.Schema(
-    {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Required(FOR): SECONDS}
+    {vol.Required(TURN_ON): TURN_ON_SCHEMA, vol.Required(LASTS): PERIOD}
 )
 
 
@@ -134,7 +120,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "low": _breathe("blue"),
     RESOLVED: {
         TURN_ON: {"color_name": "green", "brightness_pct": 50},
-        FOR: {"seconds": 120},
+        LASTS: {"minutes": 2},
     },
 }
 
@@ -160,20 +146,21 @@ def settings(configured: Mapping[str, Any]) -> dict[str, Any]:
     return dict(block) if block is not None else SCHEMA({})
 
 
-def light_ids(
-    settings: Mapping[str, Any], devices: Mapping[str, Any]
-) -> dict[str, list[str]]:
-    """Each group's lights, by unique ID (pururu_<device>_light_<key>)."""
+def light_ids(settings: Mapping[str, Any], index: Index) -> dict[str, list[str]]:
+    """Each group's lights, by unique ID (pururu_<device>_light_<key>): check() found each in `index`."""
     return {
         group: [
-            Device(
-                key=key, name=devices[key][CONF_NAME], namespace=LIGHTS.namespace
-            ).object_id(light)
-            for key, lights in members.items()
-            for light in lights
+            index[device][ref.key].unique_id for device, ref in map(_member, members)
         ]
         for group, members in settings[GROUPS].items()
     }
+
+
+def _member(text: str) -> tuple[str, Ref]:
+    """A group's member, as device_reference validated it: its device, and the reference."""
+    ref = Ref.parse(text)
+    assert ref.device is not None  # device_reference
+    return ref.device, ref
 
 
 @dataclass(eq=False)
@@ -189,7 +176,7 @@ class _Light:
     recent: deque[str] = field(default_factory=lambda: deque(maxlen=RECENT))
     repeating: CALLBACK_TYPE | None = None
     resolving: CALLBACK_TYPE | None = None
-    # Resolved's `for` ended while it had no reading: turned off once it's back
+    # Resolved's `lasts` ended while it had no reading: turned off once it's back
     overdue: bool = False
     # Its commands run one at a time, in the order given: a slow turn_off must
     # never land after the next alert's turn_on
@@ -215,7 +202,7 @@ class _Light:
             self.repeating = None
 
     def stop_resolving(self) -> None:
-        """Stop counting resolved's `for`."""
+        """Stop counting resolved's `lasts`."""
         if self.resolving is not None:
             self.resolving()
             self.resolving = None
@@ -308,7 +295,7 @@ class AlertLights:
         without a reading was taken by nobody. During resolved only a person
         or an automation takes it back, even as it comes back from no reading;
         a change neither made (the bulb back online, its own late report)
-        shows resolved again, its `for` running on, or turns it off if that
+        shows resolved again, its `lasts` running on, or turns it off if that
         ended meanwhile.
         """
         light = self._by_id[event.data["entity_id"]]
@@ -364,13 +351,13 @@ class AlertLights:
 
     @callback
     def _resolve(self, light: _Light) -> None:
-        """Show resolved for its `for`, then hand the light back."""
+        """Show resolved for its `lasts`, then hand the light back."""
         light.stop_repeating()
         light.stop_resolving()
         light.overdue = False
         self._apply(light, RESOLVED)
         light.resolving = async_call_later(
-            self._hass, self._settings[RESOLVED][FOR], partial(self._resolved, light)
+            self._hass, self._settings[RESOLVED][LASTS], partial(self._resolved, light)
         )
 
     @callback
@@ -583,7 +570,7 @@ async def async_step(
             hass,
             entry,
             lights_settings,
-            light_ids(lights_settings, built.house.get(CONF_DEVICES, {})),
+            light_ids(lights_settings, built.index),
             [
                 entity
                 for entity in built.entities.get(Platform.BINARY_SENSOR, ())
@@ -601,7 +588,7 @@ async def async_step(
 def check(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> Iterator[vol.Invalid]:
-    """Refuse a group's light that isn't a device's, or an alert's group that isn't one (a schema check)."""
+    """Refuse a group's member that isn't a device's light, or an alert's group that isn't one (a schema check)."""
     groups = house[CONF_CONFIG][CONF_ALERTS][CONF_LIGHTS][GROUPS]
     for group, members in groups.items():
         if (
@@ -627,22 +614,33 @@ def check(
 
 
 def _group_refused(
-    devices: Mapping[str, Any],
-    index: Index,
-    group: str,
-    members: Mapping[str, list[str]],
+    devices: Mapping[str, Any], index: Index, group: str, members: list[str]
 ) -> vol.Invalid | None:
-    """Why this group can't be: a light of it that isn't a device's; None when it can."""
+    """Why this group can't be: a member that isn't a device's light, at its path; None when it can.
+
+    A light is a lights entity of its own (not one an aspect would add to
+    lights).
+    """
     where = f"config.alerts.lights.groups: {group}"
-    path: list[Hashable] = [CONF_CONFIG, CONF_ALERTS, CONF_LIGHTS, GROUPS, group]
-    for key, lights in members.items():
-        if key not in devices:
-            return vol.Invalid(f"{where}: device {key} is not in devices", path=path)
-        for light in lights:
-            if find(index, key, Ref(key, qualified(LIGHTS.namespace, light))) is None:
-                return vol.Invalid(
-                    f"{where}: device {key} has no light {light}", path=path
-                )
+    for at, (device, ref) in enumerate(map(_member, members)):
+        path: list[Hashable] = [
+            CONF_CONFIG,
+            CONF_ALERTS,
+            CONF_LIGHTS,
+            GROUPS,
+            group,
+            at,
+        ]
+        if device not in devices:
+            hint = entity_id_hint(
+                index, ref, "a group lists <device>.light_<key> of a device's lights"
+            )
+            return vol.Invalid(
+                f"{where}: device {device} is not in devices{hint}", path=path
+            )
+        target = find(index, device, ref)
+        if target is None or target.builder != CONF_LIGHTS or target.by is not None:
+            return vol.Invalid(f"{where}: {ref.text} is not a light", path=path)
     return None
 
 

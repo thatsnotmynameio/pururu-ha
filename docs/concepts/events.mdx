@@ -3,11 +3,12 @@ title: Events
 description: pururu fires an event on Home Assistant's bus for every change of its entities, so an automation can send it anywhere, such as a webhook.
 ---
 
-Everything pururu knows ends up in the state of one of its entities: a cycle's end is `last_cycle_end`, who opened a door is `last_opened_by`, an alert is its binary sensor. With `events`, pururu also **fires an event on Home Assistant's bus** each time one of those states changes, with the change and a snapshot of the whole device. pururu sends nothing over the network itself: an automation of yours takes the event from the bus and posts it, for example to a webhook.
+Everything pururu knows ends up in the state of one of its entities: a cycle's end is `last_cycle_end`, who opened a door is `last_opened_by`, an alert is its binary sensor. With `config: events:`, pururu also **fires an event on Home Assistant's bus** each time one of those states changes, with the change and a snapshot of the whole device. pururu sends nothing over the network itself: an automation of yours takes the event from the bus and posts it, for example to a webhook.
 
 ```yaml title="configuration.yaml"
 pururu:
-  events: [state_changed, reading]
+  config:
+    events: [state_changed, reading]
   devices:
     clothes_washer:
       name: Tanquinho
@@ -24,7 +25,7 @@ pururu:
 | `state_changed` | `pururu_state_changed` | Entities **without** a `state_class`: facts such as `running`, a phase, an alert, a door, `last_opened_by`, the last cycle's values, switches, lights, buttons (each press: its time). |
 | `reading` | `pururu_reading` | Entities **with** a `state_class`: series such as the power and energy mirrors, totals and per-period meters. They can change every few seconds. |
 
-`events` lists the classes to fire, each once. Leave it out (the default) and pururu fires nothing. A class you don't list is never fired. **Developer tools → YAML → Pururu** applies a change.
+`config: events:` lists the classes to fire, each once. Leave it out (the default) and pururu fires nothing. A class you don't list is never fired. **Developer tools → YAML → Pururu** applies a change.
 
 A change is fired when the state itself changes. pururu doesn't fire:
 

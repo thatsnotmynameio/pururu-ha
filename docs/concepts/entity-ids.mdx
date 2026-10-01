@@ -19,7 +19,7 @@ Every entity pururu creates has the ID
 | Feature or device key | Namespace | Example |
 |---|---|---|
 | [`appliance`](/features/appliance) | `appliance` | `binary_sensor.pururu_clothes_washer_appliance_running`, `sensor.pururu_clothes_washer_appliance_phase_warming_cycles_total`, `binary_sensor.pururu_clothes_washer_appliance_cotton` (a detected program) |
-| [`door`](/features/door) | `door` | `binary_sensor.pururu_porta_cercado_frente_door_open` |
+| [`door`](/features/door) | `door` | `binary_sensor.pururu_porta_frente_door_open` |
 | [`window`](/features/window) | `window` | `binary_sensor.pururu_janela_quarto_window_open` |
 | [`lights`](/features/lights) | `light` | `light.pururu_biblioteca_light_teto` |
 | [`switches`](/features/switches) | `switch` | `switch.pururu_greenhouse_switch_sprinkler` |
@@ -35,10 +35,6 @@ So the `running` entity of the device `clothes_washer` is always `binary_sensor.
 A [detected program](/concepts/programs#more-detected-programs)'s key is an entity key of the appliance's namespace (`cotton` → `binary_sensor.pururu_clothes_washer_appliance_cotton`), so it can't be one the appliance already creates, such as `running` or `cycles_total`, nor one a phase could take later (`phase_…`, or `cotton_phase_…` beside a program `cotton`): that's a configuration error, told at once.
 
 The entity's **unique ID** is the same text without the platform: `pururu_clothes_washer_appliance_running`. That's what Home Assistant uses to remember the entity's settings and history across restarts.
-
-<Info>
-  Before pururu 0.1.5, IDs had no namespace (`binary_sensor.pururu_clothes_washer_running`, `switch.pururu_greenhouse_sprinkler`). Updating removes those entities, with their history, and creates the new ones: counters such as `cycles_total` and `runtime_total` start again from 0, and renames you made in the UI are lost. Update the automations and dashboards that name them.
-</Info>
 
 ## Names
 

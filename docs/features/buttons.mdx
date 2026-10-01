@@ -39,7 +39,7 @@ pururu knows nothing about remotes, integrations or vendors. You name a sensor a
 ---
 
 <Property name="state" type="string" required>
-  The sensor's value that counts as a press. It can't be empty, `unavailable` or `unknown`: those mean the sensor has no reading, and nobody presses them. An unquoted `on` is the state `on`.
+  The sensor's value that counts as a press, compared as text, as an [alert's `state`](/concepts/alerts#settings). It can't be empty, `unavailable` or `unknown`: those mean the sensor has no reading, and nobody presses them. An unquoted `on` is the state `on`. A number without quotes is refused (`state: YAML reads it as the number 1: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`), since pururu can't tell whether your sensor shows `1` or `1.0`: quote it as the sensor shows it, such as `state: "1"`.
 </Property>
 
 ---
@@ -51,7 +51,7 @@ pururu knows nothing about remotes, integrations or vendors. You name a sensor a
 ---
 
 <Property name="program" type="string">
-  One of the device's [executable programs](/concepts/programs#executable-programs), by its key. Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button, as [Reacting to a press](#reacting-to-a-press) says.
+  One of the device's [executable programs](/concepts/programs#executable-programs), by its key. A button starts its own device's programs only: another device's, with a dot, is refused (`estufa.regar must be of this device: its entity key, without <device>. or <domain>.`). Each press starts it, unless it's already running. Without `program`, a press only records its time: an automation of yours can still react to the button, as [Reacting to a press](#reacting-to-a-press) says.
 </Property>
 
 <Property name="statistics" type="map">

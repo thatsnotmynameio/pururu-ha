@@ -89,6 +89,43 @@ async def test_the_error_names_the_refused_state(
     assert message in caplog.text
 
 
+@pytest.mark.parametrize(("written", "text"), [
+    pytest.param(1, "1", id="an int"),
+    pytest.param(1.0, "1.0", id="a float"),
+])
+async def test_a_number_in_state_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+                                            written: float, text: str) -> None:
+    """One rule with an alert's state: pururu can't tell which sensor shows 1 as 1.0."""
+    assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
+        "ler": {"entity": REMOTE, "state": written, "name": "Ler"}}}})
+    assert (f"state: YAML reads it as the number {text}: compare a reading with above or below, "
+            'or quote the state as the entity shows it ("1.0") for dictionary value '
+            "'pururu->devices->biblioteca->buttons->ler->state'") in caplog.text
+
+
+@pytest.mark.parametrize(("value", "pressed"), [
+    pytest.param("1.0", True, id="as the sensor shows it"),
+    pytest.param("1", False, id="1 is not the sensor's 1.0"),
+])
+async def test_a_quoted_number_in_state_compares_as_text(ha: HomeAssistant, value: str,
+                                                        pressed: bool) -> None:
+    """A quoted state is text, as an alert's: the sensor writing 1.0 presses only "1.0"."""
+    await fake(ha, REMOTE, "")
+    assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
+        "ler": {"entity": REMOTE, "state": value, "name": "Ler"}}}})
+    await write(ha, "1.0")
+    assert state(ha, LER) == (now() if pressed else "unknown")
+
+
+async def test_a_program_with_a_dot_is_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """A button's program is its own device's, as a reaction's then: one message for both."""
+    assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
+        "ler": {**BUTTONS["ler"], "program": "estufa.regar"}}}})
+    assert ("estufa.regar must be of this device: its entity key, without <device>. or <domain>. "
+            "for dictionary value 'pururu->devices->biblioteca->buttons->ler->program'"
+            ) in caplog.text
+
+
 async def test_an_unquoted_on_is_the_state_on(ha: HomeAssistant) -> None:
     """YAML reads an unquoted on as true: the button's state is still `on`."""
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {

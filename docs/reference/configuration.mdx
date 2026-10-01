@@ -7,11 +7,11 @@ description: Every key of the pururu block on one page.
 pururu:
   config:
     notify: notify.mobile_app_phone     # where every message goes
+    events: [state_changed, reading]    # see events
     alerts:
       lights:
         groups:
-          default: {biblioteca: [teto]}
-  events: [state_changed, reading]   # see events
+          default: [biblioteca.light_teto]
   floors:
     terreo:
       name: Térreo
@@ -51,11 +51,12 @@ pururu:
         long_cycle:
           name: Ciclo longo
           when: appliance_running
-          is: "on"
+          state: "on"
           for: {hours: 3}
           priority: medium
-          lights: true
-          notify: {message: A máquina passou de 3 horas ligada!, done_message: A máquina terminou.}
+          lights: default
+          message: A máquina passou de 3 horas ligada!
+          done_message: A máquina terminou.
     greenhouse:
       name: Estufa
       switches:
@@ -77,23 +78,24 @@ pururu:
         teto: {entity: light.biblioteca_teto, name: Teto}
         abajur: {entity: switch.sonoff_abajur, name: Abajur}
       reactions:
-        washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off"}
+        washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off"}
         night: {name: Noite, at: "22:00", message: Hora de apagar as luzes.}
 
 automation pururu: !include_dir_merge_list pururu/automations
 script pururu: !include_dir_merge_named pururu/scripts
 
-alert2:                          # alerts with notify: see alerts
+alert2:                          # alerts with texts: see alerts
   alerts: !include_dir_merge_list pururu/alert2
 ```
 
 ## General rules
 
-- `pururu:` has five optional keys: `config`, `floors`, `areas`, `devices` and `events`. Any other key is an error.
+- `pururu:` has four optional keys: `config`, `floors`, `areas` and `devices`. Any other key is an error.
 - Every **key** you choose, whether of a floor, an area, a device, a phase, a switch, a light, an alert or a detected or executable program, is a **slug**: lowercase letters, digits and `_`.
 - A feature's own `alerts` enables its ready-made alerts, one key each: see [Ready-made alerts](/concepts/alerts#ready-made-alerts). The device's `alerts` is for alerts you write.
 - A feature's own `notifications` enables its ready-made notifications the same way: see [Notifications](/concepts/notifications#ready-made-notifications).
 - A `statistics` counts one of the block's totals per period: in a feature's own block (`appliance`, `door`, `window`), in an appliance's `running_program`, in each of its phases and `other`, in each detected program (and its phases and `other`), or inside each executable program, reaction or button. See [Statistics](/concepts/statistics).
+- A reference to an entity is its entity key on the same device (`appliance_running`), `<device>.<key>` on another (`clothes_washer.appliance_running`: a reaction's `when`, a light group's member), or `entity:` for a real entity (a reaction's source). An alert's `when`, a program's steps and a reaction's `then` are always of their own device.
 - An alert's `when` names an entity key of another feature of the same device, as it ends the entity ID (`appliance_running`, `switch_sprinkler`). See [alerts](/concepts/alerts#settings).
 - An executable program's steps name entity keys of other features of the same device the same way, and each one's feature must take the step's action. See [programs](/concepts/programs#steps).
 - No two devices give an entity the same ID. Device `greenhouse` with the switch `switch_sprinkler` and device `greenhouse_switch` with the switch `sprinkler` would both have `switch.pururu_greenhouse_switch_switch_sprinkler`, so that's a configuration error. It counts every entity key a feature can create, even one its settings don't: device `greenhouse` with the switch `appliance_energy_total` is refused next to a device `greenhouse_switch` with `appliance`, even without `energy:`, so turning a setting on later never breaks the configuration.
@@ -111,6 +113,12 @@ Settings of the whole house, not of a device.
 
 ---
 
+<Property name="events" type="list" optional>
+  The classes of [events](/concepts/events) pururu fires on Home Assistant's bus: `state_changed`, `reading`, each once. None by default.
+</Property>
+
+---
+
 <Property name="alerts.lights" type="map" optional>
   The alert lights: `groups` of lights that alerts borrow with `lights`, and what a light shows for each priority (`high`, `medium`, `low`) and once its alerts ended (`resolved`). See [Alert lights](/concepts/alert-lights#settings).
 </Property>
@@ -120,7 +128,7 @@ Settings of the whole house, not of a device.
 A map of **floor ID → floor**. See [Floors and areas](/concepts/floors-and-areas).
 
 <Property name="name" type="string" required>
-  The name Home Assistant shows.
+  The name Home Assistant shows. It can't be empty.
 </Property>
 
 ---
@@ -146,7 +154,7 @@ A map of **floor ID → floor**. See [Floors and areas](/concepts/floors-and-are
 A map of **area ID → area**. See [Floors and areas](/concepts/floors-and-areas).
 
 <Property name="name" type="string" required>
-  The name Home Assistant shows.
+  The name Home Assistant shows. It can't be empty.
 </Property>
 
 ---
@@ -167,16 +175,12 @@ A map of **area ID → area**. See [Floors and areas](/concepts/floors-and-areas
   Other names for the area. A single string is allowed too.
 </Property>
 
-## events
-
-A list of the classes of [events](/concepts/events) to fire, each once: `state_changed`, `reading`. Leave it out and pururu fires none.
-
 ## devices
 
 A map of **device key → device**. See [Devices and features](/concepts/devices-and-features).
 
 <Property name="name" type="string" required>
-  The device's name.
+  The device's name. It can't be empty.
 </Property>
 
 ---

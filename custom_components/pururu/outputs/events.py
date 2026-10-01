@@ -1,8 +1,10 @@
 """pururu's events: each state change of an entity the entry created, fired on HA's bus.
 
+Enabled by class in `config: events:`.
+
 pururu speaks no HTTP: whatever consumes HA's events takes them from there (for
 a webhook, a rest_command in the user's automation). Two classes, each enabled
-on its own in `events`: the change of an entity with a state_class is a reading
+on its own: the change of an entity with a state_class is a reading
 (a series: power, totals, meters), any other a change (a fact: running, a phase,
 the last cycle's end). Each event carries its device's states when it is fired:
 a cycle's end (last_cycle_end, written last) comes with that cycle's values.
@@ -31,7 +33,7 @@ from homeassistant.helpers.json import json_bytes
 from homeassistant.util.json import json_loads_object
 from homeassistant.util.ulid import ulid_now
 
-from ..const import CONF_DEVICES, DOMAIN
+from ..const import CONF_CONFIG, CONF_DEVICES, DOMAIN
 from ..core.entity import PururuEntity
 from ..core.runtime import Built, PururuConfigEntry
 
@@ -161,6 +163,6 @@ async def async_step(
     async_setup(
         hass,
         entry,
-        built.house.get(CONF_EVENTS, []),
+        built.house.get(CONF_CONFIG, {}).get(CONF_EVENTS, []),
         watched(built.house.get(CONF_DEVICES, {}), built.by_device),
     )

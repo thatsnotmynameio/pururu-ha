@@ -1,0 +1,526 @@
+---
+title: Updating to 0.2.1
+description: Move a configuration from 0.1.23, or 0.2.0, which takes the same configuration, to 0.2.1 by hand, once, in this order. There is no automatic migration.
+---
+
+0.2.1 is the release that carries pururu's 0.2.0 refactor; the 0.2.0 release came out at its start, with 0.1.23's configuration. pururu still does what it did for you; the YAML you write for it changes, made consistent: one way to name an entity, one condition vocabulary, one meaning for `notify`, one time format, and programs in place of `modes`, `phases` and the appliance's `running`.
+
+**There is no automatic migration.** pururu ships no aliases, no deprecation warnings and no migration code: an old key is refused, with its place (`'is' is an invalid option for 'pururu', check: pururu->devices->clothes_washer->alerts->stuck->is`). You rewrite the `pururu:` block once, from 0.1.23 or 0.2.0 (which takes the same configuration), following this page in order. Where this page says 0.1.23, block titles included, it means 0.2.0 too.
+
+<Warning>
+  **Some history starts over.** Two kinds of entities get new IDs:
+
+  - **Modes and phases** (`mode_*`, `phase_current`): a phase of `running_program` is `<platform>.pururu_<key>_appliance_phase_<phase>…`.
+  - **Executable programs**: each script is `script.pururu_<key>_program_executable_<program>`, and its sensors `sensor.pururu_<key>_program_executable_<program>_…`.
+
+  Their old entities are removed at the first start. Their history stays in the recorder under the old IDs; the new totals and meters start from zero. Every other entity keeps its ID, its history and its statistics. See [What starts over](#what-starts-over).
+</Warning>
+
+## Before you update
+
+Still on 0.1.23 (or 0.2.0):
+
+<Steps>
+  <Step title="Wait until every appliance is stopped">
+    A cycle running during the update is lost, and so are its phases'.
+  </Step>
+  <Step title="Back up">
+    Make a full backup (**Settings → System → Backups**), or copy `configuration.yaml`, the `pururu/` folder next to it, and `.storage/`: your way back to the version you run now.
+  </Step>
+  <Step title="Remove every ready-made notifications block, then reload pururu">
+    Delete each feature's `notifications:` (such as the appliance's `finished`), then reload pururu (**Developer tools → YAML → Pururu**, or the `pururu.reload` action). Their automations and registry entries go. 0.2.1 writes reactions' and notifications' automations to one file under one list of IDs: left in place, the old ones would be taken for yours and not generated again. You put the blocks back at the end.
+  </Step>
+</Steps>
+
+## Update
+
+<Steps>
+  <Step title="Download 0.2.1, but don't restart yet">
+    In HACS, open **Pururu** and download 0.2.1 (or copy the new `custom_components/pururu/` by hand). Don't restart and don't reload pururu until the `pururu:` block below is rewritten: the old version refuses the new keys, and the new one the old keys. A refused reload loses nothing (pururu keeps everything as it was), but it's confusing.
+  </Step>
+</Steps>
+
+## Rewrite the `pururu:` block
+
+Home Assistant validates the whole block at once: make every change below before you restart. Each change shows 0.1.23, then 0.2.1; the last two steps delete the old automation files and restart.
+
+<Steps>
+  <Step title="The appliance's running becomes running_program">
+    `running:` becomes `running_program:`, its `threshold:` becomes `above:`, and its delays stay (absent, they are 0). The appliance's `runtime` and `cycles` statistics move into it; `idle_energy` stays on the appliance.
+
+    ```yaml title="0.1.23"
+    appliance:
+      power: sensor.washer_plug_power
+      energy: sensor.washer_plug_energy
+      running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+      statistics:
+        runtime: [today, month]
+        cycles: [today, month]
+        idle_energy: [month]
+    ```
+
+    ```yaml title="0.2.1"
+    appliance:
+      power: sensor.washer_plug_power
+      energy: sensor.washer_plug_energy
+      running_program:
+        above: 4
+        on_delay: {minutes: 1}
+        off_delay: {minutes: 2}
+        statistics:
+          runtime: [today, month]
+          cycles: [today, month]
+      statistics:
+        idle_energy: [month]
+    ```
+  </Step>
+
+  <Step title="modes and phases become the running program's phases">
+    Each `modes:` and `phases:` feature goes. Its bands become `running_program: phases:`, each with a `name`, `above`/`below` and `on_delay`/`off_delay`.
+
+    - A mode keeps its `name`, band and delays. `cycle_from`, `sensor` and `energy` go: a phase reads the appliance's power and energy.
+    - A phase band's `for:` becomes `on_delay:`, and it needs a `name` now. `cycle_from` and `sensor` go from a `phases:` block too: every phase compares the appliance's `power`. `defaults:` goes: a stopped appliance's phase is `idle`, and one running outside every band is `other`.
+    - **A `phases:` or `modes:` block on another sensor** (a temperature, say) can't move into `running_program`: its bands would be compared with the power's watts, and nothing would refuse them. Drop it, and watch that sensor with a reaction's `entity:` and `above`/`below`.
+    - A device with both `modes:` and `phases:` moves both into the one `phases:` map: their keys must differ.
+    - `idle`, `other`, `other_…`, `current` and `last` are reserved: rename a phase keyed so. One keyed `other_spin` is refused with `other_spin is reserved for the built-in phase other (other, other_…): name the phase otherwise`.
+    - Bands may overlap: both phases then run.
+    - `statistics:` goes in each phase that should have meters. They are new meters, starting from zero.
+
+    ```yaml title="0.1.23"
+    water_station:
+      name: Purificador
+      appliance:
+        power: sensor.station_plug_power
+        energy: sensor.station_plug_energy
+        running: {threshold: 2.9, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
+      modes:
+        cycle_from: appliance
+        sensor: sensor.station_plug_power
+        energy: sensor.station_plug_energy
+        modes:
+          resfriar: {name: Resfriar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
+          quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
+        statistics:
+          runtime: [today, month]
+    ```
+
+    ```yaml title="0.2.1"
+    water_station:
+      name: Purificador
+      appliance:
+        power: sensor.station_plug_power
+        energy: sensor.station_plug_energy
+        running_program:
+          above: 2.9
+          on_delay: {seconds: 1}
+          off_delay: {minutes: 1}
+          phases:
+            resfriar:
+              name: Resfriar
+              above: 4
+              below: 150
+              on_delay: {seconds: 10}
+              off_delay: {minutes: 3}
+              statistics: {runtime: [today, month]}
+            quente:
+              name: Água quente
+              above: 150
+              below: 400
+              on_delay: {seconds: 30}
+              off_delay: {seconds: 30}
+              statistics: {runtime: [today, month]}
+    ```
+
+    A `modes:` block's `statistics:` metered every mode: write it in each phase.
+
+    ```yaml title="0.1.23"
+    phases:
+      cycle_from: appliance
+      sensor: sensor.washer_plug_power
+      defaults: {stopped: idle, running: washing}
+      bands:
+        warming: {above: 1000}
+        wringing: {above: 50, below: 1000, for: {minutes: 3}}
+    ```
+
+    ```yaml title="0.2.1"
+    running_program:
+      above: 4
+      phases:
+        warming: {name: Aquecendo, above: 1000}
+        wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+    ```
+  </Step>
+
+  <Step title="A device's programs go under executable">
+    Indent each device's programs under `executable:`. The old flat map is refused with `a device's programs sit under executable: (programs: executable: <key>: …)`.
+
+    ```yaml title="0.1.23"
+    programs:
+      clean:
+        name: Limpar
+        sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
+    ```
+
+    ```yaml title="0.2.1"
+    programs:
+      executable:
+        clean:
+          name: Limpar
+          sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
+    ```
+
+    A program an appliance's power alone tells apart can become a [detected program](/concepts/programs#more-detected-programs) later, in its `appliance:` block, under `programs: detected:`.
+  </Step>
+
+  <Step title="Rename what pururu's own YAML says about renamed entities">
+    In your alerts' and reactions' `when:`:
+
+    - `mode_current`, `mode_last`, `mode_<key>_…` and `phase_current` become `appliance_phase_current`, `appliance_phase_last` and `appliance_phase_<key>_…`.
+    - `program_<key>_…` becomes `program_executable_<key>_…`.
+
+    In their `state:`, `to:` and `from:`:
+
+    - A state that named the old `defaults: stopped:` word names `idle` now, and one that named `defaults: running:` names `other`.
+    - `appliance_phase_current` and `appliance_phase_last` show a phase by its key: only `idle` and `other` are translated. The phase's `name` is `appliance_phase_current`'s `name` attribute, and names the phase's own binary sensor.
+    - With overlapping bands, `appliance_phase_current` is the phase that started last, where 0.1.23's `phases:` showed the first band listed that held. To watch one phase, use its own binary sensor: `when: appliance_phase_wringing`, `state: "on"`.
+
+    A missed one is refused, and all of pururu stays down until it's fixed: `alerts: program_clean_cycles_total is not an entity key of another feature of this device`. A reaction's `then:` needs nothing: it still names the program's key.
+  </Step>
+
+  <Step title="Another device's entity is device.key">
+    A reaction's `device:` and `when:` become one `when: <device>.<key>`. An entity of the same device is still its key alone.
+
+    ```yaml title="0.1.23"
+    washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off"}
+    ```
+
+    ```yaml title="0.2.1"
+    washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off"}
+    ```
+
+    A `when:` written as an entity ID reads as a device that isn't one, and the refusal gives the reference to write: `device binary_sensor is not in devices (binary_sensor.pururu_clothes_washer_appliance_running is an entity ID: write clothes_washer.appliance_running)`.
+
+    An alert light group becomes a list of its lights, each `<device>.light_<key>`:
+
+    ```yaml title="0.1.23"
+    groups:
+      default: {biblioteca: [teto]}
+      externas: {biblioteca: [teto, abajur]}
+    ```
+
+    ```yaml title="0.2.1"
+    groups:
+      default: [biblioteca.light_teto]
+      externas: [biblioteca.light_teto, biblioteca.light_abajur]
+    ```
+
+    **A member must be a light now.** 0.1.23 never checked it; 0.2.1 refuses a member that isn't one of a device's `lights`, at the member's place: `config.alerts.lights.groups: default: greenhouse.switch_sprinkler is not a light`. A member written as an entity ID gets the reference to write: `device light is not in devices (light.pururu_biblioteca_light_teto is an entity ID: write biblioteca.light_teto)`.
+  </Step>
+
+  <Step title="An alert's is, notify and lights">
+    - `is:` becomes `state:`, compared as text, as a reaction's `to:`. `on` and `off` read as before, quoted or not.
+    - **A number is refused** in an alert's `state:`, and in a reaction's `to:` and `from:`. A state is text, and pururu can't tell which entity shows `1` as `1.0` (the appliance's power does): `state: 1` is refused with `state: YAML reads it as the number 1: compare a reading with above or below, or quote the state as the entity shows it ("1.0")`. Compare a reading with `above`/`below`, or quote the state as the entity shows it (`state: "0.0"`); for a plug drawing nothing, use the appliance's ready-made [`no_power`](/features/appliance#ready-made-alerts). YAML reads some unquoted values as numbers (`12:30` is 750, `1.50` is 1.5): quote them.
+    - `notify: {message, done_message}` becomes `message:` and `done_message:` on the alert, both or neither. This applies to the ready-made alerts too. `notify` always means where a message goes now; an alert's is Alert2's.
+    - `lights: true` becomes `lights: default`. `lights: false` goes: absent, an alert borrows no light. Either is refused with `lights names a group of config.alerts.lights.groups, such as default; absent, the alert borrows none`.
+
+    ```yaml title="0.1.23"
+    stuck:
+      name: Travada
+      when: phase_current
+      is: wringing
+      for: {hours: 1}
+      lights: true
+      notify: {message: Travada!, done_message: Destravou.}
+    ```
+
+    ```yaml title="0.2.1"
+    stuck:
+      name: Travada
+      when: appliance_phase_current
+      state: wringing
+      for: {hours: 1}
+      lights: default
+      message: Travada!
+      done_message: Destravou.
+    ```
+  </Step>
+
+  <Step title="The alert lights' resolved lasts">
+    `resolved`'s `for` becomes `lasts`. It and `repeat` take any time period of at least a second: `{seconds: 120}`, `{minutes: 2}`, `"00:02:00"`.
+
+    ```yaml title="0.1.23"
+    resolved: {turn_on: {color_name: green}, for: {seconds: 120}}
+    ```
+
+    ```yaml title="0.2.1"
+    resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}
+    ```
+  </Step>
+
+  <Step title="event_entities, config: events, names">
+    - A door's or window's `events:` (its `event.*` entities) becomes `event_entities:`.
+    - The top-level `events:` (pururu's events on the bus) moves into `config:`.
+    - A device's, floor's or area's `name` can't be empty.
+
+    ```yaml title="0.1.23"
+    pururu:
+      config:
+        notify: notify.mobile_app_phone
+      events: [state_changed, reading]
+    ```
+
+    ```yaml title="0.2.1"
+    pururu:
+      config:
+        notify: notify.mobile_app_phone
+        events: [state_changed, reading]
+    ```
+  </Step>
+
+  <Step title="Delete the old automation files">
+    Last, just before the restart: until then the old version still runs, and whatever reloads pururu (`pururu.reload`, an entity renamed in the UI) writes `reactions.yaml` back. In the folder of `configuration.yaml` (`/config` on Home Assistant OS):
+
+    ```sh
+    rm -f pururu/automations/reactions.yaml pururu/automations/notifications.yaml
+    ```
+
+    0.2.1 writes both kinds to `pururu/automations/automations.yaml`. Home Assistant loads every file in the folder, so the old two would repeat its IDs. If `reactions.yaml` came back before the restart, delete it again.
+  </Step>
+
+  <Step title="Restart Home Assistant">
+    Restart while every appliance is stopped: a cycle running at the restart is lost.
+
+    Home Assistant checks the configuration before it restarts, still with the old version's code: pururu's new keys may show there as warnings, which don't stop the restart. To check the new block before restarting, run Home Assistant's check in a new process, which loads 0.2.1 from disk: `ha core check` on Home Assistant OS, or `python -m homeassistant --script check_config -c /config` where Home Assistant runs (inside its container, for a container install).
+
+    pururu sets up with 0.2.1. The old modes' and phases' entities are removed. Each executable program's script is now `script.pururu_<key>_program_executable_<program>`, and its sensors `sensor.pururu_<key>_program_executable_<program>_…`; the old script and sensors are removed. Their history stays in the recorder under the old IDs, and the new totals and meters start from zero: see [What starts over](#what-starts-over).
+  </Step>
+</Steps>
+
+## After the restart
+
+<Steps>
+  <Step title="Check that pururu set up">
+    If it refused the block, Home Assistant logs `Invalid config for 'pururu'` in **Settings → System → Logs**, each refused key with its place: `'events' is an invalid option for 'pururu', check: pururu->events`. [Troubleshooting](/reference/troubleshooting#the-reload-changed-nothing) lists each refusal, the old forms' too. pururu doesn't start, so there is no `pururu.reload`: fix the block, run **Developer tools → YAML → Check configuration**, then restart again.
+
+    Run **Check configuration** only after this restart: until then, Home Assistant still runs the old version's code, which checks the block against the old keys.
+  </Step>
+  <Step title="Put the notifications back, then reload pururu">
+    Their syntax didn't change (`message`, `notify`): only the file they're written to did.
+  </Step>
+  <Step title="Rename what refers to a renamed entity outside pururu">
+    Dashboards, your automations and scripts, and whatever consumes [pururu's events](/concepts/events) still name the old IDs:
+
+    - `…_mode_…` and `…_phase_current` → `…_appliance_phase_…`; an event's `event_name` too (`<device>.mode_…` → `<device>.appliance_phase_…`).
+    - `script.pururu_<key>_program_<program>` (as a `script.turn_on` target) and its sensors → `…_program_executable_<program>…`; an event's `event_name` too (`<device>.program_<program>_…` → `<device>.program_executable_<program>_…`).
+  </Step>
+  <Step title="Optional: tidy up">
+    Once you no longer need them, delete the old entities' long-term statistics in **Developer tools → Statistics**.
+  </Step>
+</Steps>
+
+### If you didn't remove the notifications first
+
+Their automations show as **no longer provided**, and pururu logs each new one as already taken. In **Settings → Entities**, delete each `automation.pururu_…_notification_…`, then reload pururu: their IDs are free again, and pururu generates them.
+
+## What starts over
+
+| What | Before | After | Its history |
+|---|---|---|---|
+| A mode's or phase's entities | `sensor.pururu_<key>_mode_<mode>_…`, `…_mode_current`, `…_mode_last`, `…_phase_current` | `sensor.pururu_<key>_appliance_phase_<phase>_…`, `…_appliance_phase_current`, `…_appliance_phase_last`, and a new `binary_sensor.pururu_<key>_appliance_phase_<phase>` | Kept under the old IDs; the new ones start from zero |
+| An executable program's script | `script.pururu_<key>_program_<program>` | `script.pururu_<key>_program_executable_<program>` | Its runs restart under the new ID |
+| An executable program's sensors | `sensor.pururu_<key>_program_<program>_…` | `sensor.pururu_<key>_program_executable_<program>_…` | Kept under the old IDs; totals and meters start from zero |
+
+Settings you made in the UI to a renamed entity (its name, icon, area, hidden or disabled) don't carry over to its new ID; nor do a notification automation's, removed in [Before you update](#before-you-update).
+
+Everything else keeps its ID, history and statistics: floors and areas, the appliance's own entities (`appliance_running`, its last cycle, totals and meters), switches, lights, doors, windows, alerts (and their Alert2 names and acknowledgements), reactions' and notifications' automations, and the `/pururu` dashboard.
+
+## The whole example
+
+Every step at once, on one house: 0.1.23's block, then 0.2.1's, with its notifications put back.
+
+<Tabs groupId="version">
+  <TabItem label="0.1.23" value="before">
+    ```yaml title="0.1.23: configuration.yaml"
+    pururu:
+      config:
+        notify: notify.mobile_app_phone
+        alerts:
+          lights:
+            groups:
+              default: {biblioteca: [teto]}
+              externas: {biblioteca: [teto, abajur]}
+            resolved: {turn_on: {color_name: green}, for: {seconds: 120}}
+      events: [state_changed, reading]
+      devices:
+        clothes_washer:
+          name: Tanquinho
+          appliance:
+            power: sensor.washer_plug_power
+            energy: sensor.washer_plug_energy
+            running: {threshold: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+            statistics:
+              runtime: [today, month]
+              cycles: [today, month]
+              idle_energy: [month]
+            alerts:
+              long_cycle: {for: {hours: 3}, lights: externas, notify: {message: Demorou., done_message: Terminou.}}
+            notifications:
+              finished:
+          phases:
+            cycle_from: appliance
+            sensor: sensor.washer_plug_power
+            defaults: {stopped: idle, running: washing}
+            bands:
+              warming: {above: 1000}
+              wringing: {above: 50, below: 1000, for: {minutes: 3}}
+          alerts:
+            stuck:
+              name: Travada
+              when: phase_current
+              is: wringing
+              for: {hours: 1}
+              lights: true
+              notify: {message: Travada!, done_message: Destravou.}
+        water_station:
+          name: Purificador
+          appliance:
+            power: sensor.station_plug_power
+            energy: sensor.station_plug_energy
+            running: {threshold: 2.9, on_delay: {seconds: 1}, off_delay: {minutes: 1}}
+          modes:
+            cycle_from: appliance
+            sensor: sensor.station_plug_power
+            energy: sensor.station_plug_energy
+            modes:
+              resfriar: {name: Resfriar, above: 4, below: 150, on_delay: {seconds: 10}, off_delay: {minutes: 3}}
+              quente: {name: Água quente, above: 150, below: 400, on_delay: {seconds: 30}, off_delay: {seconds: 30}}
+            statistics:
+              runtime: [today, month]
+        porta_frente:
+          name: Porta da frente
+          door:
+            contact: binary_sensor.porta_frente
+            events:
+              - entity: event.porta_frente_doorbell
+                types: {ring: ring}
+        greenhouse:
+          name: Estufa
+          switches:
+            sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+          programs:
+            clean:
+              name: Limpar
+              sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
+        biblioteca:
+          name: Biblioteca
+          lights:
+            teto: {entity: light.biblioteca_teto, name: Teto}
+            abajur: {entity: switch.sonoff_abajur, name: Abajur}
+          reactions:
+            washer_done: {name: Lavadora terminou, device: clothes_washer, when: appliance_running, from: "on", to: "off"}
+
+    automation pururu: !include_dir_merge_list pururu/automations
+    script pururu: !include_dir_merge_named pururu/scripts
+    alert2:
+      alerts: !include_dir_merge_list pururu/alert2
+    ```
+  </TabItem>
+  <TabItem label="0.2.1" value="after">
+    ```yaml title="0.2.1: configuration.yaml"
+    pururu:
+      config:
+        notify: notify.mobile_app_phone
+        events: [state_changed, reading]
+        alerts:
+          lights:
+            groups:
+              default: [biblioteca.light_teto]
+              externas: [biblioteca.light_teto, biblioteca.light_abajur]
+            resolved: {turn_on: {color_name: green}, lasts: {minutes: 2}}
+      devices:
+        clothes_washer:
+          name: Tanquinho
+          appliance:
+            power: sensor.washer_plug_power
+            energy: sensor.washer_plug_energy
+            running_program:
+              above: 4
+              on_delay: {minutes: 1}
+              off_delay: {minutes: 2}
+              statistics:
+                runtime: [today, month]
+                cycles: [today, month]
+              phases:
+                warming: {name: Aquecendo, above: 1000}
+                wringing: {name: Centrifugando, above: 50, below: 1000, on_delay: {minutes: 3}}
+            statistics:
+              idle_energy: [month]
+            alerts:
+              long_cycle: {for: {hours: 3}, lights: externas, message: Demorou., done_message: Terminou.}
+            notifications:
+              finished:
+          alerts:
+            stuck:
+              name: Travada
+              when: appliance_phase_current
+              state: wringing
+              for: {hours: 1}
+              lights: default
+              message: Travada!
+              done_message: Destravou.
+        water_station:
+          name: Purificador
+          appliance:
+            power: sensor.station_plug_power
+            energy: sensor.station_plug_energy
+            running_program:
+              above: 2.9
+              on_delay: {seconds: 1}
+              off_delay: {minutes: 1}
+              phases:
+                resfriar:
+                  name: Resfriar
+                  above: 4
+                  below: 150
+                  on_delay: {seconds: 10}
+                  off_delay: {minutes: 3}
+                  statistics: {runtime: [today, month]}
+                quente:
+                  name: Água quente
+                  above: 150
+                  below: 400
+                  on_delay: {seconds: 30}
+                  off_delay: {seconds: 30}
+                  statistics: {runtime: [today, month]}
+        porta_frente:
+          name: Porta da frente
+          door:
+            contact: binary_sensor.porta_frente
+            event_entities:
+              - entity: event.porta_frente_doorbell
+                types: {ring: ring}
+        greenhouse:
+          name: Estufa
+          switches:
+            sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+          programs:
+            executable:
+              clean:
+                name: Limpar
+                sequence: [{turn_on: switch_sprinkler}, {delay: {hours: 2}}, {turn_off: switch_sprinkler}]
+        biblioteca:
+          name: Biblioteca
+          lights:
+            teto: {entity: light.biblioteca_teto, name: Teto}
+            abajur: {entity: switch.sonoff_abajur, name: Abajur}
+          reactions:
+            washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off"}
+
+    automation pururu: !include_dir_merge_list pururu/automations
+    script pururu: !include_dir_merge_named pururu/scripts
+    alert2:
+      alerts: !include_dir_merge_list pururu/alert2
+    ```
+  </TabItem>
+</Tabs>

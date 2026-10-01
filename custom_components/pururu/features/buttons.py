@@ -50,8 +50,9 @@ from homeassistant.util.signal_type import SignalType
 from ..aspects import programs
 from ..const import CONF_DEVICES
 from ..core.entity import PururuEntity
-from ..core.feature import EACH, TEXT, Device, Feature, Item, Path, at, state_text
+from ..core.feature import EACH, TEXT, Device, Feature, Item, Path, at, state_of
 from ..core.generated import SCRIPTS
+from ..core.resolve import local_key
 from ..core.roles import Configured, Counted, Counters, Items
 from ..core.vocabulary import NO_READING
 from . import standing
@@ -68,8 +69,11 @@ SETTLE = timedelta(seconds=3)
 
 
 def pressed_state(value: Any) -> str:
-    """The value that counts as a press: a state, never one that means no reading."""
-    state = state_text(value)
+    """The value that counts as a press: a state, never one that means no reading.
+
+    A state as an alert's (`state_of`): a YAML number refused, a quoted one text.
+    """
+    state = state_of("state")(value)
     if state in NO_READING:
         raise vol.Invalid(f"{state} is not a value a person presses")
     return state
@@ -96,7 +100,8 @@ ITEM = vol.Schema(
         vol.Required("state"): pressed_state,
         # A blank name would show the button as its device's name alone
         vol.Required("name"): TEXT,
-        vol.Optional("program"): cv.slug,
+        # Its own device's program, as a reaction's then: a dot is another device's
+        vol.Optional("program"): local_key,
     }
 )
 

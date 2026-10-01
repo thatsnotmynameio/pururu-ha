@@ -43,10 +43,18 @@ from ..core.feature import (
     at,
     finite_float,
     qualified,
-    state_text,
+    state_of,
 )
 from ..core.generated import AUTOMATIONS, SCRIPTS, Planned
-from ..core.resolve import Index, Ref, Target, find
+from ..core.resolve import (
+    Index,
+    Ref,
+    Target,
+    entity_id_hint,
+    find,
+    local_key,
+    reference,
+)
 from ..core.roles import Counted, Counters, Generates, Items
 
 _LOGGER = logging.getLogger(__name__)
@@ -128,8 +136,6 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
         raise vol.Invalid("a reaction needs one source: when, entity, at or sun")
     if CONF_NOTIFY in reaction and CONF_MESSAGE not in reaction:
         raise vol.Invalid("a reaction's notify goes with message")
-    if "device" in reaction and "when" not in reaction:
-        raise vol.Invalid("a reaction's device goes with when")
     if "offset" in reaction and "sun" not in reaction:
         raise vol.Invalid("a reaction's offset goes with sun")
     _retry_consistent(reaction, sources[0])
@@ -164,11 +170,11 @@ REACTION = vol.All(
         {
             # A blank name would show the automation as its device's name alone
             vol.Required(CONF_NAME): TEXT,
-            vol.Optional("when"): cv.slug,
-            vol.Optional("device"): cv.slug,
+            # An entity key: of this device, or of another (<device>.<key>)
+            vol.Optional("when"): reference,
             vol.Optional("entity"): cv.entity_id,
-            vol.Optional("to"): state_text,
-            vol.Optional("from"): state_text,
+            vol.Optional("to"): state_of("to"),
+            vol.Optional("from"): state_of("from"),
             vol.Optional("above"): finite_float,
             vol.Optional("below"): finite_float,
             vol.Optional("for"): cv.positive_time_period,
@@ -178,7 +184,7 @@ REACTION = vol.All(
             # More tries of an at or sun occurrence, each skipped once it ran
             vol.Optional("retry"): RETRY,
             # A program of this device, started when the reaction fires
-            vol.Optional("then"): cv.slug,
+            vol.Optional("then"): local_key,
             # Told when the reaction fires, to its own notify or config's
             vol.Optional(CONF_MESSAGE): TEXT,
             vol.Optional(CONF_NOTIFY): messages.TARGETS,
@@ -231,7 +237,14 @@ def triggers(
     """
     if "at" in reaction or "sun" in reaction:
         return [_occurrence(reaction, timedelta(0)), *_retries(reaction)]
-    return [vocabulary.trigger(reaction, entity_id)]
+    return [
+        vocabulary.trigger(
+            entity_id,
+            vocabulary.parse(reaction, "to"),
+            from_=reaction.get("from"),
+            hold=reaction.get("for"),
+        )
+    ]
 
 
 def conditions(reaction: Mapping[str, Any], script: str | None) -> list[dict[str, Any]]:
@@ -410,11 +423,11 @@ STATISTICS = Feature(
 
 
 def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Invalid]:
-    """Refuse a reaction's `when`, `device` or `then` it can't have (a schema check).
+    """Refuse a reaction's `when` or `then` it can't have (a schema check).
 
-    `when` without `device` names an entity key of the device, and never one of
-    the reaction's own statistics; `device` names a device; `then` one of the
-    device's executable programs.
+    `when` names an entity key of the device, or of another device
+    (<device>.<key>), never one of the reaction's own statistics; `then` one of
+    the device's executable programs.
     """
     devices = house[CONF_DEVICES]
     for key, device in devices.items():
@@ -444,11 +457,11 @@ def _refused(
 ) -> vol.Invalid | None:
     """Why this reaction can't be, the first reason; None when it can."""
     path: list[Hashable] = [CONF_DEVICES, key, CONF_REACTIONS, reaction_key]
-    when, other = reaction.get("when"), reaction.get("device")
-    target = None if when is None else find(index, key, Ref(other, when))
-    if other is None and _own_statistic(target, key, reaction_key):
+    ref = Ref.parse(reaction["when"]) if "when" in reaction else None
+    target = None if ref is None else find(index, key, ref)
+    if ref is not None and _own_statistic(target, key, reaction_key):
         return vol.Invalid(
-            f"reactions: {reaction_key}: {when} is its own statistic", path=path
+            f"reactions: {reaction_key}: {ref.key} is its own statistic", path=path
         )
     then = reaction.get("then")
     if then is not None and then not in programs.executable(devices[key]):
@@ -457,25 +470,24 @@ def _refused(
             "this device",
             path=path,
         )
-    if when is None:
+    if ref is None or target is not None:
         return None
-    if other is None:
-        if target is None:
-            return vol.Invalid(
-                f"reactions: {reaction_key}: {when} is not an entity key of this device",
-                path=path,
-            )
-        return None
-    where = f"device {key}: reactions: {reaction_key}"
-    if other not in devices:
-        return vol.Invalid(f"{where}: device {other} is not in devices", path=path)
-    if _own_statistic(target, key, reaction_key):
-        return vol.Invalid(f"{where}: {when} is its own statistic", path=path)
-    if target is None:
+    if ref.device is None:
         return vol.Invalid(
-            f"{where}: {when} is not an entity key of device {other}", path=path
+            f"reactions: {reaction_key}: {ref.key} is not an entity key of this device",
+            path=path,
         )
-    return None
+    where = f"device {key}: reactions: {reaction_key}"
+    if ref.device not in devices:
+        hint = entity_id_hint(
+            index, ref, f"watch a real entity with entity: {ref.text}"
+        )
+        return vol.Invalid(
+            f"{where}: device {ref.device} is not in devices{hint}", path=path
+        )
+    return vol.Invalid(
+        f"{where}: {ref.key} is not an entity key of device {ref.device}", path=path
+    )
 
 
 def plan(
@@ -541,7 +553,7 @@ def _watched(
     """
     if (when := reaction.get("when")) is None:
         return True, reaction.get("entity")
-    target = find(index, key, Ref(reaction.get("device"), when))
+    target = find(index, key, Ref.parse(when))
     assert target is not None  # the schema checked it (check)
     if target.unique_id not in created:
         _LOGGER.error(

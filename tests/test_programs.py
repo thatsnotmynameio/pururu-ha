@@ -102,11 +102,27 @@ async def greenhouse(scripts: HomeAssistant) -> HomeAssistant:
     pytest.param({"name": "Limpar", "sequence": ["turn_on"]}, id="a step that isn't a mapping"),
     pytest.param({"name": "Limpar", "sequence": [{"delay": -5}]}, id="a negative delay"),
     pytest.param({"name": "Limpar", "sequence": [{"turn_on": REAL_SPRINKLER}]}, id="a real entity ID"),
+    pytest.param({"name": "Limpar", "sequence": [{"turn_on": "greenhouse.switch_sprinkler"}]},
+                 id="a step with a device"),
     pytest.param({"name": "Limpar", "sequence": [{"turn_on": "switch_sprinkler"}], "icon": "mdi:greenhouse"},
                  id="unknown key"),
 ])
 async def test_invalid_program_is_refused(ha: HomeAssistant, program: dict[str, Any]) -> None:
     assert not await setup(ha, devices(clean=program))
+
+
+@pytest.mark.parametrize("written", [
+    pytest.param("greenhouse.switch_sprinkler", id="with its device"),
+    pytest.param(REAL_SPRINKLER, id="an entity ID"),
+])
+async def test_a_step_acts_only_on_this_device(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, written: str) -> None:
+    """A step names its device's entity key: a dot is another device's, or an entity ID."""
+    assert not await setup(ha, devices(clean={"name": "Limpar", "sequence": [{"turn_on": written}]}))
+    assert (f"{written} must be of this device: its entity key, without <device>. or <domain>. "
+            "for dictionary value "
+            "'pururu->devices->greenhouse->programs->executable->clean->sequence->0->turn_on'"
+            ) in caplog.text
 
 
 # A flat map (before D3) or a block without its group: the device's programs

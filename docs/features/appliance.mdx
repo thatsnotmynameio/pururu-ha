@@ -150,7 +150,7 @@ appliance:
 | `long_cycle` | a cycle has run for longer than `for` | the cycle ends | `for` required, `medium` |
 | `no_cycle` | no cycle has run for longer than `for` | a cycle starts | `for` required, `medium` |
 
-- Each one takes `for`, `priority`, [`notify`](/concepts/alerts#settings), which replaces its texts, and [`lights`](/concepts/alert-lights). Anything else is a configuration error.
+- Each one takes `for`, `priority`, [`message` and `done_message`](/concepts/alerts#settings), which replace its texts, and [`lights`](/concepts/alert-lights). Anything else is a configuration error.
 - Without Alert2, they still work as binary sensors, for a [reaction](/concepts/reactions) or your own automations, and their own texts log nothing.
 - `offline:` alone, with nothing after it, enables it with every default.
 - `no_power` is for an appliance that always draws something, such as a fridge. A washer between cycles reads 0 W, so it would be on almost always.

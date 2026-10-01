@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from ..const import CONF_ALERTS, CONF_DEVICES
+from ..core import vocabulary
 from ..core.entity import PururuEntity
 from ..core.feature import (
     ALERTS_KEY,
@@ -33,9 +34,8 @@ from ..core.feature import (
 from ..core.resolve import Index, Ref, find
 from ..core.roles import Configured, Refers
 from ..core.texts import Texts
-from ..core.vocabulary import Condition
 from .elapsed import ElapsedAlert
-from .problem import SCHEMA, Alert, shared
+from .problem import SCHEMA, TEXTS, Alert, shared, texts_together
 
 
 def _build(
@@ -51,14 +51,10 @@ def _build(
             entity_key,
             name=alert["name"],
             watched=inputs[alert["when"]],
-            condition=Condition(
-                state=alert.get("is"),
-                above=alert.get("above"),
-                below=alert.get("below"),
-            ),
-            hold=alert["for"],
+            condition=vocabulary.parse(alert),
+            hold=alert.get("for"),
             priority=alert["priority"],
-            notify=alert.get("notify"),
+            messages=_texts(alert),
             lights=alert.get("lights"),
             follows=(alert["when"],),
         )
@@ -95,20 +91,27 @@ ALERTS = Feature(
     schema=SCHEMA,
     entity_keys={},
     build=_build,
-    example={"too_long": {"name": "Too long", "when": "appliance_running", "is": "on"}},
+    example={
+        "too_long": {"name": "Too long", "when": "appliance_running", "state": "on"}
+    },
     namespace="alert",
     roles=(Configured(Platform.BINARY_SENSOR), Refers(_refers)),
 )
 
 
-def _settings(preset: Preset) -> vol.Schema:
+def _texts(alert: Mapping[str, Any]) -> dict[str, str] | None:
+    """An alert's message and done_message; None without (texts_together: both or neither)."""
+    return {text: alert[text] for text in TEXTS} if TEXTS[0] in alert else None
+
+
+def _settings(preset: Preset) -> Callable[[Any], Any]:
     """What one alert takes: its for, then what every alert takes (problem.shared)."""
     timing: dict[Any, Any] = (
         {vol.Required("for"): cv.positive_time_period}
         if preset.hold is None
         else {vol.Optional("for", default=preset.hold): cv.positive_time_period}
     )
-    return vol.Schema({**timing, **shared(preset.priority)})
+    return vol.All(vol.Schema({**timing, **shared(preset.priority)}), texts_together)
 
 
 def settings_schema(
@@ -164,17 +167,14 @@ def _places(builder: Feature, _name: str) -> tuple[Place, ...]:
     )
 
 
-def _notify(
+def _messages(
     device: Device, entity_key: str, settings: Mapping[str, Any], texts: Texts
 ) -> dict[str, str]:
-    """The user's notify, or the default texts of this alert."""
-    if "notify" in settings:
-        return dict(settings["notify"])
+    """The user's message and done_message, or this alert's default texts."""
+    if (own := _texts(settings)) is not None:
+        return own
     key = device.qualified(entity_key)
-    return {
-        "message": texts[f"{key}_message"],
-        "done_message": texts[f"{key}_done_message"],
-    }
+    return {text: texts[f"{key}_{text}"] for text in TEXTS}
 
 
 def _build_ready_made(
@@ -192,8 +192,8 @@ def _build_ready_made(
         watched = device.current_entity_id(
             hass, feature.entity_keys[preset.watches], preset.watches
         )
-        notify = _notify(device, entity_key, settings, texts)
-        if isinstance(preset.kind, Condition):
+        messages = _messages(device, entity_key, settings, texts)
+        if isinstance(preset.kind, vocabulary.Condition):
             entities.append(
                 Alert(
                     device,
@@ -203,9 +203,9 @@ def _build_ready_made(
                     condition=preset.kind,
                     hold=settings["for"],
                     priority=settings["priority"],
-                    notify=notify,
+                    messages=messages,
                     sources=(preset.watches,),
-                    asks_alert2="notify" in settings,
+                    asks_alert2=TEXTS[0] in settings,
                     lights=settings.get("lights"),
                 )
             )
@@ -227,12 +227,12 @@ def _build_ready_made(
                 elapsed=kind,
                 hold=settings.get("for", preset.hold or timedelta(0)),
                 priority=settings["priority"],
-                notify=notify,
+                messages=messages,
                 sources=(
                     preset.watches,
                     *((kind.since_key,) if kind.since_key else ()),
                 ),
-                asks_alert2="notify" in settings,
+                asks_alert2=TEXTS[0] in settings,
                 lights=settings.get("lights"),
             )
         )

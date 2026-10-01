@@ -1,11 +1,13 @@
 """The index of every entity key a device can create, and finding a reference in it."""
 
+import re
 from typing import Any
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 import pytest
+import voluptuous as vol
 
 from helpers import DOMAIN, module
 
@@ -102,3 +104,63 @@ def test_the_current_entity_id_follows_a_rename(ha: HomeAssistant, index: Any) -
 def test_a_reference_reads_as_written() -> None:
     assert ref(None, "appliance_running").text == "appliance_running"
     assert ref("washer", "appliance_running").text == "washer.appliance_running"
+
+
+# --- the one reference form ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("text", "device", "key"), [
+    pytest.param("appliance_running", None, "appliance_running", id="this device"),
+    pytest.param("washer.appliance_running", "washer", "appliance_running", id="another device"),
+])
+def test_a_reference_parses_as_written(ha: HomeAssistant, text: str, device: str | None, key: str) -> None:
+    parsed = module("core.resolve").Ref.parse(text)
+    assert (parsed.device, parsed.key) == (device, key)
+    assert parsed.text == text
+
+
+@pytest.mark.parametrize("text", [
+    pytest.param(".appliance_running", id="no device"),
+    pytest.param("washer.", id="no key"),
+    pytest.param("a.b.c", id="two dots"),
+    pytest.param("", id="empty"),
+])
+def test_a_reference_not_validated_is_a_programming_error(ha: HomeAssistant, text: str) -> None:
+    """Ref.parse reads what reference validated: other text wouldn't read back as written."""
+    parse = module("core.resolve").Ref.parse
+    with pytest.raises(ValueError, match="is not a validated reference"):
+        parse(text)
+
+
+@pytest.mark.parametrize(("validator", "value"), [
+    pytest.param("reference", "appliance_running", id="a reference, local"),
+    pytest.param("reference", "washer.appliance_running", id="a reference, of another device"),
+    pytest.param("local_key", "switch_plug", id="a local key"),
+    pytest.param("device_reference", "lights.light_teto", id="a device's key"),
+])
+def test_a_reference_is_accepted(ha: HomeAssistant, validator: str, value: str) -> None:
+    assert getattr(module("core.resolve"), validator)(value) == value
+
+
+@pytest.mark.parametrize(("validator", "value", "message"), [
+    pytest.param("reference", "washer.", "washer. is neither an entity key nor <device>.<key>",
+                 id="no key"),
+    pytest.param("reference", ".appliance_running",
+                 ".appliance_running is neither an entity key nor <device>.<key>", id="no device"),
+    pytest.param("reference", "a.b.c", "a.b.c is neither an entity key nor <device>.<key>",
+                 id="two dots"),
+    pytest.param("reference", "Washer.appliance_running", "invalid slug Washer", id="not a slug"),
+    pytest.param("local_key", "washer.switch_plug",
+                 "washer.switch_plug must be of this device: its entity key, without <device>. or <domain>.",
+                 id="a local key with a device"),
+    pytest.param("local_key", "Switch", "invalid slug Switch", id="a local key not a slug"),
+    pytest.param("device_reference", "light_teto", "light_teto needs its device: <device>.light_teto",
+                 id="a light group's member without its device"),
+    pytest.param("reference", "", "an entity key can't be empty", id="an empty reference"),
+    pytest.param("local_key", "", "an entity key can't be empty", id="an empty local key"),
+    pytest.param("device_reference", "", "an entity key can't be empty", id="an empty device's key"),
+])
+def test_a_reference_is_refused(ha: HomeAssistant, validator: str, value: str, message: str) -> None:
+    validate = getattr(module("core.resolve"), validator)
+    with pytest.raises(vol.Invalid, match=re.escape(message)):
+        validate(value)

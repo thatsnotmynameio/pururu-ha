@@ -22,7 +22,7 @@ from ..const import (
     DOMAIN,
 )
 from ..core import messages
-from ..core.feature import Feature
+from ..core.feature import TEXT, Feature
 from ..core.resolve import Index
 from ..device_keys import reactions
 from ..features import FEATURES, buttons
@@ -37,7 +37,8 @@ def _device(value: Any) -> dict[str, Any]:
     offers. What its blocks refer to is checked over the whole house (CHECKS).
     """
     schema: dict[Any, Any] = {
-        vol.Required(CONF_NAME): cv.string,
+        # A blank name would show its entities by their own names alone
+        vol.Required(CONF_NAME): TEXT,
         vol.Optional(CONF_AREA): cv.slug,
         **{
             vol.Optional(name): partial(catalogue.mount, builder, name)
@@ -102,12 +103,13 @@ CONFIG_SCHEMA = vol.Schema(
                         {cv.slug: places.AREA_SCHEMA}
                     ),
                     vol.Optional(CONF_DEVICES, default={}): {cv.slug: _device},
-                    vol.Optional(events.CONF_EVENTS, default=[]): events.SCHEMA,
                     # Settings of the whole house; schemas of their own, so a typo is refused
                     vol.Optional(CONF_CONFIG, default={}): vol.Schema(
                         {
                             # Where every message goes, unless its own notify says
                             vol.Optional(CONF_NOTIFY): messages.TARGETS,
+                            # pururu's events fired on HA's bus
+                            vol.Optional(events.CONF_EVENTS, default=[]): events.SCHEMA,
                             vol.Optional(CONF_ALERTS, default={}): vol.Schema(
                                 {
                                     vol.Optional(

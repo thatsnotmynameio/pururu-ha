@@ -368,13 +368,14 @@ def test_every_alert_takes_the_shared_keys(features: dict[str, Any]) -> None:
     """Hand-written and ready-made alerts take problem.shared's keys, one schema: only the default priority differs."""
     problem, alerts = module("aspects.problem"), module("aspects.alerts")
     shared = schema_keys(vol.Schema(problem.shared("low")))
-    assert set(shared) == {"priority", "notify", "lights"}
+    assert set(shared) == {"priority", "message", "done_message", "lights"}
     hand_written = schema_keys(problem.ALERT.validators[0])
     assert set(shared) <= set(hand_written)
     assert hand_written["priority"].default() == "low"
     for name, feature in features.items():
         for alert, preset in (role(feature, "Presets").offered if role(feature, "Presets") else {}).items():
-            ready_made = schema_keys(alerts._settings(preset))
+            # vol.All(schema, problem.texts_together)
+            ready_made = schema_keys(alerts._settings(preset).validators[0])
             assert set(shared) <= set(ready_made), f"{name}: {alert}"
             assert set(ready_made) - set(shared) == {"for"}, f"{name}: {alert}"
             assert ready_made["priority"].default() == preset.priority, f"{name}: {alert}"

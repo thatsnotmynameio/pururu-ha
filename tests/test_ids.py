@@ -44,7 +44,6 @@ async def test_ids_are_pinned(ha: HomeAssistant) -> None:
         HOUSE["devices"],
         floors=HOUSE["floors"],
         areas=HOUSE["areas"],
-        events=HOUSE["events"],
         config=HOUSE["config"],
     )
     found: dict[str, Any] = ids(ha)
