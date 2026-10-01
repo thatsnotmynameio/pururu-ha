@@ -74,6 +74,31 @@ class Marker:
         return f"<!-- {MARKER} {json.dumps(record)} -->"
 
 
+MARKER_LINE = re.compile(rf"<!-- {MARKER} (\{{.*\}}) -->")
+SESSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def marker_of(body: str, issue: int) -> Marker | None:
+    """The marker on a comment's last line, if its session is a UUID and its branch this issue's.
+
+    The session becomes a `claude --resume` argument, and the branch a folder's name.
+    """
+    lines = body.strip().splitlines()
+    found = MARKER_LINE.fullmatch(lines[-1].strip()) if lines else None
+    try:
+        record = json.loads(found[1]) if found else None
+    except ValueError:
+        return None
+    if not isinstance(record, dict):
+        return None
+    session, branch, reset = record.get("session"), record.get("branch"), record.get("reset")
+    if (isinstance(session, str) and SESSION_ID.fullmatch(session)
+            and isinstance(branch, str) and re.fullmatch(rf"issue-{issue}(-\d+)?", branch)
+            and (reset is None or (isinstance(reset, int) and not isinstance(reset, bool)))):
+        return Marker(session, branch, reset)
+    return None
+
+
 @dataclass(frozen=True)
 class Hold:
     """No session starts until `until` (epoch seconds); a probe then starts one, not a slot's worth."""
@@ -260,6 +285,7 @@ LABELS = {
     IN_REVIEW: ("1d76db", "A pull request is open; its required checks don't all pass yet"),
     READY_TO_MERGE: ("5319e7", "A pull request is open and its required checks pass"),
     NEEDS_ATTENTION: ("d93f0b", "The session ended without a pull request; see the comment"),
+    PAUSED: ("c5def5", "The session hit the usage limit; it resumes when the limit is back"),
 }
 ISSUES = """query($owner: String!, $name: String!, $login: String!, $label: String!) {
   repository(owner: $owner, name: $name) {
@@ -370,16 +396,32 @@ class GitHub:
                 self._ok(["label", "create", name, "--color", color, "--description",
                           description])
 
+    def markers(self, issue: int) -> Marker | None:
+        """A paused issue's newest valid marker among the `gh` user's comments, if any.
+
+        The repository is public: anyone else's marker could name a session to resume.
+        """
+        login = self.login()
+        comments = json.loads(self._ok(["issue", "view", str(issue), "--json",
+                                        "comments"]))["comments"]
+        found = [marker for comment in comments  # oldest first
+                 if (comment.get("author") or {}).get("login") == login
+                 and (marker := marker_of(comment.get("body") or "", issue))]
+        return found[-1] if found else None
+
     def move(self, move: Move) -> None:
-        """Swap the labels, then comment."""
+        """Swap the labels, then comment; a comment-first move comments, then swaps."""
         args = ["issue", "edit", str(move.issue)]
         for label in move.remove:
             args += ["--remove-label", label]
         for label in move.add:
             args += ["--add-label", label]
+        comment = ["issue", "comment", str(move.issue), "--body", move.comment or ""]
+        if move.comment and move.comment_first:
+            self._ok(comment)
         self._ok(args)
-        if move.comment:
-            self._ok(["issue", "comment", str(move.issue), "--body", move.comment])
+        if move.comment and not move.comment_first:
+            self._ok(comment)
 
     def link(self, link: Link) -> None:
         """Append `Closes #issue` to the pull request's body unless a closing keyword is there."""
@@ -397,6 +439,11 @@ GRACE = 10.0  # seconds a session gets to exit after terminate, before kill
 PROMPT = ("/compound-engineering:lfg #{issue}\n\n"
           "The pull request body must contain the line `Closes #{issue}`, "
           "so merging it closes the issue.")
+RESUME_PROMPT = ("The Claude usage limit that stopped this session has reset. Continue "
+                 "`/compound-engineering:lfg #{issue}` where it stopped.\n\n"
+                 "The pull request body must contain the line `Closes #{issue}`, "
+                 "so merging it closes the issue.")
+LIMIT_TEXT = re.compile(r"hit your .*limit|usage limit reached", re.IGNORECASE)
 FLAGS = ["--permission-mode", "auto", "--output-format", "stream-json", "--verbose"]
 ISSUE_FOLDER = re.compile(r"issue-(\d+)(-\d+)?")
 
@@ -429,6 +476,7 @@ class Running:
     log: Path
     process: Process
     since: int = 0  # where this session's output starts in the issue's log
+    resumed: Marker | None = None  # the marker it was resumed from
 
 
 def run_git(args: list[str]) -> str:
@@ -463,19 +511,35 @@ class Sessions:
         name = self._name(issue)
         worktree = self.root / WORKTREES / name
         self.git(["worktree", "add", "-b", name, str(worktree), "origin/main"])
+        return self._run(issue, name, worktree, [PROMPT.format(issue=issue)])
+
+    def resume(self, issue: int, marker: Marker) -> Running:
+        """The paused conversation resumed headless in its kept worktree, told the limit is back.
+
+        A missing worktree raises before anything starts.
+        """
+        worktree = self.root / WORKTREES / marker.branch
+        if not worktree.is_dir():
+            raise FileNotFoundError(f"the worktree {worktree} is gone")
+        return self._run(issue, marker.branch, worktree,
+                         ["--resume", marker.session, RESUME_PROMPT.format(issue=issue)], marker)
+
+    def _run(self, issue: int, branch: str, worktree: Path, args: list[str],
+             resumed: Marker | None = None) -> Running:
+        """`claude -p` with these arguments in the worktree, appending to the issue's log."""
         log = self.root / STATE / "logs" / f"issue-{issue}.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a") as output:
             since = output.tell()
-            process = self.spawn(["claude", "-p", PROMPT.format(issue=issue), *FLAGS],
+            process = self.spawn(["claude", "-p", *args, *FLAGS],
                                  cwd=worktree, stdin=subprocess.DEVNULL, stdout=output,
                                  stderr=subprocess.STDOUT, start_new_session=True)
-        return Running(issue, name, worktree, log, process, since)
+        return Running(issue, branch, worktree, log, process, since, resumed)
 
-    def reason(self, running: Running) -> str:
-        """Why a session ended: its final result's text, else its exit code.
+    def _events(self, running: Running) -> list[dict[str, Any]]:
+        """This session's part of the log as its top-level `stream-json` events, in order.
 
-        Only this session's part of the log counts: an earlier attempt's result is not its reason.
+        An earlier attempt's output, before `since`, is not this session's.
         """
         try:
             with running.log.open("rb") as log:
@@ -483,14 +547,51 @@ class Sessions:
                 lines = log.read().decode(errors="replace").splitlines()
         except FileNotFoundError:
             lines = []
-        for line in reversed(lines):
+        events = []
+        for line in lines:
             try:
                 event = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(event, dict) and event.get("type") == "result" and event.get("result"):
+            if isinstance(event, dict):
+                events.append(event)
+        return events
+
+    def reason(self, running: Running) -> str:
+        """Why a session ended: its final result's text, else its exit code."""
+        for event in reversed(self._events(running)):
+            if event.get("type") == "result" and event.get("result"):
                 return str(event["result"]).strip()[:2000]
         return f"the session exited with code {running.process.returncode} and no final result"
+
+    def limit(self, running: Running) -> Marker | None:
+        """The marker when the usage limit stopped the session, else None.
+
+        Only top-level events count, never the text inside them, which may quote the limit. The
+        final result must be absent or an error, and the last rate limit event `rejected` or that
+        result's text name the limit; the reset is that rejected event's `resetsAt`.
+        """
+        session: str | None = None
+        status: object = None
+        resets: object = None
+        final: dict[str, Any] | None = None
+        for event in self._events(running):
+            if isinstance(event.get("session_id"), str):
+                session = event["session_id"]
+            if event.get("type") == "rate_limit_event":
+                info = event.get("rate_limit_info")
+                info = info if isinstance(info, dict) else {}
+                status, resets = info.get("status"), info.get("resetsAt")
+            elif event.get("type") == "result":
+                final = event
+        if session is None or (final is not None and not final.get("is_error")):
+            return None
+        named = final is not None and bool(LIMIT_TEXT.search(str(final.get("result") or "")))
+        if status != "rejected" and not named:
+            return None
+        return Marker(session, running.branch,
+                      int(resets) if status == "rejected" and isinstance(resets, int | float)
+                      and not isinstance(resets, bool) else None)
 
     def end(self, sessions: Iterable[Running]) -> None:
         """Terminate the sessions; kill those still running once the grace period is over."""

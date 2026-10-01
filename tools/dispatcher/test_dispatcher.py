@@ -345,7 +345,18 @@ def test_only_missing_labels_are_created() -> None:
         [{"name": name} for name in (READY, IN_PROGRESS, IN_REVIEW, "bug")])))
     gh.ensure_labels()
     created = [call[2] for call in fake.calls if call[:2] == ["label", "create"]]
-    assert created == [READY_TO_MERGE, NEEDS_ATTENTION]
+    assert created == [READY_TO_MERGE, NEEDS_ATTENTION, PAUSED]
+
+
+def test_the_paused_label_is_created_when_missing() -> None:
+    """R13: the repository has every label but `paused`."""
+    gh, fake = github((("label", "list"), 0, json.dumps(
+        [{"name": name} for name in (READY, IN_PROGRESS, IN_REVIEW, READY_TO_MERGE,
+                                     NEEDS_ATTENTION)])))
+    gh.ensure_labels()
+    assert [call for call in fake.calls if call[:2] == ["label", "create"]] == [
+        ["label", "create", "paused", "--color", "c5def5", "--description",
+         "The session hit the usage limit; it resumes when the limit is back"]]
 
 
 def test_a_dispatch_swaps_labels_in_one_edit() -> None:
@@ -359,6 +370,67 @@ def test_a_move_with_a_comment_comments_after_the_swap() -> None:
     gh, fake = github()
     gh.move(Move(74, (IN_PROGRESS,), (IN_REVIEW,), "Dispatcher: hi"))
     assert fake.calls[1] == ["issue", "comment", "74", "--body", "Dispatcher: hi"]
+
+
+def test_a_pause_comments_before_the_swap() -> None:
+    """KTD3: `paused` never exists without its marker."""
+    gh, fake = github()
+    gh.move(Move(70, (IN_PROGRESS,), (PAUSED,), "Dispatcher: paused", comment_first=True))
+    assert fake.calls == [["issue", "comment", "70", "--body", "Dispatcher: paused"],
+                          ["issue", "edit", "70", "--remove-label", "in progress",
+                           "--add-label", "paused"]]
+
+
+OTHER = "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a"
+
+
+def comment(login: str, body: str) -> dict[str, object]:
+    return {"author": {"login": login}, "body": body, "createdAt": "2026-10-01T15:10:00Z"}
+
+
+def pause_comment(login: str, session: str, branch: str, reset: int | None) -> dict[str, object]:
+    record = json.dumps({"session": session, "branch": branch, "reset": reset})
+    return comment(login, "Dispatcher: the Claude usage limit stopped the session.\n\n"
+                          f"<!-- dispatcher-pause {record} -->")
+
+
+def comments_reply(*comments: dict[str, object]) -> tuple[tuple[str, ...], int, str]:
+    return ("issue", "view"), 0, json.dumps({"comments": list(comments)})
+
+
+def test_the_paused_issues_marker_is_the_users_valid_one() -> None:
+    """KTD3: a stranger's marker, a session that is no UUID and another issue's branch don't count."""
+    gh, fake = github(comments_reply(
+        pause_comment("stranger", OTHER, "issue-70", 1759350600),
+        pause_comment("me", "--dangerously-skip-permissions", "issue-70", 1759350600),
+        pause_comment("me", OTHER, "issue-71", 1759350600),
+        pause_comment("me", SESSION, "issue-70-2", 1759350600)))
+    assert gh.markers(70) == Marker(SESSION, "issue-70-2", 1759350600)
+    assert fake.calls[-1] == ["issue", "view", "70", "--json", "comments"]
+
+
+def test_a_paused_issue_without_the_users_valid_marker_has_none() -> None:
+    gh, _ = github(comments_reply(
+        pause_comment("stranger", OTHER, "issue-70", 1759350600),
+        pause_comment("me", "--dangerously-skip-permissions", "issue-70", 1759350600),
+        pause_comment("me", OTHER, "issue-71", 1759350600),
+        comment("me", "Looking into it.")))
+    assert gh.markers(70) is None
+
+
+def test_the_newest_marker_wins() -> None:
+    """A retry after a failed swap repeats the comment; a re-pause records a new one."""
+    gh, _ = github(comments_reply(pause_comment("me", OTHER, "issue-70", 1759350600),
+                                  pause_comment("me", SESSION, "issue-70", None)))
+    assert gh.markers(70) == Marker(SESSION, "issue-70", None)
+
+
+def test_a_marker_round_trips_through_its_line() -> None:
+    marker = Marker(SESSION, "issue-70", None)
+    body = f"Dispatcher: the Claude usage limit stopped the session.\n\n{marker.line()}"
+    assert len(marker.line().splitlines()) == 1
+    assert dispatcher.marker_of(body, 70) == marker
+    assert dispatcher.marker_of("Dispatcher: pull request is open.", 70) is None
 
 
 def test_a_pull_request_without_the_closing_line_gets_it_once() -> None:
@@ -515,6 +587,140 @@ def test_a_new_attempt_never_reports_an_earlier_attempts_result(tmp_path: Path) 
     with again.log.open("a") as log:
         log.write(json.dumps({"type": "assistant"}) + "\n")
     assert runner.reason(again) == "the session exited with code 1 and no final result"
+
+
+def event(kind: str, session: str = SESSION, **fields: object) -> str:
+    return json.dumps({"type": kind, "session_id": session, **fields})
+
+
+def rejected(resets: int = 1759350600, session: str = SESSION) -> str:
+    return event("rate_limit_event", session, rate_limit_info={
+        "status": "rejected", "resetsAt": resets, "rateLimitType": "five_hour"})
+
+
+def result(text: str, *, error: bool = True, session: str = SESSION) -> str:
+    return event("result", session, subtype="success", is_error=error, result=text)
+
+
+INIT = event("system", subtype="init")
+QUOTED = event("user", message={"role": "user", "content": [{
+    "type": "tool_result",
+    "content": "You've hit your session limit · resets 8:30pm (America/Sao_Paulo)"}]})
+
+
+def slice_of(tmp_path: Path, *lines: str, before: tuple[str, ...] = ()) -> dispatcher.Running:
+    """#70's session whose part of the log is `lines`, after an earlier attempt's `before`."""
+    log = tmp_path / dispatcher.STATE / "logs/issue-70.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    earlier = "".join(line + "\n" for line in before)
+    log.write_text(earlier + "".join(line + "\n" for line in lines))
+    process = FakeProcess()
+    process.returncode = 1
+    return dispatcher.Running(70, "issue-70", tmp_path / ".claude/worktrees/issue-70", log,
+                              process, len(earlier.encode()))
+
+
+def test_a_rejected_limit_with_an_error_result_is_a_limit_ending(tmp_path: Path) -> None:
+    """AE1: the session, the branch and resetsAt from the log; with no result at all as well."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    assert runner.limit(slice_of(tmp_path, INIT, rejected(), result("API Error"))) == Marker(
+        SESSION, "issue-70", 1759350600)
+    assert runner.limit(slice_of(tmp_path, INIT, rejected())) == Marker(
+        SESSION, "issue-70", 1759350600)
+
+
+def test_a_rejected_limit_with_a_successful_result_is_no_limit_ending(tmp_path: Path) -> None:
+    """KTD1: extra usage may have covered it."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    assert runner.limit(slice_of(tmp_path, INIT, rejected(), result("Done.", error=False))) is None
+
+
+def test_a_tool_output_quoting_the_limit_is_no_limit_ending(tmp_path: Path) -> None:
+    """KTD1: only top-level events count, never the text inside them."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    assert runner.limit(slice_of(tmp_path, INIT, QUOTED, result("Stopped: blocked"))) is None
+
+
+@pytest.mark.parametrize("text", [
+    "You've hit your session limit · resets 8:30pm (America/Sao_Paulo)",
+    "Claude AI usage limit reached|1759350600"])
+def test_a_result_naming_the_limit_is_a_limit_ending_with_an_unknown_reset(
+        tmp_path: Path, text: str) -> None:
+    """R5: no rejected event, so no reset."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    assert runner.limit(slice_of(tmp_path, INIT, QUOTED, result(text))) == Marker(
+        SESSION, "issue-70", None)
+
+
+def test_an_earlier_attempts_limit_is_not_this_sessions(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = slice_of(tmp_path, INIT, result("Stopped: blocked"),
+                       before=(INIT, rejected(), result("API Error")))
+    assert runner.limit(running) is None
+
+
+def test_the_latest_session_id_is_the_markers(tmp_path: Path) -> None:
+    """AE3: a resume may fork the session ID; a later pause records the new one."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = slice_of(tmp_path, INIT, event("assistant", OTHER, message={}),
+                       rejected(session=OTHER), result("API Error", session=OTHER))
+    assert runner.limit(running) == Marker(OTHER, "issue-70", 1759350600)
+
+
+def test_an_empty_slice_is_no_limit_ending(tmp_path: Path) -> None:
+    """The process exited before any output: judged as today."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = slice_of(tmp_path, before=(INIT, rejected(), result("API Error")))
+    assert runner.limit(running) is None
+    assert runner.reason(running) == "the session exited with code 1 and no final result"
+
+
+def test_a_resume_continues_the_conversation_headless(tmp_path: Path) -> None:
+    """KTD7: the same flags as a dispatch, the limit back in the prompt."""
+    (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
+    runner, spawn = sessions(tmp_path, FakeGit())
+    runner.resume(70, Marker(SESSION, "issue-70", 1759350600))
+    (args, _), = spawn.calls
+    assert args[:4] == ["claude", "-p", "--resume", SESSION]
+    assert args[5:] == ["--permission-mode", "auto", "--output-format", "stream-json", "--verbose"]
+    prompt = args[4]
+    assert "/compound-engineering:lfg #70" in prompt
+    assert "usage limit" in prompt
+    assert "reset" in prompt
+    assert "continue" in prompt.lower()
+    assert "Closes #70" in prompt
+
+
+def test_a_resume_runs_in_the_markers_worktree_and_appends_to_the_log(tmp_path: Path) -> None:
+    worktree = tmp_path / ".claude/worktrees/issue-70-2"
+    worktree.mkdir(parents=True)
+    log = tmp_path / dispatcher.STATE / "logs/issue-70.log"
+    log.parent.mkdir(parents=True)
+    earlier = INIT + "\n" + rejected() + "\n"
+    log.write_text(earlier)
+    marker = Marker(SESSION, "issue-70-2", 1759350600)
+    runner, spawn = sessions(tmp_path, FakeGit())
+    running = runner.resume(70, marker)
+    (_, options), = spawn.calls
+    assert options["cwd"] == worktree
+    assert options["start_new_session"] is True
+    assert options["stdin"] is subprocess.DEVNULL
+    assert options["stderr"] is subprocess.STDOUT
+    assert options["stdout"].name == str(log)
+    assert options["stdout"].mode == "a"
+    assert (running.issue, running.branch, running.worktree, running.log) == (
+        70, "issue-70-2", worktree, log)
+    assert running.since == len(earlier.encode())
+    assert running.resumed == marker
+    assert log.read_text() == earlier
+
+
+def test_a_resume_whose_worktree_is_gone_raises_before_spawning(tmp_path: Path) -> None:
+    """R9: the issue needs attention with the reason; no claude starts."""
+    runner, spawn = sessions(tmp_path, FakeGit())
+    with pytest.raises(FileNotFoundError):
+        runner.resume(70, Marker(SESSION, "issue-70", 1759350600))
+    assert spawn.calls == []
 
 
 def test_a_session_that_ignores_terminate_is_killed(tmp_path: Path) -> None:
