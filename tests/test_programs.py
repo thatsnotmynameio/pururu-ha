@@ -28,11 +28,11 @@ KEY = "greenhouse"
 REAL_SPRINKLER = "switch.greenhouse_sprinkler"
 SPRINKLER = "switch.pururu_greenhouse_switch_sprinkler"
 CLEAN = "script.pururu_greenhouse_program_executable_clean"
-SWITCHES: dict[str, Any] = {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
+SWITCHES: dict[str, Any] = {"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"}}
 TWO_HOURS = 2 * 60 * 60
 CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
     {"turn_on": "switches.sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switches.sprinkler"}]}
-APPLIANCE = {"power": "sensor.greenhouse_sprinkler_power",
+APPLIANCE = {"power": "homeassistant.sensor.greenhouse_sprinkler_power",
              "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
 
 
@@ -199,7 +199,7 @@ async def test_two_programs_with_one_script_id_are_refused(
     """greenhouse's b_program_executable_c and greenhouse_program_executable_b's c would both be pururu_greenhouse_program_executable_b_program_executable_c."""
     config = devices(b_program_executable_c=CLEANING)
     config["greenhouse_program_executable_b"] = {
-        "name": "Outra", "switches": {"x": {"entity": "switch.dummy_x", "name": "X"}},
+        "name": "Outra", "switches": {"x": {"entity": "homeassistant.switch.dummy_x", "name": "X"}},
         "programs": {"executable": {"c": {"name": "C", "sequence": [{"turn_on": "switches.x"}]}}},
     }
     assert not await setup(ha, config)
@@ -281,7 +281,7 @@ async def test_it_turns_a_light_on_and_off(
     evening = {"name": "Noite", "sequence": [
         {"turn_on": "lights.teto"}, {"delay": {"minutes": 30}}, {"turn_off": "lights.teto"}]}
     assert await setup(scripts, {"biblioteca": {"name": "Biblioteca",
-                                          "lights": {"teto": {"entity": real, "name": "Teto"}},
+                                          "lights": {"teto": {"entity": f"homeassistant.{real}", "name": "Teto"}},
                                           "programs": {"executable": {"evening": evening}}}})
     calls = capture(scripts, "call_service")
     await start(scripts, "script.pururu_biblioteca_program_executable_evening")
@@ -482,7 +482,7 @@ async def test_a_held_program_stays_tracked_without_a_repairs_issue(
 
 
 VENT = "switch.pururu_greenhouse_switch_vent"
-TWO_SWITCHES: dict[str, Any] = {**SWITCHES, "vent": {"entity": "switch.greenhouse_vent", "name": "Ventilação"}}
+TWO_SWITCHES: dict[str, Any] = {**SWITCHES, "vent": {"entity": "homeassistant.switch.greenhouse_vent", "name": "Ventilação"}}
 
 
 async def two_switches(hass: HomeAssistant, *keys: str) -> None:
@@ -767,7 +767,7 @@ def test_a_whole_number_key_keeps_its_statistics(ha: HomeAssistant) -> None:
         "name": "Estufa",
         "programs": {"executable": {1: {"name": "Limpar", "sequence": [{"delay": 1}], "statistics": statistics}}},
         "reactions": {2: {"name": "Noite", "at": "22:00", "statistics": {"triggered": ["week"]}}},
-        "switches": {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}},
+        "switches": {"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"}},
     }}}
     device = module("setup.schema").CONFIG_SCHEMA({DOMAIN: house})[DOMAIN]["devices"][KEY]
     assert device["programs"]["executable"]["1"]["statistics"] == {"runtime": [], "cycles": ["today"]}

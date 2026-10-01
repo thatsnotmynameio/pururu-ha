@@ -11,8 +11,8 @@ from helpers import module
 
 
 @pytest.mark.parametrize(("value", "expected"), [
-    pytest.param("notify.mobile_app_phone", ["notify.mobile_app_phone"], id="one"),
-    pytest.param(["notify.a", "notify.b"], ["notify.a", "notify.b"], id="a list"),
+    pytest.param("homeassistant.notify.mobile_app_phone", ["notify.mobile_app_phone"], id="one"),
+    pytest.param(["homeassistant.notify.a", "homeassistant.notify.b"], ["notify.a", "notify.b"], id="a list"),
 ])
 def test_targets_are_a_list_of_notify_actions(ha: HomeAssistant, value: Any, expected: list[str]) -> None:
     assert module("core.messages").TARGETS(value) == expected
@@ -20,9 +20,10 @@ def test_targets_are_a_list_of_notify_actions(ha: HomeAssistant, value: Any, exp
 
 @pytest.mark.parametrize("value", [
     pytest.param("mobile_app_phone", id="no domain"),
-    pytest.param("script.phone", id="another domain"),
-    pytest.param("notify.Phone", id="not a slug"),
-    pytest.param("notify.", id="no name"),
+    pytest.param("homeassistant.script.phone", id="another domain"),
+    pytest.param("homeassistant.notify.Phone", id="not a slug"),
+    pytest.param("homeassistant.notify.", id="no name"),
+    pytest.param("notify.mobile_app_phone", id="without homeassistant, as before 0.2.2"),
     pytest.param([], id="none"),
     pytest.param(None, id="null"),
 ])
@@ -30,6 +31,12 @@ def test_anything_else_is_refused(ha: HomeAssistant, value: Any) -> None:
     targets = module("core.messages").TARGETS
     with pytest.raises(vol.Invalid):
         targets(value)
+
+
+def test_a_refusal_quotes_what_was_written(ha: HomeAssistant) -> None:
+    with pytest.raises(vol.Invalid, match=r"^notify\.mobile_app_phone is not a notify action: "
+                       r"homeassistant\.notify\.<name>"):
+        module("core.messages").action("notify.mobile_app_phone")
 
 
 @pytest.mark.parametrize("text", [

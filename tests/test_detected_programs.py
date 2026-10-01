@@ -30,7 +30,7 @@ SUFFIXES = (*LAST_CYCLE, "cycles_total", "runtime_total", "energy_total")
 
 def appliance(**block: Any) -> dict[str, Any]:
     """The washer's appliance block with its detected programs, `block` over it."""
-    return {"power": POWER, "energy": ENERGY, "running_program": RUNNING_PROGRAM,
+    return {"power": f"homeassistant.{POWER}", "energy": f"homeassistant.{ENERGY}", "running_program": RUNNING_PROGRAM,
             "programs": {"detected": DETECTED}, **block}
 
 
@@ -264,7 +264,7 @@ def reserved(block: dict[str, Any]) -> set[str]:
 
 
 # The appliance with everything that adds keys: energy, a phase and other
-FULL = {"power": POWER, "energy": ENERGY, "running_program": {
+FULL = {"power": f"homeassistant.{POWER}", "energy": f"homeassistant.{ENERGY}", "running_program": {
     **RUNNING_PROGRAM, "phases": {"warming": {"name": "Aquecendo", "above": 1000}}, "other": {}}}
 
 
@@ -364,7 +364,7 @@ PHASES = {"phases": {"warming": {"name": "Aquecendo", "above": 1000}}}
 
 def house(running: dict[str, Any], detected: dict[str, Any]) -> dict[str, Any]:
     """The washer's configuration: its running program's settings over RUNNING_PROGRAM, and its detected programs."""
-    block = {"power": POWER, "running_program": {**RUNNING_PROGRAM, **running}, "programs": {"detected": detected}}
+    block = {"power": f"homeassistant.{POWER}", "running_program": {**RUNNING_PROGRAM, **running}, "programs": {"detected": detected}}
     return {DOMAIN: {"devices": {KEY: {"name": "Tanquinho", "appliance": block}}}}
 
 

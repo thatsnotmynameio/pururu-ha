@@ -1,9 +1,9 @@
 """Reactions: what a device listens to, as Home Assistant automations pururu generates.
 
-A reaction is one source (an entity of a device, a real entity, a time of day,
-the sun) and, for an entity, a condition. Each becomes an automation in
-pururu/automations/automations.yaml, whose folder configuration.yaml includes
-(generated.py). It starts one of its device's programs (then), tells its
+A reaction is one source (an entity of a device, Home Assistant's entity, a
+time of day, the sun) and, for an entity, a condition. Each becomes an
+automation in pururu/automations/automations.yaml, whose folder
+configuration.yaml includes (generated.py). It starts one of its device's programs (then), tells its
 message (message, notify), or does nothing: it fires, and its trace shows when
 and why. An at or sun reaction can retry: its automation triggers again, each
 try skipped once the occurrence ran. Each reaction's triggers are counted:
@@ -53,7 +53,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # The namespace of every reaction's automation ID
 NAMESPACE = "reaction"
-SOURCES = ("when", "entity", "at", "sun")
+SOURCES = ("when", "at", "sun")
 # HA's event when an automation runs (its conditions passed), naming it in its
 # data. A string, not automation's constant: pururu doesn't depend on it
 AUTOMATION_TRIGGERED = "automation_triggered"
@@ -125,7 +125,7 @@ def _consistent(reaction: dict[str, Any]) -> dict[str, Any]:
     """One source, and the keys that go with it."""
     sources = [key for key in SOURCES if key in reaction]
     if len(sources) != 1:
-        raise vol.Invalid("a reaction needs one source: when, entity, at or sun")
+        raise vol.Invalid("a reaction needs one source: when, at or sun")
     if CONF_NOTIFY in reaction and CONF_MESSAGE not in reaction:
         raise vol.Invalid("a reaction's notify goes with message")
     if "offset" in reaction and "sun" not in reaction:
@@ -162,9 +162,9 @@ REACTION = vol.All(
         {
             # A blank name would show the automation as its device's name alone
             vol.Required(CONF_NAME): TEXT,
-            # A path: of this device, or of another (device.<device>.<path>)
+            # A path: of this device, of another (device.<device>.<path>), or
+            # Home Assistant's entity (homeassistant.<entity ID>), kept whole
             vol.Optional("when"): path,
-            vol.Optional("entity"): cv.entity_id,
             vol.Optional("to"): state_of("to"),
             vol.Optional("from"): state_of("from"),
             vol.Optional("above"): finite_float,
@@ -419,7 +419,9 @@ def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Inval
 
     `when` names an entity of the device, or of another device
     (device.<device>.<path>), never one of the reaction's own statistics;
-    `then` one of the device's executable programs.
+    `then` one of the device's executable programs. Home Assistant's entity
+    is Home Assistant's, unless pururu creates it
+    (checks.pururus_own_as_home_assistants).
     """
     devices = house[CONF_DEVICES]
     for key, device in devices.items():
@@ -447,7 +449,7 @@ def _refused_when(index: Index, key: str, reaction_key: str, when: str) -> str |
     """
     ref = Ref.parse(when)
     if ref.owner is Owner.HOME_ASSISTANT:
-        return f"{when} is Home Assistant's: watch it with entity: {ref.path}"
+        return None
     block, _, rest = ref.path.partition(".")
     if block == CONF_REACTIONS and "." not in rest:
         return f"{when} is a reaction: watch {when}.triggered_total"
@@ -541,11 +543,15 @@ def _watched(
 ) -> tuple[bool, str | None]:
     """Whether the reaction can watch what it names, and the entity ID it watches.
 
-    A pururu entity not created can't be, logged; `at` and `sun` watch none.
+    A pururu entity not created can't be, logged; Home Assistant's is its
+    entity ID, without homeassistant.; `at` and `sun` watch none.
     """
     if (when := reaction.get("when")) is None:
-        return True, reaction.get("entity")
-    target = find(index, key, Ref.parse(when))
+        return True, None
+    ref = Ref.parse(when)
+    if ref.owner is Owner.HOME_ASSISTANT:
+        return True, ref.path
+    target = find(index, key, ref)
     assert target is not None  # the schema checked it (check)
     if target.unique_id not in created:
         _LOGGER.error(

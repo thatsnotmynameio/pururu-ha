@@ -32,7 +32,7 @@ ORANGE = {"color_name": "orange", "brightness_pct": 100, "effect": "breathe"}
 BLUE = {"color_name": "blue", "brightness_pct": 100, "effect": "breathe"}
 GREEN = {"color_name": "green", "brightness_pct": 50}
 APPLIANCE: dict[str, Any] = {
-    "power": "sensor.lavadora_power",
+    "power": "homeassistant.sensor.lavadora_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 
@@ -53,14 +53,14 @@ def raised(name: str, priority: str, lights: Any = "default") -> dict[str, Any]:
 def devices(**alerts: dict[str, Any]) -> dict[str, Any]:
     house: dict[str, Any] = {
         "name": "Casa",
-        "switches": {name: {"entity": real, "name": name.title()} for name, real in REAL.items()},
+        "switches": {name: {"entity": f"homeassistant.{real}", "name": name.title()} for name, real in REAL.items()},
     }
     if alerts:
         house["alerts"] = alerts
     return {
-        "greenhouse": {"name": "Estufa", "lights": {"lantern": {"entity": REAL_LANTERN, "name": "LANTERN"}}},
+        "greenhouse": {"name": "Estufa", "lights": {"lantern": {"entity": f"homeassistant.{REAL_LANTERN}", "name": "LANTERN"}}},
         "varanda": {"name": "Varanda",
-                    "lights": {"rele": {"entity": REAL_RELAY, "name": "Relé"}}},
+                    "lights": {"rele": {"entity": f"homeassistant.{REAL_RELAY}", "name": "Relé"}}},
         HOUSE: house,
     }
 

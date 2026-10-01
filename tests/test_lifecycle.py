@@ -13,8 +13,8 @@ import pytest
 
 from helpers import DOMAIN, module, reload, setup
 
-SWITCH = {"name": "Estufa", "switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}}
-LIGHT = {"name": "Luzes", "lights": {"teto": {"entity": "light.teto", "name": "Teto"}}}
+SWITCH = {"name": "Estufa", "switches": {"sprinkler": {"entity": "homeassistant.switch.greenhouse_sprinkler", "name": "Irrigador"}}}
+LIGHT = {"name": "Luzes", "lights": {"teto": {"entity": "homeassistant.light.teto", "name": "Teto"}}}
 
 
 async def test_the_steps_run_in_order(ha: HomeAssistant) -> None:
@@ -101,7 +101,7 @@ async def test_a_setup_failing_after_its_platforms_recovers_on_reload(
     removed = ha.states.get(sprinkler)
     assert removed is not None
     assert removed.attributes["restored"]  # HA's placeholder: the entity is gone
-    switches = {**SWITCH["switches"], "vent": {"entity": "switch.greenhouse_vent", "name": "Ventilação"}}
+    switches = {**SWITCH["switches"], "vent": {"entity": "homeassistant.switch.greenhouse_vent", "name": "Ventilação"}}
     await reload(ha, {"greenhouse": {**SWITCH, "switches": switches}})
     assert entry.state is ConfigEntryState.LOADED
     for entity_id in (sprinkler, "switch.pururu_greenhouse_switch_vent"):
@@ -166,7 +166,7 @@ async def test_a_setup_cancelled_after_its_platforms_recovers_on_reload(
     assert removed is not None
     assert removed.attributes["restored"]  # HA's placeholder: the entity is gone
     assert "failed setup" not in caplog.text
-    switches = {**SWITCH["switches"], "vent": {"entity": "switch.greenhouse_vent", "name": "Ventilação"}}
+    switches = {**SWITCH["switches"], "vent": {"entity": "homeassistant.switch.greenhouse_vent", "name": "Ventilação"}}
     await reload(ha, {"greenhouse": {**SWITCH, "switches": switches}})
     assert entry.state is ConfigEntryState.LOADED
     for entity_id in (sprinkler, "switch.pururu_greenhouse_switch_vent"):
@@ -231,12 +231,12 @@ async def test_renaming_a_ready_made_notification_reloads(ha: HomeAssistant) -> 
     washer = {
         "name": "Washer",
         "appliance": {
-            "power": "sensor.washer_power",
+            "power": "homeassistant.sensor.washer_power",
             "running_program": {"above": 4, "on_delay": 1, "off_delay": 1},
             "notifications": {"finished": None},
         },
     }
-    assert await setup(ha, {"washer": washer}, config={"notify": "notify.phone"})
+    assert await setup(ha, {"washer": washer}, config={"notify": "homeassistant.notify.phone"})
     registry = er.async_get(ha)
     with patch.object(ha.config_entries, "async_schedule_reload") as reloading:
         registry.async_update_entity(

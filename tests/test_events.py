@@ -18,8 +18,8 @@ RUNNING = "binary_sensor.pururu_dummy_washer_appliance_running"
 MIRROR = "sensor.pururu_dummy_washer_appliance_power"
 ENERGY_TOTAL = "sensor.pururu_dummy_washer_appliance_energy_total"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
-    "energy": ENERGY,
+    "power": f"homeassistant.{POWER}",
+    "energy": f"homeassistant.{ENERGY}",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 DEVICES = {KEY: {"name": "Dummy washer", "appliance": APPLIANCE}}
@@ -305,8 +305,8 @@ async def test_a_phases_entities_are_named_by_their_keys(ha: HomeAssistant, free
 async def test_devices_sharing_a_prefix(ha: HomeAssistant) -> None:
     """`greenhouse` and `greenhouse_sprinkler`: each entity's key comes from the device that built it."""
     devices = {
-        "greenhouse": {"name": "Greenhouse", "switches": {"sprinkler": {"entity": "switch.a", "name": "A"}}},
-        "greenhouse_sprinkler": {"name": "Greenhouse sprinkler", "switches": {"main": {"entity": "switch.b", "name": "B"}}},
+        "greenhouse": {"name": "Greenhouse", "switches": {"sprinkler": {"entity": "homeassistant.switch.a", "name": "A"}}},
+        "greenhouse_sprinkler": {"name": "Greenhouse sprinkler", "switches": {"main": {"entity": "homeassistant.switch.b", "name": "B"}}},
     }
     ha.states.async_set("switch.a", "off")
     ha.states.async_set("switch.b", "off")

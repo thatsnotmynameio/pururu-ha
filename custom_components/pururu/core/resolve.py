@@ -16,7 +16,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, valid_entity_id
 from homeassistant.helpers import config_validation as cv
 
 from .feature import Device
@@ -182,6 +182,31 @@ def path(value: Any) -> str:
             f"{text} is not a path of another device: {DEVICE}.<device>.<block>.<key>"
         )
     return text
+
+
+def homeassistant_entity(*domains: str) -> Callable[[Any], str]:
+    """A field that takes only Home Assistant's entity: homeassistant.<domain>.<object_id>, of one of `domains` (any without).
+
+    It hands its consumer the bare entity ID (sensor.plug_power), as Home
+    Assistant names it; a refusal quotes what the author wrote, homeassistant.
+    included.
+    """
+
+    def validate(value: Any) -> str:
+        text = cv.string(value)
+        first, _, written = text.partition(".")
+        # Lowered, as Home Assistant's cv.entity_id does
+        entity_id = written.lower()
+        if first != HOME_ASSISTANT or not valid_entity_id(entity_id):
+            raise vol.Invalid(
+                f"{text} is not a Home Assistant entity: "
+                f"{HOME_ASSISTANT}.<domain>.<object_id>"
+            )
+        if domains and entity_id.partition(".")[0] not in domains:
+            raise vol.Invalid(f"{text} is not a {' or '.join(domains)}")
+        return entity_id
+
+    return validate
 
 
 def key_alone(field: str, of: str) -> Callable[[Any], str]:

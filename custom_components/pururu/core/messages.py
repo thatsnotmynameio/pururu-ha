@@ -6,19 +6,35 @@ user's, never a template.
 """
 
 from collections.abc import Sequence
+import re
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.helpers import config_validation as cv
 
-# A notify action: notify.<name>, as mobile_app's notify.mobile_app_<phone>
-ACTION = vol.All(
-    cv.string,
-    vol.Match(r"^notify\.[a-z0-9_]+$", msg="a notify action is notify.<name>"),
-)
+from .resolve import HOME_ASSISTANT
+
+_ACTION = re.compile(rf"{HOME_ASSISTANT}\.(notify\.[a-z0-9_]+)")
+
+
+def action(value: Any) -> str:
+    """A notify action, Home Assistant's: homeassistant.notify.<name>; the action alone (notify.<name>).
+
+    As mobile_app's homeassistant.notify.mobile_app_<phone>. The generated
+    automations call it as Home Assistant names it; a refusal quotes what the
+    author wrote.
+    """
+    text = cv.string(value)
+    if (found := _ACTION.fullmatch(text)) is None:
+        raise vol.Invalid(
+            f"{text} is not a notify action: {HOME_ASSISTANT}.notify.<name>"
+        )
+    return found[1]
+
+
 # config: notify, and a reaction's or a notification's own: one or a list
-TARGETS = vol.All(cv.ensure_list, vol.Length(min=1), [ACTION])
+TARGETS = vol.All(cv.ensure_list, vol.Length(min=1), [action])
 
 
 def escaped(text: str) -> str:

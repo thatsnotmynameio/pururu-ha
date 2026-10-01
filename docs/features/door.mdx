@@ -14,15 +14,15 @@ pururu:
       name: Porta da frente
       area: entrada
       door:
-        contact: binary_sensor.porta_frente
+        contact: homeassistant.binary_sensor.porta_frente
         statistics:
           openings: [today, week, month]
           open_time: [today, week]
         event_entities:
-          - entity: event.porta_frente_access
+          - entity: homeassistant.event.porta_frente_access
             types: {access_granted: opening, access_denied: denied}
             fields: {who: actor, how: authentication, direction: direction}
-          - entity: event.porta_frente_doorbell
+          - entity: homeassistant.event.porta_frente_doorbell
             types: {ring: ring}
 ```
 
@@ -113,7 +113,7 @@ A door offers alerts for an opening that lasts too long and for one that doesn't
 
 ```yaml
 door:
-  contact: binary_sensor.porta_frente
+  contact: homeassistant.binary_sensor.porta_frente
   alerts:
     long_opening: {for: {minutes: 10}}
     no_opening: {for: {days: 1}}

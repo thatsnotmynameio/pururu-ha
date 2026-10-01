@@ -97,6 +97,11 @@ STUCK = [*WASHER, "alerts", "stuck"]
 MORNING = ["devices", "greenhouse", "reactions", "morning"]
 REACTION = ["devices", "biblioteca", "reactions", "washer_done"]
 GROUPS = ["config", "alerts", "lights", "groups"]
+APPLIANCE = [*WASHER, "appliance"]
+DOOR = ["devices", "biblioteca", "door"]
+TETO = ["devices", "biblioteca", "lights", "teto"]
+PANTRY = ["devices", "biblioteca", "reactions", "pantry"]
+NOT_HOME_ASSISTANTS = "{} is not a Home Assistant entity: homeassistant.<domain>.<object_id>"
 NOT_A_PATH = "{} is not a path: write it from its block, <block>.<key>"
 
 
@@ -133,6 +138,8 @@ OWN = "alerts: device.clothes_washer.appliance.running_program.phase_current is 
 OTHER = "reactions: washer_done: clothes_washer.appliance_running: clothes_washer is not a block of this device"
 MEMBER = "biblioteca.light_teto needs its device: device.<device>.lights.<key>"
 THEN = "then is its program's key alone: clean"
+ENTITY = "'entity' is an invalid option for 'pururu', check: pururu->devices->biblioteca->reactions->pantry->entity"
+NOTIFY = "notify.mobile_app_phone is not a notify action: homeassistant.notify.<name>"
 
 OLDS = [
     old("an entity key in an alert's when", STUCK, "when", was(*STUCK, "when"),
@@ -145,6 +152,16 @@ OLDS = [
     old("a device naming itself", STUCK, "when", "device.clothes_washer.appliance.running_program.phase_current",
         check(OWN, *STUCK, "when"), OWN),
     old("a then as a path", MORNING, "then", "programs.executable.clean", value(THEN, *MORNING, "then"), THEN),
+    old("a bare power", APPLIANCE, "power", was(*APPLIANCE, "power"),
+        value(NOT_HOME_ASSISTANTS.format("sensor.washer_plug_power"), *APPLIANCE, "power"),
+        NOT_HOME_ASSISTANTS.format("sensor.washer_plug_power")),
+    old("a bare contact", DOOR, "contact", was(*DOOR, "contact"),
+        value(NOT_HOME_ASSISTANTS.format("binary_sensor.porta_biblioteca"), *DOOR, "contact")),
+    old("a bare entity", TETO, "entity", was(*TETO, "entity"),
+        value(NOT_HOME_ASSISTANTS.format("light.biblioteca_teto"), *TETO, "entity")),
+    old("a bare notify", ["config"], "notify", was("config", "notify"),
+        check(NOTIFY, "config", "notify", "0"), NOTIFY),
+    old("a reaction's entity", PANTRY, "entity", was(*PANTRY, "entity"), ENTITY, ENTITY),
 ]
 
 

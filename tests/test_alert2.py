@@ -18,7 +18,7 @@ from helpers import module, reload, setup
 KEY = "dummy_washer"
 POWER = "sensor.dummy_plug_power"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
+    "power": f"homeassistant.{POWER}",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 TEXTS = {"message": "Overload!", "done_message": "Back to normal."}

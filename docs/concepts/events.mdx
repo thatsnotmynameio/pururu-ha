@@ -13,8 +13,8 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
-        energy: sensor.washer_plug_energy
+        power: homeassistant.sensor.washer_plug_power
+        energy: homeassistant.sensor.washer_plug_energy
         running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
 ```
 

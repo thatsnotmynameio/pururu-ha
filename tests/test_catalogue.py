@@ -20,8 +20,8 @@ PROGRAM: dict[str, Any] = {
     "other": {"statistics": {"runtime": ["week"]}},
 }
 APPLIANCE: dict[str, Any] = {
-    "power": "sensor.dummy_plug_power",
-    "energy": "sensor.dummy_plug_energy",
+    "power": "homeassistant.sensor.dummy_plug_power",
+    "energy": "homeassistant.sensor.dummy_plug_energy",
     "running_program": PROGRAM,
     "statistics": {"idle_energy": ["year"]},
 }
@@ -85,7 +85,7 @@ def test_a_place_that_isnt_a_map_is_refused_cleanly(
     """vol.Invalid at its path, not a KeyError or TypeError from taking the aspect's key out."""
     schema = module("setup.schema").CONFIG_SCHEMA
     house = {"devices": {"washer": {"name": "Washer", "appliance": {
-        "power": "sensor.dummy_plug_power", "running_program": program}}}}
+        "power": "homeassistant.sensor.dummy_plug_power", "running_program": program}}}}
     with pytest.raises(vol.Invalid) as refused:
         schema({DOMAIN: house})
     paths = ([error.path for error in refused.value.errors]
@@ -115,7 +115,7 @@ def test_keys_lists_the_meters_at_every_place(ha: HomeAssistant) -> None:
 
 
 # The appliance without statistics: the made-up aspects below replace ASPECTS
-PLAIN: dict[str, Any] = {"power": "sensor.dummy_plug_power", "running_program": {"above": 4}}
+PLAIN: dict[str, Any] = {"power": "homeassistant.sensor.dummy_plug_power", "running_program": {"above": 4}}
 
 
 def made_up(key: str, path: tuple[str, ...], schema: Any, **place: Any) -> Any:
@@ -233,9 +233,9 @@ WASHER: dict[str, Any] = {
             "other": {"statistics": {"energy": ["month"]}},
         }}},
     },
-    "door": {"contact": "binary_sensor.washer_door", "alerts": {"long_opening": {"for": {"minutes": 5}}}},
-    "switches": {"sprinkler": {"entity": "switch.sprinkler", "name": "Sprinkler"}},
-    "buttons": {"ler": {"entity": "sensor.remote_action", "state": "1_single", "name": "Ler"}},
+    "door": {"contact": "homeassistant.binary_sensor.washer_door", "alerts": {"long_opening": {"for": {"minutes": 5}}}},
+    "switches": {"sprinkler": {"entity": "homeassistant.switch.sprinkler", "name": "Sprinkler"}},
+    "buttons": {"ler": {"entity": "homeassistant.sensor.remote_action", "state": "1_single", "name": "Ler"}},
     "programs": {"executable": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switches.sprinkler"}]}}},
     "reactions": {"morning": {"name": "Morning", "at": "07:00"}},
     "alerts": {"long_cycle": {"name": "Long cycle", "when": "appliance.running_program", "state": "on"}},

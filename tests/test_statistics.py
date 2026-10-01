@@ -85,8 +85,8 @@ def appliance_sensor(suffix: str) -> str:
 async def test_appliance_meters(ha: HomeAssistant, language: str) -> None:
     ha.config.language = language
     block = {
-        "power": "sensor.dummy_plug_power",
-        "energy": "sensor.dummy_plug_energy",
+        "power": "homeassistant.sensor.dummy_plug_power",
+        "energy": "homeassistant.sensor.dummy_plug_energy",
         "running_program": {
             "above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2},
             "statistics": {counter: list(PERIODS) for counter in ("runtime", "cycles")},
@@ -143,7 +143,7 @@ def phase_sensor(suffix: str) -> str:
 def phases(statistics: dict[str, Any], **appliance: Any) -> dict[str, Any]:
     """The dummy station: phase resfriar and other, each with `statistics`."""
     return {PHASE_KEY: {"name": PHASE_NAME, "appliance": {
-        "power": "sensor.dummy_plug_power",
+        "power": "homeassistant.sensor.dummy_plug_power",
         "running_program": {
             "above": 4,
             "phases": {"resfriar": {"name": "Resfriar", "above": 40, "statistics": statistics}},
@@ -156,7 +156,7 @@ def phases(statistics: dict[str, Any], **appliance: Any) -> dict[str, Any]:
 @pytest.mark.parametrize("language", ["en", "pt-BR"])
 async def test_phases_meters(ha: HomeAssistant, language: str) -> None:
     ha.config.language = language
-    assert await setup(ha, phases(PHASE_STATISTICS, energy="sensor.dummy_plug_energy"))
+    assert await setup(ha, phases(PHASE_STATISTICS, energy="homeassistant.sensor.dummy_plug_energy"))
     for phase in ("resfriar", "other"):
         for counter in PHASE_COUNTERS:
             for period in PERIODS:
@@ -194,7 +194,7 @@ def opening_sensor(kind: str, suffix: str) -> str:
 async def test_opening_meters(ha: HomeAssistant, kind: str, language: str) -> None:
     ha.config.language = language
     block = {
-        "contact": OPENING_CONTACT,
+        "contact": f"homeassistant.{OPENING_CONTACT}",
         "statistics": {counter: list(PERIODS) for counter in OPENING_COUNTERS},
     }
     assert await setup(ha, {OPENING_KEY: {"name": OPENING_NAME, kind: block}})
@@ -248,7 +248,7 @@ async def test_programs_meters(scripts: HomeAssistant, language: str) -> None:
     devices: dict[str, Any] = {
         PROGRAM_KEY: {
             "name": PROGRAM_NAME,
-            "switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}},
+            "switches": {"sprinkler": {"entity": "homeassistant.switch.greenhouse_sprinkler", "name": "Irrigador"}},
             "programs": {
                 "executable": {
                     PROGRAM_SLUG: {
@@ -299,11 +299,11 @@ async def test_reactions_meters(ha: HomeAssistant, language: str) -> None:
     devices: dict[str, Any] = {
         REACTION_KEY: {
             "name": REACTION_NAME,
-            "lights": {"teto": {"entity": "light.dummy_teto", "name": "Teto"}},
+            "lights": {"teto": {"entity": "homeassistant.light.dummy_teto", "name": "Teto"}},
             "reactions": {
                 REACTION_SLUG: {
                     "name": REACTION_ITEM_NAME,
-                    "entity": "binary_sensor.dummy_door",
+                    "when": "homeassistant.binary_sensor.dummy_door",
                     "to": "on",
                     "statistics": {"triggered": list(PERIODS)},
                 }
@@ -321,7 +321,7 @@ async def test_reactions_meters(ha: HomeAssistant, language: str) -> None:
 # --- refusals ----------------------------------------------------------------------------
 
 APPLIANCE_MINIMAL = {
-    "power": "sensor.dummy_plug_power",
+    "power": "homeassistant.sensor.dummy_plug_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 

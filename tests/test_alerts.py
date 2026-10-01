@@ -13,10 +13,10 @@ POWER = "sensor.dummy_plug_power"
 MIRROR = "sensor.pururu_dummy_washer_appliance_power"
 REAL_SPRINKLER = "switch.dummy_sprinkler"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
+    "power": f"homeassistant.{POWER}",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-SWITCHES = {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}}
+SWITCHES = {"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"}}
 OVERLOAD = {"name": "Overload", "when": "appliance.power", "above": 2500}
 SPRINKLER_ON = {"name": "Sprinkler on", "when": "switches.sprinkler", "state": "on"}
 

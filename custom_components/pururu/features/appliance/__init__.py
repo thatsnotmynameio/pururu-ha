@@ -11,10 +11,10 @@ import voluptuous as vol
 
 from homeassistant.const import CONF_NAME, STATE_OFF, STATE_ON, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
 
 from ...core.entity import PururuEntity
 from ...core.feature import Device, Feature
+from ...core.resolve import homeassistant_entity
 from ...core.roles import (
     Counted,
     Counters,
@@ -48,8 +48,9 @@ def _unnamed(block: Any) -> Any:
 
 SCHEMA = vol.Schema(
     {
-        vol.Required("power"): cv.entity_id,
-        vol.Optional("energy"): cv.entity_id,
+        # Any entity of Home Assistant's, homeassistant.<entity ID>: a pururu sensor too
+        vol.Required("power"): homeassistant_entity(),
+        vol.Optional("energy"): homeassistant_entity(),
         vol.Required(RUNNING_PROGRAM): vol.All(_unnamed, program.SCHEMA),
     }
 )
@@ -124,7 +125,7 @@ APPLIANCE = Feature(
     entity_keys=ENTITY_KEYS,
     build=build,
     example={
-        "power": "sensor.dummy_plug_power",
+        "power": "homeassistant.sensor.dummy_plug_power",
         # One phase and other: the contract test reaches every derived key
         RUNNING_PROGRAM: {
             "above": 4,

@@ -16,8 +16,8 @@ ENERGY = "sensor.dummy_plug_energy"
 RUNNING = "binary_sensor.pururu_dummy_washer_appliance_running"
 IDLE_W = 1.4
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
-    "energy": ENERGY,
+    "power": f"homeassistant.{POWER}",
+    "energy": f"homeassistant.{ENERGY}",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 DEVICES = {KEY: {"name": "Dummy washer", "appliance": APPLIANCE}}
@@ -83,7 +83,7 @@ async def end_cycle(hass: HomeAssistant, freezer: Any) -> None:
                  id="above not a number"),
     pytest.param({**APPLIANCE, "running_program": {**APPLIANCE["running_program"], "above": "inf"}},
                  id="above infinite"),
-    pytest.param({"power": POWER, "running": {"on_delay": 60, "off_delay": 120, "threshold": 4}},
+    pytest.param({"power": f"homeassistant.{POWER}", "running": {"on_delay": 60, "off_delay": 120, "threshold": 4}},
                  id="running is now running_program"),
     pytest.param({**APPLIANCE, "running_program": {**APPLIANCE["running_program"], "name": "X"}},
                  id="running_program takes no name"),
@@ -93,7 +93,7 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
 
 
 @pytest.mark.parametrize(("block", "reasons"), [
-    pytest.param({"power": POWER, "running": {"on_delay": 60, "off_delay": 120, "threshold": 4}},
+    pytest.param({"power": f"homeassistant.{POWER}", "running": {"on_delay": 60, "off_delay": 120, "threshold": 4}},
                  ["'running' is an invalid option for 'pururu', check: "
                   f"pururu->devices->{KEY}->appliance->running",
                   "required key 'running_program' not provided"],
@@ -106,6 +106,15 @@ async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]
                  ["'cycles' is an invalid option for 'pururu', check: "
                   f"pururu->devices->{KEY}->appliance->statistics->cycles"],
                  id="cycles in the block"),
+    pytest.param({**APPLIANCE, "power": POWER},
+                 [f"{POWER} is not a Home Assistant entity: homeassistant.<domain>.<object_id> for dictionary "
+                  f"value 'pururu->devices->{KEY}->appliance->power'"],
+                 id="power without homeassistant, as before 0.2.2"),
+    pytest.param({**APPLIANCE, "energy": "homeassistant.dummy_plug_energy"},
+                 ["homeassistant.dummy_plug_energy is not a Home Assistant entity: "
+                  "homeassistant.<domain>.<object_id> for dictionary "
+                  f"value 'pururu->devices->{KEY}->appliance->energy'"],
+                 id="energy without a domain"),
 ])
 async def test_the_old_block_and_a_name_are_refused_by_their_text(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, block: dict[str, Any],
@@ -230,6 +239,12 @@ async def test_mirrors_follow_the_plug(washer: HomeAssistant) -> None:
     assert power.attributes["unit_of_measurement"] == "W"
     assert float(energy.state) == 100.5
     assert energy.attributes["state_class"] == "total_increasing"
+
+
+async def test_power_may_be_a_pururu_sensor(ha: HomeAssistant) -> None:
+    """power and energy take any entity of Home Assistant's, one of pururu's own too."""
+    block = {**APPLIANCE, "power": "homeassistant.sensor.pururu_other_appliance_power"}
+    assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": block}})
 
 
 async def test_device_holds_the_appliance(washer: HomeAssistant) -> None:
@@ -468,7 +483,8 @@ async def test_last_cycle_restores(ha: HomeAssistant) -> None:
 
 async def test_devices_do_not_cross(ha: HomeAssistant, freezer: Any) -> None:
     """Two washers: a cycle on one counts only there."""
-    other = {**APPLIANCE, "power": "sensor.dummy_other_power", "energy": "sensor.dummy_other_energy"}
+    other = {**APPLIANCE, "power": "homeassistant.sensor.dummy_other_power",
+             "energy": "homeassistant.sensor.dummy_other_energy"}
     assert await setup(ha, {**DEVICES, "dummy_other": {"name": "Other", "appliance": other}})
     await watts(ha, IDLE_W)
     await fake(ha, "sensor.dummy_other_power", str(IDLE_W))
@@ -661,7 +677,8 @@ async def test_the_appliances_meters_keep_their_ids(metered: HomeAssistant) -> N
 
 
 async def test_two_devices_have_their_own_meters(ha: HomeAssistant, freezer: Any) -> None:
-    other = {**STATISTICS, "power": "sensor.dummy_other_power", "energy": "sensor.dummy_other_energy"}
+    other = {**STATISTICS, "power": "homeassistant.sensor.dummy_other_power",
+             "energy": "homeassistant.sensor.dummy_other_energy"}
     assert await setup(ha, {KEY: {"name": "Dummy washer", "appliance": STATISTICS},
                             "dummy_other": {"name": "Other", "appliance": other}})
     await watts(ha, IDLE_W)

@@ -52,7 +52,7 @@ from ..const import CONF_DEVICES
 from ..core.entity import PururuEntity
 from ..core.feature import EACH, TEXT, Device, Feature, Item, Path, at, state_of
 from ..core.generated import SCRIPTS
-from ..core.resolve import key_alone
+from ..core.resolve import HOME_ASSISTANT, key_alone
 from ..core.roles import Configured, Counted, Counters, Items
 from ..core.vocabulary import NO_READING
 from . import standing
@@ -289,9 +289,10 @@ def check(house: Mapping[str, Any], *_: Any) -> Iterator[vol.Invalid]:
                 )
             value = (button["entity"], button["state"])
             if (other := pressing.setdefault(value, button_key)) != button_key:
+                # Quoted as written: the schema took homeassistant. off
                 yield vol.Invalid(
-                    f"buttons: {button_key}: {value[0]} at {value[1]} is already "
-                    f"button {other}",
+                    f"buttons: {button_key}: {HOME_ASSISTANT}.{value[0]} at "
+                    f"{value[1]} is already button {other}",
                     path=path,
                 )
 
@@ -302,7 +303,7 @@ BUTTONS = Feature(
     build=build,
     example={
         "read": {
-            "entity": "sensor.dummy_remote_action",
+            "entity": "homeassistant.sensor.dummy_remote_action",
             "state": "1_single",
             "name": "Read",
         }

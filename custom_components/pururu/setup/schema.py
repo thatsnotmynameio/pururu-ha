@@ -64,6 +64,7 @@ CHECKS: tuple[Check, ...] = (
     alerts.check,
     checks.real_entities_distinct,
     reactions.check,
+    checks.pururus_own_as_home_assistants,
     programs.check,
     buttons.check,
     places.floors_exist,

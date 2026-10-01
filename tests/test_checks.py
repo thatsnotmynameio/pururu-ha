@@ -9,10 +9,10 @@ import voluptuous as vol
 from helpers import DOMAIN, module
 
 APPLIANCE: dict[str, Any] = {
-    "power": "sensor.washer_power",
+    "power": "homeassistant.sensor.washer_power",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-SPRINKLER = {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}
+SPRINKLER = {"sprinkler": {"entity": "homeassistant.switch.greenhouse_sprinkler", "name": "Irrigador"}}
 
 
 def washer(**blocks: Any) -> dict[str, Any]:
@@ -38,7 +38,7 @@ def clean(*sequence: Any) -> dict[str, Any]:
 WHEN = ["devices", "washer", "alerts", "x", "when"]
 REACTION = ["devices", "washer", "reactions", "it"]
 STEP = ["devices", "greenhouse", "programs", "executable", "clean", "sequence", 0, "turn_on"]
-TETO = {"teto": {"entity": "light.dummy_teto", "name": "Teto"}}
+TETO = {"teto": {"entity": "homeassistant.light.dummy_teto", "name": "Teto"}}
 LIBRARY = {"name": "Library", "lights": TETO}
 GROUP = ["config", "alerts", "lights", "groups", "porch", 0]
 
@@ -124,10 +124,10 @@ def group(*members: str) -> dict[str, Any]:
         "reactions: it: dryer.appliance_running: dryer is not a block of this device",
         id="a reaction's other device as before 0.2.2"),
     pytest.param(
-        {"devices": {"washer": washer(reactions=reaction("homeassistant.binary_sensor.door"))}}, [*REACTION, "when"],
-        "reactions: it: homeassistant.binary_sensor.door is Home Assistant's: watch it with entity: "
-        "binary_sensor.door",
-        id="a reaction on Home Assistant's, until its when takes it"),
+        {"devices": {"washer": washer(reactions=reaction("homeassistant.sensor.pururu_washer_appliance_power"))}},
+        [*REACTION, "when"],
+        "reactions: it: homeassistant.sensor.pururu_washer_appliance_power is pururu's: write appliance.power",
+        id="a reaction on its own device's entity as Home Assistant's"),
     pytest.param(
         {"devices": {"washer": washer(reactions=reaction("device.washer.appliance.running_program"))}},
         [*REACTION, "when"],
@@ -172,14 +172,14 @@ def group(*members: str) -> dict[str, Any]:
         id="a program's step naming its own device"),
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "buttons": {
-            "clean": {"entity": "sensor.remote_action", "state": "1_single", "name": "Clean",
+            "clean": {"entity": "homeassistant.sensor.remote_action", "state": "1_single", "name": "Clean",
                       "program": "regar"}}}}},
         ["devices", "greenhouse", "buttons", "clean", "program"],
         "buttons: clean: regar is not an executable program of this device",
         id="a button's program"),
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "buttons": {
-            "clean": {"entity": "sensor.remote_action", "state": "1_single", "name": "Clean",
+            "clean": {"entity": "homeassistant.sensor.remote_action", "state": "1_single", "name": "Clean",
                       "program": "programs.executable.clean"}}}}},
         ["devices", "greenhouse", "buttons", "clean", "program"], "program is its program's key alone: clean",
         id="a button's program as a path"),
@@ -193,20 +193,20 @@ def group(*members: str) -> dict[str, Any]:
         id="an area's floor as a path"),
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "buttons": {
-            "clean": {"entity": "sensor.remote_action", "state": "1_single", "name": "Clean"},
-            "wash": {"entity": "sensor.remote_action", "state": "1_single", "name": "Wash"}}}}},
+            "clean": {"entity": "homeassistant.sensor.remote_action", "state": "1_single", "name": "Clean"},
+            "wash": {"entity": "homeassistant.sensor.remote_action", "state": "1_single", "name": "Wash"}}}}},
         ["devices", "greenhouse", "buttons", "wash"],
-        "buttons: wash: sensor.remote_action at 1_single is already button clean",
+        "buttons: wash: homeassistant.sensor.remote_action at 1_single is already button clean",
         id="two buttons on one value"),
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": SPRINKLER, "lights": {
-            "sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}}}},
+            "sprinkler": {"entity": "homeassistant.switch.greenhouse_sprinkler", "name": "Irrigador"}}}}},
         ["devices", "greenhouse", "switches"],
-        "switches: switch.greenhouse_sprinkler is already in lights",
+        "switches: homeassistant.switch.greenhouse_sprinkler is already in lights",
         id="a real entity twice"),
     pytest.param(
         {"devices": {"greenhouse": {"name": "Greenhouse", "switches": {"switch_sprinkler": SPRINKLER["sprinkler"]}},
-                     "greenhouse_switch": {"name": "Greenhouse", "switches": {"sprinkler": {"entity": "switch.other",
+                     "greenhouse_switch": {"name": "Greenhouse", "switches": {"sprinkler": {"entity": "homeassistant.switch.other",
                                                                           "name": "Other"}}}}},
         ["devices", "greenhouse_switch"],
         "device greenhouse_switch: pururu_greenhouse_switch_switch_sprinkler is already an entity of device greenhouse",
@@ -234,7 +234,7 @@ def group(*members: str) -> dict[str, Any]:
         "config.alerts.lights.groups: porch: device.garagem.lights.x: device garagem is not in devices",
         id="a light group"),
     pytest.param(
-        {"devices": {"garagem": {"name": "Garagem", "lights": {"x": {"entity": "light.dummy_x", "name": "X"}}}},
+        {"devices": {"garagem": {"name": "Garagem", "lights": {"x": {"entity": "homeassistant.light.dummy_x", "name": "X"}}}},
          "config": group("device.garagem.lights.x", "device.garagem.lights.y")}, [*GROUP[:-1], 1],
         "config.alerts.lights.groups: porch: device.garagem.lights.y is not a light",
         id="a light group's second member"),

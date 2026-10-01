@@ -18,8 +18,8 @@ LER = "button.pururu_biblioteca_button_ler"
 EXTRA = "button.pururu_biblioteca_button_extra"
 LER_TOTAL = "sensor.pururu_biblioteca_button_ler_triggered_total"
 EXTRA_TOTAL = "sensor.pururu_biblioteca_button_extra_triggered_total"
-BUTTONS: dict[str, Any] = {"ler": {"entity": REMOTE, "state": "1_single", "name": "Ler"},
-                           "extra": {"entity": REMOTE, "state": "2_single", "name": "Extra"}}
+BUTTONS: dict[str, Any] = {"ler": {"entity": f"homeassistant.{REMOTE}", "state": "1_single", "name": "Ler"},
+                           "extra": {"entity": f"homeassistant.{REMOTE}", "state": "2_single", "name": "Extra"}}
 DEVICES = {KEY: {"name": "Biblioteca", "buttons": BUTTONS}}
 # A press the button recorded before a restart
 PRESSED = "2026-09-16T09:00:00+00:00"
@@ -57,20 +57,22 @@ async def library(ha: HomeAssistant) -> HomeAssistant:
 
 @pytest.mark.parametrize("block", [
     pytest.param({"ler": {"state": "1_single", "name": "Ler"}}, id="no entity"),
-    pytest.param({"ler": {"entity": REMOTE, "name": "Ler"}}, id="no state"),
-    pytest.param({"ler": {"entity": REMOTE, "state": "1_single"}}, id="no name"),
-    pytest.param({"ler": {"entity": REMOTE, "state": "1_single", "name": "  "}}, id="blank name"),
-    pytest.param({"ler": {"entity": REMOTE, "state": "  ", "name": "Ler"}}, id="blank state"),
-    pytest.param({"ler": {"entity": "binary_sensor.controle", "state": "on", "name": "Ler"}},
+    pytest.param({"ler": {"entity": f"homeassistant.{REMOTE}", "name": "Ler"}}, id="no state"),
+    pytest.param({"ler": {"entity": f"homeassistant.{REMOTE}", "state": "1_single"}}, id="no name"),
+    pytest.param({"ler": {"entity": f"homeassistant.{REMOTE}", "state": "1_single", "name": "  "}}, id="blank name"),
+    pytest.param({"ler": {"entity": f"homeassistant.{REMOTE}", "state": "  ", "name": "Ler"}}, id="blank state"),
+    pytest.param({"ler": {"entity": "homeassistant.binary_sensor.controle", "state": "on", "name": "Ler"}},
                  id="another domain"),
-    pytest.param({"ler": {"entity": "sensor.pururu_biblioteca_appliance_power", "state": "1",
+    pytest.param({"ler": {"entity": "homeassistant.sensor.pururu_biblioteca_appliance_power", "state": "1",
                           "name": "Ler"}}, id="a pururu sensor"),
-    pytest.param({"ler": {"entity": REMOTE, "state": "unavailable", "name": "Ler"}},
+    pytest.param({"ler": {"entity": REMOTE, "state": "1_single", "name": "Ler"}},
+                 id="without homeassistant, as before 0.2.2"),
+    pytest.param({"ler": {"entity": f"homeassistant.{REMOTE}", "state": "unavailable", "name": "Ler"}},
                  id="state unavailable"),
-    pytest.param({"ler": {"entity": REMOTE, "state": "unknown", "name": "Ler"}}, id="state unknown"),
-    pytest.param({"ler": {"entity": REMOTE, "state": "1_single", "name": "Ler", "icon": "mdi:book"}},
+    pytest.param({"ler": {"entity": f"homeassistant.{REMOTE}", "state": "unknown", "name": "Ler"}}, id="state unknown"),
+    pytest.param({"ler": {"entity": f"homeassistant.{REMOTE}", "state": "1_single", "name": "Ler", "icon": "mdi:book"}},
                  id="unknown key"),
-    pytest.param({"Ler": {"entity": REMOTE, "state": "1_single", "name": "Ler"}}, id="key not a slug"),
+    pytest.param({"Ler": {"entity": f"homeassistant.{REMOTE}", "state": "1_single", "name": "Ler"}}, id="key not a slug"),
     pytest.param({}, id="no button"),
 ])
 async def test_invalid_block_is_refused(ha: HomeAssistant, block: dict[str, Any]) -> None:
@@ -85,7 +87,7 @@ async def test_the_error_names_the_refused_state(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture, value: str, message: str) -> None:
     """The messages the docs quote (troubleshooting)."""
     assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
-        "ler": {"entity": REMOTE, "state": value, "name": "Ler"}}}})
+        "ler": {"entity": f"homeassistant.{REMOTE}", "state": value, "name": "Ler"}}}})
     assert message in caplog.text
 
 
@@ -97,7 +99,7 @@ async def test_a_number_in_state_is_refused(ha: HomeAssistant, caplog: pytest.Lo
                                             written: float, text: str) -> None:
     """One rule with an alert's state: pururu can't tell which sensor shows 1 as 1.0."""
     assert not await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
-        "ler": {"entity": REMOTE, "state": written, "name": "Ler"}}}})
+        "ler": {"entity": f"homeassistant.{REMOTE}", "state": written, "name": "Ler"}}}})
     assert (f"state: YAML reads it as the number {text}: compare a reading with above or below, "
             'or quote the state as the entity shows it ("1.0") for dictionary value '
             "'pururu->devices->biblioteca->buttons->ler->state'") in caplog.text
@@ -112,7 +114,7 @@ async def test_a_quoted_number_in_state_compares_as_text(ha: HomeAssistant, valu
     """A quoted state is text, as an alert's: the sensor writing 1.0 presses only "1.0"."""
     await fake(ha, REMOTE, "")
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
-        "ler": {"entity": REMOTE, "state": value, "name": "Ler"}}}})
+        "ler": {"entity": f"homeassistant.{REMOTE}", "state": value, "name": "Ler"}}}})
     await write(ha, "1.0")
     assert state(ha, LER) == (now() if pressed else "unknown")
 
@@ -129,7 +131,7 @@ async def test_a_program_with_a_dot_is_refused(ha: HomeAssistant, caplog: pytest
 async def test_an_unquoted_on_is_the_state_on(ha: HomeAssistant) -> None:
     """YAML reads an unquoted on as true: the button's state is still `on`."""
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
-        "ler": {"entity": REMOTE, "state": True, "name": "Ler"}}}})
+        "ler": {"entity": f"homeassistant.{REMOTE}", "state": True, "name": "Ler"}}}})
     assert held(ha, KEY) == {LER, LER_TOTAL}
 
 
@@ -138,7 +140,7 @@ async def test_an_unquoted_on_is_the_state_on(ha: HomeAssistant) -> None:
 
 async def test_a_program_of_another_device_is_refused(ha: HomeAssistant) -> None:
     """Covers AE8: a button starts its own device's executable programs only."""
-    other = {"name": "Estufa", "switches": {"sprinkler": {"entity": "switch.x", "name": "X"}},
+    other = {"name": "Estufa", "switches": {"sprinkler": {"entity": "homeassistant.switch.x", "name": "X"}},
              "programs": {"executable": {"regar": {"name": "Regar", "sequence": [{"turn_on": "switches.sprinkler"}]}}}}
     assert not await setup(ha, {"estufa": other, KEY: {"name": "Biblioteca", "buttons": {
         "ler": {**BUTTONS["ler"], "program": "regar"}}}})
@@ -397,7 +399,7 @@ async def test_a_renamed_pururu_sensor_is_not_a_real_one(
     er.async_get(ha).async_get_or_create("sensor", "pururu", "pururu_x_appliance_power",
                                          suggested_object_id="potencia")
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {
-        "ler": {"entity": "sensor.potencia", "state": "1_single", "name": "Ler"}}}})
+        "ler": {"entity": "homeassistant.sensor.potencia", "state": "1_single", "name": "Ler"}}}})
     assert ha.states.get(LER) is None
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any("sensor.potencia is a pururu sensor" in message and LER in message
@@ -417,11 +419,11 @@ CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
     {"turn_on": "switches.sprinkler"}, {"delay": {"hours": 2}}, {"turn_off": "switches.sprinkler"}]}
 GREENHOUSE_DEVICES: dict[str, Any] = {GREENHOUSE: {
     "name": "Estufa",
-    "switches": {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}},
+    "switches": {"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"}},
     "programs": {"executable": {"clean": CLEANING}},
     "buttons": {
-        "clean": {"entity": GREENHOUSE_REMOTE, "state": "1_single", "name": "Limpar", "program": "clean"},
-        "bell": {"entity": GREENHOUSE_REMOTE, "state": "2_single", "name": "Sino"},
+        "clean": {"entity": f"homeassistant.{GREENHOUSE_REMOTE}", "state": "1_single", "name": "Limpar", "program": "clean"},
+        "bell": {"entity": f"homeassistant.{GREENHOUSE_REMOTE}", "state": "2_single", "name": "Sino"},
     },
 }}
 
@@ -718,7 +720,7 @@ async def test_a_button_on_a_pururu_sensor_has_no_total(
     er.async_get(ha).async_get_or_create("sensor", "pururu", "pururu_x_appliance_power",
                                          suggested_object_id="potencia")
     assert await setup(ha, {KEY: {"name": "Biblioteca", "buttons": {"ler": {
-        "entity": "sensor.potencia", "state": "1_single", "name": "Ler",
+        "entity": "homeassistant.sensor.potencia", "state": "1_single", "name": "Ler",
         "statistics": {"triggered": ["today"]}}}}})
     assert ha.states.get(LER_TOTAL) is None
     assert ha.states.get("sensor.pururu_biblioteca_button_ler_triggered_today") is None
@@ -756,7 +758,7 @@ async def test_an_alert_watches_a_buttons_meter(ha: HomeAssistant) -> None:
 async def test_another_devices_reaction_watches_a_buttons_total(ha: HomeAssistant) -> None:
     """Another device names it by device.<device>. then its path: buttons.<key>.triggered_total."""
     await fake(ha, REMOTE, "")
-    sala = {"name": "Sala", "lights": {"teto": {"entity": "light.dummy_sala", "name": "Teto"}},
+    sala = {"name": "Sala", "lights": {"teto": {"entity": "homeassistant.light.dummy_sala", "name": "Teto"}},
             "reactions": {"leitura": {"name": "Leitura", "when": f"device.{KEY}.buttons.ler.triggered_total",
                                       "above": 2}}}
     assert await setup(ha, {**DEVICES, "sala": sala})

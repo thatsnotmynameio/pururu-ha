@@ -16,14 +16,14 @@ HOUSE: dict[str, Any] = {
     "washer": {
         "name": "Washer",
         "appliance": {
-            "power": "sensor.washer_power",
+            "power": "homeassistant.sensor.washer_power",
             "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
             "alerts": {"offline": None},
         },
-        "switches": {"plug": {"entity": "switch.washer_plug", "name": "Plug"}},
+        "switches": {"plug": {"entity": "homeassistant.switch.washer_plug", "name": "Plug"}},
         "programs": {"executable": {"clean": {"name": "Clean", "sequence": [{"turn_on": "switches.plug"}]}}},
     },
-    "lights": {"name": "Lights", "lights": {"teto": {"entity": "light.teto", "name": "Teto"}}},
+    "lights": {"name": "Lights", "lights": {"teto": {"entity": "homeassistant.light.teto", "name": "Teto"}}},
 }
 
 

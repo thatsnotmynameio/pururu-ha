@@ -1,5 +1,5 @@
 config:
-  notify: notify.mobile_app_phone
+  notify: homeassistant.notify.mobile_app_phone
   events: [state_changed, reading]
   alerts:
     lights:
@@ -18,8 +18,8 @@ devices:
     name: Tanquinho
     area: despensa
     appliance:
-      power: sensor.washer_plug_power
-      energy: sensor.washer_plug_energy
+      power: homeassistant.sensor.washer_plug_power
+      energy: homeassistant.sensor.washer_plug_energy
       running_program:
         above: 4
         on_delay: {minutes: 1}
@@ -77,8 +77,8 @@ devices:
   water_station:
     name: Purificador
     appliance:
-      power: sensor.station_plug_power
-      energy: sensor.station_plug_energy
+      power: homeassistant.sensor.station_plug_power
+      energy: homeassistant.sensor.station_plug_energy
       running_program:
         above: 2.9
         on_delay: {seconds: 1}
@@ -104,16 +104,16 @@ devices:
     name: Porta da frente
     area: entrada
     door:
-      contact: binary_sensor.porta_frente
+      contact: homeassistant.binary_sensor.porta_frente
       match: {seconds: 5}
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
       event_entities:
-        - entity: event.porta_frente_access
+        - entity: homeassistant.event.porta_frente_access
           types: {access_granted: opening, access_denied: denied}
           fields: {who: actor, how: authentication, direction: direction}
-        - entity: event.porta_frente_doorbell
+        - entity: homeassistant.event.porta_frente_doorbell
           types: {ring: ring}
       alerts:
         long_opening: {for: {minutes: 10}}
@@ -121,7 +121,7 @@ devices:
   janela_quarto:
     name: Janela do quarto
     window:
-      contact: binary_sensor.janela_quarto
+      contact: homeassistant.binary_sensor.janela_quarto
       statistics:
         openings: [today, week, month, year]
         open_time: [today, week, month, year]
@@ -131,10 +131,10 @@ devices:
   greenhouse:
     name: Estufa
     switches:
-      sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+      sprinkler: {entity: homeassistant.switch.greenhouse_sprinkler, name: Irrigador}
     buttons:
-      clean: {entity: sensor.greenhouse_remote_action, state: 1_single, name: Limpar, program: clean}
-      bell: {entity: sensor.greenhouse_remote_action, state: 2_single, name: Sino}
+      clean: {entity: homeassistant.sensor.greenhouse_remote_action, state: 1_single, name: Limpar, program: clean}
+      bell: {entity: homeassistant.sensor.greenhouse_remote_action, state: 2_single, name: Sino}
     programs:
       executable:
         clean:
@@ -156,8 +156,8 @@ devices:
   biblioteca:
     name: Biblioteca
     lights:
-      teto: {entity: light.biblioteca_teto, name: Teto}
-      abajur: {entity: switch.sonoff_abajur, name: Abajur}
+      teto: {entity: homeassistant.light.biblioteca_teto, name: Teto}
+      abajur: {entity: homeassistant.switch.sonoff_abajur, name: Abajur}
     reactions:
       washer_done:
         name: Lavadora terminou

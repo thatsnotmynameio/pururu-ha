@@ -5,6 +5,8 @@ description: Move a configuration from 0.2.1 to 0.2.2 by hand, once, in this ord
 
 0.2.2 changes how the `pururu:` block names an entity pururu creates. In 0.2.1 a reference was the end of the entity ID (`appliance_running`, `clothes_washer.appliance_running`); in 0.2.2 it is the **path** through the YAML you wrote, from the block it's in: `appliance.running_program`, and `device.clothes_washer.appliance.running_program` from another device. You read it in your own YAML, without knowing how pururu names its entities.
 
+Everything Home Assistant owns starts with `homeassistant.`, in every field that names it: `power: homeassistant.sensor.washer_plug_power`, `notify: homeassistant.notify.mobile_app_phone`. A reaction on a Home Assistant entity names it in its `when`, as any other reaction.
+
 **There is no automatic migration.** pururu ships no aliases, no deprecation warnings and no migration code: a 0.2.1 reference is refused, with its place (`appliance_phase_current is not a path: write it from its block, <block>.<key> for dictionary value 'pururu->devices->clothes_washer->alerts->stuck->when'`). You rewrite the `pururu:` block once, following this page in order.
 
 Updating from 0.1.23 or 0.2.0? Follow [Updating to 0.2.1](https://github.com/thatsnotmynameio/pururu-ha/blob/v0.2.1/docs/getting-started/updating-to-0.2.1.mdx) first, then this page.
@@ -102,6 +104,70 @@ Home Assistant validates the whole block at once: make every change below before
     A 0.2.1 member is refused at its place: `biblioteca.light_teto needs its device: device.<device>.lights.<key>`.
   </Step>
 
+  <Step title="Home Assistant's entities start with homeassistant.">
+    `power`, `energy`, `contact`, the `entity` of a switch, a light or a button, and a door's or window's `event_entities` name a Home Assistant entity: write `homeassistant.` before its entity ID.
+
+    ```yaml title="0.2.1"
+    appliance:
+      power: sensor.washer_plug_power
+      energy: sensor.washer_plug_energy
+    ```
+
+    ```yaml title="0.2.2"
+    appliance:
+      power: homeassistant.sensor.washer_plug_power
+      energy: homeassistant.sensor.washer_plug_energy
+    ```
+
+    A switch, a light or a button too, and a door's `contact`:
+
+    ```yaml title="0.2.1"
+    teto: {entity: light.biblioteca_teto, name: Teto}
+    ```
+
+    ```yaml title="0.2.2"
+    teto: {entity: homeassistant.light.biblioteca_teto, name: Teto}
+    ```
+
+    ```yaml title="0.2.1"
+    door: {contact: binary_sensor.porta_biblioteca}
+    ```
+
+    ```yaml title="0.2.2"
+    door: {contact: homeassistant.binary_sensor.porta_biblioteca}
+    ```
+
+    A missed one is refused at its place: `sensor.washer_plug_power is not a Home Assistant entity: homeassistant.<domain>.<object_id>`.
+  </Step>
+
+  <Step title="A reaction on a Home Assistant entity names it in when">
+    A reaction has no `entity:` anymore: its `when` takes the Home Assistant entity, with `homeassistant.`.
+
+    ```yaml title="0.2.1"
+    pantry: {name: Despensa abriu, entity: binary_sensor.porta_despensa, to: "on"}
+    ```
+
+    ```yaml title="0.2.2"
+    pantry: {name: Despensa abriu, when: homeassistant.binary_sensor.porta_despensa, to: "on"}
+    ```
+
+    A reaction still on `entity:` is refused: `'entity' is an invalid option for 'pururu', check: pururu->devices->biblioteca->reactions->pantry->entity`. An entity pururu creates is written by its path, never as Home Assistant's: `when: homeassistant.binary_sensor.pururu_clothes_washer_appliance_running` is refused, saying to write `device.clothes_washer.appliance.running_program`.
+  </Step>
+
+  <Step title="A notify action starts with homeassistant.">
+    `config: notify`, and a reaction's or a ready-made notification's own `notify`:
+
+    ```yaml title="0.2.1"
+    notify: notify.mobile_app_phone
+    ```
+
+    ```yaml title="0.2.2"
+    notify: homeassistant.notify.mobile_app_phone
+    ```
+
+    A missed one is refused: `notify.mobile_app_phone is not a notify action: homeassistant.notify.<name>`.
+  </Step>
+
   <Step title="A field that takes one kind of thing keeps its key alone">
     A reaction's `then`, a button's `program`, a device's `area`, an area's `floor` and an alert's `lights` name one kind of thing each, so they take its key alone, as in 0.2.1: `then: clean`. A path there is refused, naming the key to write: `then is its program's key alone: clean`.
   </Step>
@@ -149,6 +215,9 @@ Home Assistant validates the whole block at once: make every change below before
 | `alert_<key>` | `alerts.<key>` |
 | `<device>.<key>` | `device.<device>.` and the path, such as `device.clothes_washer.appliance.running_program` |
 | A light group's `<device>.light_<key>` | `device.<device>.lights.<key>` |
+| A Home Assistant entity in `power`, `energy`, `contact`, `entity`: `sensor.washer_plug_power` | `homeassistant.sensor.washer_plug_power` |
+| A reaction's `entity: binary_sensor.porta_despensa` | `when: homeassistant.binary_sensor.porta_despensa` |
+| A notify action: `notify.mobile_app_phone` | `homeassistant.notify.mobile_app_phone` |
 
 A reaction can't watch a reaction: `reactions.<key>` is refused, pointing to what counts it, `reactions.<key>.triggered_total`.
 
@@ -216,8 +285,10 @@ Every step at once, on one house: 0.2.1's block, then 0.2.2's.
           lights:
             teto: {entity: light.biblioteca_teto, name: Teto}
             abajur: {entity: switch.sonoff_abajur, name: Abajur}
+          door: {contact: binary_sensor.porta_biblioteca}
           reactions:
             washer_done: {name: Lavadora terminou, when: clothes_washer.appliance_running, from: "on", to: "off"}
+            pantry: {name: Despensa abriu, entity: binary_sensor.porta_despensa, to: "on"}
 
     automation pururu: !include_dir_merge_list pururu/automations
     script pururu: !include_dir_merge_named pururu/scripts
@@ -229,7 +300,7 @@ Every step at once, on one house: 0.2.1's block, then 0.2.2's.
     ```yaml title="0.2.2: configuration.yaml"
     pururu:
       config:
-        notify: notify.mobile_app_phone
+        notify: homeassistant.notify.mobile_app_phone
         events: [state_changed, reading]
         alerts:
           lights:
@@ -241,8 +312,8 @@ Every step at once, on one house: 0.2.1's block, then 0.2.2's.
         clothes_washer:
           name: Tanquinho
           appliance:
-            power: sensor.washer_plug_power
-            energy: sensor.washer_plug_energy
+            power: homeassistant.sensor.washer_plug_power
+            energy: homeassistant.sensor.washer_plug_energy
             running_program:
               above: 4
               on_delay: {minutes: 1}
@@ -271,7 +342,7 @@ Every step at once, on one house: 0.2.1's block, then 0.2.2's.
         greenhouse:
           name: Estufa
           switches:
-            sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+            sprinkler: {entity: homeassistant.switch.greenhouse_sprinkler, name: Irrigador}
           programs:
             executable:
               clean:
@@ -282,10 +353,12 @@ Every step at once, on one house: 0.2.1's block, then 0.2.2's.
         biblioteca:
           name: Biblioteca
           lights:
-            teto: {entity: light.biblioteca_teto, name: Teto}
-            abajur: {entity: switch.sonoff_abajur, name: Abajur}
+            teto: {entity: homeassistant.light.biblioteca_teto, name: Teto}
+            abajur: {entity: homeassistant.switch.sonoff_abajur, name: Abajur}
+          door: {contact: homeassistant.binary_sensor.porta_biblioteca}
           reactions:
             washer_done: {name: Lavadora terminou, when: device.clothes_washer.appliance.running_program, from: "on", to: "off"}
+            pantry: {name: Despensa abriu, when: homeassistant.binary_sensor.porta_despensa, to: "on"}
 
     automation pururu: !include_dir_merge_list pururu/automations
     script pururu: !include_dir_merge_named pururu/scripts

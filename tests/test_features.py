@@ -17,7 +17,7 @@ from helpers import DOMAIN, module
 
 # A configured feature's block, valid on its own: for devices that need a feature besides
 # the one under test (a non-map programs/appliance block still needs at least one feature)
-SWITCHES = {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}
+SWITCHES = {"sprinkler": {"entity": "homeassistant.switch.greenhouse_sprinkler", "name": "Irrigador"}}
 
 INTEGRATION = Path(__file__).resolve().parents[1] / "custom_components/pururu"
 

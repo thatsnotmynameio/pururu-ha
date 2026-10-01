@@ -11,8 +11,8 @@ pururu:
     clothes_washer:
       name: Tanquinho
       appliance:
-        power: sensor.washer_plug_power
-        energy: sensor.washer_plug_energy
+        power: homeassistant.sensor.washer_plug_power
+        energy: homeassistant.sensor.washer_plug_energy
         running_program:
           above: 4
           on_delay: {minutes: 1}
@@ -136,7 +136,7 @@ An appliance offers alerts for what usually goes wrong. They're **off** until yo
 
 ```yaml
 appliance:
-  power: sensor.washer_plug_power
+  power: homeassistant.sensor.washer_plug_power
   running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   alerts:
     offline:                          # every default
@@ -173,7 +173,7 @@ An appliance offers one notification, off until you enable it in its `notificati
 
 ```yaml
 appliance:
-  power: sensor.washer_plug_power
+  power: homeassistant.sensor.washer_plug_power
   running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
   notifications:
     finished:

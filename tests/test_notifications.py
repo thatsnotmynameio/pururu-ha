@@ -15,9 +15,11 @@ from helpers import capture, fake, generated, reload, settle, setup, tick
 
 KEY = "washer"
 POWER = "sensor.dummy_plug_power"
+# A notify action, as the generated automation calls it; the YAML writes it with homeassistant.
 PHONE = "notify.phone"
+PHONE_REF = f"homeassistant.{PHONE}"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
+    "power": f"homeassistant.{POWER}",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 
@@ -33,10 +35,11 @@ def devices(notifications: Any, **device: Any) -> dict[str, Any]:
 @pytest.mark.parametrize("notifications", [
     pytest.param({"finished": None}, id="null is every default"),
     pytest.param({"finished": {}}, id="empty is every default"),
-    pytest.param({"finished": {"message": "Roupa pronta!", "notify": "notify.tablet"}}, id="all set"),
+    pytest.param({"finished": {"message": "Roupa pronta!", "notify": "homeassistant.notify.tablet"}},
+                 id="all set"),
 ])
 async def test_valid_notifications_are_accepted(ha: HomeAssistant, notifications: Any) -> None:
-    assert await setup(ha, devices(notifications), config={"notify": PHONE})
+    assert await setup(ha, devices(notifications), config={"notify": PHONE_REF})
 
 
 @pytest.mark.parametrize(("notifications", "reason"), [
@@ -46,22 +49,24 @@ async def test_valid_notifications_are_accepted(ha: HomeAssistant, notifications
                  "'lasts' is an invalid option for 'pururu', check: "
                  "pururu->devices->washer->appliance->notifications->finished->lasts", id="unknown setting"),
     pytest.param({"finished": {"message": ""}}, "length of value must be at least 1", id="blank message"),
-    pytest.param({"finished": {"notify": "phone"}}, "a notify action is notify.<name>",
+    pytest.param({"finished": {"notify": "phone"}}, "phone is not a notify action: homeassistant.notify.<name>",
                  id="not a notify action"),
+    pytest.param({"finished": {"notify": PHONE}}, "notify.phone is not a notify action: homeassistant.notify.<name>",
+                 id="a notify action without homeassistant, as before 0.2.2"),
     pytest.param({}, "length of value must be at least 1", id="empty"),
 ])
 async def test_invalid_notifications_are_refused(ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
                                                  notifications: Any, reason: str) -> None:
-    assert not await setup(ha, devices(notifications), config={"notify": PHONE})
+    assert not await setup(ha, devices(notifications), config={"notify": PHONE_REF})
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert any(reason in message for message in errors), errors
 
 
 async def test_a_feature_offering_none_takes_no_notifications(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
-    config = {KEY: {"name": "Porta", "door": {"contact": "binary_sensor.x",
+    config = {KEY: {"name": "Porta", "door": {"contact": "homeassistant.binary_sensor.x",
                                               "notifications": {"finished": None}}}}
-    assert not await setup(ha, config, config={"notify": PHONE})
+    assert not await setup(ha, config, config={"notify": PHONE_REF})
     assert "'notifications' is an invalid option" in caplog.text
 
 
@@ -70,7 +75,7 @@ async def test_the_device_has_no_notifications_key(ha: HomeAssistant,
     """They're in their feature's block, as its ready-made alerts."""
     config = {KEY: {"name": "Máquina", "appliance": APPLIANCE,
                     "notifications": {"appliance": {"finished": None}}}}
-    assert not await setup(ha, config, config={"notify": PHONE})
+    assert not await setup(ha, config, config={"notify": PHONE_REF})
     assert "'notifications' is an invalid option" in caplog.text
 
 
@@ -82,19 +87,19 @@ async def test_a_notification_needs_somewhere_to_go(ha: HomeAssistant,
 
 
 async def test_its_own_notify_is_enough(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices({"finished": {"notify": PHONE}}))
+    assert await setup(ha, devices({"finished": {"notify": PHONE_REF}}))
 
 
 async def test_a_notification_and_a_reaction_with_one_id_are_refused(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """a's reaction x_appliance_notification_finished and a_reaction_x's finished: one automation ID."""
-    door = {"name": "Porta", "entity": "binary_sensor.door", "to": "on"}
+    door = {"name": "Porta", "when": "homeassistant.binary_sensor.door", "to": "on"}
     config = {
         "a": {"name": "A", "appliance": APPLIANCE, "reactions": {"x_appliance_notification_finished": door}},
-        "a_reaction_x": {"name": "B", "appliance": {**APPLIANCE, "power": "sensor.other",
+        "a_reaction_x": {"name": "B", "appliance": {**APPLIANCE, "power": "homeassistant.sensor.other",
                                                     "notifications": {"finished": None}}},
     }
-    assert not await setup(ha, config, config={"notify": PHONE})
+    assert not await setup(ha, config, config={"notify": PHONE_REF})
     assert ("device a_reaction_x: automation.pururu_a_reaction_x_appliance_notification_finished "
             "is already a reaction of device a") in caplog.text
 
@@ -108,7 +113,7 @@ ENABLED = {"finished": None}
 
 
 async def test_the_file_holds_the_notifications_automation(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     assert generated(ha) == [{
         "id": "pururu_washer_appliance_notification_finished",
         "alias": "Máquina Finished",
@@ -121,15 +126,15 @@ async def test_the_file_holds_the_notifications_automation(ha: HomeAssistant) ->
 
 async def test_in_hass_language(ha: HomeAssistant) -> None:
     ha.config.language = "pt-BR"
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     [automation] = generated(ha)
     assert automation["alias"] == "Máquina Terminou"
     assert automation["actions"][0]["parallel"][0]["data"]["message"] == "O ciclo terminou."
 
 
 async def test_its_own_message_and_notify(ha: HomeAssistant) -> None:
-    mine = {"finished": {"message": "Roupa {pronta}!", "notify": ["notify.a", "notify.b"]}}
-    assert await setup(ha, devices(mine), config={"notify": PHONE})
+    mine = {"finished": {"message": "Roupa {pronta}!", "notify": ["homeassistant.notify.a", "homeassistant.notify.b"]}}
+    assert await setup(ha, devices(mine), config={"notify": PHONE_REF})
     [automation] = generated(ha)
     told = automation["actions"][0]["parallel"]
     assert [action["action"] for action in told] == ["notify.a", "notify.b"]
@@ -137,7 +142,7 @@ async def test_its_own_message_and_notify(ha: HomeAssistant) -> None:
 
 
 async def test_it_follows_a_renamed_running(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     er.async_get(ha).async_update_entity(RUNNING, new_entity_id="binary_sensor.washer_running")
     await ha.async_block_till_done()
     assert generated(ha)[0]["triggers"][0]["entity_id"] == "binary_sensor.washer_running"
@@ -146,14 +151,14 @@ async def test_it_follows_a_renamed_running(ha: HomeAssistant) -> None:
 async def test_not_generated_when_running_is_not_created(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     ha.states.async_set(RUNNING, "off")  # another integration's entity holds the ID
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     assert generated(ha) == []
     assert (f"{FINISHED} follows {RUNNING}, which is not created; not generating it") in caplog.text
 
 
 async def test_dropped_from_the_yaml_it_goes(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
-    await reload(ha, {KEY: {"name": "Máquina", "appliance": APPLIANCE}}, config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
+    await reload(ha, {KEY: {"name": "Máquina", "appliance": APPLIANCE}}, config={"notify": PHONE_REF})
     assert generated(ha) == []
 
 
@@ -185,7 +190,7 @@ async def test_the_phone_is_told_when_a_cycle_finishes(ha: HomeAssistant, freeze
                                                        automations: None) -> None:
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, POWER, "0")
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     await cycle(ha, freezer)
     assert [call.data for call in calls] == [{"title": "Máquina", "message": "The cycle finished."}]
 
@@ -194,10 +199,10 @@ async def test_a_late_timer_still_ends_the_cycle_before_the_next(ha: HomeAssista
                                                                 automations: None) -> None:
     """on_delay 0: a reading above after off_delay passed, before its timer ran, ends the cycle and starts the next; running goes through off, and the phone is told."""
     calls = async_mock_service(ha, "notify", "phone")
-    quick = {"power": POWER, "running_program": {"above": 4, "off_delay": {"minutes": 2}},
+    quick = {"power": f"homeassistant.{POWER}", "running_program": {"above": 4, "off_delay": {"minutes": 2}},
              "notifications": ENABLED}
     await fake(ha, POWER, "0")
-    assert await setup(ha, {KEY: {"name": "Máquina", "appliance": quick}}, config={"notify": PHONE})
+    assert await setup(ha, {KEY: {"name": "Máquina", "appliance": quick}}, config={"notify": PHONE_REF})
     changes = capture(ha, "state_changed")
     await fake(ha, POWER, "100")
     await fake(ha, POWER, "0")
@@ -217,9 +222,9 @@ async def test_a_reload_while_idle_tells_nobody(ha: HomeAssistant, freezer: Any,
     """A reload takes running away and brings it back off: no cycle ended."""
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, POWER, "0")
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     assert ha.states.get(RUNNING).state == "off"
-    await reload(ha, devices(ENABLED), config={"notify": PHONE})
+    await reload(ha, devices(ENABLED), config={"notify": PHONE_REF})
     await tick(ha, freezer, 180)
     assert ha.states.get(RUNNING).state == "off"
     assert calls == []
@@ -228,15 +233,15 @@ async def test_a_reload_while_idle_tells_nobody(ha: HomeAssistant, freezer: Any,
 async def test_a_reload_tells_nobody(ha: HomeAssistant, freezer: Any, automations: None) -> None:
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, POWER, "100")
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     await tick(ha, freezer, 60)
-    await reload(ha, devices(ENABLED), config={"notify": PHONE})
+    await reload(ha, devices(ENABLED), config={"notify": PHONE_REF})
     await tick(ha, freezer, 60)
     assert calls == []
 
 
 async def test_the_automation_has_the_pururu_entity_id(ha: HomeAssistant, automations: None) -> None:
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     state = ha.states.get(FINISHED)
     assert state is not None
     assert state.attributes["friendly_name"] == "Máquina Finished"
@@ -246,7 +251,7 @@ async def test_a_repair_while_the_file_is_not_loaded(ha: HomeAssistant, freezer:
     """A configuration.yaml without the include: the notification isn't loaded."""
     with patch("homeassistant.config.load_yaml_config_file", side_effect=lambda *_a, **_k: {}):
         assert await async_setup_component(ha, "automation", {})
-        assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+        assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     await tick(ha, freezer, 5)
     issue = ir.async_get(ha).async_get_issue("pururu", "automations_not_included")
     assert issue is not None
@@ -256,12 +261,12 @@ async def test_a_repair_while_the_file_is_not_loaded(ha: HomeAssistant, freezer:
     }
 
 
-DOOR = {"name": "Porta", "entity": "binary_sensor.door", "to": "on"}
+DOOR = {"name": "Porta", "when": "homeassistant.binary_sensor.door", "to": "on"}
 
 
 async def test_reactions_and_notifications_share_one_file(ha: HomeAssistant) -> None:
     """One automations kind: the reactions' then the notifications', tracked under one data key."""
-    assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE_REF})
     both = ["pururu_washer_reaction_door", "pururu_washer_appliance_notification_finished"]
     assert [automation["id"] for automation in generated(ha)] == both
     [entry] = ha.config_entries.async_entries("pururu")
@@ -280,8 +285,8 @@ NOTIFICATION = "pururu_washer_appliance_notification_finished"
 async def test_dropping_one_source_keeps_the_others(ha: HomeAssistant, automations: None,
                                                    kept: str, dropped: str, device: dict[str, Any]) -> None:
     """One tracked list for both: what goes is the dropped one's, never the other's."""
-    assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE})
-    await reload(ha, {KEY: device}, config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE_REF})
+    await reload(ha, {KEY: device}, config={"notify": PHONE_REF})
     assert [automation["id"] for automation in generated(ha)] == [kept]
     [entry] = ha.config_entries.async_entries("pururu")
     assert entry.data["automations"] == [kept]
@@ -294,14 +299,14 @@ async def test_one_repair_for_reactions_and_notifications(ha: HomeAssistant, fre
     """Not included, the reactions' and the notifications' automations raise one issue: one include."""
     with patch("homeassistant.config.load_yaml_config_file", side_effect=lambda *_a, **_k: {}):
         assert await async_setup_component(ha, "automation", {})
-        assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE})
+        assert await setup(ha, devices(ENABLED, reactions={"door": DOOR}), config={"notify": PHONE_REF})
     await tick(ha, freezer, 5)
     issues = [issue_id for domain, issue_id in ir.async_get(ha).issues if domain == "pururu"]
     assert issues == ["automations_not_included"]
 
 
 async def test_removing_the_entry_empties_the_file(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(ENABLED), config={"notify": PHONE})
+    assert await setup(ha, devices(ENABLED), config={"notify": PHONE_REF})
     entry = ha.config_entries.async_entries("pururu")[0]
     await ha.config_entries.async_remove(entry.entry_id)
     await ha.async_block_till_done()

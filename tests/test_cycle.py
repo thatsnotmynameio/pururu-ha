@@ -13,7 +13,7 @@ KEY = "dummy_washer"
 POWER = "sensor.dummy_plug_power"
 RUNNING = "binary_sensor.pururu_dummy_washer_appliance_running"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
+    "power": f"homeassistant.{POWER}",
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
 DEVICES = {KEY: {"name": "Dummy washer", "appliance": APPLIANCE}}
@@ -83,7 +83,7 @@ async def test_a_cycle_is_sent_after_its_state_door_or_window(
     )
     open_entity = f"binary_sensor.pururu_{DOOR_KEY}_{kind}_open"
     await fake(ha, CONTACT, "off", {"device_class": "door"})
-    assert await setup(ha, {DOOR_KEY: {"name": "Dummy door", kind: {"contact": CONTACT}}})
+    assert await setup(ha, {DOOR_KEY: {"name": "Dummy door", kind: {"contact": f"homeassistant.{CONTACT}"}}})
     await fake(ha, CONTACT, "on", {"device_class": "door"})
     assert ha_state(ha, open_entity) == "on"
 

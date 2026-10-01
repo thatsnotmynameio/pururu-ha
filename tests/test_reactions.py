@@ -21,20 +21,23 @@ from helpers import capture, fake, generated, generated_scripts, module, reload,
 
 WASHER = "washer"
 LIGHTS = "lights"
+# Home Assistant's entities, as faked; the YAML writes them with homeassistant.
 POWER = "sensor.dummy_plug_power"
 DOOR = "binary_sensor.dummy_door"
 TETO = "light.dummy_teto"
+POWER_REF = f"homeassistant.{POWER}"
+DOOR_REF = f"homeassistant.{DOOR}"
 MIRROR = "sensor.pururu_washer_appliance_power"
 APPLIANCE: dict[str, Any] = {
-    "power": POWER,
+    "power": POWER_REF,
     "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}},
 }
-DOOR_OPENS = {"name": "Porta abriu", "entity": DOOR, "to": "on"}
+DOOR_OPENS = {"name": "Porta abriu", "when": DOOR_REF, "to": "on"}
 OVERLOAD = {"name": "Sobrecarga", "when": f"device.{WASHER}.appliance.power", "above": 2500}
 
 
 def devices(**reactions: dict[str, Any]) -> dict[str, Any]:
-    lights: dict[str, Any] = {"name": "Luzes", "lights": {"teto": {"entity": TETO, "name": "Teto"}}}
+    lights: dict[str, Any] = {"name": "Luzes", "lights": {"teto": {"entity": f"homeassistant.{TETO}", "name": "Teto"}}}
     if reactions:
         lights["reactions"] = reactions
     return {WASHER: {"name": "Washer", "appliance": APPLIANCE}, LIGHTS: lights}
@@ -67,13 +70,13 @@ PATH = "'pururu->devices->lights->reactions->it"
 
 
 @pytest.mark.parametrize(("reaction", "reason"), [
-    pytest.param({"entity": DOOR, "to": "on"}, "required key 'name' not provided", id="no name"),
+    pytest.param({"when": DOOR_REF, "to": "on"}, "required key 'name' not provided", id="no name"),
     pytest.param({**DOOR_OPENS, "name": " "}, f"length of value must be at least 1 for dictionary "
                  f"value {PATH}->name'", id="blank name"),
-    pytest.param({"name": "X"}, "a reaction needs one source: when, entity, at or sun",
+    pytest.param({"name": "X"}, "a reaction needs one source: when, at or sun",
                  id="no source"),
     pytest.param({**DOOR_OPENS, "at": "22:00"},
-                 "a reaction needs one source: when, entity, at or sun", id="two sources"),
+                 "a reaction needs one source: when, at or sun", id="two sources"),
     pytest.param({"name": "X", "device": WASHER, "when": "appliance.power", "to": "on"},
                  f"'device' is an invalid option for 'pururu', check: {PATH[1:]}->device",
                  id="device and when, as 0.1.23 wrote it"),
@@ -95,7 +98,7 @@ PATH = "'pururu->devices->lights->reactions->it"
     pytest.param({"name": "X", "sun": "sunset", "to": "on"},
                  "a reaction on at or sun takes no to, from, above, below or for",
                  id="to on the sun"),
-    pytest.param({"name": "X", "entity": DOOR},
+    pytest.param({"name": "X", "when": DOOR_REF},
                  "a reaction on a state needs to, or above and/or below, not both", id="no condition"),
     pytest.param({**DOOR_OPENS, "above": 1},
                  "a reaction on a state needs to, or above and/or below, not both",
@@ -115,17 +118,18 @@ PATH = "'pururu->devices->lights->reactions->it"
                  f'or quote the state as the entity shows it ("1.0") for dictionary value '
                  f"{PATH}->to'",
                  id="a time YAML reads as a number"),
-    pytest.param({"name": "X", "entity": DOOR, "state": "on"},
+    pytest.param({"name": "X", "when": DOOR_REF, "state": "on"},
                  f"'state' is an invalid option for 'pururu', check: {PATH[1:]}->state",
                  id="an alert's state"),
-    pytest.param({"name": "X", "entity": POWER, "above": 1, "from": "0"},
+    pytest.param({"name": "X", "when": POWER_REF, "above": 1, "from": "0"},
                  "a reaction's from goes with to", id="from without to"),
-    pytest.param({"name": "X", "entity": POWER, "above": 2, "below": 1},
+    pytest.param({"name": "X", "when": POWER_REF, "above": 2, "below": 1},
                  "a reaction's above must be lower than its below", id="above not lower"),
     pytest.param({**DOOR_OPENS, "sun": "noon"}, "value must be one of ['sunrise', 'sunset']",
                  id="unknown sun event"),
-    pytest.param({**DOOR_OPENS, "entity": "door"}, "Entity ID door is an invalid entity ID",
-                 id="entity not an entity ID"),
+    pytest.param({"name": "X", "entity": DOOR, "to": "on"},
+                 f"'entity' is an invalid option for 'pururu', check: {PATH[1:]}->entity",
+                 id="entity, as before 0.2.2"),
     pytest.param({**DOOR_OPENS, "colour": "red"},
                  f"'colour' is an invalid option for 'pururu', check: {PATH[1:]}->colour",
                  id="unknown key"),
@@ -196,14 +200,17 @@ async def test_an_empty_block_is_refused(ha: HomeAssistant) -> None:
     assert not await setup(ha, config)
 
 
+# A notify action, as the generated automation calls it; the YAML writes it with homeassistant.
 PHONE = "notify.phone"
+PHONE_REF = f"homeassistant.{PHONE}"
 TOLD = {**DOOR_OPENS, "message": "A porta abriu."}
 
 
 @pytest.mark.parametrize(("reaction", "config"), [
-    pytest.param(TOLD, {"notify": PHONE}, id="the default"),
-    pytest.param({**TOLD, "notify": PHONE}, None, id="its own"),
-    pytest.param({**TOLD, "notify": [PHONE, "notify.tablet"]}, {"notify": "notify.x"}, id="its own list"),
+    pytest.param(TOLD, {"notify": PHONE_REF}, id="the default"),
+    pytest.param({**TOLD, "notify": PHONE_REF}, None, id="its own"),
+    pytest.param({**TOLD, "notify": [PHONE_REF, "homeassistant.notify.tablet"]},
+                 {"notify": "homeassistant.notify.x"}, id="its own list"),
 ])
 async def test_a_message_that_goes_somewhere_is_accepted(
         ha: HomeAssistant, reaction: dict[str, Any], config: dict[str, Any] | None) -> None:
@@ -212,9 +219,12 @@ async def test_a_message_that_goes_somewhere_is_accepted(
 
 @pytest.mark.parametrize(("reaction", "reason"), [
     pytest.param({**DOOR_OPENS, "message": " "}, "length of value must be at least 1", id="blank message"),
-    pytest.param({**DOOR_OPENS, "notify": PHONE}, "a reaction's notify goes with message",
+    pytest.param({**DOOR_OPENS, "notify": PHONE_REF}, "a reaction's notify goes with message",
                  id="notify without message"),
-    pytest.param({**TOLD, "notify": "phone"}, "a notify action is notify.<name>", id="not a notify action"),
+    pytest.param({**TOLD, "notify": "phone"}, "phone is not a notify action: homeassistant.notify.<name>",
+                 id="not a notify action"),
+    pytest.param({**TOLD, "notify": PHONE}, "notify.phone is not a notify action: homeassistant.notify.<name>",
+                 id="a notify action without homeassistant, as before 0.2.2"),
     pytest.param(TOLD, "device lights: reactions: it: message needs notify, here or in config.notify",
                  id="nowhere to go"),
 ])
@@ -227,7 +237,7 @@ async def test_a_message_that_cant_go_is_refused(ha: HomeAssistant, caplog: pyte
 
 async def test_config_notify_is_a_notify_action(ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     assert not await setup(ha, devices(it=TOLD), config={"notify": "phone"})
-    assert "a notify action is notify.<name>" in caplog.text
+    assert "phone is not a notify action: homeassistant.notify.<name>" in caplog.text
 
 
 async def test_reactions_alone_are_not_a_feature(ha: HomeAssistant,
@@ -247,7 +257,7 @@ async def test_two_reactions_with_one_automation_id_are_refused(
     """lights' b_reaction_c and lights_reaction_b's c would both be pururu_lights_reaction_b_reaction_c."""
     config = devices(b_reaction_c=DOOR_OPENS)
     config["lights_reaction_b"] = {
-        "name": "Outras", "lights": {"x": {"entity": "light.dummy_x", "name": "X"}},
+        "name": "Outras", "lights": {"x": {"entity": "homeassistant.light.dummy_x", "name": "X"}},
         "reactions": {"c": DOOR_OPENS},
     }
     assert not await setup(ha, config)
@@ -332,7 +342,7 @@ def test_a_quoted_number_in_to_is_text(ha: HomeAssistant) -> None:
 
 
 def test_above_and_below_are_numeric_state(ha: HomeAssistant) -> None:
-    assert translated(ha, {"name": "X", "entity": POWER, "above": 10, "below": 2500,
+    assert translated(ha, {"name": "X", "when": POWER_REF, "above": 10, "below": 2500,
                            "for": {"hours": 1, "seconds": 5}}, POWER) == [{
         "trigger": "numeric_state", "entity_id": POWER, "above": 10.0, "below": 2500.0,
         "for": "01:00:05",
@@ -533,6 +543,40 @@ async def test_a_reaction_on_another_devices_running_program(ha: HomeAssistant) 
     assert generated(ha)[0]["triggers"][0]["entity_id"] == "binary_sensor.pururu_washer_appliance_running"
 
 
+@pytest.mark.parametrize("entity_id", [
+    pytest.param("binary_sensor.porta_despensa", id="a real entity"),
+    pytest.param("input_boolean.pururu_guest", id="a helper of the user's, named pururu_"),
+])
+async def test_a_reaction_on_home_assistants_entity(ha: HomeAssistant, entity_id: str) -> None:
+    """when: homeassistant.<entity ID> watches that entity: the automation's trigger names it without homeassistant."""
+    assert await setup(ha, devices(it={"name": "X", "when": f"homeassistant.{entity_id}", "to": "on"}))
+    assert generated(ha)[0]["triggers"][0]["entity_id"] == entity_id
+
+
+@pytest.mark.parametrize(("when", "write"), [
+    pytest.param(f"homeassistant.binary_sensor.pururu_{WASHER}_appliance_running",
+                 f"is pururu's: write device.{WASHER}.appliance.running_program", id="another device's entity"),
+    pytest.param("homeassistant.light.pururu_lights_light_teto", "is pururu's: write lights.teto",
+                 id="this device's entity"),
+    pytest.param(f"homeassistant.script.pururu_{WASHER}_program_executable_clean",
+                 f"is pururu's: write device.{WASHER}.programs.executable.clean", id="a program's script"),
+    pytest.param(f"homeassistant.automation.pururu_{WASHER}_reaction_morning",
+                 f"is pururu's: write device.{WASHER}.reactions.morning.triggered_total",
+                 id="a reaction's automation"),
+    pytest.param(f"homeassistant.automation.pururu_{WASHER}_appliance_notification_finished",
+                 "is a ready-made notification: a reaction can't watch it", id="a notification's automation"),
+])
+async def test_pururus_own_written_as_home_assistants_is_refused(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, when: str, write: str) -> None:
+    """What pururu creates or generates, by its ID as created, is refused with what to write: one way to write it."""
+    config = devices(it={"name": "X", "when": when, "to": "on"})
+    config[WASHER]["appliance"] = {**APPLIANCE, "notifications": {"finished": None}}
+    config[WASHER]["programs"] = {"executable": {"clean": {"name": "Limpar", "sequence": [{"delay": 1}]}}}
+    config[WASHER]["reactions"] = {"morning": {"name": "Manhã", "at": "07:00"}}
+    assert not await setup(ha, config, config={"notify": PHONE_REF})
+    assert f"reactions: it: {when} {write} {PATH}->when'" in caplog.text
+
+
 async def test_a_reaction_on_an_entity_not_created_is_not_generated(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     month = {"name": "Mês", "when": f"device.{WASHER}.appliance.running_program.statistics.runtime.month",
@@ -562,8 +606,8 @@ async def test_a_state_reaction_fires(ha: HomeAssistant, automations: None) -> N
 
 
 async def test_the_default_or_its_own_notify(ha: HomeAssistant) -> None:
-    assert await setup(ha, devices(door=TOLD, mine={**TOLD, "notify": "notify.tablet"}),
-                       config={"notify": [PHONE]})
+    assert await setup(ha, devices(door=TOLD, mine={**TOLD, "notify": "homeassistant.notify.tablet"}),
+                       config={"notify": [PHONE_REF]})
     told = {a["id"]: [action["action"] for action in a["actions"][0]["parallel"]] for a in generated(ha)}
     assert told == {"pururu_lights_reaction_door": [PHONE],
                     "pururu_lights_reaction_mine": ["notify.tablet"]}
@@ -574,7 +618,7 @@ async def test_a_message_is_text(ha: HomeAssistant, automations: None) -> None:
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, DOOR, "off")
     assert await setup(ha, devices(door={**TOLD, "message": "Porta {{ aberta }} {% raw %}"}),
-                       config={"notify": PHONE})
+                       config={"notify": PHONE_REF})
     await fake(ha, DOOR, "on")
     await ha.async_block_till_done()
     assert [call.data for call in calls] == [{"title": "Luzes", "message": "Porta {{ aberta }} {% raw %}"}]
@@ -585,7 +629,7 @@ async def test_a_phone_gone_does_not_keep_the_next_from_being_told(ha: HomeAssis
     """An unpaired phone's notify action doesn't exist: HA stops a sequence on it, whatever continue_on_error."""
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, DOOR, "off")
-    assert await setup(ha, devices(door=TOLD), config={"notify": ["notify.gone", PHONE]})
+    assert await setup(ha, devices(door=TOLD), config={"notify": ["homeassistant.notify.gone", PHONE_REF]})
     await fake(ha, DOOR, "on")
     await ha.async_block_till_done()
     assert [call.data for call in calls] == [{"title": "Luzes", "message": "A porta abriu."}]
@@ -604,7 +648,7 @@ async def test_for_waits(ha: HomeAssistant, freezer: Any, automations: None) -> 
 async def test_coming_back_from_unavailable_does_not_fire(ha: HomeAssistant,
                                                           automations: None) -> None:
     await fake(ha, DOOR, "on")
-    assert await setup(ha, devices(closed={"name": "Fechou", "entity": DOOR, "to": "off"}))
+    assert await setup(ha, devices(closed={"name": "Fechou", "when": DOOR_REF, "to": "off"}))
     await fake(ha, DOOR, "unavailable")
     await fake(ha, DOOR, "off")
     assert not fired(ha, "closed")
@@ -659,7 +703,7 @@ CLEANING: dict[str, Any] = {"name": "Limpar", "sequence": [
 def greenhouse(**reactions: dict[str, Any]) -> dict[str, Any]:
     """The greenhouse: its sprinkler, its cleaning, and reactions to the door; `clean` also a reaction key."""
     return {GREENHOUSE: {"name": "Estufa",
-                   "switches": {"sprinkler": {"entity": REAL_SPRINKLER, "name": "Irrigador"}},
+                   "switches": {"sprinkler": {"entity": f"homeassistant.{REAL_SPRINKLER}", "name": "Irrigador"}},
                    "programs": {"executable": {"clean": CLEANING}},
                    "reactions": reactions or {"clean": {**DOOR_OPENS, "then": "clean"}}}}
 
@@ -705,7 +749,7 @@ async def test_a_missing_notify_action_does_not_keep_the_program_from_starting(
     await fake(ha, DOOR, "off")
     await fake(ha, REAL_SPRINKLER, "off")
     assert await setup(ha, greenhouse(clean={**DOOR_OPENS, "then": "clean", "message": "Limpando",
-                                       "notify": "notify.nobody"}))
+                                       "notify": "homeassistant.notify.nobody"}))
     await fake(ha, DOOR, "on")
     await settle()
     assert script_state(ha) == "on"
@@ -1088,7 +1132,7 @@ async def test_a_busy_programs_message_is_told_once(ha: HomeAssistant, freezer: 
     calls = async_mock_service(ha, "notify", "phone")
     await fake(ha, REAL_SPRINKLER, "off")
     assert await setup(ha, greenhouse(clean={"name": "Logo", "at": "10:05", "then": "clean",
-                                       "message": "Limpando", "notify": PHONE,
+                                       "message": "Limpando", "notify": PHONE_REF,
                                        "retry": {"times": 3, "every": {"hours": 1}}}))
     await ha.services.async_call("script", "turn_on", {"entity_id": CLEAN}, blocking=True)
     await settle()

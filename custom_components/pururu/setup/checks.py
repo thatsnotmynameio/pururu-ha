@@ -12,21 +12,24 @@ import voluptuous as vol
 
 from homeassistant.const import CONF_NAME
 
-from ..aspects import notifications
+from ..aspects import notifications, programs
 from ..const import (
     CONF_AREA,
     CONF_AREAS,
     CONF_CONFIG,
     CONF_DEVICES,
+    CONF_EXECUTABLE,
     CONF_MESSAGE,
     CONF_NOTIFICATIONS,
     CONF_NOTIFY,
+    CONF_PROGRAMS,
     CONF_REACTIONS,
 )
 from ..core import generated
 from ..core.feature import Device, Feature
-from ..core.resolve import Index, Owner, resolve
+from ..core.resolve import HOME_ASSISTANT, Index, Owner, Ref, resolve
 from ..core.roles import Configured, Generates, Refers
+from ..device_keys import reactions
 from . import catalogue
 
 
@@ -81,10 +84,79 @@ def _shared_real_entities(
             None, (item.get("entity") for item in device[name].values())
         ):
             if owners.setdefault(entity, name) != name:
+                # Quoted as written: the schema took homeassistant. off
                 yield vol.Invalid(
-                    f"{name}: {entity} is already in {owners[entity]}",
+                    f"{name}: {HOME_ASSISTANT}.{entity} is already in {owners[entity]}",
                     path=[CONF_DEVICES, key, name],
                 )
+
+
+def pururus_own_as_home_assistants(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> Iterator[vol.Invalid]:
+    """Refuse a reaction's when naming as Home Assistant's what pururu creates or generates, with what to write.
+
+    One way to write each thing: its path follows a rename in the UI, and a
+    reaction (reactions.<key>) is refused for what counts it. Matched against
+    the IDs as pururu creates them; any other pururu_ ID, a helper of the
+    user's, is Home Assistant's.
+    """
+    pururus = _pururus(house, index, builders)
+    for key, device in house[CONF_DEVICES].items():
+        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items():
+            if "when" not in reaction:
+                continue
+            ref = Ref.parse(reaction["when"])
+            if ref.owner is not Owner.HOME_ASSISTANT or ref.path not in pururus:
+                continue
+            owner = pururus[ref.path]
+            if owner is None:
+                why = "is a ready-made notification: a reaction can't watch it"
+            else:
+                written = Ref(Owner.DEVICE, *owner)
+                if written.device == key:
+                    written = Ref(Owner.HERE, None, written.path)
+                why = f"is pururu's: write {written.text}"
+            yield vol.Invalid(
+                f"reactions: {reaction_key}: {ref.text} {why}",
+                path=[CONF_DEVICES, key, CONF_REACTIONS, reaction_key, "when"],
+            )
+
+
+def _pururus(
+    house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
+) -> dict[str, tuple[str, str] | None]:
+    """Entity ID as created -> (device, the path to write), of all pururu creates and generates; None: nothing to write.
+
+    A program's script is followed by its path (programs.executable.<key>),
+    a reaction's automation by what counts it; a ready-made notification's
+    automation by nothing.
+    """
+    pururus: dict[str, tuple[str, str] | None] = {
+        target.entity_id(): (key, path)
+        for key, targets in index.items()
+        for path, target in targets.items()
+    }
+    for key, device in house[CONF_DEVICES].items():
+        for program in programs.executable(device):
+            pururus[
+                f"{generated.SCRIPTS.domain}.{programs.script_id(key, program)}"
+            ] = (
+                key,
+                f"{CONF_PROGRAMS}.{CONF_EXECUTABLE}.{program}",
+            )
+        for reaction in device.get(CONF_REACTIONS, {}):
+            automation = reactions.automation_id(key, reaction)
+            pururus[f"{generated.AUTOMATIONS.domain}.{automation}"] = (
+                key,
+                f"{CONF_REACTIONS}.{reaction}.triggered_total",
+            )
+        for _, feature, notification, _ in notifications.enabled(device, builders):
+            automation = notifications.automation_id(
+                key, feature.namespace, notification
+            )
+            pururus[f"{generated.AUTOMATIONS.domain}.{automation}"] = None
+    return pururus
 
 
 def areas_exist(

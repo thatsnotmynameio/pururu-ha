@@ -51,7 +51,7 @@ def test_a_time_is_read_back(ha: HomeAssistant) -> None:
 
 async def test_an_entity_knows_its_key_and_reference(ha: HomeAssistant) -> None:
     """`<device>.<entity key>`: the event_name events fire, the reference form C adds to the YAML."""
-    greenhouse = {"name": "Estufa", "switches": {"sprinkler": {"entity": "switch.greenhouse_sprinkler", "name": "Irrigador"}}}
+    greenhouse = {"name": "Estufa", "switches": {"sprinkler": {"entity": "homeassistant.switch.greenhouse_sprinkler", "name": "Irrigador"}}}
     assert await setup(ha, {"greenhouse": greenhouse})
     [entry] = ha.config_entries.async_entries(DOMAIN)
     [switch] = entry.runtime_data[Platform.SWITCH]
