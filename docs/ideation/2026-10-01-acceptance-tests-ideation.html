@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testes de aceitação robustos</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1f2328; --muted: #57606a; --line: #d8dee4;
+    --accent: #0b5cad; --accent-soft: #e7f0fa; --accent-text: #0a4a8a;
+    --warn-soft: #fbf1e3; --warn-text: #7a4a00;
+    --ok-soft: #e8f5ec; --ok-text: #1f6b3a;
+    --card: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c; --fg: #e6e8eb; --muted: #a3acb6; --line: #2e353d;
+      --accent: #6cb0ff; --accent-soft: #1b2a3b; --accent-text: #a9d0ff;
+      --warn-soft: #33281a; --warn-text: #f0c68a;
+      --ok-soft: #1a2e22; --ok-text: #9edbb2;
+      --card: #1b1f24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 900px; margin-inline: auto; padding: 2.5rem 1.25rem 4rem; }
+  p, li, dd { max-width: 72ch; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0.2rem 0 0.8rem; }
+  h2 { font-size: 1.4rem; margin: 2.8rem 0 1rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+  strong { color: inherit; }
+  code { font: 0.88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--accent-soft); color: var(--accent-text); padding: 0.05em 0.35em; border-radius: 4px; }
+  a { color: var(--accent); }
+  .eyebrow { font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .meta { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.5rem 0 1.5rem; font-size: 0.92rem; }
+  .meta dt { color: var(--muted); }
+  .meta dd { margin: 0; }
+  .stats { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0 0; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.9rem; font-size: 0.9rem; }
+  .stat b { font-size: 1.2rem; display: block; }
+  .jump { columns: 2; padding-left: 1.2rem; font-size: 0.95rem; }
+  @media (max-width: 700px) { .jump { columns: 1; } }
+  article.idea { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.3rem 1.4rem; margin: 1.2rem 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.8rem; }
+  .chip { font-size: 0.78rem; padding: 0.15rem 0.6rem; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  .chip.id { background: var(--accent-soft); color: var(--accent-text); border-color: transparent; font-weight: 600; }
+  article.idea dl { margin: 0; }
+  article.idea dt { font-weight: 600; margin-top: 0.8rem; font-size: 0.9rem; }
+  article.idea dd { margin: 0.2rem 0 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin: 0.8rem 0; }
+  th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
+  th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  figure { margin: 1rem 0 0.4rem; }
+  figcaption { font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; }
+  svg { max-width: 100%; height: auto; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .svg-box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+  .svg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .svg-warn { fill: var(--warn-soft); stroke: var(--warn-text); stroke-width: 1.2; }
+  .svg-t { fill: var(--fg); font-size: 13px; }
+  .svg-s { fill: var(--muted); font-size: 11px; }
+  .svg-at { fill: var(--accent-text); font-size: 13px; font-weight: 600; }
+  .svg-wt { fill: var(--warn-text); font-size: 12px; }
+  .svg-line { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  footer.composition-signal { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+  pre { font: 0.86em/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--accent-soft); color: var(--accent-text); padding: 0.8rem 1rem; border-radius: 8px; overflow-x: auto; margin: 0.6rem 0; }
+  pre code { background: none; padding: 0; color: inherit; font-size: 1em; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+  .cols h4 { margin: 0.4rem 0 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  @media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">Ideação · pururu</div>
+  <h1>Ideation: testes de aceitação robustos</h1>
+  <dl class="meta">
+    <dt>date</dt><dd><time datetime="2026-10-01">2026-10-01</time></dd>
+    <dt>topic</dt><dd>acceptance-tests</dd>
+    <dt>focus</dt><dd>testes de aceitação robustos: provar que o YAML do usuário vira, no Home Assistant, a casa que ele declarou, e continuar provando sem falso verde e sem flake</dd>
+    <dt>mode</dt><dd>repo-grounded</dd>
+  </dl>
+  <div class="stats">
+    <div class="stat"><b>46</b>ideias brutas</div>
+    <div class="stat"><b>20 + 3</b>após juntar duplicatas, mais combinações</div>
+    <div class="stat"><b>7</b>sobreviventes</div>
+    <div class="stat"><b>5 de 5</b>eixos cobertos</div>
+  </div>
+</header>
+
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+<h3>Codebase Context</h3>
+<ul>
+  <li>A suíte tem cerca de 30 arquivos, 986 funções de teste e 15,9 mil linhas. Ela roda o núcleo real do HA em processo (<code>pytest-homeassistant-custom-component</code>, <code>homeassistant==2026.9.3</code>), com o relógio congelado numa quarta-feira 10:00 (<code>tests/conftest.py:19-21</code>).</li>
+  <li>Os helpers de <code>tests/helpers.py</code> (<code>setup</code>, <code>reload</code>, <code>restart</code>, <code>tick</code>, <code>fake</code>, <code>settle</code>, <code>snapshot</code>) já dão a forma dado/quando/então. Uma fixture autouse (<code>no_step_failed</code>, <code>tests/conftest.py:92-103</code>) reprova qualquer teste que registre <code>Step &lt;name&gt; failed</code> ou <code>Listener failed</code> sem esperar.</li>
+  <li><code>tests/test_features.py</code> é um teste de contrato sobre cada entrada de <code>FEATURES</code> e <code>DEVICE_KEYS</code>. Ele confere traduções, ícones e se o <code>example</code> passa no schema, e não testa comportamento.</li>
+  <li>Cada arquivo escreve sua própria casa: cerca de 24 arquivos têm um <code>devices()</code> local, e blocos como <code>APPLIANCE</code> se repetem em 8 ou mais. A única casa inteira, <code>tests/fixtures/house.yaml</code>, só é usada por <code>tests/test_ids.py</code> para fixar os IDs.</li>
+  <li>Algumas automações e scripts gerados rodam nos domínios reais <code>automation</code> e <code>script</code> (<code>tests/test_generated.py:157</code>, <code>tests/test_reactions.py:502</code>). O <code>configuration.yaml</code>, porém, nunca é lido do disco: <code>homeassistant.config.load_yaml_config_file</code> é substituído em 13 lugares, inclusive em <code>reload()</code> (<code>tests/helpers.py:83-87</code>). O Alert2 é um dublê (<code>FakeAlert2</code>, <code>tests/test_alert2.py:131-150</code>), e o dashboard nunca é desenhado num navegador.</li>
+  <li><code>settle()</code> gira o loop 100 vezes (<code>SETTLE_TURNS = 100  # far more than any chain of our callbacks needs</code>, <code>tests/helpers.py:27</code>) e é chamado em 48 lugares. <code>expected_lingering_timers</code> aceita timers pendentes no fim do teste.</li>
+  <li>A maior parte do código chega por PRs de agentes: o dispatcher transforma issues <code>ready</code> em sessões lfg. Os planos trazem Acceptance Examples (AE1..AEn), mas só <code>tests/test_buttons.py</code> cita um AE pelo nome, e só em docstring.</li>
+  <li>STRATEGY.md: a casa deve ser "a short file a person or an agent can write, diff and review"; o pururu declara o que tem de valer e constrói o resto como peças nativas do HA.</li>
+</ul>
+<h3>Past Learnings</h3>
+<ul>
+  <li>Os toques de um botão são contados pelo sinal de <code>async_press</code>, não pela mudança de estado. Sob o relógio congelado, dois toques no mesmo instante viram uma mudança só, e um restore gera contagens falsas (<code>docs/solutions/design-patterns/count-button-presses-from-async-press-not-state.md</code>).</li>
+  <li>O CI pula checagens com <code>if:</code> no job, nunca com filtro de caminho no workflow (<code>docs/solutions/workflow-issues/skipping-ci-checks-per-pr-without-blocking-merges.md</code>).</li>
+</ul>
+<h3>External Context</h3>
+<p>O núcleo do HA usa snapshots com syrupy para registros e estados. Para o que o HA em processo não prova, a comunidade usa um HA real em contêiner (ha-testcontainer, hass-custom-devcontainer) ou <code>hass --script check_config</code>, e Playwright para dashboards (hass-taste-test). As técnicas de fora mais próximas são o teste com máquina de estados do Hypothesis (sequências aleatórias reduzidas até a menor que falha), a simulação determinística de bancos de dados (FoundationDB, TigerBeetle: relógio injetado, uma semente reproduz a execução), o replay de traços reais e o teste de mutação (mutmut). Esses resultados vêm de resumos de busca; nenhuma página foi lida inteira.</p>
+</section>
+
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<ol>
+  <li>O cenário como unidade: como uma casa em YAML vira teste, onde os cenários moram e como são escritos.</li>
+  <li>Fidelidade ao HA de verdade: o que roda de verdade e o que é dublê ou patch (leitura do YAML, Alert2, notify, dashboard, restart, versão do HA).</li>
+  <li>Tempo, ordem e determinismo: relógio congelado, <code>tick</code>/<code>settle</code>/<code>fake</code>, restart com estado restaurado, flakiness.</li>
+  <li>Força da suíte: se a suíte pega regressão (contratos, invariantes, asserções fracas).</li>
+  <li>Quem escreve e quando: issue → plano → teste → código → PR → CI, com agentes escrevendo a maior parte.</li>
+</ol>
+</section>
+
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+<ol class="jump">
+  <li><a href="#i1">A casa é o que o YAML diz: uma conciliação depois de todo teste</a></li>
+  <li><a href="#i2">Histórias sobre uma casa de referência que usa todas as features</a></li>
+  <li><a href="#i3">O HA lê o <code>configuration.yaml</code> do disco</a></li>
+  <li><a href="#i4">Teste de aceitação novo tem de falhar no <code>main</code></a></li>
+  <li><a href="#i5">Contrato de comportamento gerado dos roles</a></li>
+  <li><a href="#i6"><code>settle()</code> espera o HA ficar ocioso</a></li>
+  <li><a href="#i7">As viradas de calendário que nenhum teste atravessa</a></li>
+</ol>
+
+<article class="idea" id="i1">
+  <div class="chips"><span class="chip id">1.</span><span class="chip">Eixo 4 · força da suíte</span><span class="chip">Confiança 85%</span><span class="chip">Complexidade média</span></div>
+  <h3>1. A casa é o que o YAML diz: uma conciliação depois de todo teste</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>O pururu guarda o mesmo fato em três lugares: os IDs em <code>entry.data</code> (<code>floors</code>, <code>areas</code>, <code>automations</code>, <code>scripts</code>), os itens dos arquivos gerados (<code>automations.yaml</code>, <code>programs.yaml</code>, <code>alerts.yaml</code>) e os registros do HA. Uma função, <code>assert_house_matches(hass, yaml)</code>, deriva do YAML o que deve existir e confere os três, com as divergências que as regras mandam: um programa <em>held</em> fica no registro e em <code>entry.data</code>, mas sai do arquivo. Ela também confere que cada condição do arquivo do Alert2 e cada cartão do dashboard apontam para uma entidade que existe.</p>
+      <p>Ela roda como fixture autouse, no molde de <code>no_step_failed</code>, depois de todo <code>setup</code>, <code>reload</code> e <code>restart</code>. Assim os 986 testes que já existem passam a conferir a casa inteira sem nenhuma asserção nova. Depois, a mesma função serve de checagem a cada passo de uma máquina de estados do Hypothesis ou depois do boot num HA real, se essas ideias vierem.</p>
+      <figure>
+        <svg viewBox="0 0 640 200" role="img" aria-labelledby="f1t">
+          <title id="f1t">Três registros do mesmo fato conferidos por uma função</title>
+          <rect class="svg-box" x="20" y="20" width="170" height="52" rx="8"/>
+          <text class="svg-t" x="105" y="42" text-anchor="middle">entry.data</text>
+          <text class="svg-s" x="105" y="60" text-anchor="middle">IDs que a entrada gerencia</text>
+          <rect class="svg-box" x="235" y="20" width="170" height="52" rx="8"/>
+          <text class="svg-t" x="320" y="42" text-anchor="middle">arquivos gerados</text>
+          <text class="svg-s" x="320" y="60" text-anchor="middle">automations, scripts, alert2</text>
+          <rect class="svg-box" x="450" y="20" width="170" height="52" rx="8"/>
+          <text class="svg-t" x="535" y="42" text-anchor="middle">registros do HA</text>
+          <text class="svg-s" x="535" y="60" text-anchor="middle">entidades, áreas, andares</text>
+          <path class="svg-line" d="M105 72 L250 128"/>
+          <path class="svg-line" d="M320 72 L320 128"/>
+          <path class="svg-line" d="M535 72 L390 128"/>
+          <rect class="svg-accent" x="170" y="128" width="300" height="52" rx="8"/>
+          <text class="svg-at" x="320" y="150" text-anchor="middle">assert_house_matches(hass, yaml)</text>
+          <text class="svg-s" x="320" y="168" text-anchor="middle">depois de todo setup, reload e restart</text>
+        </svg>
+        <figcaption>Os três registros do mesmo fato, conferidos contra o YAML por uma função só.</figcaption>
+      </figure>
+    </dd>
+    <dt>Axis</dt><dd>4. Força da suíte</dd>
+    <dt>Basis</dt>
+    <dd><code>direct:</code> a fixture <code>no_step_failed</code> (<code>tests/conftest.py:92-103</code>) já reprova falhas que nenhum teste pediu. A regra "A program whose target is disabled is held, not dropped" (CLAUDE.md) é exatamente a divergência que a conciliação precisa conhecer. Há asserções que só checam existência, como <code>assert ha.states.get(alert("long_day")) is not None</code>. <code>external:</code> a conciliação de três vias da contabilidade (pedido, recebimento e nota fiscal).</dd>
+    <dt>Rationale</dt>
+    <dd>Quando um agente esquece de tirar um ID de <code>entry.data</code> ao remover um item, o teste vizinho pega, e não o usuário meses depois. É a única ideia que fortalece todos os testes existentes de uma vez. Ela também define uma vez o que "a casa está certa" quer dizer, e as ideias 2, 3 e 5 reutilizam essa definição.</dd>
+    <dt>Downsides</dt>
+    <dd>Ela precisa codificar as regras de held, dropped, desabilitado e renomeado. Se codificar errado, gera falso vermelho em testes que hoje passam. Também deixa cada teste um pouco mais lento, e é preciso medir quanto. Testes que montam um estado inconsistente de propósito precisam de uma marca para desligá-la.</dd>
+    <dt>Confidence</dt><dd>85%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i2">
+  <div class="chips"><span class="chip id">2.</span><span class="chip">Eixo 1 · o cenário como unidade</span><span class="chip">Confiança 80%</span><span class="chip">Complexidade média</span></div>
+  <h3>2. Histórias sobre uma casa de referência que usa todas as features</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>Uma casa de referência genérica, montada a partir do próprio pururu e não de uma casa real. Ela tem pelo menos um device para cada feature, cada aspect e cada device key, ligados entre si: uma reação que segue o programa de outro device, uma luz emprestada a um alerta, uma notificação pronta. O ponto de partida é o <code>example</code> de cada feature, que <code>full()</code> já compõe com os aspects (<code>tests/test_features.py:83-95</code>). Um teste confere que a casa continua cobrindo tudo, e assim uma feature nova que não entra nela quebra o teste, do mesmo jeito que o contrato já faz com traduções e ícones.</p>
+      <p>Um arquivo novo, <code>tests/test_stories.py</code>, guarda histórias que atravessam várias features nessa casa. As histórias usam os helpers que já existem, em Python, sem linguagem nova. Cada uma vai do setup até o fim e passa por restart, reload, rename e disable no meio. Cada passo afirma o que um usuário do pururu vê: estados, scripts iniciados, notificações enviadas, a luz emprestada ao alerta.</p>
+      <pre><code>async def test_a_reaction_follows_a_program_across_a_restart(ha, freezer):
+    await setup_reference_house(ha)
+    await fake(ha, "sensor.washer_power", "900")
+    await tick(ha, freezer, 40 * 60)
+    await restart_reference_house(ha)           # no meio do ciclo
+    await fake(ha, "sensor.washer_power", "2")
+    await tick(ha, freezer, 3 * 60)
+    assert state(ha, "washer.appliance_cycles_total") == "1"
+    assert notified(ha) == ["Washer: cycle ended"]</code></pre>
+      <p>Esboço: <code>setup_reference_house</code>, <code>restart_reference_house</code>, <code>state</code> e <code>notified</code> seriam helpers novos sobre os que já existem, e os nomes e o texto da notificação são ilustrativos.</p>
+    </dd>
+    <dt>Axis</dt><dd>1. O cenário como unidade</dd>
+    <dt>Basis</dt>
+    <dd><code>direct:</code> a lista de lacunas da suíte traz "Complex device interactions (appliance + reactions + alerts together)". Cerca de 24 arquivos de teste definem um <code>devices()</code> local, e a única casa inteira, <code>tests/fixtures/house.yaml</code>, só é usada em <code>tests/test_ids.py:20</code>. O <code>example</code> de cada feature só passa no schema (<code>tests/test_features.py:204-206</code>).</dd>
+    <dt>Rationale</dt>
+    <dd>As regressões que um usuário sente aparecem nas costuras entre features: a reação que segue o programa, a luz emprestada ao alerta, o reload no meio de um ciclo. Os testes por feature não cobrem essas costuras porque cada um monta a sua casa isolada. Gerar a casa a partir do catálogo faz ela acompanhar o pururu sozinha, sem ninguém lembrar de atualizá-la.</dd>
+    <dt>Downsides</dt>
+    <dd>Os <code>example</code> de hoje foram escritos para passar no schema, não para conversar entre si, e as ligações entre devices (reações, grupos de luz) precisam ser acrescentadas à mão. Uma história longa falha longe da causa; a ideia 1 ajuda porque aponta o primeiro passo em que a casa divergiu. Na mão de agentes, as histórias podem virar cópias umas das outras sem uma regra de quando nasce uma nova.</dd>
+    <dt>Confidence</dt><dd>80%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i3">
+  <div class="chips"><span class="chip id">3.</span><span class="chip">Eixo 2 · fidelidade ao HA</span><span class="chip">Confiança 75%</span><span class="chip">Complexidade média</span></div>
+  <h3>3. O HA lê o <code>configuration.yaml</code> do disco</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>Hoje <code>reload()</code> troca a leitura do <code>configuration.yaml</code> por um dicionário montado em Python que já junta as automações e os scripts gerados. Nenhum teste prova que as linhas que o usuário cola (<code>automation pururu: !include_dir_merge_list pururu/automations</code>, <code>script pururu: …</code>, o <code>alerts:</code> do <code>alert2:</code>) fazem o HA carregar o que o pururu escreveu.</p>
+      <p>A proposta tem duas camadas. Na suíte de sempre, um modo de <code>setup</code>/<code>reload</code> escreve um <code>configuration.yaml</code> de verdade em <code>ha.config.path()</code>, com essas linhas, e deixa o HA ler do disco no <code>pururu.reload</code>, no <code>automation.reload</code> e no <code>script.reload</code>. As histórias da ideia 2 usam esse modo. Fora do caminho do PR, um job no <code>main</code> roda <code>hass --script check_config</code> e, se valer o custo, um HA real em contêiner com o Alert2 de verdade, para o que nem o modo em disco prova.</p>
+      <div class="cols">
+        <div><h4>Hoje</h4><pre><code>patch("homeassistant.config.load_yaml_config_file",
+      side_effect=lambda *_: {
+          **yaml_config,
+          "automation pururu": generated(hass),
+          "script pururu": generated_scripts(hass)})</code></pre></div>
+        <div><h4>Proposta</h4><pre><code># config/configuration.yaml, escrito no teste
+pururu: !include pururu.yaml
+automation pururu: !include_dir_merge_list pururu/automations
+script pururu: !include_dir_merge_named pururu/scripts</code></pre></div>
+      </div>
+    </dd>
+    <dt>Axis</dt><dd>2. Fidelidade ao HA de verdade</dd>
+    <dt>Basis</dt>
+    <dd><code>direct:</code> <code>tests/helpers.py:83-87</code> substitui <code>homeassistant.config.load_yaml_config_file</code> no <code>reload()</code>, e o mesmo patch aparece em 13 lugares. O que já existe é estreito: <code>tests/test_generated.py:343-353</code> escreve um <code>configuration.yaml</code> e o lê com <code>load_yaml_dict</code>. Isso prova a sintaxe do include, não o HA recarregando os domínios a partir dele. O Alert2 é o dublê <code>FakeAlert2</code> (<code>tests/test_alert2.py:131-150</code>), que assume a forma das entidades do Alert2. <code>external:</code> <code>hass --script check_config</code>, ha-testcontainer.</dd>
+    <dt>Rationale</dt>
+    <dd>Essas linhas são o contrato mais frágil entre o pururu e o usuário, e ninguém as confere de ponta a ponta. A camada em disco é barata porque roda no mesmo processo e com o mesmo relógio, e fecha a maior parte do buraco sem contêiner.</dd>
+    <dt>Downsides</dt>
+    <dd>Ler do disco tira a liberdade de montar a configuração por teste, por isso o patch continua nos testes que não são sobre arquivos. O contêiner é pesado, mais lento e mais sujeito a flake. Começar só com <code>check_config</code> e acrescentar o contêiner apenas se um bug real passar pela camada em disco.</dd>
+    <dt>Confidence</dt><dd>75%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i4">
+  <div class="chips"><span class="chip id">4.</span><span class="chip">Eixo 5 · quem escreve e quando</span><span class="chip">Confiança 75%</span><span class="chip">Complexidade baixa</span></div>
+  <h3>4. Teste de aceitação novo tem de falhar no <code>main</code></h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>Um job do CI pega os testes novos ou alterados do PR (o diff contra <code>origin/main</code> que <code>.github/scripts/changes.py</code> já calcula) e roda esses testes contra o código do <code>main</code>. Um teste de feature ou de correção que passa dos dois lados não prova nada sobre a mudança, e o job aponta isso no PR. Funciona como teste de mutação com um único mutante, o código de antes. Por isso é barato o bastante para todo PR. PRs de refatoração ficam de fora por um rótulo ou um prefixo de commit.</p>
+      <figure>
+        <svg viewBox="0 0 640 140" role="img" aria-labelledby="f4t">
+          <title id="f4t">O teste novo roda no código do PR e no código do main</title>
+          <rect class="svg-box" x="20" y="44" width="150" height="52" rx="8"/>
+          <text class="svg-t" x="95" y="66" text-anchor="middle">teste novo do PR</text>
+          <text class="svg-s" x="95" y="84" text-anchor="middle">diff contra origin/main</text>
+          <path class="svg-line" d="M170 60 L250 30"/>
+          <path class="svg-line" d="M170 80 L250 110"/>
+          <rect class="svg-box" x="250" y="8" width="150" height="44" rx="8"/>
+          <text class="svg-t" x="325" y="35" text-anchor="middle">código do PR</text>
+          <rect class="svg-box" x="250" y="88" width="150" height="44" rx="8"/>
+          <text class="svg-t" x="325" y="115" text-anchor="middle">código do main</text>
+          <path class="svg-line" d="M400 30 L450 30"/>
+          <path class="svg-line" d="M400 110 L450 110"/>
+          <rect class="svg-accent" x="450" y="8" width="170" height="44" rx="8"/>
+          <text class="svg-at" x="535" y="35" text-anchor="middle">tem de passar</text>
+          <rect class="svg-warn" x="450" y="88" width="170" height="44" rx="8"/>
+          <text class="svg-wt" x="535" y="115" text-anchor="middle">tem de falhar</text>
+        </svg>
+        <figcaption>Um teste que passa nos dois lados é marcado no PR: ele não depende da mudança.</figcaption>
+      </figure>
+    </dd>
+    <dt>Axis</dt><dd>5. Quem escreve e quando</dd>
+    <dt>Basis</dt>
+    <dd><code>direct:</code> a mesma sessão lfg escreve o código e o teste que o aprova ("No separate acceptance phase; unit tests ARE the acceptance gate"). A suíte já tem asserções que passam com ou sem o comportamento, como <code>assert ha.states.get("switch.pururu_greenhouse_switch_sprinkler") is not None</code>. <code>reasoned:</code> rodar só os testes novos contra o código antigo é a menor checagem que mostra que o teste depende da mudança. O mutmut completo é lento demais para gate; um único mutante, não.</dd>
+    <dt>Rationale</dt>
+    <dd>Pega o teste que nunca poderia falhar, o defeito mais comum quando quem implementa também escreve o teste. E pega no PR, não numa auditoria meses depois. É a ideia mais barata da lista, e é a única que muda o fluxo dos agentes sem dobrar o número de sessões.</dd>
+    <dt>Downsides</dt>
+    <dd>Um teste novo que importa um símbolo que o <code>main</code> não tem falha por erro de import, não por comportamento. O job precisa distinguir esse caso ou aceitá-lo como "falhou". Um teste de cobertura escrito de propósito para comportamento antigo também passa nos dois lados e precisa de uma exceção explícita.</dd>
+    <dt>Confidence</dt><dd>75%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i5">
+  <div class="chips"><span class="chip id">5.</span><span class="chip">Eixo 4 · força da suíte</span><span class="chip">Confiança 70%</span><span class="chip">Complexidade média</span></div>
+  <h3>5. Contrato de comportamento gerado dos roles</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p><code>tests/test_features.py</code> já percorre cada feature e cada device key, e uma feature nova "is covered here unchanged" em traduções, ícones e exemplo. A proposta estende o contrato da forma para o comportamento, a partir dos dados que os roles já declaram. Cada <code>Preset</code> traz <code>watches</code>, <code>kind</code> (<code>Condition</code> ou <code>Elapsed</code>) e <code>hold</code>. Cada <code>Happening</code> traz <code>watches</code>, <code>to</code> e <code>from_</code>. Cada <code>Counted</code> traz o que conta. Para cada um, o teste monta o mesmo roteiro: condição verdadeira por <code>hold</code> menos 1 s dá desligado, por <code>hold</code> dá ligado, condição falsa dá desligado, restart no meio mantém o estado. Para a notificação, a transição certa dispara a automação uma vez. Para o contador, cada ciclo soma um.</p>
+    </dd>
+    <dt>Axis</dt><dd>4. Força da suíte</dd>
+    <dt>Basis</dt>
+    <dd><code>direct:</code> o cabeçalho de <code>tests/test_features.py</code>: "The contract, over every Feature in FEATURES and DEVICE_KEYS: a new one is covered here unchanged"; o <code>example</code> só passa no schema (<code>tests/test_features.py:204-206</code>). <code>Preset</code> tem <code>watches</code>, <code>kind</code> e <code>hold</code> (<code>custom_components/pururu/core/feature.py:158-166</code>), e <code>Happening</code> tem <code>watches</code> (<code>:184-192</code>).</dd>
+    <dt>Rationale</dt>
+    <dd>Muitas features novas chegam por PR de agente. Um alerta pronto novo com a condição invertida passa hoje no contrato e só precisa de um teste que nunca o liga de verdade. Com o contrato de comportamento, a feature nova ganha o roteiro básico sem ninguém escrevê-lo.</dd>
+    <dt>Downsides</dt>
+    <dd>Cada role precisa de uma forma genérica de "fazer a condição ficar verdadeira" (qual entidade fingir, com qual valor), e isso pode exigir um campo novo no role só para o teste. Um <code>Elapsed</code> conta desde um marco e não segue o mesmo roteiro de um <code>Condition</code>. O roteiro genérico prova só o básico; casos específicos de cada feature continuam nos arquivos delas.</dd>
+    <dt>Confidence</dt><dd>70%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i6">
+  <div class="chips"><span class="chip id">6.</span><span class="chip">Eixo 3 · tempo e determinismo</span><span class="chip">Confiança 75%</span><span class="chip">Complexidade baixa</span></div>
+  <h3>6. <code>settle()</code> espera o HA ficar ocioso</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p><code>settle()</code> gira o loop 100 vezes porque 100 é "far more than any chain of our callbacks needs". A troca é uma espera por condição: girar até o HA não ter mais trabalho pronto (<code>async_block_till_done</code> mais as tarefas do pururu) e falhar com a lista do que ficou pendente quando passar de um limite. No fim do teste, os timers que sobram são listados por nome em vez de aceitos em bloco por <code>expected_lingering_timers</code>, e só os timers conhecidos do carrier ficam permitidos.</p>
+    </dd>
+    <dt>Axis</dt><dd>3. Tempo, ordem e determinismo</dd>
+    <dt>Basis</dt>
+    <dd><code>direct:</code> <code>SETTLE_TURNS = 100</code> (<code>tests/helpers.py:27</code>), com 48 chamadas de <code>settle()</code> na suíte, e <code>expected_lingering_timers</code> (<code>tests/conftest.py:64-67</code>), que aceita "The carrier's delays may still be pending when test ends". A lição dos botões em <code>docs/solutions/</code> mostra que a simultaneidade sob o relógio congelado já produziu um bug real.</dd>
+    <dt>Rationale</dt>
+    <dd>Um número mágico de voltas passa hoje e vira flake no dia em que uma cadeia de reação, programa e alerta ficar mais longa. As histórias da ideia 2 são exatamente essas cadeias longas. A regra do projeto é consertar flakiness onde ela aparecer, e esta é a fonte mais provável antes de ela aparecer.</dd>
+    <dt>Downsides</dt>
+    <dd>Esperar até ocioso pode travar se algum componente reagenda trabalho para sempre, e o limite precisa de uma mensagem que diga quem é. Trocar 48 chamadas pode revelar testes que passavam por acaso. Isso é o objetivo, mas custa uma rodada de correções.</dd>
+    <dt>Confidence</dt><dd>75%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i7">
+  <div class="chips"><span class="chip id">7.</span><span class="chip">Eixo 3 · tempo e determinismo</span><span class="chip">Confiança 60%</span><span class="chip">Complexidade baixa</span></div>
+  <h3>7. As viradas de calendário que nenhum teste atravessa</h3>
+  <dl>
+    <dt>Description</dt>
+    <dd>
+      <p>O relógio dos testes começa numa quarta-feira no meio do mês "so the few hours a test simulates never cross a day, week, month or year by accident". É a escolha certa por padrão, mas deixa sem prova o comportamento nas viradas. Alguns testes cruzam o dia de propósito (<code>tests/test_opening.py:802</code> avança 24 h), mas nenhum cruza mês, ano, a troca de horário de verão do fuso dos testes ou 29 de fevereiro. A proposta é uma marca <code>@pytest.mark.calendar</code> que roda um pequeno conjunto de cenários a partir de instantes difíceis: 31/12 23:59, o último dia do mês, domingo 23:59, a véspera da troca de horário. Os cenários são as estatísticas por período ao redor de um restart, os alertas de tempo decorrido e as reações <code>at</code> com <code>retry</code>.</p>
+    </dd>
+    <dt>Axis</dt><dd>3. Tempo, ordem e determinismo</dd>
+    <dt>Basis</dt>
+    <dd><code>direct:</code> o comentário e o <code>START = (2026, 9, 16, 10, 0)</code> em <code>tests/conftest.py:19-21</code>. As estatísticas usam o <code>utility_meter</code> do HA (<code>custom_components/pururu/aspects/statistics.py:15-41</code>), e o pururu mexe no começo de cada medidor: "Core's utility_meter only starts a fresh meter from the source's next state". <code>external:</code> no comissionamento de prédios, cada sistema é testado na estação em que trabalha de verdade.</dd>
+    <dt>Rationale</dt>
+    <dd>Um erro de virada aparece uma vez por mês ou por ano, quando o contador zera errado ou a reação da meia-noite dispara duas vezes. Depois disso é quase impossível de reproduzir. Hoje a suíte garante, por construção, que nunca vê esses instantes.</dd>
+    <dt>Downsides</dt>
+    <dd>Quem zera o período é o <code>utility_meter</code> do HA, então parte do risco é do HA, não do pururu. O valor está no código do pururu em volta dele: restart perto da virada e o primeiro estado do medidor. A troca de horário de verão só vale para fusos que a têm, então o cenário roda num fuso que a tem. A ideia é estreita de propósito, e por isso a confiança é menor.</dd>
+    <dt>Confidence</dt><dd>60%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+</article>
+</section>
+
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+<p>As 46 ideias brutas viraram 20 candidatas e 3 combinações depois de juntar as duplicatas. As que não sobreviveram:</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Cenários como arquivos YAML com passos e expectativas (formato <code>lit</code>/test262), um coletor só</td><td>É uma segunda linguagem de teste para manter, e os cenários precisam de <code>fake</code> e <code>snapshot</code> que o YAML não expressa, então o coletor cresceria. A ideia 2 consegue a casa compartilhada sem linguagem nova.</td></tr>
+    <tr><td>2</td><td>A página da docs executa: blocos <code>scenario</code> nos <code>.mdx</code></td><td>Traz os riscos de MDX/JSX (<code>{</code> e <code>&lt;</code>) e um runner novo para pouco ganho. As histórias da ideia 2 cobrem o mesmo comportamento.</td></tr>
+    <tr><td>3</td><td>AEs dos planos pré-registrados: marcador <code>@pytest.mark.ae</code> e guarda no CI</td><td>O verificador mostrou que os AEs já são testados sem rótulo (o AE1 do plano de aberturas está em <code>tests/test_opening.py:802</code>). A guarda dá rastreabilidade, não força. A ideia 4 pega o teste fraco de forma mais direta.</td></tr>
+    <tr><td>4</td><td>Quem escreve o teste não escreve o código: sessão cega no dispatcher</td><td>Dobra as sessões por issue, e testes escritos só a partir do plano tendem a errar a interface. Custo alto para o ganho. A ideia 4 ataca o mesmo problema (teste que espelha o código) por uma fração do custo.</td></tr>
+    <tr><td>5</td><td>Qualificar os dublês contra o HA real, a cada versão</td><td>Gravar o comportamento real para vários dublês a cada versão é uma construção grande. Um teste de contrato só contra o Alert2 real cabe na camada de contêiner da ideia 3.</td></tr>
+    <tr><td>6</td><td>Canário noturno contra o HA novo e o beta, com a falha virando issue para o dispatcher</td><td>Rodar à noite é barato, mas abrir PR de adaptação sozinho é especulativo, e o diff com syrupy é exagero. Fica para quando a ideia 3 tiver o job no <code>main</code>.</td></tr>
+    <tr><td>7</td><td>Máquina de estados Hypothesis sobre apply, reload, rename, disable e restart</td><td>O Hypothesis não é dependência hoje, e a invariante é difícil de escrever sem a ideia 1. Depende da ideia 1: reaproveita a função dela e vem depois.</td></tr>
+    <tr><td>8</td><td>Dias reais gravados de uma casa como replay da integração inteira, com checksum por instante</td><td>Prende a aceitação a uma casa específica, e o pururu tem de ser testado de forma genérica. A linha do tempo de hashes da integração inteira também é frágil e cara de manter. A parte que continua genérica, mais traços no replay do <code>Detector</code> como <code>purifier_day.csv</code>, é uma convenção, não uma direção.</td></tr>
+    <tr><td>9</td><td>Um ano simulado por execução</td><td>Depende das ideias 1, 7 e da máquina de estados, e um gerador de um ano de eventos é um harness grande.</td></tr>
+    <tr><td>10</td><td>Transcrição da casa como golden file revisável</td><td>Para um projeto pequeno o golden é ruidoso, e agentes tendem a aceitar o diff sem ler. As ideias 2 e 1 dão a maior parte do valor.</td></tr>
+    <tr><td>11</td><td>Lista de equipamento mínimo: cada cenário com uma dependência quebrada</td><td>Aplicar a tabela a todo cenário é vago. A maioria desses comportamentos já tem teste dedicado, então o trabalho real é uma auditoria do que falta.</td></tr>
+    <tr><td>12</td><td>Matriz de cobertura funcional (feature × evento de ciclo de vida)</td><td>Sobrepõe as ideias 5 e 1. Um plugin que vira gate é exagero; um relatório em script é pequeno demais para uma direção.</td></tr>
+    <tr><td>13</td><td>Auditoria por mutação com mutmut, no diff do PR ou por release</td><td>É lenta como gate de PR. A auditoria única em <code>setup/</code> e <code>core/</code> tem valor, mas a ideia 4 entrega o mesmo sinal em todo PR por uma fração do custo.</td></tr>
+    <tr><td>14</td><td>Ordem de callbacks embaralhada por semente</td><td>Especulativa: nenhum flake de ordem foi registrado. A parte concreta, trocar as 100 voltas por espera até ocioso, é a ideia 6.</td></tr>
+    <tr><td>15</td><td>O AE vira arquivo de cenário, escrito às cegas, que precisa falhar no <code>main</code> (combinação)</td><td>Soma os custos das rejeitadas 1, 3 e 4. Só a parte que falha no <code>main</code> sobrevive, como ideia 4.</td></tr>
+    <tr><td>16</td><td>Bug de uma casa → export do recorder → transcrição → teste para sempre (combinação)</td><td>Soma partes especulativas (8 e 10) e parte de uma casa específica. O fluxo "bug vira teste" cabe como convenção nas histórias da ideia 2, reescrito na casa de referência.</td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+
+<footer class="composition-signal">Composed <time datetime="2026-10-01T21:40Z">2026-10-01T21:40Z</time> by ce-ideate from the prompt "testes de aceitacao robustos", grounded in <a href="https://github.com/thatsnotmynameio/pururu-ha">thatsnotmynameio/pururu-ha</a>.</footer>
+</main>
+</body>
+</html>

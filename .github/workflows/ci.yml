@@ -1,7 +1,8 @@
 # Every pull request's checks, each run only when the pull request changes
-# something it checks. changes.py reads the changed files: code (the
+# something it checks. .github/scripts/changes.py reads the changed files: code (the
 # integration, tests, the Python and Sonar settings) runs Build and Docs; docs
 # pages run Docs; hacs.json, the manifest or README.md run Validate (HACS);
+# tools/, pyproject.toml or uv.lock run Tools (the repo's own tools' tests);
 # agent and planning files (.claude/, CLAUDE.md, docs/plans/...) run nothing;
 # a workflow, or any file in no group, runs everything, as changes.py itself
 # does, decided here without running it. A check is skipped by its job's own
@@ -34,6 +35,7 @@ jobs:
       build: ${{ steps.classify.outputs.build }}
       docs: ${{ steps.classify.outputs.docs }}
       hacs: ${{ steps.classify.outputs.hacs }}
+      tools: ${{ steps.classify.outputs.tools }}
     steps:
       # The pull request's merge commit: its first parent is the current base
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,14 +46,15 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             files=$(git diff --name-only --no-renames HEAD^1 HEAD)
-            # changes.py never judges its own change: a broken fallback would skip the tests that catch it
-            if grep -qxF changes.py <<< "$files"; then
-              printf 'build=true\ndocs=true\nhacs=true\n' >> "$GITHUB_OUTPUT"
+            # changes.py never judges its own change: a broken fallback would skip the tests that catch it.
+            # Every check it can print is listed here: a check added there is added here too.
+            if grep -qxF .github/scripts/changes.py <<< "$files"; then
+              printf 'build=true\ndocs=true\nhacs=true\ntools=true\n' >> "$GITHUB_OUTPUT"
             else
-              printf '%s\n' "$files" | python3 changes.py pull_request >> "$GITHUB_OUTPUT"
+              printf '%s\n' "$files" | python3 .github/scripts/changes.py pull_request >> "$GITHUB_OUTPUT"
             fi
           else
-            python3 changes.py "$GITHUB_EVENT_NAME" >> "$GITHUB_OUTPUT"
+            python3 .github/scripts/changes.py "$GITHUB_EVENT_NAME" >> "$GITHUB_OUTPUT"
           fi
           cat "$GITHUB_OUTPUT"
 
@@ -71,9 +74,14 @@ jobs:
     if: needs.changes.outputs.hacs == 'true'
     uses: ./.github/workflows/validate.yml
 
+  tools:
+    needs: changes
+    if: needs.changes.outputs.tools == 'true'
+    uses: ./.github/workflows/tools.yml
+
   ok:
     name: CI ok
-    needs: [changes, build, docs, validate]
+    needs: [changes, build, docs, validate, tools]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

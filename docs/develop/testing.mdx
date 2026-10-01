@@ -100,7 +100,7 @@ async def test_starts_after_on_delay(ha: HomeAssistant, freezer: Any) -> None:
 | `docs/test_updating.py` | The Guide's update page (`getting-started/updating-to-0.2.1.mdx`): its examples, old and new: each step shows 0.1.23 then 0.2.1, each a part of its whole example; the whole example after sets up and the whole before is refused; each old form, as the page writes it, put back in the whole after is refused at its place, with the message the page quotes |
 | `docs/test_pages.py` | The pages that state what the code holds: the Develop pages' examples import modules that exist; the alerts page's Alert2 include is the one pururu asks for; the alert lights page's example sets up and its defaults are the defaults; the notifications page, and the door and appliance pages, list every ready-made notification or alert |
 | `test_release.py`, `test_fetch_hassfest.py` | The release and hassfest scripts |
-| `test_changes.py` | `changes.py`: which checks a pull request's changed files run, and every check off a pull request |
+| `test_changes.py` | `.github/scripts/changes.py`: which checks a pull request's changed files run, and every check off a pull request |
 | `test_sharding.py` | `PURURU_SHARD`: N shards cover every file once, stable whatever the order, a wrong value refused |
 | `tools/dispatcher/tests/test_dispatcher.py` | The issue dispatcher, in a `tests/` folder beside its script: the queue (order, blocked, slots), a session's end, promotion, the `gh` calls with recorded replies, worktrees and the session's command line, the usage limit (read from the log, the pause and its marker, the hold, the resume, across a restart), the lock, start, stop, the loop and its signals |
 

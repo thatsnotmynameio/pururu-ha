@@ -32,13 +32,14 @@ All in `.github/workflows/`:
 
 | Workflow | When | What |
 |---|---|---|
-| `ci.yml` (**CI**) | Every pull request | `changes.py` classifies the changed files, then calls Build, Docs and Validate as they need; **CI ok** fails when a check that ran failed or was cancelled |
-| `build.yml` (**Build**) | Called by CI and by Release | Three stages. Lint: `release.py check`, then `tests/test_code.py` (core's checks, the layer table, the docs tests' guard). Tests: the rest of `uv run --locked pytest --cov` in three parallel shards (`PURURU_SHARD`). SonarQube: their coverage combined, then the SonarQube Cloud scan |
+| `ci.yml` (**CI**) | Every pull request | `.github/scripts/changes.py` classifies the changed files, then calls Build, Docs, Validate and Tools as they need; **CI ok** fails when a check that ran failed or was cancelled |
+| `build.yml` (**Build**) | Called by CI and by Release | Three stages. Lint: `release.py check`, then `tests/test_code.py` (core's checks, the layer table, the docs tests' guard). Tests: the rest of `tests/` (`uv run --locked pytest tests --cov`) in three parallel shards (`PURURU_SHARD`). SonarQube: their coverage combined, then the SonarQube Cloud scan |
 | `docs.yml` (**Docs**) | Called by CI | Two jobs in parallel: `pnpm install --frozen-lockfile` then `pnpm docs:check` (docs.page's check of this site), and the docs tests (`uv run --locked pytest -m docs`) |
 | `validate.yml` (**Validate**) | Called by CI and by Release, and weekly | HACS's own validation of the repository (`hacs/action`) |
+| `tools.yml` (**Tools**) | Called by CI | The tests of the repo's own tools, `tools/` (`uv run --locked pytest tools`): they share nothing with the integration, so Release doesn't run them |
 | `release.yml` (**Release**) | Every push to `main` | Build and Validate in full, then the tag and GitHub release |
 
-Build, Docs and Validate have no pull request trigger of their own, and each can also be started by hand.
+Build, Docs, Validate and Tools have no pull request trigger of their own, and each can also be started by hand.
 
 ### What runs on a pull request
 
@@ -46,16 +47,17 @@ CI runs a check only when the pull request changes something it checks. A skippe
 
 | The pull request changes | What runs |
 |---|---|
-| Code: `custom_components/`, `tests/`, `pyproject.toml`, `uv.lock`, `ruff.toml`, `mypy.ini`, `fetch_hassfest.py`, `release.py`, `sonar-project.properties` | Build and Docs |
+| Code: `custom_components/`, `tests/`, `pyproject.toml`, `uv.lock`, `ruff.toml`, `mypy.ini`, `fetch_hassfest.py`, `release.py`, `sonar-project.properties` | Build and Docs (`pyproject.toml` and `uv.lock` run Tools too) |
 | The site: `docs/**/*.mdx`, `docs.json`, `package.json`, `pnpm-lock.yaml` | Docs |
 | What HACS reads: `hacs.json`, `custom_components/pururu/manifest.json`, `README.md` | Validate (the manifest runs Build and Docs too, as code) |
+| The repo's own tools: `tools/` | Tools |
 | Agent and planning files: `.claude/`, `.compound-engineering/`, `CLAUDE.md`, `CONCEPTS.md`, `STRATEGY.md`, `docs/plans/`, `docs/solutions/`, `docs/superpowers/`, `docs/ideation/` | Nothing but **CI ok** |
 | A workflow (`.github/workflows/`), or any file in none of these | Everything |
 
 To see what your changes run:
 
 ```sh
-git diff --name-only origin/main... | python3 changes.py pull_request
+git diff --name-only origin/main... | python3 .github/scripts/changes.py pull_request
 ```
 
 CodeQL isn't part of CI: it runs on every pull request (see [Security](#security)).

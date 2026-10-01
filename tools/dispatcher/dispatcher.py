@@ -17,9 +17,10 @@ pass), or `needs attention` (the session ended without one), or `paused` (the Cl
 usage limit stopped it). A pause holds every start until a minute past the limit's
 reset, or, with no reset known, until the next poll tries one session. Past the hold,
 paused issues resume first, oldest first: the same conversation, in the same worktree.
-Logs and the lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions that
-ended, as a poll would, then stops the others and marks their issues `needs attention`;
-paused issues stay paused, and the next start resumes them from GitHub alone.
+Every line it prints carries the time; each poll reports what it found. Logs and the
+lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll
+would, then stops the others and marks their issues `needs attention`; paused issues
+stay paused, and the next start resumes them from GitHub alone.
 """
 
 import argparse
@@ -54,6 +55,7 @@ class Issue:
     number: int
     labels: frozenset[str] = frozenset()
     blocked: int = 0
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -277,6 +279,28 @@ def restore(markers: Iterable[Marker], now: float) -> Hold:
     return hold if hold.probe or hold.holds(now) else Hold()
 
 
+def queue_lines(ready: Iterable[Issue], running: set[int], picked: list[int],
+                slots: int, held: bool = False) -> list[str]:
+    """What happens to each ready issue this poll: started, blocked, waiting or running."""
+    in_use = len(running) + len(picked)
+    lines = []
+    for issue in ready:
+        name = f'#{issue.number} "{issue.title}"' if issue.title else f"#{issue.number}"
+        if issue.number in picked:
+            fate = "dispatching"
+        elif IN_PROGRESS in issue.labels or issue.number in running:
+            fate = "already in progress"
+        elif issue.blocked:
+            plural = "s" if issue.blocked > 1 else ""
+            fate = f"blocked by {issue.blocked} open issue{plural}, skipped"
+        elif held:
+            fate = "waiting for the Claude usage limit to reset"
+        else:
+            fate = f"waiting for a free session ({in_use} of {slots} in use)"
+        lines.append(f"{name}: {fate}")
+    return lines
+
+
 def orphans(in_progress: Iterable[Issue], worktrees: Mapping[int, list[str]]) -> list[Move]:
     """At start no session runs, so every issue in progress lost its session: it needs attention."""
     return [needs_attention(issue.number, "this issue was in progress with no session running "
@@ -301,6 +325,7 @@ ISSUES = """query($owner: String!, $name: String!, $login: String!, $label: Stri
            orderBy: {field: CREATED_AT, direction: ASC}) {
       nodes {
         number
+        title
         labels(first: 30) { nodes { name } }
         issueDependenciesSummary { blockedBy }
         closedByPullRequestsReferences(first: 10) {
@@ -371,7 +396,8 @@ class GitHub:
         found = self._graphql(ISSUES, login=self.login(), label=label)["issues"]["nodes"]
         return [(Issue(node["number"],
                        frozenset(tag["name"] for tag in node["labels"]["nodes"]),
-                       node["issueDependenciesSummary"]["blockedBy"]),
+                       node["issueDependenciesSummary"]["blockedBy"],
+                       node.get("title") or ""),
                  tuple(PullRequest(pr["number"], pr["url"])
                        for pr in node["closedByPullRequestsReferences"]["nodes"]
                        if pr["state"] == "OPEN" and not pr["isCrossRepository"]))
@@ -394,15 +420,18 @@ class GitHub:
         code, _, _ = self.run(["pr", "checks", str(pr), "--required"])
         return code == 0
 
-    def ensure_labels(self) -> None:
-        """Create the dispatcher's labels that the repository doesn't have yet."""
+    def ensure_labels(self) -> list[str]:
+        """Create the dispatcher's labels that the repository doesn't have yet; say which."""
         present = {label["name"]
                    for label in json.loads(self._ok(["label", "list", "--limit", "500",
                                                      "--json", "name"]))}
+        created = []
         for name, (color, description) in LABELS.items():
             if name not in present:
                 self._ok(["label", "create", name, "--color", color, "--description",
                           description])
+                created.append(name)
+        return created
 
     def marker(self, issue: int) -> Marker | None:
         """A paused issue's newest valid marker among the `gh` user's comments, if any.
@@ -484,6 +513,7 @@ class Running:
     log: Path
     process: Process
     since: int = 0  # where this session's output starts in the issue's log
+    started: float = 0.0  # time.time() when it started
     resumed: Marker | None = None  # the marker it was resumed from
 
 
@@ -580,7 +610,7 @@ class Sessions:
             process = self.spawn(["claude", "-p", *args, *FLAGS],
                                  cwd=worktree, stdin=subprocess.DEVNULL, stdout=output,
                                  stderr=subprocess.STDOUT, start_new_session=True)
-        return Running(issue, branch, worktree, log, process, since, resumed)
+        return Running(issue, branch, worktree, log, process, since, time.time(), resumed)
 
     def _events(self, running: Running) -> list[dict[str, Any]]:
         """This session's part of the log as its top-level `stream-json` events, in order.
@@ -637,11 +667,16 @@ SESSIONS = 2
 EVERY = 300
 
 
+def stamp(line: str) -> None:
+    """Print a progress line with the time, at once: someone may be watching the terminal."""
+    print(f"{time.strftime('%H:%M:%S')} {line}", flush=True)
+
+
 class Dispatcher:
     """Applies each poll's actions through GitHub and the sessions; owns the running sessions."""
 
     def __init__(self, gh: GitHub, sessions: Sessions, slots: int,
-                 say: Callable[[str], None] = print,
+                 say: Callable[[str], None] = stamp,
                  clock: Callable[[], float] = time.time) -> None:
         """Up to `slots` sessions; progress lines through `say`; the wall clock through `clock`."""
         self.gh = gh
@@ -655,13 +690,23 @@ class Dispatcher:
         self.pending: list[Action] = []  # ended sessions' verdicts that failed: the next poll's
 
     def start(self) -> None:
-        """Create the missing labels; the issues left in progress need attention.
+        """Say what it watches, create the missing labels, mark the issues left in progress.
 
         The hold comes back from the paused issues' markers; one without a valid marker is left
         to the first resume, which moves it to needs attention.
         """
-        self.gh.ensure_labels()
+        self.say(f"dispatcher: watching the open issues {self.gh.login()} opened and labelled "
+                 f"`ready`, up to {self.slots} sessions at once")
+        created = self.gh.ensure_labels()
+        self.say("dispatcher: labels: " + ("; ".join(f"created the label `{name}`"
+                                                     for name in created)
+                                           or f"all {len(LABELS)} in place"))
         stranded = [issue for issue, _ in self.gh.issues(IN_PROGRESS)]
+        if not stranded:
+            self.say("dispatcher: no issue left in progress by an earlier run")
+        for issue in stranded:
+            self.say(f"dispatcher: #{issue.number} was left in progress with no session running:"
+                     " it needs attention")
         for move in orphans(stranded, self.sessions.worktrees() if stranded else {}):
             self.apply(move)
         now = self.clock()
@@ -703,6 +748,7 @@ class Dispatcher:
         clock is read once: an unknown reset holds until this `now`, so this poll's tick too.
         """
         now = self.clock()
+        self.say("dispatcher: poll: reading GitHub...")
         self.pending = [action for action in self.pending if not self.apply(action)]
         try:
             snapshot, over = self.snapshot()
@@ -711,14 +757,33 @@ class Dispatcher:
             return
         for running in over:
             del self.running[running.issue]
+            self.say(f"dispatcher: #{running.issue} session ended "
+                     f"(exit code {running.process.returncode}), log {running.log}")
         hold = self.hold
         for session in snapshot.ended:
             if session.limit:
                 hold = hold.extend(session.limit.reset, now)
         if hold != self.hold:
             self.held(hold)
+        blocked = sum(1 for issue in snapshot.ready if issue.blocked)
+        self.say(f"dispatcher: poll: {len(snapshot.ready)} ready ({blocked} blocked), "
+                 f"{len(snapshot.paused)} paused, {len(self.running)} running, "
+                 f"{len(snapshot.reviews)} in review")
+        for running in self.running.values():
+            minutes = int((now - running.started) // 60)
+            self.say(f"dispatcher: #{running.issue} still running ({minutes} min), "
+                     f"log {running.log}")
+        for review in snapshot.reviews:
+            self.say(f"dispatcher: #{review.issue} in review: "
+                     + ("its required checks pass" if review.passing
+                        else "its required checks don't all pass yet"))
         self.settle(snapshot.ended)
-        for action in tick(snapshot, set(self.running), self.slots, now, self.hold):
+        actions = tick(snapshot, set(self.running), self.slots, now, self.hold)
+        picked = [action.issue for action in actions if isinstance(action, Dispatch | Resume)]
+        for line in queue_lines(snapshot.ready, set(self.running), picked, self.slots,
+                                self.hold.holds(now)):
+            self.say(f"dispatcher: {line}")
+        for action in actions:
             self.apply(action)
         if not self.hold.holds(now):
             self.hold = Hold()
@@ -763,6 +828,7 @@ class Dispatcher:
         """
         self.gh.move(Move(issue, (READY, NEEDS_ATTENTION), (IN_PROGRESS,)))
         self.say(f"dispatcher: #{issue} -> {IN_PROGRESS}")
+        self.say(f"dispatcher: #{issue}: fetching origin/main and creating its worktree...")
         try:
             running = self.sessions.start(issue)
         except (OSError, subprocess.CalledProcessError) as error:
@@ -772,7 +838,9 @@ class Dispatcher:
                                        f"the session could not start: {str(detail).strip()}"))
             return
         self.running[issue] = running
-        self.say(f"dispatcher: #{issue} running in {running.worktree}, log {running.log}")
+        pid = getattr(running.process, "pid", "?")
+        self.say(f"dispatcher: #{issue}: claude started (PID {pid}) in {running.worktree}, "
+                 f"log {running.log}")
 
     def resume(self, issue: int) -> None:
         """In progress, then the paused conversation; one that cannot resume needs attention.
@@ -865,8 +933,12 @@ def serve(boss: Dispatcher, every: float) -> None:
     signal.signal(signal.SIGTERM, stop)
     try:
         boss.start()
+        boss.say(f"dispatcher: a poll every {every:g}s; Ctrl-C stops")
         while not stopping.is_set():
             boss.poll()
+            if not stopping.is_set():
+                upcoming = time.strftime("%H:%M:%S", time.localtime(time.time() + every))
+                boss.say(f"dispatcher: next poll at {upcoming}")
             stopping.wait(every)
     finally:
         boss.say("dispatcher: stopping")
