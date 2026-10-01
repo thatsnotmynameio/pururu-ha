@@ -89,10 +89,10 @@ def find(index: Index, here: str, ref: Ref) -> Target | None:
     return index.get(here if ref.device is None else ref.device, {}).get(ref.key)
 
 
-# The domains of entities, to tell an entity ID from <device>.<key>: a
-# device keyed as one is told apart by being in devices
-# The domains an entity ID begins with: HA's platforms, and the helpers and
-# generated items that aren't one (pururu's own scripts and automations among them)
+# The domains an entity ID begins with, to tell one from <device>.<key>: HA's
+# platforms, and the helpers and generated items that aren't one (pururu's own
+# scripts and automations among them). A device keyed as a domain is still a
+# device: the hint is asked only of a reference whose device isn't in devices.
 _DOMAINS = frozenset(platform.value for platform in Platform) | {
     "automation",
     "counter",
