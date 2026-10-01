@@ -166,6 +166,7 @@
       "program_cycles_total": {"name": "Ciclos de {program}", "unit_of_measurement": "ciclos"},
       "program_runtime_total": {"name": "Tempo de {program}"},
       "reaction_triggered_total": {"name": "Disparos de {reaction}", "unit_of_measurement": "disparos"},
+      "button_triggered_total": {"name": "Disparos de {button}", "unit_of_measurement": "disparos"},
       "runtime_today": {"name": "Tempo ligado hoje"},
       "runtime_week": {"name": "Tempo ligado na semana"},
       "runtime_month": {"name": "Tempo ligado no mês"},

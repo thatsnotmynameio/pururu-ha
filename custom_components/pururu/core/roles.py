@@ -13,7 +13,11 @@ if TYPE_CHECKING:  # feature.py imports this module
 
 @dataclass(frozen=True)
 class Configured:
-    """Its entity keys are its block's keys, all on this platform, named by each block's `name`."""
+    """Its block's keys are entity keys on this platform, named by each block's `name`.
+
+    Items may add keys of their own beside them, one item per block key (a
+    button's total); an aspect sits only inside an item, never at the block.
+    """
 
     platform: Platform
 

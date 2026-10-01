@@ -423,10 +423,13 @@ def test_each_role_at_most_once(features: dict[str, Any]) -> None:
         assert len({type(each) for each in feature.roles}) == len(feature.roles), name
 
 
-def test_configured_and_items_never_together(features: dict[str, Any]) -> None:
-    """A configured block's keys are its entity keys; an item block's keys are items: not both."""
+def test_a_configured_builders_items_are_its_keys(features: dict[str, Any]) -> None:
+    """A configured block's keys are its entity keys: items beside them (a button's total) are one per key, its slug the key."""
     for name, feature in features.items():
-        assert not (role(feature, "Configured") and role(feature, "Items")), name
+        if role(feature, "Configured") is None or (items := role(feature, "Items")) is None:
+            continue
+        block = feature.schema(feature.example)
+        assert [item.slug for item in items.of(block)] == list(block), name
 
 
 def test_a_device_key_neither_acts_nor_derives(ha: HomeAssistant) -> None:
@@ -630,6 +633,7 @@ def test_the_aspects_each_builder_offers(features: dict[str, Any]) -> None:
         "window": {"statistics", "alerts"},
         "programs": {"statistics"},
         "reactions": {"statistics"},
+        "buttons": {"statistics"},
     }
 
 
@@ -694,11 +698,14 @@ def test_mount_skips_a_place_without_a_check(features: dict[str, Any]) -> None:
 
 
 def test_a_configured_builder_offers_no_block_aspect(features: dict[str, Any]) -> None:
-    """A configured block's keys are its entity keys: one keyed as an aspect is an entity."""
+    """A configured block's keys are its entity keys: one keyed as an aspect is an entity, so an aspect sits only inside an item."""
     aspects_of = module("setup.catalogue").aspects_of
+    each = module("core.feature").EACH
     for name, feature in features.items():
         if role(feature, "Configured") is not None:
-            assert not aspects_of(feature), name
+            for aspect in aspects_of(feature):
+                for place in aspect.places(feature, name):
+                    assert place.path[:1] == (each,), (name, aspect.key, place.path)
 
 
 def test_a_counter_is_totalled(features: dict[str, Any]) -> None:
@@ -712,7 +719,7 @@ def test_a_counter_is_totalled(features: dict[str, Any]) -> None:
     catalogue = module("setup.catalogue")
     feature_module = module("core.feature")
     counting = [name for name, feature in features.items() if role(feature, "Counters")]
-    assert set(counting) == {"appliance", "door", "window", "programs", "reactions"}
+    assert set(counting) == {"appliance", "door", "window", "programs", "reactions", "buttons"}
     for name in counting:
         feature = features[name]
         block = catalogue.mount(feature, name, full(name, feature))

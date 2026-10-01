@@ -8,6 +8,9 @@ configuration names a sensor and the value that counts as a press.
 No press nobody made: only a change into the value presses, once HA runs,
 from a real reading (see `pressed`). A value written again never does: a
 sensor that holds its value and is rewritten would press by itself.
+
+Each button counts its presses, all time (`<key>_triggered_total`), and its
+`statistics:` asks for that count per period, as a reaction's.
 """
 
 from collections.abc import Hashable, Iterator, Mapping
@@ -35,18 +38,24 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send,
+)
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util.signal_type import SignalType
 
 # Not `from ..aspects.programs import …`: the package import reaches this module
 # through features/__init__ while aspects.programs is still loading
 from ..aspects import programs
 from ..const import CONF_DEVICES
 from ..core.entity import PururuEntity
-from ..core.feature import TEXT, Device, Feature, state_text
+from ..core.feature import EACH, TEXT, Device, Feature, Item, Path, at, state_text
 from ..core.generated import SCRIPTS
-from ..core.roles import Configured
+from ..core.roles import Configured, Counted, Counters, Items
 from ..core.vocabulary import NO_READING
 from . import standing
+from .cycle.totals import CyclesTotal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,6 +102,30 @@ ITEM = vol.Schema(
 
 # A schema of its own: ALLOW_EXTRA would let a key that isn't a slug through
 SCHEMA = vol.All(vol.Schema({cv.slug: ITEM}), vol.Length(min=1))
+# Each button's own keys, beside the button: its presses, all time
+PER_BUTTON: dict[str, Platform] = {"triggered_total": Platform.SENSOR}
+
+
+def _item(key: str, button: Mapping[str, Any]) -> Item:
+    return Item(slug=key, name=button["name"])
+
+
+def _item_at(block: Any, path: Path) -> Item:
+    """The button at `path` of the block."""
+    return _item(path[-1], at(block, path))
+
+
+def _items(config: Mapping[str, Any]) -> list[Item]:
+    return [_item(key, button) for key, button in config.items()]
+
+
+# The statistics aspect meters it, `statistics:` in each button
+COUNTERS = Counters((Counted(needs={"triggered": None}, at=(EACH,), item=_item_at),))
+
+
+def pressed_signal(device: Device, item: Item) -> SignalType[()]:
+    """Each press of the button `item` is sent here, for its total."""
+    return SignalType(device.object_id(item.key("pressed")))
 
 
 class Button(PururuEntity, ButtonEntity):
@@ -103,6 +136,7 @@ class Button(PururuEntity, ButtonEntity):
     ) -> None:
         """The button `entity_key` of `device`, as configured."""
         self._identify(device, Platform.BUTTON, entity_key, button["name"])
+        self._pressed = pressed_signal(device, _item(entity_key, button))
         self._entity = button["entity"]
         self._state = button["state"]
         # The unique ID of its program's script; None without a program
@@ -152,7 +186,11 @@ class Button(PururuEntity, ButtonEntity):
         generated and idle; running, held out (HA's restored placeholder) or
         not loaded yet start nothing. Not awaited: a start single mode refuses
         would wait for the running program's next step.
+
+        Every press reaches here (HA's _async_press_action is final), so it is
+        counted first, whatever the program does.
         """
+        async_dispatcher_send(self.hass, self._pressed)
         entry = self.platform.config_entry
         if self._script is None or entry is None:
             return
@@ -179,13 +217,36 @@ class Button(PururuEntity, ButtonEntity):
         )
 
 
+class TriggeredTotal(CyclesTotal):
+    """A button's presses, all time; a disabled button presses nothing, so it counts nothing."""
+
+    def __init__(self, device: Device, *, item: Item) -> None:
+        """Count the presses of the button `item`."""
+        super().__init__(
+            device, source=item.slug, item=item, entity_key="triggered_total"
+        )
+        self._pressed = pressed_signal(device, item)
+
+    @override
+    def _watch(self) -> None:
+        """Count each press its button sends."""
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._pressed, self._press)
+        )
+
+    @callback
+    def _press(self) -> None:
+        self._cycles += 1
+        self.async_write_ha_state()
+
+
 def build(
     hass: HomeAssistant,
     device: Device,
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """A button per key of the block; none on a pururu sensor.
+    """A button and its total per key of the block; neither on a pururu sensor.
 
     The configuration refuses sensor.pururu_…; a pururu sensor renamed in the
     UI gets past that, and only the registry still knows it is ours.
@@ -200,6 +261,7 @@ def build(
             )
             continue
         buttons.append(Button(device, entity_key, button))
+        buttons.append(TriggeredTotal(device, item=_item(entity_key, button)))
     return buttons
 
 
@@ -241,5 +303,5 @@ BUTTONS = Feature(
         }
     },
     namespace="button",
-    roles=(Configured(Platform.BUTTON),),
+    roles=(Configured(Platform.BUTTON), Items(PER_BUTTON, _items), COUNTERS),
 )

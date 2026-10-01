@@ -674,6 +674,14 @@
   ],
   [
    "sensor",
+   "pururu_greenhouse_button_bell_triggered_total"
+  ],
+  [
+   "sensor",
+   "pururu_greenhouse_button_clean_triggered_total"
+  ],
+  [
+   "sensor",
    "pururu_greenhouse_program_executable_clean_cycles_month"
   ],
   [
