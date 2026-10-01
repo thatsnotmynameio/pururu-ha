@@ -63,7 +63,7 @@ def test_quality_scale_covers_every_rule() -> None:
         assert status.get("comment"), f"{rule}: {status['status']} without a comment"
 
 
-PLATFORMS = {"sensor", "binary_sensor", "switch", "light"}
+PLATFORMS = {"sensor", "binary_sensor", "button", "switch", "light"}
 
 
 def imports_of(path: Path) -> set[str]:
@@ -138,6 +138,8 @@ ALSO: dict[str, tuple[str, ...]] = {
     "device_keys/__init__": ("aspects.alerts", "aspects.programs"),
     # a reaction's then names an executable program (programs.executable) and starts its script (programs.script_id)
     "device_keys/reactions": ("aspects.programs",),
+    # a button's program names an executable program and starts its script (programs.script_id)
+    "features/buttons": ("aspects.programs",),
     # HA's entry points take the typed entry: hassfest's strict-typing check wants
     # it named *ConfigEntry, and PururuConfigEntry is core/runtime.py's, as for the platforms
     "__init__": ("core.runtime",),

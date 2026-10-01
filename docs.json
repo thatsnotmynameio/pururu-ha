@@ -45,7 +45,8 @@
         { "title": "door", "href": "/features/door" },
         { "title": "window", "href": "/features/window" },
         { "title": "lights", "href": "/features/lights" },
-        { "title": "switches", "href": "/features/switches" }
+        { "title": "switches", "href": "/features/switches" },
+        { "title": "buttons", "href": "/features/buttons" }
       ]
     },
     {

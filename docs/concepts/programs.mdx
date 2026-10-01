@@ -11,7 +11,7 @@ A **program** is a named kind of run. There are two:
 | | Detected | Executable |
 |---|---|---|
 | **pururu knows it runs** | from a reading: a band of the power, with `on_delay`/`off_delay` | because it runs it: the steps in `sequence` |
-| **Can be started** | no | yes: a reaction's `then`, `script.turn_on` |
+| **Can be started** | no | yes: a reaction's `then`, a [button](/features/buttons)'s press, `script.turn_on` |
 | **Where** | in the block of the feature whose reading it reads | at the device |
 
 ## Where they sit
@@ -329,7 +329,7 @@ A program is a method of its device. It acts only on its device's entities, and 
 
 - **No other device, no real entity.** To act on a real switch or light, add it to the device under [`switches`](/features/switches) or [`lights`](/features/lights).
 - **No templates, no events, no other actions.** Its steps are the four above.
-- **No triggers of its own.** A [reaction](/concepts/reactions#starting-a-program)'s `then` starts it, or you, an automation, a voice assistant.
+- **No triggers of its own.** A [reaction](/concepts/reactions#starting-a-program)'s `then` or a [button](/features/buttons)'s press starts it, or you, an automation, a voice assistant.
 
 ### The script
 
@@ -362,7 +362,7 @@ Each run of a program is a **cycle**, as an [appliance](/features/appliance)'s: 
 
 They're named after the program: **Estufa Limpar cycles**.
 
-- **Every run counts**, whoever started it: a [reaction](/concepts/reactions#starting-a-program), you, a voice assistant. What's measured is the script.
+- **Every run counts**, whoever started it: a [reaction](/concepts/reactions#starting-a-program), a [button](/features/buttons), you, a voice assistant. What's measured is the script.
 - **A pururu reload while it runs** counts the run once, with its real start.
 - **A restart of Home Assistant while it runs** loses the run, as Home Assistant does: it isn't counted. Its runtime until then is.
 - `cycles_total` and `runtime_total` survive restarts and are `total_increasing`, so Home Assistant keeps long-term statistics for them. `runtime_total` is brought up to date every minute.

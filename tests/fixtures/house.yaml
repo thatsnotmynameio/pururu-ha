@@ -130,6 +130,9 @@ devices:
     name: Estufa
     switches:
       sprinkler: {entity: switch.greenhouse_sprinkler, name: Irrigador}
+    buttons:
+      clean: {entity: sensor.greenhouse_remote_action, state: 1_single, name: Limpar, program: clean}
+      bell: {entity: sensor.greenhouse_remote_action, state: 2_single, name: Sino}
     programs:
       executable:
         clean:

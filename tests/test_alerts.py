@@ -104,7 +104,7 @@ async def test_alerts_alone_are_not_a_feature(
                                       "alerts": {"overload": OVERLOAD}}})
     # Only the real features, in FEATURES' order: alerts is none of them
     assert ("a device needs at least one feature "
-            "(appliance, door, window, lights, switches)" in caplog.text)
+            "(appliance, door, window, lights, switches, buttons)" in caplog.text)
 
 
 async def test_a_when_of_no_entity_key_names_it(

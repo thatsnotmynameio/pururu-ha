@@ -26,6 +26,9 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A door or window whose `contact` isn't a `binary_sensor.*` entity (`sensor.x is not a binary_sensor`) or is a pururu binary sensor (`binary_sensor.pururu_… is a pururu binary_sensor: name the real one`); an event entity whose `entity` isn't an `event.*` entity, whose `types` is empty or means something other than `opening`, `denied` or `ring`, or whose `fields` names something other than `who`, `how` or `direction`.
 - A door's or window's `events`, as before 0.2.1: `'events' is an invalid option`. Write `event_entities`.
 - A light whose `entity` isn't a `light.*` or `switch.*` entity (`sensor.x is not a light or switch`), is a pururu light or switch, or has no `name` or an empty one.
+- A button whose `entity` isn't a `sensor.*` entity (`binary_sensor.x is not a sensor`) or is a pururu sensor, with no `name` or an empty one, or whose `state` is empty, `unavailable` or `unknown` (`unknown is not a value a person presses`).
+- A button's `program` that isn't one of its device's executable programs: `buttons: ler: regar is not an executable program of this device`.
+- Two buttons of one device on the same sensor and value: `buttons: extra: sensor.controle_biblioteca_action at 1_single is already button ler`. Give each its own value.
 - A real entity in both `switches` and `lights` of one device: `switches: switch.sonoff_abajur is already in lights`. Keep it in one of them.
 - An alert whose `when` isn't an entity of another feature of the device: `alerts: appliance_nothing is not an entity key of another feature of this device`. Write it as the entity ID ends after the device key, with its namespace (`appliance_power`, not `power`).
 - An alert with both `state` and `above`/`below`, with neither, with `above` not lower than `below`, or with an unknown `priority`.
@@ -187,6 +190,16 @@ A switch's or a light's `entity:` names one of pururu's own entities that you re
 
 **Fix:** point `entity:` at the real switch or light, then reload pururu.
 
+### `… is a pururu sensor: name the real one; not creating …`
+
+```
+sensor.potencia is a pururu sensor: name the real one; not creating button.pururu_biblioteca_button_ler
+```
+
+A button's `entity:` names one of pururu's own sensors that you renamed in the UI, so it no longer starts with `sensor.pururu_`. A [button](/features/buttons) reads a real sensor.
+
+**Fix:** point `entity:` at the real sensor, then reload pururu.
+
 ### `… is this switch itself: name the real one` (or light)
 
 ```
@@ -222,6 +235,16 @@ An [executable program](/concepts/programs#executable-programs) was started whil
 - `last_cycle_energy` is `unknown` for a cycle when the energy counter had no value at the start or end of the cycle, or when its unit isn't an energy unit.
 - A period sensor (`runtime_month`, `cycles_year`…) starts from its total's current value. If the total has no value yet, the period sensor waits for it.
 - A door's `last_opened_by`, `last_opened_via` and `last_direction` are `unknown` after an opening no event described: no `opening` event came within `match` of it. Check that the event's `types` names its `event_type` exactly, and widen `match` if your controller reports late.
+
+### A button isn't pressed by its remote
+
+A [button](/features/buttons) is pressed when its sensor **changes to** its `state`. Check, in the sensor's history, what the sensor shows when you press:
+
+- **The value is exactly the button's `state`**, case and all (`1_single`, not `single`).
+- **It goes back to another value between presses.** A sensor that keeps its value and only writes it again presses once: the same value again is never a press.
+- **It isn't `unavailable` or just restarted** at the moment you press. A value right after `unavailable`, or within 3 seconds of a sensor becoming `unknown`, is not a press, and nothing presses while Home Assistant starts.
+
+If the button is pressed but its program doesn't start, the program was already running or isn't generated: see [Executable programs](#executable-programs).
 
 ### A switch is `unavailable`
 
