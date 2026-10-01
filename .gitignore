@@ -5,3 +5,4 @@ __pycache__/
 .coverage
 coverage.xml
 .context/compound-engineering/
+.dispatch/
