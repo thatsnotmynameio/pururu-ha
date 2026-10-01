@@ -54,7 +54,23 @@
   ],
   [
    "binary_sensor",
+   "pururu_janela_quarto_window_alert_long_opening"
+  ],
+  [
+   "binary_sensor",
+   "pururu_janela_quarto_window_alert_no_opening"
+  ],
+  [
+   "binary_sensor",
    "pururu_janela_quarto_window_open"
+  ],
+  [
+   "binary_sensor",
+   "pururu_porta_frente_door_alert_long_opening"
+  ],
+  [
+   "binary_sensor",
+   "pururu_porta_frente_door_alert_no_opening"
   ],
   [
    "binary_sensor",

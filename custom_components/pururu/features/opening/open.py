@@ -95,6 +95,14 @@ class Open(CycleSource, BinarySensorEntity, RestoreEntity):
         """The current opening's start, and whether an event described it."""
         return OpeningStart(since=self._data.since, described=self._described)
 
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """While open, when the opening started: the appliance's `running`'s `cycle_start`."""
+        if not self._attr_is_on or self._data.since is None:
+            return None
+        return {"cycle_start": self._data.since}
+
     @override
     async def async_added_to_hass(self) -> None:
         """Restore the state and the opening; follow the contact once HA has started.

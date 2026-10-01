@@ -101,7 +101,7 @@ An alert needs **either** `state` **or** `above`/`below`, not both.
 
 ## Ready-made alerts
 
-A feature may offer alerts for what usually goes wrong, such as the appliance's `offline` or `long_cycle`. They're **off** until you enable them in **that feature's own block**, under its `alerts`, one key each:
+A feature may offer alerts for what usually goes wrong, such as the appliance's `offline` or `long_cycle`, or a door's `no_opening`. They're **off** until you enable them in **that feature's own block**, under its `alerts`, one key each:
 
 ```yaml
 appliance:
@@ -116,7 +116,7 @@ appliance:
 - Its defaults are its own too: its `for` (some need one), its `priority`, and texts of its own in Home Assistant's language, which `message` and `done_message` replace.
 - Each one is `binary_sensor.pururu_<key>_<namespace>_alert_<name>`, in the feature's namespace: `binary_sensor.pururu_clothes_washer_appliance_alert_offline`.
 - A [reaction](/concepts/reactions) may watch one (`when: appliance_alert_offline`). An alert can't: `alerts: appliance_alert_offline is an alert: an alert can't watch another`.
-- Which ones a feature offers, what each watches and its defaults: the [appliance's table](/features/appliance#ready-made-alerts).
+- Which ones a feature offers, what each watches and its defaults: each feature's page, such as the [appliance's](/features/appliance#ready-made-alerts) and the [door's](/features/door#ready-made-alerts) (a window's are the door's).
 
 ## Entity
 
