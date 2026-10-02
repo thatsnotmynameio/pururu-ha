@@ -2,9 +2,7 @@
 
 from typing import Any
 
-from homeassistant.core import Event
-
-from steps import Home
+from steps import Home, services
 
 POWER = "sensor.washer_power"
 RUNNING = "binary_sensor.pururu_washer_appliance_running"
@@ -38,10 +36,11 @@ def garden() -> dict[str, Any]:
 GROUPS = {"alerts": {"lights": {"groups": {"default": ["device.garden.lights.lantern"]}}}}
 
 
-def services(events: list[Event], entity_id: str) -> list[str]:
-    """The services called on `entity_id`, in order."""
-    return [event.data["service"] for event in events
-            if event.data["service_data"].get("entity_id") in (entity_id, [entity_id])]
+async def set_up_garden(home: Home) -> None:
+    """The garden, from its real entities off and the door closed."""
+    for real in (REAL_PUMP, REAL_DOOR, REAL_LANTERN):
+        await home.play(real, "off")
+    assert await home.setup({"devices": garden(), "config": GROUPS})
 
 
 async def test_a_cycle_runs_on_across_a_restart(home: Home) -> None:
@@ -61,10 +60,7 @@ async def test_a_cycle_runs_on_across_a_restart(home: Home) -> None:
 
 
 async def test_a_borrowed_light_is_borrowed_again(home: Home) -> None:
-    await home.play(REAL_PUMP, "off")
-    await home.play(REAL_DOOR, "off")
-    await home.play(REAL_LANTERN, "off")
-    assert await home.setup({"devices": garden(), "config": GROUPS})
+    await set_up_garden(home)
     home.calm.expect(GATE_OPEN)
     await home.play(REAL_PUMP, "on")
     assert home.state(GATE_OPEN) == "on"
@@ -74,21 +70,28 @@ async def test_a_borrowed_light_is_borrowed_again(home: Home) -> None:
 
 
 async def test_a_rename_is_kept(home: Home) -> None:
-    await home.play(REAL_PUMP, "off")
-    await home.play(REAL_DOOR, "off")
-    await home.play(REAL_LANTERN, "off")
-    assert await home.setup({"devices": garden(), "config": GROUPS})
+    await set_up_garden(home)
     await home.rename("switch.pururu_garden_switch_pump", "switch.my_pump")
     await home.restart()
     assert home.state("switch.my_pump") == "off"
     assert home.hass.states.get("switch.pururu_garden_switch_pump") is None
 
 
+async def test_a_restart_while_a_program_runs(home: Home) -> None:
+    """The restart stops the running script, as Home Assistant stopping does, and starts again."""
+    await set_up_garden(home)
+    home.calm.expect(GATE_OPEN)
+    calls = home.capture("call_service")
+    await home.play(REAL_DOOR, "on")
+    assert home.state(WATER) == "on"
+    await home.restart()
+    assert home.state(WATER) == "off"
+    await home.tick(60)
+    assert services(calls, REAL_PUMP) == ["turn_on"]
+
+
 async def test_the_generated_automations_and_scripts_run(home: Home) -> None:
-    await home.play(REAL_PUMP, "off")
-    await home.play(REAL_DOOR, "off")
-    await home.play(REAL_LANTERN, "off")
-    assert await home.setup({"devices": garden(), "config": GROUPS})
+    await set_up_garden(home)
     home.calm.expect(GATE_OPEN)
     await home.restart()
     calls = home.capture("call_service")

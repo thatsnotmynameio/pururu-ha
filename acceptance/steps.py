@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.const import EVENT_STATE_CHANGED
-from homeassistant.core import CoreState, Event, HomeAssistant, ServiceCall, callback
+from homeassistant.core import CoreState, Event, HomeAssistant, ServiceCall, State, callback
 from homeassistant.helpers import entity_registry as er, restore_state
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
@@ -55,6 +55,24 @@ async def wait() -> None:
     """Let everything that is ready run."""
     for _ in range(TURNS):
         await asyncio.sleep(0)
+
+
+def is_alert(entity_id: str) -> bool:
+    """Whether `entity_id` is a pururu alert: written or ready-made (docs/concepts/alerts.mdx)."""
+    return entity_id.startswith("binary_sensor.pururu_") and "_alert_" in entity_id
+
+
+def calls(events: list[Event], entity_id: str) -> list[tuple[str, dict[str, Any]]]:
+    """The services called on `entity_id` among `call_service` events, in order, with their data without it."""
+    return [(event.data["service"],
+             {key: value for key, value in event.data["service_data"].items() if key != "entity_id"})
+            for event in events
+            if event.data["service_data"].get("entity_id") in (entity_id, [entity_id])]
+
+
+def services(events: list[Event], entity_id: str) -> list[str]:
+    """The services called on `entity_id` among `call_service` events, in order."""
+    return [service for service, _data in calls(events, entity_id)]
 
 
 class Home:
@@ -111,17 +129,19 @@ class Home:
         test plugin's registries never save or load (StoreWithoutWriteLoad) and it
         never loads config entries, so a second Home Assistant would start without
         the user's renames or pururu's entry. So the restart stays on one instance.
+        Home Assistant stops its running scripts as it stops, so this stops them too.
         """
         hass = self.hass
+        await hass.services.async_call("script", "turn_off", {"entity_id": "all"}, blocking=True)
         await restore_state.async_get(hass).async_dump_states()
         [entry] = hass.config_entries.async_entries(DOMAIN)
         assert await hass.config_entries.async_unload(entry.entry_id)
-        await hass.async_block_till_done()
+        await wait()
         hass.set_state(CoreState.not_running)
         await restore_state.async_get(hass).async_load()
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_start()
-        await hass.async_block_till_done()
+        await wait()
 
     async def tick(self, seconds: float) -> None:
         """Move the clock by `seconds` and run what became due."""
@@ -137,17 +157,23 @@ class Home:
         self.hass.states.async_set(entity_id, state, attributes)
         await wait()
 
-    def state(self, entity_id: str) -> str:
-        """An entity's state; it must exist."""
+    def _get(self, entity_id: str) -> State:
         found = self.hass.states.get(entity_id)
         assert found is not None, f"no {entity_id}"
-        return found.state
+        return found
+
+    def state(self, entity_id: str) -> str:
+        """An entity's state; it must exist."""
+        return self._get(entity_id).state
 
     def attributes(self, entity_id: str) -> dict[str, Any]:
         """An entity's attributes; it must exist."""
-        found = self.hass.states.get(entity_id)
-        assert found is not None, f"no {entity_id}"
-        return dict(found.attributes)
+        return dict(self._get(entity_id).attributes)
+
+    def alerts_on(self) -> list[str]:
+        """The pururu alerts on now."""
+        return [state.entity_id for state in self.hass.states.async_all("binary_sensor")
+                if is_alert(state.entity_id) and state.state == "on"]
 
     async def rename(self, entity_id: str, new_entity_id: str) -> None:
         """The user changes an entity's ID in Home Assistant's settings."""
@@ -161,7 +187,7 @@ class Home:
         await self.hass.async_block_till_done()
 
     async def enable(self, entity_id: str) -> None:
-        """The user enables an entity again; Home Assistant reloads its entry after a delay."""
+        """The user enables an entity again (Home Assistant reloads its entry some 30 s later: tick past it)."""
         er.async_get(self.hass).async_update_entity(entity_id, disabled_by=None)
         await self.hass.async_block_till_done()
 
@@ -187,7 +213,6 @@ class Calm:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.alerts: list[str] = []
-        self.told: list[str] = []
         self.expected: set[str] = set()
         self.notify = async_mock_service(hass, *NOTIFY)
         hass.bus.async_listen(EVENT_STATE_CHANGED, self._changed)
@@ -196,8 +221,7 @@ class Calm:
     def _changed(self, event: Event) -> None:
         entity_id: str = event.data["entity_id"]
         old, new = event.data["old_state"], event.data["new_state"]
-        if (entity_id.startswith("binary_sensor.pururu_") and "_alert_" in entity_id
-                and new is not None and new.state == "on" and (old is None or old.state != "on")):
+        if (is_alert(entity_id) and new is not None and new.state == "on" and (old is None or old.state != "on")):
             self.alerts.append(entity_id)
 
     def expect(self, *caused: str) -> None:

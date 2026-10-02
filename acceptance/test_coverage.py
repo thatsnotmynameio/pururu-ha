@@ -132,7 +132,7 @@ async def test_an_aspect_no_device_uses_is_named(house: Home) -> None:
         "aspect forecast"]
 
 
-async def test_the_published_sources_are_read() -> None:
+def test_the_published_sources_are_read() -> None:
     now = published_now()
     assert {"appliance", "door", "window", "lights", "switches", "buttons"} <= now.features
     assert now.device_keys == {"programs", "reactions", "alerts"}

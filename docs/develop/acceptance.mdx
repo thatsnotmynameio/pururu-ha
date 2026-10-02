@@ -31,7 +31,7 @@ uv run --locked --project acceptance pytest acceptance
 
 The house starts **calm**. Before pururu sets up, every real entity it names gets a calm state (`CALM` in `acceptance/steps.py`): contacts closed, the fridge drawing its idle power, the washer at 0 W, the lights and switches off, the remote on a value no button listens for. The ready-made alerts that count time, such as the door's `no_opening`, take a `for` longer than any story. So right after setup no alert is on and nothing has been sent.
 
-The `home` fixture records every pururu alert that turns on and every notification sent to `notify.phone`. A story names what it causes with `home.calm.expect(...)`, alerts by entity ID and notifications by title; anything else fails the story at teardown, named. An alert nobody caused can't pass unseen or steal the light a story watches.
+The `home` fixture records every pururu alert that turns on and every notification sent to `notify.phone`. A story names what it causes with `home.calm.expect(...)`, alerts by entity ID and notifications by title; anything else fails the story at teardown, named. A title lets through every notification under it, so a story that causes one also asserts `home.calm.sent()`, the exact titles and messages sent. An alert nobody caused can't pass unseen or steal the light a story watches.
 
 ## The guard
 
@@ -53,7 +53,7 @@ A story takes the `house` fixture, the reference house set up from its calm stat
 |---|---|
 | `play(entity_id, state, attributes=None)` | A real device changes. Its attributes are kept unless given. |
 | `tick(seconds)` | Moves the clock and runs what became due. |
-| `restart()` | Stops Home Assistant and starts it again, carrying across only the states it saves itself. |
+| `restart()` | Stops Home Assistant and starts it again, carrying across only the states it saves itself. Running scripts stop, as they do when Home Assistant stops. |
 | `reload(block)` | Edits `configuration.yaml`'s `pururu:` block and calls `pururu.reload`. |
 | `rename(entity_id, new_entity_id)`, `disable(entity_id)`, `enable(entity_id)` | What the user does in Home Assistant's settings. |
 | `capture(*event_types)` | Records bus events, such as `call_service` or `automation_triggered`. |

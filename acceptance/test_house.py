@@ -13,22 +13,15 @@ LONG_CYCLE = "binary_sensor.pururu_washer_appliance_alert_long_cycle"
 CEILING = "light.pururu_living_room_light_ceiling"
 
 
-def alerts_on(home: Home) -> list[str]:
-    return [state.entity_id for state in home.hass.states.async_all("binary_sensor")
-            if state.entity_id.startswith("binary_sensor.pururu_") and "_alert_" in state.entity_id
-            and state.state == "on"]
-
-
 async def test_it_starts_calm(house: Home) -> None:
-    assert alerts_on(house) == []
+    assert house.alerts_on() == []
     assert house.calm.sent() == []
 
 
 async def test_a_quiet_day_stays_calm(house: Home) -> None:
     for _ in range(24):
         await house.tick(3600)
-    assert alerts_on(house) == []
-    assert house.calm.unexpected() == []
+    assert house.alerts_on() == []
 
 
 async def test_the_reaction_follows_the_washer(house: Home) -> None:
@@ -59,14 +52,24 @@ async def test_an_alert_nobody_caused_is_named(house: Home) -> None:
     for _ in range(3 * 24 + 1):
         await house.tick(3600)
     assert f"alert {DOOR_NO_OPENING}" in house.calm.unexpected()
-    house.calm.expect(*alerts_on(house))
+    house.calm.expect(*house.alerts_on())
+
+
+async def test_a_notification_nobody_caused_is_named(house: Home) -> None:
+    """A washer cycle sends `finished`; a story that didn't expect it is failed, the notification named."""
+    await house.play("sensor.washer_plug_power", "900")
+    await house.tick(60)
+    await house.play("sensor.washer_plug_power", "0")
+    await house.tick(120)
+    assert house.calm.unexpected() == ["notification Washer: The cycle finished."]
+    house.calm.expect("Washer")
 
 
 @pytest.mark.parametrize("turn", ["first", "second"])
 async def test_each_test_starts_from_the_calm_house(house: Home, turn: str) -> None:
     """Whatever ran before, the house is calm; this one leaves the door open long enough to alert."""
-    assert alerts_on(house) == []
+    assert house.alerts_on() == []
     house.calm.expect("binary_sensor.pururu_front_door_door_alert_long_opening")
     await house.play("binary_sensor.front_door_contact", "on")
     await house.tick(11 * 60)
-    assert alerts_on(house) == ["binary_sensor.pururu_front_door_door_alert_long_opening"]
+    assert house.alerts_on() == ["binary_sensor.pururu_front_door_door_alert_long_opening"]

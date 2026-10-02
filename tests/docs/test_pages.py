@@ -47,7 +47,7 @@ def test_the_develop_docs_examples_import_what_exists() -> None:
 
 FEATURES_PAGES = PROJECT / "docs/features"
 DEVICES_PAGE = PROJECT / "docs/concepts/devices-and-features.mdx"
-KINDS = {"feature": "features", "device key": "device_keys"}
+KINDS = {"feature": ("features", "FEATURES"), "device key": ("device_keys", "DEVICE_KEYS")}
 
 
 def differs(what: str, documented: set[str], code: set[str]) -> str:
@@ -76,15 +76,15 @@ def aspects_table() -> dict[str, tuple[str, set[str]]]:
 def test_every_feature_has_its_page(ha: HomeAssistant) -> None:
     """AE6: a feature without a page under docs/features/ fails, named."""
     pages = {page.stem for page in FEATURES_PAGES.glob("*.mdx")}
-    assert pages == set(module("features").FEATURES), differs(
-        "features with a page", pages, set(module("features").FEATURES))
+    features = set(module("features").FEATURES)
+    assert pages == features, differs("features with a page", pages, features)
 
 
 def test_the_aspects_table_lists_every_feature_and_device_key(ha: HomeAssistant) -> None:
     table = aspects_table()
-    for kind, package in KINDS.items():
+    for kind, (package, name) in KINDS.items():
         listed = {key for key, (its, _) in table.items() if its == kind}
-        code = set(getattr(module(package), package.upper()))
+        code = set(getattr(module(package), name))
         assert listed == code, differs(f"rows of kind {kind}", listed, code)
     assert {kind for kind, _ in table.values()} <= set(KINDS), table
 

@@ -5,12 +5,10 @@ and reads only what a pururu user sees: states, attributes, the notifications
 sent, the calls the real devices get.
 """
 
-from typing import Any
-
 from homeassistant.core import Event
 from homeassistant.helpers import entity_registry as er
 
-from steps import Home
+from steps import Home, calls, services
 
 # The washer
 POWER = "sensor.washer_plug_power"
@@ -39,19 +37,6 @@ PRESSES = "sensor.pururu_garden_button_water_triggered_total"
 WATER_CYCLES = "sensor.pururu_garden_program_executable_water_cycles_total"
 # The water program's delay, between turning the pump on and off
 WATERING = 10 * 60
-
-
-def calls(events: list[Event], entity_id: str) -> list[tuple[str, dict[str, Any]]]:
-    """The services called on the real `entity_id`, in order, with their data without it."""
-    return [(event.data["service"],
-             {key: value for key, value in event.data["service_data"].items() if key != "entity_id"})
-            for event in events
-            if event.data["service_data"].get("entity_id") in (entity_id, [entity_id])]
-
-
-def services(events: list[Event], entity_id: str) -> list[str]:
-    """The services called on the real `entity_id`, in order."""
-    return [service for service, _data in calls(events, entity_id)]
 
 
 def triggered(events: list[Event], automation: str) -> int:
@@ -151,6 +136,8 @@ async def test_f2_two_alerts_borrow_the_ceiling_and_give_it_back(house: Home) ->
     assert "alert" not in house.attributes(CEILING)
     assert [event.data for event in released] == [{"entity_id": CEILING}]
     assert ("turn_off", {}) not in calls(events, REAL_CEILING)[:-1]
+    assert [(call.data["title"], call.data["message"]) for call in house.calm.sent()] == [
+        (WASHER, "The cycle finished.")]
 
 
 async def test_f3_a_press_runs_the_water_program_once(house: Home) -> None:
@@ -184,6 +171,8 @@ async def test_f4_a_rename_and_a_disable_midway(house: Home) -> None:
     await start_cycle(house, renamed)
     await end_cycle(house, renamed)
     assert triggered(reactions, LAUNDRY_DONE) == 1
+    assert [(call.data["title"], call.data["message"]) for call in house.calm.sent()] == [
+        (WASHER, "The cycle finished.")]
 
     script = registry.async_get(WATER)
     assert script is not None
