@@ -23,8 +23,10 @@ in the same worktree.
 Every line it prints carries the time; each poll reports what it found. Logs, a record
 of each session and the lock are in tools/dispatcher/.state/. Ctrl-C, SIGTERM or an error
 judges the sessions that ended, as a poll would, and leaves the others running: their
-issues stay `in progress`, and the next start follows them; paused issues stay paused, and
-the next start resumes them from GitHub alone.
+issues stay `in progress`, and the next start follows them. A session that ended while no
+dispatcher ran is judged at the next start; one gone without a final result is paused as
+interrupted and resumes like any paused one. Paused issues stay paused, and the next start
+resumes them from GitHub alone.
 """
 
 import argparse
@@ -40,7 +42,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 ROOT = Path(__file__).resolve().parents[2]  # the checkout: tools/dispatcher/ is two below it
 READY = "ready"
@@ -205,6 +207,11 @@ class Ended:
     limit: Marker | None = None  # the usage limit stopped it, as its log says
     resumed: Marker | None = None  # the marker it was resumed from
     progress: Progress = Progress()  # where it stood when it ended, as its log says
+    branch: str = ""  # its branch, which a pause's marker names
+    final: bool = True  # its log holds a final result
+    conversation: str | None = None  # what a pause resumes: this attempt's, else `resumed`'s
+    stopped: bool = False  # `dispatcher.py stop` ended it, as its record says
+    at_start: bool = False  # judged where no dispatcher watched it end: at start, or by `stop`
 
 
 @dataclass(frozen=True)
@@ -314,17 +321,25 @@ def pause(session: Ended, marker: Marker, root: Path) -> Move:
 
 
 def judge(session: Ended, root: Path) -> list[Action]:
-    """A session ended: in review with an open pull request, paused at the limit, else attention.
+    """A session ended: its verdict, in one order wherever it is judged.
 
-    Each move is followed by its final report, from the marks the session's log left. Paths are
-    named under the checkout `root`.
+    An open pull request: in review. Else the usage limit: paused. Else, `stopped`: paused as
+    stopped. Else a final result: needs attention. Else, judged `at_start`: paused as
+    interrupted, as no dispatcher watched it end; at a poll it needs attention, so a session
+    that keeps dying never loops through resumes. A stopped or interrupted pause resumes the
+    session's conversation; without one it needs attention. Each move is followed by its final
+    report, from the marks the session's log left. Paths are named under the checkout `root`.
     """
     marks = session.progress.marks
-    if not session.prs and session.limit:
-        return [pause(session, session.limit, root),
-                Report(session.issue, Status(PAUSED, marks_paused(marks),
-                                             reset=session.limit.reset,
-                                             cause=session.limit.cause))]
+    marker = session.limit
+    if (marker is None and session.conversation is not None
+            and (session.stopped or (session.at_start and not session.final))):
+        marker = Marker(session.conversation, session.branch, None,
+                        STOPPED if session.stopped else INTERRUPTED)
+    if not session.prs and marker:
+        return [pause(session, marker, root),
+                Report(session.issue, Status(PAUSED, marks_paused(marks), reset=marker.reset,
+                                             cause=marker.cause))]
     if not session.prs:
         return [needs_attention(session.issue, "the session ended without a pull request.",
                                 f"Reason: {unrooted(session.reason, root)}",
@@ -413,9 +428,10 @@ def queue_lines(ready: Iterable[Issue], running: set[int], picked: list[int],
 
 def orphans(in_progress: Iterable[Issue], worktrees: Mapping[int, list[str]],
             root: Path) -> list[Move | Report]:
-    """At start no session runs, so every issue in progress lost its session: it needs attention.
+    """At start, the issues in progress no readable session record names: each needs attention.
 
-    Its comment's stage fails where the comment left it; its worktrees are named under `root`.
+    No session of theirs can be followed. Its comment's stage fails where the comment left it;
+    its worktrees are named under `root`.
     """
     actions: list[Move | Report] = []
     for issue in in_progress:
@@ -910,7 +926,8 @@ def record_of(text: str, issue: int) -> Record | None:
              and (record.start is None or isinstance(record.start, str))
              and branch_of(record.branch, issue) and type(record.since) is int
              and record.since >= 0 and isinstance(record.started, number)
-             and not isinstance(record.started, bool) and (resumed is None) == (record.resumed is None)
+             and not isinstance(record.started, bool)
+             and (resumed is None) == (record.resumed is None)
              and len(record.start_marks) == len(STAGES)
              and all(isinstance(mark, str) and mark in MARK_SIGNS for mark in record.start_marks)
              and isinstance(record.stopped, bool))
@@ -975,11 +992,23 @@ class Followed:
 
 
 def reason_of(events: list[dict[str, Any]], running: Running) -> str:
-    """Why a session ended: its final result's text, else its exit code."""
+    """Why a session ended: its final result's text, else its exit code, when anyone knows it."""
     for event in reversed(events):
         if event.get("type") == "result" and event.get("result"):
             return str(event["result"]).strip()[:2000]
-    return f"the session exited with code {running.process.returncode} and no final result"
+    code = running.process.returncode
+    if code is None:  # a followed session: not this process's child
+        return "the session ended with no final result; its exit code is unknown"
+    return f"the session exited with code {code} and no final result"
+
+
+def conversation_of(events: list[dict[str, Any]]) -> str | None:
+    """The conversation these events belong to: the last top-level session ID, if any."""
+    session: str | None = None
+    for event in events:
+        if isinstance(event.get("session_id"), str):
+            session = event["session_id"]
+    return session
 
 
 def limit_of(events: list[dict[str, Any]], running: Running) -> Marker | None:
@@ -989,13 +1018,11 @@ def limit_of(events: list[dict[str, Any]], running: Running) -> Marker | None:
     final result must be absent or an error, and the last rate limit event `rejected` or that
     result's text name the limit; the reset is that rejected event's `resetsAt`.
     """
-    session: str | None = None
+    session = conversation_of(events)
     status: object = None
     resets: object = None
     final: dict[str, Any] | None = None
     for event in events:
-        if isinstance(event.get("session_id"), str):
-            session = event["session_id"]
         if event.get("type") == "rate_limit_event":
             info = event.get("rate_limit_info")
             info = info if isinstance(info, dict) else {}
@@ -1045,6 +1072,21 @@ def progress_of(events: list[dict[str, Any]], start_marks: tuple[str, ...]) -> P
     marks = tuple("current" if index == current else "pending" if index > current
                   else "done" if index in entered else "skipped" for index in range(len(STAGES)))
     return Progress(marks, latest)
+
+
+class Ending(NamedTuple):
+    """How a session ended, as one read of its part of the log says.
+
+    `final`: a final result is there. `conversation`: what a pause would resume, this attempt's
+    own, else the marker it resumed from; never an earlier attempt's, which may be another
+    worktree's.
+    """
+
+    reason: str
+    limit: Marker | None
+    progress: Progress
+    final: bool = True
+    conversation: str | None = None
 
 
 def run_git(args: list[str]) -> str:
@@ -1110,7 +1152,7 @@ class Sessions:
         Its record is written once it runs; one that can't be written ends it and raises: a
         session no later dispatcher could follow or stop must not run on.
         """
-        log = self.root / STATE / "logs" / f"issue-{issue}.log"
+        log = self.log(issue)
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a") as output:
             since = output.tell()
@@ -1127,12 +1169,17 @@ class Sessions:
             raise OSError(f"its session record could not be written: {error}") from error
         return running
 
-    def _record(self, issue: int) -> Path:
+    def log(self, issue: int) -> Path:
+        """The issue's log, every attempt appended."""
+        return self.root / STATE / "logs" / f"issue-{issue}.log"
+
+    def record(self, issue: int) -> Path:
+        """Where the issue's session record is."""
         return self.root / STATE / "sessions" / f"issue-{issue}.json"
 
     def _write(self, record: Record) -> None:
         """Write the record to a temporary file, then rename it into place: never half of one."""
-        path = self._record(record.issue)
+        path = self.record(record.issue)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + ".tmp")
         temporary.write_text(record.text())
@@ -1165,7 +1212,7 @@ class Sessions:
 
     def forget(self, issue: int) -> None:
         """Remove the issue's session record, if there is one."""
-        self._record(issue).unlink(missing_ok=True)
+        self.record(issue).unlink(missing_ok=True)
 
     def _events(self, running: Running) -> list[dict[str, Any]]:
         """This session's part of the log as its top-level `stream-json` events, in order.
@@ -1188,14 +1235,19 @@ class Sessions:
                 events.append(event)
         return events
 
-    def ending(self, running: Running) -> tuple[str, Marker | None, Progress]:
-        """Why a session ended, its marker when the usage limit stopped it, and where it stood.
+    def ending(self, running: Running) -> Ending:
+        """How a session ended: why, the usage limit's marker, where it stood, and the rest.
 
-        One read of the log; the progress continues from the marks its resume started from.
+        Whether it left a final result, and its conversation (`Ending`). One read of the log;
+        the progress continues from the marks its resume started from.
         """
         events = self._events(running)
-        return (reason_of(events, running), limit_of(events, running),
-                progress_of(events, running.start_marks))
+        conversation = conversation_of(events)
+        if conversation is None and running.resumed is not None:
+            conversation = running.resumed.session
+        return Ending(reason_of(events, running), limit_of(events, running),
+                      progress_of(events, running.start_marks),
+                      any(event.get("type") == "result" for event in events), conversation)
 
     def progress(self, running: Running, start_marks: tuple[str, ...]) -> Progress:
         """Where a running session stands, from its part of the log and these starting marks."""
@@ -1255,10 +1307,15 @@ class Dispatcher:
         self.judged: set[int] = set()  # ended sessions whose records go once nothing is pending
 
     def start(self) -> None:
-        """Say what it watches, create the missing labels, mark the issues left in progress.
+        """Say what it watches, create the missing labels, take up what the last run left.
 
-        Each one's status comment fails the stage it held; a failure to read or write it is
-        reported, waits in `pending` for the first poll, and the start goes on. The hold comes
+        Each issue in progress, with one line: its session, named by its record, still runs
+        with the recorded start time, so it is followed again and takes a slot (its status
+        comment untouched till the first poll's running report); it ended, so it is judged as
+        at start (`conclude`); or no readable record names it, so it needs attention, its status
+        comment failing the stage it held. A failed write is reported, waits in `pending` for
+        the first poll, and the start goes on. A record whose issue isn't in progress is left
+        alone, its process never signalled, and goes once that process is gone. The hold comes
         back from the paused issues' markers; one without a valid marker is left to the first
         resume, which moves it to needs attention.
         """
@@ -1269,17 +1326,45 @@ class Dispatcher:
                                                      for name in created)
                                            or f"all {len(LABELS)} in place"))
         stranded = [issue for issue, _ in self.gh.issues(IN_PROGRESS)]
+        records = self.sessions.records()
         if not stranded:
             self.say("dispatcher: no issue left in progress by an earlier run")
+        lost = []
         for issue in stranded:
-            self.say(f"dispatcher: #{issue.number} was left in progress with no session running:"
-                     " it needs attention")
-        for action in orphans(stranded, self.sessions.worktrees() if stranded else {},
+            record = records.get(issue.number)
+            if record is None:
+                kind = "an unreadable" if issue.number in records else "no"
+                self.say(f"dispatcher: #{issue.number} was in progress with {kind} session "
+                         "record: it needs attention")
+                lost.append(issue)
+                continue
+            running = self.sessions.follow(record)
+            if running.process.poll() is None:
+                self.running[issue.number] = running
+                self.say(f"dispatcher: #{issue.number} still running (PID {record.pid}): "
+                         "followed again")
+            else:
+                self.conclude(record)
+        for action in orphans(lost, self.sessions.worktrees() if lost else {},
                               self.sessions.root):
             if isinstance(action, Report):
                 self.final(action)  # no later poll reads an issue that needs attention
             else:
                 self.apply(action)
+        taken = {issue.number for issue in stranded}
+        for number, left in records.items():
+            if number in taken:
+                continue
+            if left is None:
+                self.say(f"dispatcher: #{number}: its session record "
+                         f"{self.sessions.record(number)} cannot be read")
+            elif self.sessions.follow(left).process.poll() is None:
+                self.say(f"dispatcher: #{number} is not in progress: its session "
+                         f"(PID {left.pid}) is left alone")
+            else:
+                self.sessions.forget(number)
+                self.say(f"dispatcher: #{number} is not in progress: its session is gone, "
+                         "its record removed")
         now = self.clock()
         markers = [marker for issue, _ in self.gh.issues(PAUSED)
                    if (marker := self.gh.marker(issue.number))]
@@ -1298,19 +1383,21 @@ class Dispatcher:
         paused = tuple(issue for issue, _ in self.gh.issues(PAUSED))
         return Snapshot(tuple(ended), tuple(reviews), ready, paused), over
 
-    def read(self, running: Running) -> Ended:
+    def read(self, running: Running, *, stopped: bool = False,
+             at_start: bool = False) -> Ended:
         """An ended session with what GitHub says of its branch; one with a PR is remembered.
 
-        Its log says where it stood and, without a pull request, why it ended and whether the
-        usage limit stopped it.
+        Its log says where it stood and, without a pull request, why it ended, whether the
+        usage limit stopped it, and its conversation. `stopped` and `at_start` are the verdict's
+        (`judge`): its record's flag, and whether no dispatcher watched it end.
         """
         prs = self.gh.head(running.branch)
-        reason, limit, progress = self.sessions.ending(running)
-        if prs:
-            reason, limit = "", None  # judged by its pull request alone
+        ending = self.sessions.ending(running)
+        reason, limit = ("", None) if prs else (ending.reason, ending.limit)  # a PR alone judges
         session = Ended(running.issue, str(running.worktree), str(running.log), reason, prs,
                         self.gh.linked(running.issue) if prs else frozenset(), limit,
-                        running.resumed, progress)
+                        running.resumed, ending.progress, running.branch, ending.final,
+                        ending.conversation, stopped, at_start)
         if prs:
             self.branches[running.issue] = running.branch
         return session
@@ -1333,8 +1420,9 @@ class Dispatcher:
             return
         for running in over:
             del self.running[running.issue]
+            code = running.process.returncode  # None: a followed session, not our child
             self.say(f"dispatcher: #{running.issue} session ended "
-                     f"(exit code {running.process.returncode}), log {running.log}")
+                     f"(exit code {'unknown' if code is None else code}), log {running.log}")
         hold = self.hold
         for session in snapshot.ended:
             if session.limit and session.limit.cause == LIMIT:  # only the usage limit holds
@@ -1393,9 +1481,35 @@ class Dispatcher:
         Each one's record goes once its verdict is applied in full.
         """
         for session in ended:
-            for action in judge(session, self.sessions.root):
-                self.final(action)
-            self.judged.add(session.issue)
+            self.decide(session.issue, judge(session, self.sessions.root))
+        self.tidy()
+
+    def decide(self, issue: int, verdict: Iterable[Action]) -> None:
+        """Apply a verdict no later poll redoes: a failed action waits in `pending`.
+
+        The session's record stays until nothing of it is pending (`tidy`).
+        """
+        for action in verdict:
+            self.final(action)
+        self.judged.add(issue)
+
+    def conclude(self, record: Record) -> None:
+        """Judge a recorded session that ended while no dispatcher watched it, and say how.
+
+        As at start (`judge`): the record's `stopped` flag pauses it as stopped, and no final
+        result pauses it as interrupted. Its record goes once the verdict is applied in full.
+        A failure to read GitHub raises, the record kept, so the next start judges it again.
+        """
+        session = self.read(self.sessions.follow(record), stopped=record.stopped,
+                            at_start=True)
+        verdict = judge(session, self.sessions.root)
+        status = next(action.status for action in verdict if isinstance(action, Report))
+        told = status.state
+        if status.state == PAUSED:
+            told = ("paused at the usage limit" if status.cause == LIMIT
+                    else f"paused as {status.cause}")
+        self.say(f"dispatcher: #{record.issue} session ended while no dispatcher ran: {told}")
+        self.decide(record.issue, verdict)
         self.tidy()
 
     def retry(self) -> None:
@@ -1453,11 +1567,10 @@ class Dispatcher:
                                             started=running.started),
                       create=running.resumed is None)
 
-    def places(self, running: Running) -> tuple[str, str]:
-        """A comment's lines naming the session's worktree and log, under the checkout."""
+    def places(self, worktree: Path, log: Path) -> tuple[str, str]:
+        """A comment's lines naming a session's worktree and log, under the checkout."""
         root = self.sessions.root
-        return (f"Worktree: `{inside(running.worktree, root)}`",
-                f"Log: `{inside(running.log, root)}`")
+        return (f"Worktree: `{inside(worktree, root)}`", f"Log: `{inside(log, root)}`")
 
     def stopped_report(self, running: Running) -> Report:
         """An ended session GitHub couldn't be read for at stop: the stage its log reached fails."""
@@ -1510,7 +1623,9 @@ class Dispatcher:
             running = self.sessions.resume(issue, marker, marks_resumed(stored))
         except OSError as error:
             self.apply(needs_attention(issue, "the paused session could not resume: "
-                                       + unrooted(str(error), self.sessions.root)))
+                                       + unrooted(str(error), self.sessions.root),
+                                       *self.places(self.sessions.root / WORKTREES
+                                                    / marker.branch, self.sessions.log(issue))))
             self.final(Report(issue, Status(NEEDS_ATTENTION), marks_stopped))
             return
         self.running[issue] = running
@@ -1536,7 +1651,7 @@ class Dispatcher:
             except (GhError, ValueError, KeyError) as error:
                 self.apply(needs_attention(running.issue, "the session ended, but the dispatcher "
                                            f"was stopped before GitHub could be read: {error}",
-                                           *self.places(running)))
+                                           *self.places(running.worktree, running.log)))
                 self.apply(self.stopped_report(running))
         self.running.clear()
 
