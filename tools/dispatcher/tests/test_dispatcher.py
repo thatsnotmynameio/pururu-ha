@@ -787,6 +787,8 @@ def result(text: str, *, error: bool = True, session: str = SESSION) -> str:
 
 
 INIT = event("system", subtype="init")
+AT_LIMIT = (INIT, rejected(int(at(20, 30))), result("API Error"))
+UNKNOWN = (INIT, result("You've hit your session limit · resets 8:30pm (America/Sao_Paulo)"))
 QUOTED = event("user", message={"role": "user", "content": [{
     "type": "tool_result",
     "content": "You've hit your session limit · resets 8:30pm (America/Sao_Paulo)"}]})
@@ -1808,18 +1810,30 @@ def test_a_session_that_cannot_start_names_its_worktree_inside_the_checkout(
     assert str(tmp_path) not in comment
 
 
-def test_stopping_ends_the_sessions_and_marks_their_issues(tmp_path: Path) -> None:
+def test_stopping_leaves_a_live_session_running(tmp_path: Path) -> None:
+    """AE1, R1, R2, KTD9: Ctrl-C mid-implementation ends the dispatcher only.
+
+    The session is not signalled, #74 stays in progress with no comment, its status comment
+    is not edited though its log moved on, and its record stays for the next start.
+    """
     gh = FakeGitHub({READY: [(ready(74), ())]})
-    runner, _ = sessions(tmp_path, FakeGit())
-    boss = dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None)
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), lines)
     boss.poll()
+    gh.answers = {}
     process = boss.running[74].process
     assert isinstance(process, FakeProcess)
+    logs(boss, 74, *AE2_EVENTS)
+    written = list(gh.writes)
+    record = record_file(tmp_path, 74).read_text()
     boss.stop()
-    assert process.signals == ["terminate"]
-    move = last_move(gh)
-    assert move.add == (NEEDS_ATTENTION,)
-    assert "stopped" in (move.comment or "")
+    assert process.signals == []
+    assert process.returncode is None
+    assert gh.writes == written
+    assert moves(gh) == [(74, (IN_PROGRESS,))]
+    assert lines[-1] == (f"dispatcher: #74 left running (PID {process.pid}), "
+                         "the next start follows it")
+    assert record_file(tmp_path, 74).read_text() == record
     assert boss.running == {}
 
 
@@ -1888,9 +1902,12 @@ def test_an_ended_session_github_cannot_read_waits_for_the_next_poll(tmp_path: P
     assert (74, (IN_REVIEW,)) in moves(gh)
 
 
-def two_sessions(tmp_path: Path, gh: FakeGitHub) -> tuple[dispatcher.Dispatcher, FakeProcess,
-                                                          FakeProcess]:
-    """A dispatcher whose session for #74 exited with code 0 while #75's still runs."""
+def two_sessions(tmp_path: Path, gh: FakeGitHub, *events: str
+                 ) -> tuple[dispatcher.Dispatcher, FakeProcess, FakeProcess]:
+    """A dispatcher whose session for #74 exited while #75's still runs.
+
+    #74 wrote these events, then exited with code 0; stopping leaves #75 running.
+    """
     runner, _ = sessions(tmp_path, FakeGit())
     boss = dispatcher.Dispatcher(gh, runner, 2, say=lambda line: None)
     gh.answers = {READY: [(ready(74), ()), (ready(75), ())]}
@@ -1899,37 +1916,55 @@ def two_sessions(tmp_path: Path, gh: FakeGitHub) -> tuple[dispatcher.Dispatcher,
     done, live = boss.running[74].process, boss.running[75].process
     assert isinstance(done, FakeProcess)
     assert isinstance(live, FakeProcess)
-    done.returncode = 0
+    exits(boss, 74, *events)
     return boss, done, live
 
 
-def test_stopping_judges_a_session_that_already_ended(tmp_path: Path) -> None:
-    """KTD3 at stop: #74 opened its PR and exited before Ctrl-C, so it is in review."""
-    gh = FakeGitHub(head={"issue-74": (PR,)})
-    boss, done, live = two_sessions(tmp_path, gh)
+@pytest.mark.parametrize(("head", "events", "verdict"), [
+    ((PR,), (), IN_REVIEW),
+    ((), (INIT, result("Stopped: the plan returned blocked.")), NEEDS_ATTENTION),
+    ((), AT_LIMIT, PAUSED)], ids=["in review", "needs attention", "paused"])
+def test_stopping_judges_a_session_that_already_ended(
+        tmp_path: Path, head: tuple[PullRequest, ...], events: tuple[str, ...],
+        verdict: str) -> None:
+    """KTD3 at stop: #74 exited before Ctrl-C and is judged as a poll would; #75 is left."""
+    gh = FakeGitHub(head={"issue-74": head})
+    boss, done, live = two_sessions(tmp_path, gh, *events)
     boss.stop()
     assert done.signals == []
-    assert live.signals == ["terminate"]
-    assert moves(gh)[2:] == [(74, (IN_REVIEW,)), (75, (NEEDS_ATTENTION,))]
-    assert Link(101, 74) in gh.writes
-    move = last_move(gh)
-    assert "stopped while the session ran" in (move.comment or "")
-    assert "Worktree: `.claude/worktrees/issue-75`" in (move.comment or "")
-    assert "Log: `tools/dispatcher/.state/logs/issue-75.log`" in (move.comment or "")
-    assert str(tmp_path) not in (move.comment or "")
+    assert live.signals == []
+    assert moves(gh)[2:] == [(74, (verdict,))]
+    assert [issue for issue, _ in trail(gh)[4:]] == [74, 74]  # its move, then its status
+    assert (Link(101, 74) in gh.writes) == bool(head)
+    assert not record_file(tmp_path, 74).exists()
+    assert record_file(tmp_path, 75).exists()
     assert boss.running == {}
 
 
 def test_stopping_when_github_cannot_read_an_ended_session(tmp_path: Path) -> None:
     gh = FakeGitHub(head={"issue-74": (PR,)})
-    boss, _, _ = two_sessions(tmp_path, gh)
+    boss, _, live = two_sessions(tmp_path, gh)
     gh.flaky = {"head"}
     boss.stop()
-    assert moves(gh)[2:] == [(74, (NEEDS_ATTENTION,)), (75, (NEEDS_ATTENTION,))]
-    assert trail(gh)[4:] == [(74, (NEEDS_ATTENTION,)), (74, NEEDS_ATTENTION),
-                             (75, (NEEDS_ATTENTION,)), (75, NEEDS_ATTENTION)]
-    move = [write for write in gh.writes if isinstance(write, Move)][2]
+    assert live.signals == []
+    assert moves(gh)[2:] == [(74, (NEEDS_ATTENTION,))]
+    assert trail(gh)[4:] == [(74, (NEEDS_ATTENTION,)), (74, NEEDS_ATTENTION)]
+    move = last_move(gh)
     assert "HTTP 502" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-74`" in (move.comment or "")
+    assert str(tmp_path) not in (move.comment or "")
+
+
+def test_a_verdict_that_fails_its_last_try_at_stop_keeps_the_record(tmp_path: Path) -> None:
+    """KTD1: #74's move failed at a poll and again at stop: the next start judges it again."""
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"move"}
+    boss.poll()
+    gh.flaky = {"move"}
+    boss.stop()
+    assert (74, (IN_REVIEW,)) not in moves(gh)
+    assert record_file(tmp_path, 74).exists()
 
 
 # The command at the usage limit
@@ -1971,10 +2006,6 @@ def resumes(spawn: FakeSpawn) -> list[tuple[list[str], dict[str, Any]]]:
 def worktrees(tmp_path: Path, *names: str) -> None:
     for name in names:
         (tmp_path / ".claude/worktrees" / name).mkdir(parents=True)
-
-
-AT_LIMIT = (INIT, rejected(int(at(20, 30))), result("API Error"))
-UNKNOWN = (INIT, result("You've hit your session limit · resets 8:30pm (America/Sao_Paulo)"))
 
 
 def test_a_session_at_the_limit_is_paused_and_holds_every_start(tmp_path: Path) -> None:
@@ -2286,7 +2317,7 @@ def test_a_resume_whose_worktree_is_gone_needs_attention(tmp_path: Path) -> None
 
 
 def test_stopping_leaves_a_paused_issue_alone(tmp_path: Path) -> None:
-    """R10: #70 is paused on GitHub, #75 runs: only #75 is ended and marked."""
+    """#70 is paused on GitHub, #75 runs: stopping moves neither, and #75 is left running."""
     gh = FakeGitHub({READY: [(ready(75), ())]},
                     markers={70: Marker(SESSION, "issue-70", int(at(20, 30)))})
     boss, _ = boss_at(tmp_path, gh, 1, Clock(at(18)), [])
@@ -2295,19 +2326,8 @@ def test_stopping_leaves_a_paused_issue_alone(tmp_path: Path) -> None:
     process = boss.running[75].process
     assert isinstance(process, FakeProcess)
     boss.stop()
-    assert process.signals == ["terminate"]
-    assert moves(gh) == [(75, (IN_PROGRESS,)), (75, (NEEDS_ATTENTION,))]
-
-
-def test_stopping_pauses_a_session_that_ended_at_the_limit(tmp_path: Path) -> None:
-    """KTD9: #74 hit the limit before Ctrl-C: paused, not needs attention; #75 is ended."""
-    gh = FakeGitHub()
-    boss, _, live = two_sessions(tmp_path, gh)
-    with boss.running[74].log.open("a") as log:
-        log.write("".join(line + "\n" for line in AT_LIMIT))
-    boss.stop()
-    assert live.signals == ["terminate"]
-    assert moves(gh)[2:] == [(74, (PAUSED,)), (75, (NEEDS_ATTENTION,))]
+    assert process.signals == []
+    assert moves(gh) == [(75, (IN_PROGRESS,))]
 
 
 def test_a_pause_that_fails_to_write_still_holds_and_is_retried_once(tmp_path: Path) -> None:
@@ -2476,18 +2496,6 @@ def test_a_running_session_shows_its_stage_and_last_sentence(tmp_path: Path) -> 
     assert last.body.startswith("**Dispatcher status: implementation** (running 42 min)\n")
     assert f"Latest:\n```text\n{AE2_SENTENCE}\n```" in last.body
     assert dispatcher.status_marks(last.body) == marks("done", "done", "current")
-
-
-def test_stopping_fails_the_stage_a_live_session_was_in(tmp_path: Path) -> None:
-    """AE4: Ctrl-C in implementation: the needs-attention comment as today, then the checklist."""
-    gh = FakeGitHub({READY: [(ready(74), ())]})
-    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
-    boss.poll()
-    logs(boss, 74, *AE2_EVENTS)
-    boss.stop()
-    assert trail(gh)[-2:] == [(74, (NEEDS_ATTENTION,)), (74, NEEDS_ATTENTION)]
-    assert "stopped while the session ran" in (last_move(gh).comment or "")
-    assert shown(gh, 74)[-1] == (NEEDS_ATTENTION, marks("done", "done", "failed"))
 
 
 def test_an_open_pull_request_shows_ci_current_then_done_once_its_checks_pass(
@@ -2742,8 +2750,8 @@ def handlers() -> Iterator[None]:
 
 
 @pytest.mark.usefixtures("handlers")
-def test_a_signal_ends_the_loop_and_stops_the_sessions() -> None:
-    """KTD9: Ctrl-C during a poll ends the loop, then the sessions."""
+def test_a_signal_ends_the_loop_then_leaves() -> None:
+    """Ctrl-C during a poll ends the loop, then `stop` leaves: it judges what ended."""
     boss = Boss(lambda: signal.raise_signal(signal.SIGINT))
     dispatcher.serve(boss, 0)  # type: ignore[arg-type]
     assert boss.calls == ["start", "dispatcher: a poll every 0s; Ctrl-C stops", "poll",
@@ -2751,8 +2759,8 @@ def test_a_signal_ends_the_loop_and_stops_the_sessions() -> None:
 
 
 @pytest.mark.usefixtures("handlers")
-def test_an_unexpected_error_still_stops_the_sessions() -> None:
-    """No session is left running detached when the dispatcher dies of a bug."""
+def test_an_unexpected_error_still_leaves_through_stop() -> None:
+    """A bug ends the dispatcher through `stop` too, once, before it propagates."""
     def broken() -> None:
         raise RuntimeError("a bug")
 
@@ -2761,6 +2769,32 @@ def test_an_unexpected_error_still_stops_the_sessions() -> None:
         dispatcher.serve(boss, 0)  # type: ignore[arg-type]
     assert boss.calls[-1] == "stop"
     assert boss.calls.count("stop") == 1
+
+
+@pytest.mark.usefixtures("handlers")
+def test_an_error_from_a_poll_leaves_the_live_sessions_running(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """R1: the dispatcher dies of a bug while #74 runs: #74 runs on, in progress, recorded."""
+    gh = FakeGitHub({READY: [(ready(74), ())]})
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), lines)
+    boss.poll()
+    gh.answers = {}
+    process = boss.running[74].process
+    assert isinstance(process, FakeProcess)
+    written = len(gh.writes)
+
+    def broken() -> None:
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr(boss, "poll", broken)
+    with pytest.raises(RuntimeError, match="a bug"):
+        dispatcher.serve(boss, 0)
+    assert process.signals == []
+    assert [write for write in gh.writes[written:] if isinstance(write, Move | Wrote)] == []
+    assert lines[-1] == (f"dispatcher: #74 left running (PID {process.pid}), "
+                         "the next start follows it")
+    assert record_file(tmp_path, 74).exists()
 
 
 def command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

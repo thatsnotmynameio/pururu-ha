@@ -21,9 +21,10 @@ minute past the limit's reset, or, with no reset known, until the next poll trie
 session. Past the hold, paused issues resume first, oldest first: the same conversation,
 in the same worktree.
 Every line it prints carries the time; each poll reports what it found. Logs, a record
-of each session and the lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions
-that ended, as a poll would, then stops the others and marks their issues `needs
-attention`; paused issues stay paused, and the next start resumes them from GitHub alone.
+of each session and the lock are in tools/dispatcher/.state/. Ctrl-C, SIGTERM or an error
+judges the sessions that ended, as a poll would, and leaves the others running: their
+issues stay `in progress`, and the next start follows them; paused issues stay paused, and
+the next start resumes them from GitHub alone.
 """
 
 import argparse
@@ -1459,7 +1460,7 @@ class Dispatcher:
                 f"Log: `{inside(running.log, root)}`")
 
     def stopped_report(self, running: Running) -> Report:
-        """A session the dispatcher stopped: the stage its log reached fails."""
+        """An ended session GitHub couldn't be read for at stop: the stage its log reached fails."""
         marks = self.sessions.progress(running, running.start_marks).marks
         return Report(running.issue, Status(NEEDS_ATTENTION, marks_stopped(marks)))
 
@@ -1518,18 +1519,18 @@ class Dispatcher:
         self.apply(self.running_report(running))
 
     def stop(self) -> None:
-        """Judge the sessions that already ended, as a poll would; end the others and mark them.
+        """Leave: judge the sessions that already ended, as a poll would; leave the others running.
 
-        The verdicts that failed at earlier polls get one last try: no poll follows. A stopped
-        session's status comment fails the stage its log reached.
+        The verdicts that failed at earlier polls get one last try: no poll follows, and a record
+        whose verdict still fails stays for the next start. A session left running keeps its
+        record, its label and its status comment: the next start follows it.
         """
         self.retry()
-        live: list[Running] = []
-        ended: list[Running] = []
         for running in self.running.values():
-            (live if running.process.poll() is None else ended).append(running)
-        self.running.clear()
-        for running in ended:
+            if running.process.poll() is None:
+                self.say(f"dispatcher: #{running.issue} left running "
+                         f"(PID {running.process.pid}), the next start follows it")
+                continue
             try:
                 self.settle([self.read(running)])
             except (GhError, ValueError, KeyError) as error:
@@ -1537,12 +1538,7 @@ class Dispatcher:
                                            f"was stopped before GitHub could be read: {error}",
                                            *self.places(running)))
                 self.apply(self.stopped_report(running))
-        self.sessions.end(live)
-        for running in live:
-            self.apply(needs_attention(running.issue,
-                                       "the dispatcher was stopped while the session ran.",
-                                       *self.places(running)))
-            self.apply(self.stopped_report(running))
+        self.running.clear()
 
 
 def alive(pid: int) -> bool:
@@ -1575,9 +1571,10 @@ def take(lock: Path) -> bool:
 
 
 def serve(boss: Dispatcher, every: float) -> None:
-    """Poll every `every` seconds until SIGINT or SIGTERM, then stop the sessions.
+    """Poll every `every` seconds until SIGINT or SIGTERM, then leave (`Dispatcher.stop`).
 
-    An error stops them too before it propagates: no session is left running detached.
+    An error leaves too before it propagates: the sessions that ended are judged, the live
+    ones keep running, and the next start follows them.
     """
     stopping = threading.Event()
 
