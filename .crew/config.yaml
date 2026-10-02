@@ -1,4 +1,5 @@
-# crew's workflow for this repository: what tools/dispatcher does today.
+# crew's workflow for this repository: what tools/dispatcher does today, with ce-work
+# in place of lfg.
 # crew: https://github.com/thatsnotmynameio/crew (docs/guide/crew.mdx).
 config:
   poll_interval_seconds: 300
@@ -22,8 +23,8 @@ workflow:
     moves_to: in_progress
     on_success: in_review
     actions:
-      - name: lfg
+      - name: work
         prompt: |-
-          /compound-engineering:lfg {{.Issue.Ref}}
+          /compound-engineering:ce-work Implement GitHub issue {{.Issue.Ref}}, "{{.Issue.Title}}" ({{.Issue.URL}}). Read the issue with `gh issue view {{.Issue.Key}}` first, then build, verify and open a pull request.
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
