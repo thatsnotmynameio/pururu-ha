@@ -45,3 +45,7 @@ node_modules/
 *.swp
 *.swo
 tools/dispatcher/.state/
+
+# crew's local files (.crew/config.yaml stays committed)
+.crew/logs/
+.crew/worktrees/

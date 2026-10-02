@@ -1,0 +1,30 @@
+# crew's workflow for this repository: what tools/dispatcher does today, with ce-work
+# in place of lfg.
+# crew: https://github.com/thatsnotmynameio/crew (docs/guide/crew.mdx).
+config:
+  poll_interval_seconds: 300
+  max_parallel_issues: 2
+  harness: claude
+  model: claude-opus-5-5
+tracker:
+  name: github
+  labels:
+    ready: ready
+    in_progress: in progress
+    ready_to_review: ready to review
+    in_review: in review
+    needs_attention: needs attention
+    paused: paused
+    ready_to_merge: ready to merge
+    done: done
+workflow:
+  - name: implement
+    label: ready
+    moves_to: in_progress
+    on_success: in_review
+    actions:
+      - name: work
+        prompt: |-
+          /compound-engineering:ce-work Implement GitHub issue {{.Issue.Ref}}, "{{.Issue.Title}}" ({{.Issue.URL}}). Read the issue with `gh issue view {{.Issue.Key}}` first, then build, verify and open a pull request.
+
+          The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
