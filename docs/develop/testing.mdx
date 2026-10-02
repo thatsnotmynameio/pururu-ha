@@ -5,6 +5,8 @@ description: The ha fixture, the helpers in tests/helpers.py, and the checks in 
 
 Tests use [pytest-homeassistant-custom-component](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component), which runs a real Home Assistant (the pinned version) in the test process. There are no mocks of Home Assistant itself: a test sets pururu up from a `pururu:` block, plays the real entities' states, moves the clock and reads the resulting states.
 
+The tests here each cover a feature or a part of the code. The [acceptance suite](/develop/acceptance), in `acceptance/`, runs stories across a whole reference house, from outside.
+
 ## The `ha` fixture
 
 Every test that needs Home Assistant takes `ha` (from `tests/conftest.py`) instead of the plugin's `hass`. It:

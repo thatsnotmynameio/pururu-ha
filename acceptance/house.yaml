@@ -1,0 +1,117 @@
+# The reference house: a generic house whose devices lean on each other.
+# Every feature, device key, aspect, ready-made alert and ready-made notification
+# pururu publishes sits somewhere in it (test_coverage.py checks that).
+# Its real entities start calm (steps.CALM), and no alert or notification is on
+# until a story causes one: the long `for`s are longer than any story's time.
+config:
+  notify: homeassistant.notify.phone
+  alerts:
+    lights:
+      groups:
+        living: [device.living_room.lights.ceiling]
+floors:
+  ground: {name: Ground floor, level: 0}
+areas:
+  laundry: {name: Laundry, floor: ground}
+  living: {name: Living room, floor: ground}
+  outside: {name: Outside}
+devices:
+  washer:
+    name: Washer
+    area: laundry
+    appliance:
+      power: homeassistant.sensor.washer_plug_power
+      energy: homeassistant.sensor.washer_plug_energy
+      running_program:
+        above: 4
+        on_delay: {minutes: 1}
+        off_delay: {minutes: 2}
+        phases:
+          heating: {name: Heating, above: 1000}
+          spinning: {name: Spinning, above: 50, below: 1000, on_delay: {minutes: 3}}
+        other:
+          statistics: {runtime: [today]}
+        statistics:
+          runtime: [today, month]
+          cycles: [today, month]
+      programs:
+        detected:
+          hot:
+            name: Hot wash
+            above: 1500
+            on_delay: {minutes: 5}
+            statistics: {cycles: [month]}
+      statistics:
+        idle_energy: [today]
+      alerts:
+        long_cycle: {for: {hours: 3}, lights: living}
+      notifications:
+        finished:
+    alerts:
+      overload:
+        name: Overload
+        when: appliance.power
+        above: 2500
+        for: {minutes: 1}
+        priority: high
+        lights: living
+  fridge:
+    name: Fridge
+    area: laundry
+    appliance:
+      power: homeassistant.sensor.fridge_plug_power
+      # The compressor's cycles are above 100 W; the fridge always draws its idle 80 W
+      running_program: {above: 100, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+      alerts:
+        offline:
+        no_power:
+        no_cycle: {for: {days: 3}}
+  front_door:
+    name: Front door
+    door:
+      contact: homeassistant.binary_sensor.front_door_contact
+      statistics:
+        openings: [today]
+        open_time: [today]
+      alerts:
+        long_opening: {for: {minutes: 10}}
+        no_opening: {for: {days: 3}}
+  bedroom_window:
+    name: Bedroom window
+    window:
+      contact: homeassistant.binary_sensor.bedroom_window_contact
+      alerts:
+        long_opening: {for: {hours: 2}}
+        no_opening: {for: {days: 3}}
+  living_room:
+    name: Living room
+    area: living
+    lights:
+      ceiling: {entity: homeassistant.light.living_room_ceiling, name: Ceiling}
+      lamp: {entity: homeassistant.switch.living_room_lamp_relay, name: Lamp}
+    reactions:
+      laundry_done:
+        name: Laundry done
+        when: device.washer.appliance.running_program
+        from: "on"
+        to: "off"
+        statistics: {triggered: [today]}
+  garden:
+    name: Garden
+    area: outside
+    switches:
+      pump: {entity: homeassistant.switch.garden_pump, name: Pump}
+    buttons:
+      water: {entity: homeassistant.sensor.garden_remote_action, state: 1_single, name: Water, program: water}
+      bell: {entity: homeassistant.sensor.garden_remote_action, state: 2_single, name: Bell}
+    programs:
+      executable:
+        water:
+          name: Water
+          sequence:
+            - turn_on: switches.pump
+            - delay: {minutes: 10}
+            - turn_off: switches.pump
+          statistics:
+            runtime: [today]
+            cycles: [today]

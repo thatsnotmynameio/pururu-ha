@@ -46,6 +46,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # The repo's own tools, apart from the integration; the Python environment their tests run in
     "tools": ("tools/",),
     "env": ("pyproject.toml", "uv.lock"),
+    # The acceptance suite, its own uv project; it also reads docs/, the translations and the root pins
+    "acceptance": ("acceptance/",),
     "agent": AGENT,
 }
 NEEDS: dict[str, frozenset[str]] = {
@@ -53,6 +55,7 @@ NEEDS: dict[str, frozenset[str]] = {
     "docs": frozenset({"code", "docs", "workflows"}),
     "hacs": frozenset({"hacs", "workflows"}),
     "tools": frozenset({"tools", "env", "workflows"}),
+    "acceptance": frozenset({"code", "docs", "env", "workflows", "acceptance"}),
 }
 
 

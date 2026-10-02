@@ -43,6 +43,59 @@ def test_the_develop_docs_examples_import_what_exists() -> None:
                     or (path / "__init__.py").exists()), f"{title}: from {dots}{name}"
 
 
+# --- docs/concepts/devices-and-features.mdx ----------------------------------------------
+
+FEATURES_PAGES = PROJECT / "docs/features"
+DEVICES_PAGE = PROJECT / "docs/concepts/devices-and-features.mdx"
+KINDS = {"feature": ("features", "FEATURES"), "device key": ("device_keys", "DEVICE_KEYS")}
+
+
+def differs(what: str, documented: set[str], code: set[str]) -> str:
+    """Names what the code has and the docs don't, and the other way round."""
+    return (f"{what}: not documented {sorted(code - documented)}, "
+            f"documented but not in the code {sorted(documented - code)}")
+
+
+def aspects_table() -> dict[str, tuple[str, set[str]]]:
+    """The Aspects section's table: each row's key → (its kind, the aspects marked ✓)."""
+    lines = [line for line in section(DEVICES_PAGE, "Aspects").splitlines() if line.startswith("|")]
+    assert lines, "no table in the Aspects section"
+    header = [cell.strip() for cell in lines[0].strip("|").split("|")]
+    assert header[:2] == ["Key", "Kind"], header
+    aspects = [cell.strip("`") for cell in header[2:]]
+    rows: dict[str, tuple[str, set[str]]] = {}
+    for line in lines[2:]:
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        key = re.search(r"`(\w+)`", cells[0])
+        assert key is not None, line
+        rows[key[1]] = (cells[1], {aspect for aspect, cell in zip(aspects, cells[2:], strict=True)
+                                   if cell == "✓"})
+    return rows
+
+
+def test_every_feature_has_its_page(ha: HomeAssistant) -> None:
+    """AE6: a feature without a page under docs/features/ fails, named."""
+    pages = {page.stem for page in FEATURES_PAGES.glob("*.mdx")}
+    features = set(module("features").FEATURES)
+    assert pages == features, differs("features with a page", pages, features)
+
+
+def test_the_aspects_table_lists_every_feature_and_device_key(ha: HomeAssistant) -> None:
+    table = aspects_table()
+    for kind, (package, name) in KINDS.items():
+        listed = {key for key, (its, _) in table.items() if its == kind}
+        code = set(getattr(module(package), name))
+        assert listed == code, differs(f"rows of kind {kind}", listed, code)
+    assert {kind for kind, _ in table.values()} <= set(KINDS), table
+
+
+def test_the_aspects_table_marks_the_aspects_each_offers(ha: HomeAssistant) -> None:
+    catalogue = module("setup.catalogue")
+    for key, (_, marked) in aspects_table().items():
+        offered = {aspect.key for aspect in catalogue.aspects_of(catalogue.builders()[key])}
+        assert marked == offered, differs(f"aspects of {key}", marked, offered)
+
+
 # --- docs/concepts/alerts.mdx ------------------------------------------------------------
 
 ALERTS_PAGE = PROJECT / "docs/concepts/alerts.mdx"

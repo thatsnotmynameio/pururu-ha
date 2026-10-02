@@ -38,8 +38,8 @@ Source: GitHub docs, "Troubleshooting required status checks" (https://docs.gith
 
 So the layout is one caller workflow, `.github/workflows/ci.yml`, triggered on `pull_request` (and `workflow_dispatch`):
 
-- Job `changes` checks out the PR's merge commit with `fetch-depth: 2` and diffs it against its first parent. It pipes the file list into `.github/scripts/changes.py pull_request` and exports one output per check (`build`, `docs`, `hacs`, `tools`) (`ci.yml`).
-- Jobs `build`, `docs`, `validate` and `tools` call `build.yml`, `docs.yml`, `validate.yml` and `tools.yml` through `uses:`, each guarded by `if: needs.changes.outputs.<check> == 'true'` (`ci.yml`).
+- Job `changes` checks out the PR's merge commit with `fetch-depth: 2` and diffs it against its first parent. It pipes the file list into `.github/scripts/changes.py pull_request` and exports one output per check (`build`, `docs`, `hacs`, `tools`, `acceptance`) (`ci.yml`).
+- Jobs `build`, `docs`, `validate`, `tools` and `acceptance` call `build.yml`, `docs.yml`, `validate.yml`, `tools.yml` and `acceptance.yml` through `uses:`, each guarded by `if: needs.changes.outputs.<check> == 'true'` (`ci.yml`).
 - Job "CI ok" has `needs:` on every job and `if: always()`. It fails only when a needed job's result is `failure` or `cancelled`, so skipped jobs pass (`ci.yml`).
 
 ```yaml
@@ -65,7 +65,7 @@ ok:
 
 ### 2. Called workflows: no `pull_request` trigger, no workflow-level `concurrency`
 
-- Inside a called workflow, `github.workflow` is the caller's name. A called workflow with `concurrency: group: ${{ github.workflow }}-${{ github.ref }}` therefore lands in the caller's group, and GitHub cancels the run at startup with "deadlock was detected for concurrency group" (plan KTD2, `docs/plans/2026-10-01-1504-chore-ci-runs-what-changed-plan.md:143`). Only the caller declares concurrency (`ci.yml`). `build.yml`, `docs.yml`, `validate.yml` and `tools.yml` have none.
+- Inside a called workflow, `github.workflow` is the caller's name. A called workflow with `concurrency: group: ${{ github.workflow }}-${{ github.ref }}` therefore lands in the caller's group, and GitHub cancels the run at startup with "deadlock was detected for concurrency group" (plan KTD2, `docs/plans/2026-10-01-1504-chore-ci-runs-what-changed-plan.md:143`). Only the caller declares concurrency (`ci.yml`). `build.yml`, `docs.yml`, `validate.yml`, `tools.yml` and `acceptance.yml` have none.
 - A called workflow that keeps its own `pull_request` trigger runs each check twice per PR. `build.yml` and `docs.yml` trigger only on `workflow_call` and `workflow_dispatch` (`build.yml:12-14`, `docs.yml:11-13`). `validate.yml` adds only its weekly cron (`validate.yml:7-11`).
 - `release.yml` keeps its own `concurrency: group: release` (`release.yml:15-17`). That name is not derived from `github.workflow`, so it doesn't collide when Release calls Build and Validate on every push to `main` (`release.yml:20-25`).
 
@@ -116,6 +116,8 @@ A code review then found that Release, which calls Build rather than Docs, had l
 ```
 
 The repo's own tools (`tools/`, such as the issue dispatcher) got the same treatment: they share nothing with the integration, so their tests run in their own Tools workflow (`tools.yml`), for changes to `tools/`, `pyproject.toml` or `uv.lock`. Build's shards then run `pytest tests` rather than `pytest --ignore=tools`: `testpaths` passes `tools` to pytest as an explicit path, and pytest never ignores a path it was explicitly given, so `--ignore=tools` silently kept the tools' tests in every shard.
+
+The acceptance suite (`acceptance/`, its own uv project) followed the Tools recipe: its own `acceptance.yml`, an `acceptance` group and `NEEDS` entry wanting code, docs, env, workflows and acceptance (its guard reads `docs/` and the translations, its pin check the root `uv.lock`), and Release calls it beside Build and Validate.
 
 ### 6. The ruleset swap is manual and comes after "CI ok" has run once
 

@@ -1,0 +1,66 @@
+---
+title: Acceptance
+description: A reference house in Home Assistant, driven from outside through stories across its devices.
+---
+
+The tests in `tests/` each build a small house around one feature. The acceptance suite, in `acceptance/`, sets up one whole house and runs **stories** across its devices: a washer's cycle ending that a reaction in another room follows, two alerts sharing a light, a button starting a program, a rename and a disable midway. Each story goes through a restart, a reload, a rename or a disable, where the seams between features break.
+
+## A black box
+
+The suite treats pururu as a user would. It is its own uv project, with its own `pyproject.toml` and `uv.lock`, as if it were another repository:
+
+- It imports nothing from `custom_components/pururu` or from `tests/`. A test in `acceptance/test_boundary.py` fails when a module under `acceptance/` does.
+- It installs pururu into Home Assistant as a custom component, gives it YAML, and reads only what Home Assistant shows: states, the registries, the services called, the bus events, and the files pururu writes (`pururu/automations/automations.yaml`, `pururu/scripts/programs.yaml`).
+- It runs the Home Assistant the root project pins. `acceptance/test_boundary.py` fails, naming both versions, when the root `uv.lock` pins another one.
+
+Home Assistant runs in the test process, with the clock frozen at a Wednesday, 16 September 2026, 10:00, so a 40-minute cycle takes milliseconds.
+
+## Running it
+
+From the repository root:
+
+```sh
+uv run --locked --project acceptance pytest acceptance
+```
+
+`uv run pytest` from the root doesn't collect it. CI runs it as its own check, **Acceptance**: see [Releases and CI](/develop/releases#workflows).
+
+## The reference house
+
+`acceptance/house.yaml` is a generic house: a washer and a fridge on power plugs, a front door, a bedroom window, a living room with its lights and a reaction to the washer, and a garden with a pump, a remote's buttons and a watering program. Its devices lean on each other: the reaction follows the washer, the washer's alerts borrow the living room's ceiling light, a button starts the program that drives the pump.
+
+The house starts **calm**. Before pururu sets up, every real entity it names gets a calm state (`CALM` in `acceptance/steps.py`): contacts closed, the fridge drawing its idle power, the washer at 0 W, the lights and switches off, the remote on a value no button listens for. The ready-made alerts that count time, such as the door's `no_opening`, take a `for` longer than any story. So right after setup no alert is on and nothing has been sent.
+
+The `home` fixture records every pururu alert that turns on and every notification sent to `notify.phone`. A story names what it causes with `home.calm.expect(...)`, alerts by entity ID and notifications by title; anything else fails the story at teardown, named. A title lets through every notification under it, so a story that causes one also asserts `home.calm.sent()`, the exact titles and messages sent. An alert nobody caused can't pass unseen or steal the light a story watches.
+
+## The guard
+
+`acceptance/test_coverage.py` fails when the house leaves out something pururu publishes. It reads only published sources:
+
+- the features: the pages under `docs/features/`;
+- the device keys and the aspects: the table in [Devices and features](/concepts/devices-and-features#aspects);
+- the ready-made alerts and notifications: the shipped translations (`custom_components/pururu/translations/en.json`).
+
+It sets the house up and finds each item among what pururu created, by each entity's [`reference` attribute](/concepts/entity-ids#the-reference-attribute), or by the documented ID of a generated automation or script. The YAML alone never counts. A docs test (`tests/docs/test_pages.py`) checks the pages and the table against the code, so the chain from the code to the house has no unchecked link.
+
+When the guard fails, add the missing item to `house.yaml`, starting calm, and to a story when it links to another feature.
+
+## Writing a story
+
+A story takes the `house` fixture, the reference house set up from its calm states, and drives it through the steps of `Home` in `acceptance/steps.py`:
+
+| Step | What it does |
+|---|---|
+| `play(entity_id, state, attributes=None)` | A real device changes. Its attributes are kept unless given. |
+| `tick(seconds)` | Moves the clock and runs what became due. |
+| `restart()` | Stops Home Assistant and starts it again, carrying across only the states it saves itself. Running scripts stop, as they do when Home Assistant stops. |
+| `reload(block)` | Edits `configuration.yaml`'s `pururu:` block and calls `pururu.reload`. |
+| `rename(entity_id, new_entity_id)`, `disable(entity_id)`, `enable(entity_id)` | What the user does in Home Assistant's settings. |
+| `capture(*event_types)` | Records bus events, such as `call_service` or `automation_triggered`. |
+| `state(entity_id)`, `attributes(entity_id)` | What Home Assistant shows. |
+
+Each step waits a fixed number of loop turns, never `async_block_till_done` while a script runs: that would wait out the script's whole `delay`.
+
+The restart stays on one Home Assistant instance. The HA test plugin's registries never save or load, and it never loads config entries, so a second instance would start without the user's renames or pururu's entry. The registries and the entry stay in memory, as they stay on disk in a real restart; the entities' states go through Home Assistant's own save and load.
+
+**Every new feature brings a story** linking it to another feature, in `acceptance/test_stories.py`. No test enforces it.

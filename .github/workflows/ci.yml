@@ -3,6 +3,7 @@
 # integration, tests, the Python and Sonar settings) runs Build and Docs; docs
 # pages run Docs; hacs.json, the manifest or README.md run Validate (HACS);
 # tools/, pyproject.toml or uv.lock run Tools (the repo's own tools' tests);
+# code, docs pages, pyproject.toml, uv.lock or acceptance/ run Acceptance;
 # agent and planning files (.claude/, CLAUDE.md, docs/plans/...) run nothing;
 # a workflow, or any file in no group, runs everything, as changes.py itself
 # does, decided here without running it. A check is skipped by its job's own
@@ -36,6 +37,7 @@ jobs:
       docs: ${{ steps.classify.outputs.docs }}
       hacs: ${{ steps.classify.outputs.hacs }}
       tools: ${{ steps.classify.outputs.tools }}
+      acceptance: ${{ steps.classify.outputs.acceptance }}
     steps:
       # The pull request's merge commit: its first parent is the current base
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,7 +51,7 @@ jobs:
             # changes.py never judges its own change: a broken fallback would skip the tests that catch it.
             # Every check it can print is listed here: a check added there is added here too.
             if grep -qxF .github/scripts/changes.py <<< "$files"; then
-              printf 'build=true\ndocs=true\nhacs=true\ntools=true\n' >> "$GITHUB_OUTPUT"
+              printf 'build=true\ndocs=true\nhacs=true\ntools=true\nacceptance=true\n' >> "$GITHUB_OUTPUT"
             else
               printf '%s\n' "$files" | python3 .github/scripts/changes.py pull_request >> "$GITHUB_OUTPUT"
             fi
@@ -79,9 +81,14 @@ jobs:
     if: needs.changes.outputs.tools == 'true'
     uses: ./.github/workflows/tools.yml
 
+  acceptance:
+    needs: changes
+    if: needs.changes.outputs.acceptance == 'true'
+    uses: ./.github/workflows/acceptance.yml
+
   ok:
     name: CI ok
-    needs: [changes, build, docs, validate, tools]
+    needs: [changes, build, docs, validate, tools, acceptance]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

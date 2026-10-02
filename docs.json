@@ -66,6 +66,7 @@
         { "title": "Writing a feature", "href": "/develop/writing-a-feature" },
         { "title": "Places and dashboard", "href": "/develop/places-and-dashboard" },
         { "title": "Testing", "href": "/develop/testing" },
+        { "title": "Acceptance", "href": "/develop/acceptance" },
         { "title": "Releases and CI", "href": "/develop/releases" },
         { "title": "Issue dispatcher", "href": "/develop/dispatcher" }
       ]

@@ -50,6 +50,24 @@ A device can also have [`reactions`](/concepts/reactions), [`programs`](/concept
 
 Each feature appears at most once per device, and everything under its key is that feature's configuration. An unknown key inside a feature, such as a typo, is a configuration error, so a mistake never passes silently.
 
+## Aspects
+
+An aspect is a concern written once in pururu and offered inside the block of every feature or device key that has what it needs. It works the same wherever it sits: `statistics:` counts runtime, cycles or energy per period in any block that keeps such totals, and `alerts:` turns on the ready-made alerts of any feature that offers some.
+
+| Key | Kind | `alerts` | `notifications` | `statistics` | `programs` |
+|---|---|---|---|---|---|
+| [`appliance`](/features/appliance) | feature | ✓ | ✓ | ✓ | ✓ |
+| [`door`](/features/door) | feature | ✓ |  | ✓ |  |
+| [`window`](/features/window) | feature | ✓ |  | ✓ |  |
+| [`lights`](/features/lights) | feature |  |  |  |  |
+| [`switches`](/features/switches) | feature |  |  |  |  |
+| [`buttons`](/features/buttons) | feature |  |  | ✓ |  |
+| [`programs`](/concepts/programs#executable-programs) | device key |  |  | ✓ |  |
+| [`reactions`](/concepts/reactions) | device key |  |  | ✓ |  |
+| [`alerts`](/concepts/alerts) | device key |  |  |  |  |
+
+Each column is the key the aspect takes in the block: `alerts` is the [ready-made alerts](/concepts/alerts#ready-made-alerts), `notifications` the [ready-made notifications](/concepts/notifications#ready-made-notifications), `statistics` the [statistics](/concepts/statistics), and `programs` the [detected programs](/concepts/programs#detected-programs) (`programs: detected:`). A ✓ marks an aspect the row's feature or device key offers. The `programs` column is a feature's detected programs, not the `programs` device key, which holds the device's executable programs.
+
 ## Every feature stands alone
 
 A feature reads only the real entities and settings in its own block; it never reads another feature's. What used to be split into separate `phases` and `modes` features, each following another feature's cycle, is now the appliance's own `running_program`: its `phases` are bands of the same power the appliance already reads. A detected program of its own, `programs: detected:`, sits in the same block and reads the same power. See [Programs](/concepts/programs#detected-programs).
