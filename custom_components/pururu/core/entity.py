@@ -1,5 +1,6 @@
 """The base of every entity a device's features create, and reading a real sensor or a time."""
 
+from collections.abc import Mapping
 from datetime import datetime
 import math
 from typing import Any, override
@@ -70,9 +71,15 @@ class PururuEntity(Entity):
     _unrecorded_attributes = frozenset({REFERENCE})
     # Entity keys of its own device it takes its value from: without them it isn't created
     sources: tuple[str, ...] = ()
-    # Paths of other features' entities of its device it reads
-    # (appliance.running_program): without them it isn't created either
+    # References, as written (Ref.text), to other features' entities it reads:
+    # a path of its device (appliance.running_program) or another's
+    # (device.pool.appliance.running_program.runtime_total); without them it
+    # isn't created either
     follows: tuple[str, ...] = ()
+    # What it follows that is disabled in the registry, unique ID -> entity
+    # ID, as its builder read it (a goal's alone): it isn't created then, while
+    # what is disabled is created, and so is everything else that follows it
+    disabled: Mapping[str, str] = {}
     # Its entity key in its namespace (appliance_running)
     key: str
     # Its node in its device's YAML (appliance.running_program): stamped by

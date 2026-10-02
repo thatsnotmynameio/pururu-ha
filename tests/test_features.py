@@ -286,10 +286,11 @@ def test_every_listed_key_has_one_path(features: dict[str, Any]) -> None:
 
     A path is dotted slugs. One written in the example names a declared thing
     (a map, or null: a switch, a phase, an enabled alert) or the entity a
-    written entity ID becomes (power): never a setting's value (a number, a
-    duration, a text), so no key pururu creates takes a key the author writes
-    at its node. Every key a place lists has its leaf there, and a builder's
-    nodes are its own keys'.
+    written leaf becomes: a written entity ID's mirror (power), a written
+    number's sensor showing it (a goal's target). Never a setting's value
+    otherwise (a duration, a text, a number on another platform), so no key
+    pururu creates takes a key the author writes at its node. Every key a
+    place lists has its leaf there, and a builder's nodes are its own keys'.
     """
     catalogue = module("setup.catalogue")
     for name, feature in features.items():
@@ -299,18 +300,19 @@ def test_every_listed_key_has_one_path(features: dict[str, Any]) -> None:
             for place in aspect.places(feature, name):
                 assert set(place.leaves) == set(place.keys), (name, aspect.key)
         block = catalogue.mount(feature, name, full(name, feature))
-        rows = [(key, path) for _, key, *_, path in catalogue.keys({name: block})]
-        paths = dict(rows)
+        rows = [(key, platform, path) for _, key, platform, *_, path in catalogue.keys({name: block})]
+        paths = {key: path for key, _, path in rows}
         assert len(paths) == len(rows), f"{name}: a key listed twice"
         assert len(set(paths.values())) == len(paths), f"{name}: two keys at one path"
-        for key, path in rows:
+        for key, platform, path in rows:
             head, *segments = path.split(".")
             assert head == name, (name, key, path)
             assert segments, (name, key, path)
             assert all(cv.slug(each) == each for each in segments), (name, key, path)
             found, value = written(block, segments)
             if found and not (value is None or isinstance(value, dict)):
-                assert cv.entity_id(value) == value, f"{name}: {key} at {path}, a setting"
+                shown = platform == "sensor" and isinstance(value, int | float) and not isinstance(value, bool)
+                assert shown or cv.entity_id(value) == value, f"{name}: {key} at {path}, a setting"
 
 
 async def test_every_built_entity_carries_its_path(ha: HomeAssistant, features: dict[str, Any]) -> None:

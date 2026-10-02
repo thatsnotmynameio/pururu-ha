@@ -27,6 +27,7 @@ from homeassistant.helpers import config_validation as cv, entity_registry as er
 from ..aspects import programs
 from ..const import (
     CONF_DEVICES,
+    CONF_GOALS,
     CONF_MESSAGE,
     CONF_NOTIFY,
     CONF_REACTIONS,
@@ -49,6 +50,7 @@ from ..core.feature import (
 from ..core.generated import AUTOMATIONS, SCRIPTS, Planned
 from ..core.resolve import Index, Owner, Ref, Target, find, key_alone, path, resolve
 from ..core.roles import Counted, Counters, Generates, Items
+from . import goals
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -457,8 +459,9 @@ def _refused_when(
     """Why the reaction can't watch `when`, after its place; None when it can.
 
     A reaction (reactions.<key>) is no entity: what it does is counted, its
-    triggered_total. An executable program (programs.executable.<key>) is
-    no entity either, but its script running is watched.
+    triggered_total. A goal (goals.<key>) is none either: its target and
+    done are. An executable program (programs.executable.<key>) is no
+    entity either, but its script running is watched.
     """
     ref = Ref.parse(when)
     if ref.owner is Owner.HOME_ASSISTANT:
@@ -466,6 +469,9 @@ def _refused_when(
     block, _, rest = ref.path.partition(".")
     if block == CONF_REACTIONS and "." not in rest:
         return f"{when} is a reaction: watch {when}.triggered_total"
+    if block == CONF_GOALS and "." not in rest:
+        sensors = " or ".join(f"{when}.{suffix}" for suffix in goals.PER_GOAL)
+        return f"{when} is a goal: watch {sensors}"
     if (program := programs.named(key, ref)) is not None and program[0] in devices:
         if program[1] in programs.executable(devices[program[0]]):
             return None

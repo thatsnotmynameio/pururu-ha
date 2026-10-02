@@ -19,15 +19,17 @@ from ..const import (
     CONF_CONFIG,
     CONF_DEVICES,
     CONF_EXECUTABLE,
+    CONF_GOALS,
     CONF_MESSAGE,
     CONF_NOTIFICATIONS,
     CONF_NOTIFY,
     CONF_PROGRAMS,
     CONF_REACTIONS,
+    CONF_TRACKED_BY,
 )
 from ..core import generated
 from ..core.feature import Device, Feature
-from ..core.resolve import HOME_ASSISTANT, Index, Owner, Ref
+from ..core.resolve import HOME_ASSISTANT, Index, Owner, Ref, Target, resolve
 from ..core.roles import Configured, Generates, Refers
 from ..device_keys import reactions
 from . import catalogue
@@ -39,7 +41,8 @@ def references(
     """Refuse a reference that isn't another block's entity, within its reach, at its field (an alert watching an alert: alerts.check).
 
     An executable program is followed by a reaction's when only: it is no
-    entity pururu creates, so an alert can't follow it.
+    entity pururu creates, so an alert can't follow it. Another device's
+    entities are another block's.
     """
     devices = house[CONF_DEVICES]
     for key, device in devices.items():
@@ -54,13 +57,28 @@ def _refused_refs(
     """Builder `name`'s references on device `key` that it can't have: one refusal each, at its field."""
     for where, ref in refers.of(devices[key][name]):
         path: list[Hashable] = [CONF_DEVICES, key, name, *where]
-        found = programs.reach(index, devices, key, ref)
+        found = _reached(index, devices, key, ref, refers)
         if isinstance(found, str):
             yield vol.Invalid(f"{name}: {found}", path=path)
-        elif found.builder == name:
+        elif found.builder == name and found.device.key == key:
             yield vol.Invalid(
                 f"{name}: {ref.text} is not another block's entity", path=path
             )
+
+
+def _reached(
+    index: Index, devices: Mapping[str, Any], key: str, ref: Ref, refers: Refers
+) -> Target | str:
+    """What `ref`, written in device `key`, names within the builder's reach; else why it can't, after the field's place.
+
+    Another device's path is within it with Refers.other_devices only; an
+    executable program never is.
+    """
+    if not refers.other_devices or ref.owner is not Owner.DEVICE:
+        return programs.reach(index, devices, key, ref)
+    if programs.running(devices, key, ref):
+        return f"{ref.text} {programs.RUNNING}"
+    return resolve(index, key, ref)
 
 
 def real_entities_distinct(
@@ -94,38 +112,45 @@ def _shared_real_entities(
 def pururus_own_as_home_assistants(
     house: Mapping[str, Any], index: Index, builders: Mapping[str, Feature]
 ) -> Iterator[vol.Invalid]:
-    """Refuse a reaction's when naming as Home Assistant's what pururu creates or generates, with what to write.
+    """Refuse a reaction's when, or a goal's tracked_by, naming as Home Assistant's what pururu creates or generates, with what to write.
 
-    One way to write each thing: its path follows a rename in the UI, and a
-    reaction (reactions.<key>) is refused for what counts it. Matched against
-    the IDs as pururu creates them; any other pururu_ ID, a helper of the
-    user's, is Home Assistant's.
+    One way to write each thing: its path follows a rename in the UI (and a
+    goal follows what tracks it only by its path), and a reaction
+    (reactions.<key>) is refused for what counts it. Matched against the IDs
+    as pururu creates them; any other pururu_ ID, a helper of the user's, is
+    Home Assistant's.
     """
-    # (device, reaction, its when) of each when naming Home Assistant's
-    watching = [
-        (key, reaction_key, ref)
+    # (device, block, item, field, its reference) of each naming Home Assistant's
+    naming = [
+        (key, block, item_key, field, ref)
         for key, device in house[CONF_DEVICES].items()
-        for reaction_key, reaction in device.get(CONF_REACTIONS, {}).items()
-        if "when" in reaction
-        and (ref := Ref.parse(reaction["when"])).owner is Owner.HOME_ASSISTANT
+        for block, field in ((CONF_REACTIONS, "when"), (CONF_GOALS, CONF_TRACKED_BY))
+        for item_key, item in device.get(block, {}).items()
+        if field in item
+        and (ref := Ref.parse(item[field])).owner is Owner.HOME_ASSISTANT
     ]
-    if not watching:
+    if not naming:
         return
     pururus = _pururus(house, index, builders)
-    for key, reaction_key, ref in watching:
+    for key, block, item_key, field, ref in naming:
         if ref.path not in pururus:
             continue
         owner = pururus[ref.path]
         if owner is None:
-            why = "is a ready-made notification: a reaction can't watch it"
+            what = (
+                "a reaction can't watch"
+                if block == CONF_REACTIONS
+                else "a goal can't track"
+            )
+            why = f"is a ready-made notification: {what} it"
         else:
             written = Ref(Owner.DEVICE, *owner)
             if written.device == key:
                 written = Ref(Owner.HERE, None, written.path)
             why = f"is pururu's: write {written.text}"
         yield vol.Invalid(
-            f"reactions: {reaction_key}: {ref.text} {why}",
-            path=[CONF_DEVICES, key, CONF_REACTIONS, reaction_key, "when"],
+            f"{block}: {item_key}: {ref.text} {why}",
+            path=[CONF_DEVICES, key, block, item_key, field],
         )
 
 

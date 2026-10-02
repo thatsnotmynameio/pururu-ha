@@ -14,7 +14,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A device's `area` that isn't a key of `areas:`, or an area's `floor` that isn't a key of `floors:`.
 - A device's, floor's or area's empty `name`: `length of value must be at least 1`.
 - A top-level `events:`, as before 0.2.1: `'events' is an invalid option for 'pururu', check: pururu->events`. Move it under `config:`.
-- A device with no feature: `reactions`, `programs` and `alerts` don't count, so a device with only `alerts` (and, maybe, `programs` or `reactions`) is refused too (`a device needs at least one feature`).
+- A device with no feature: `reactions`, `programs`, `alerts` and `goals` don't count, so a device with only `alerts` (and, maybe, `programs`, `reactions` or `goals`) is refused too (`a device needs at least one feature`).
 - A `running_program` with a `name` (`running_program takes no name: it is the appliance running`), or with neither `above` nor `below` (`a program needs above, below or both`).
 - A phase without `name`, keyed `idle` (`idle is a reserved phase key: name the phase otherwise`), keyed `current` or `last`, or whose entities another phase's or the detector's would be (`phase resfriar_cycles_total would create phase_resfriar_cycles_total, phase resfriar's`).
 - A phase keyed `other` or `other_…`, the built-in phase's, whether `other:` is written yet or not: its meters would be the phase's entities once it is (`other_cycles_today is reserved for the built-in phase other (other, other_…): name the phase otherwise`). Pick a key that doesn't begin with `other_`.
@@ -52,6 +52,7 @@ The configuration is probably invalid. Home Assistant logs the reason as `Invali
 - A detected program keyed as phases' keys begin, whether those phases exist yet or not: `phase` or `phase_…` (the running program's phases: `phase_warming is reserved for the running program's phases (phase, phase_…): name the program otherwise`), or `cotton_phase` or `cotton_phase_…` beside a detected program `cotton` (`cotton_phase_warming is reserved for detected program cotton's phases (cotton_phase, cotton_phase_…): name the program otherwise`). Pick a key no phase could take.
 - A reaction with no source or two (`a reaction needs one source: when, at or sun`), with both `to` and `above`/`below` or neither (`a reaction on a state needs to, or above and/or below, not both`), with `from` without `to`, `offset` without `sun`, or `to`, `from`, `above`, `below` or `for` on `at` or `sun`. A `retry` on a reaction to an entity (`a reaction's retry goes with at or sun`), with `times × every` over 12 hours (`a reaction's retries must end within 12 hours`), with `every` under a minute or not in whole seconds (`a reaction's retry every must be whole seconds`), or with `times` not a whole number (`a reaction's retry times must be a whole number`).
 - A reaction whose `when` isn't an entity of its device (`reactions: door: appliance.power: appliance is not a block of this device`: write `device.<device>.appliance.power` for another device's), or of the device it names (`reactions: washer_done: device.clothes_washer.lights.teto: lights is not a block of device clothes_washer`), or whose device isn't a device (`… device.dryer.appliance.power: device dryer is not in devices`). A `when` written as an entity ID reads as a path from a block the device doesn't have (`… binary_sensor.porta_despensa: binary_sensor is not a block of this device`): a Home Assistant entity is `homeassistant.binary_sensor.porta_despensa`. A reaction's `entity:`, as before 0.2.2, is refused (`'entity' is an invalid option`): write the entity in `when`, with `homeassistant.`. An entity, a program's script or an automation pururu creates, written as Home Assistant's, is refused with its path (`… homeassistant.binary_sensor.pururu_clothes_washer_appliance_running is pururu's: write device.clothes_washer.appliance.running_program`); a ready-made notification's automation can't be watched (`… is a ready-made notification: a reaction can't watch it`). A `pururu_` entity pururu doesn't create, such as a helper of yours, is Home Assistant's. A device naming itself with `device.` is refused with the form to write (`… device.clothes_washer.appliance.running_program is this device's: write appliance.running_program`). A reaction can't watch a reaction (`… reactions.morning is a reaction: watch reactions.morning.triggered_total`), but it can follow an executable program, its script running (`programs.executable.clean`, `device.greenhouse.programs.executable.clean`): one the device doesn't have is refused (`… programs.executable.wash is not an executable program of this device`, `… of device greenhouse`), and so is `above`, `below`, or a `to` or `from` other than `"on"` or `"off"` on one, at that field (`… programs.executable.clean is a program, on while it runs: a reaction follows it with to and from "on" or "off"`). `device:` with `when:`, as before 0.2.1, is refused (`'device' is an invalid option`).
+- A goal without `name`, with a `target` that isn't a number above 0, or with a `period` other than the four (`a goal's period is one of today, week, month, year`). A goal whose `tracked_by` is a pururu entity that isn't a total (`goals: filtering: appliance.running_program is not a total`; a meter, `….statistics.runtime.today`, isn't one either: it goes back to 0 every period), or a sensor of one of its device's own goals (`goals: goals.airing.done is not another block's entity`). Track the total itself, such as `appliance.running_program.runtime_total`. A `tracked_by` that names nothing is refused as an alert's `when` is (`goals: appliance.nothing is not an entity of this device`), and its own device written with `device.` with the form to write. A pururu entity written as Home Assistant's is refused with its path, as in a reaction's `when` (`goals: filtering: homeassistant.sensor.pururu_pool_appliance_runtime_total is pururu's: write appliance.running_program.runtime_total`). A reaction's `when` on a goal itself: `reactions: met: goals.filtering is a goal: watch goals.filtering.target or goals.filtering.done`.
 - A light group's member that isn't a light of a device's `lights`: `config.alerts.lights.groups: porch: device.varanda.lights.teto is not a light`; a member without `device.<device>.`, as before 0.2.2: `varanda.light_rele needs its device: device.<device>.lights.<key>`; a group written as a map of devices, as 0.1.23 wrote it: `expected a list`.
 - An alert's `lights: true` or `false`, as before 0.2.1: `lights names a group of config.alerts.lights.groups, such as default; absent, the alert borrows none`.
 - `resolved`'s `for`, as before 0.2.1 (`'for' is an invalid option`): write `lasts`. A `repeat` or `lasts` under a second: `value must be at least 0:00:01`.
@@ -73,16 +74,17 @@ Traceback (most recent call last):
   …
 ```
 
-Once the entities are created, pururu does the rest in steps: `events`, `devices`, `generate`, `alert2`, `alert lights` and `dashboard`. One that fails is logged with its traceback, and the others still run. The entities stay; only what that step makes is missing until the next reload:
+Once the entities are created, pururu does the rest in steps: `events`, `goals`, `devices`, `generate`, `alert2`, `alert lights` and `dashboard`. One that fails is logged with its traceback, and the others still run. The entities stay; only what that step makes is missing until the next reload:
 
 - `events`: the `pururu_state_changed` and `pururu_reading` events.
+- `goals`: rebuilding pururu when what a goal tracks is disabled.
 - `devices`: devices put in their areas, and what the configuration dropped removed.
 - `generate`: the programs' scripts, or the automations (the reactions' and the notifications' together, one file), from the part that failed on.
 - `alert2`: Alert2's alerts file.
 - `alert lights`: lights lent to the alerts.
 - `dashboard`: the `/pururu` dashboard.
 
-`Listener failed`, logged the same way after the steps, is the listener that follows renames in the UI: until the next reload, renaming one of pururu's entities, scripts or automations, or disabling an entity a program or an alert's lights follow, doesn't rebuild the entry.
+`Listener failed`, logged the same way after the steps, is the listener that follows renames in the UI: until the next reload, renaming one of pururu's entities, scripts or automations, or disabling an entity a program, an alert's lights or a goal follow, doesn't rebuild the entry.
 
 **Fix:** this is a bug in pururu. [Open an issue](https://github.com/thatsnotmynameio/pururu-ha/issues) with the traceback and the configuration of the device it names, if any. A reload tries the step, or the listener, again.
 
@@ -125,6 +127,24 @@ sensor.pururu_clothes_washer_appliance_phase_current follows binary_sensor.purur
 
 This entity depends on one that couldn't be created, usually because of the error above. Fix that one and this one comes back. An [executable program](/concepts/programs#executable-programs) acting on a switch that isn't created isn't created either.
 
+A [goal](/concepts/goals)'s two sensors are logged this way also when the total it tracks is **disabled**, and only they: the total, its meters and its alerts are still created, disabled as you left it.
+
+```
+sensor.pururu_pool_goal_filtering_done follows sensor.pururu_pool_appliance_runtime_total, which is not created; not creating it
+```
+
+**Fix:** enable the total again, and the goal comes back, `done` with what it had, or 0 if its period turned over meanwhile. Or point `tracked_by` at another total.
+
+### `… doesn't accumulate (state class …); not creating it`
+
+```
+pool: goals: filtering: homeassistant.sensor.pool_pump_power doesn't accumulate (state class measurement); not creating it
+```
+
+A [goal](/concepts/goals)'s `tracked_by` names something that goes up and down, such as a power reading in W, so how much it grew in a period means nothing. pururu checks it when it sets up, by its state class: only `total` and `total_increasing` accumulate. It checks a Home Assistant entity this way, and `appliance.energy`, by the state class of the appliance's `energy` sensor. The goal's two sensors aren't created; the rest of the device is.
+
+**Fix:** track what accumulates instead: a runtime, cycles or energy total, such as the pump's `appliance.running_program.runtime_total`, or Home Assistant's energy sensor of the plug rather than its power. Then reload pururu.
+
 ### `automation.… runs script.…, which is not generated; not generating it`
 
 ```
@@ -136,13 +156,13 @@ A [reaction](/concepts/reactions#starting-a-program)'s `then` (`runs`), or its `
 
 **Fix:** fix the program, and the reaction comes back with it.
 
-### `… watches …, which this device's settings don't create …`
+### `… watches …, which its own device's settings don't create …`
 
 ```
-binary_sensor.pururu_clothes_washer_alert_month watches sensor.pururu_clothes_washer_appliance_runtime_month, which this device's settings don't create (turn it on, or watch another entity); not creating it
+binary_sensor.pururu_clothes_washer_alert_month watches sensor.pururu_clothes_washer_appliance_runtime_month, which its own device's settings don't create (turn it on, or watch another entity); not creating it
 ```
 
-An [alert](/concepts/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance.running_program.statistics.runtime.month` without `month` in `running_program`'s `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is.
+An [alert](/concepts/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance.running_program.statistics.runtime.month` without `month` in `running_program`'s `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is. A [goal](/concepts/goals)'s `tracked_by` is logged the same way, such as `appliance.energy` without the appliance's `energy`; for another device's entity, the setting to turn on is that device's.
 
 **Fix:** turn on the setting that creates the entity, or point `when` at another entity, then reload pururu.
 

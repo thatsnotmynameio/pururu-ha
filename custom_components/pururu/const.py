@@ -20,6 +20,9 @@ CONF_REACTIONS: Final = "reactions"
 # A reaction's message, and where messages go (a reaction's, a notification's, config's)
 CONF_MESSAGE: Final = "message"
 CONF_NOTIFY: Final = "notify"
+# A device's goals: what it must achieve in each period, and the path of what tracks each
+CONF_GOALS: Final = "goals"
+CONF_TRACKED_BY: Final = "tracked_by"
 # A device's ready-made notifications: feature key -> name -> settings
 CONF_NOTIFICATIONS: Final = "notifications"
 # A device's alerts: the device key of the hand-written alerts (those with texts go to Alert2)

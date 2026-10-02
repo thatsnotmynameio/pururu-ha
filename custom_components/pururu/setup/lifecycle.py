@@ -20,8 +20,10 @@ from ..const import (
     PLATFORMS,
 )
 from ..core import generated
+from ..core.entity import PururuEntity
 from ..core.runtime import Built, PururuConfigEntry, Step
 from ..core.texts import async_texts
+from ..device_keys import goals
 from ..outputs import (
     alert2_alerts,
     alert_lights,
@@ -48,11 +50,13 @@ NOT_UNLOADED = (
 )
 
 # The outputs after the platforms, in order: the events once the entities have their
-# IDs; the devices placed and what is stale removed; the scripts before the
-# automations that start them; Alert2 and the alert lights once their alerts and
-# lights are created; the dashboard last, as it shows them all
+# IDs; what the goals track, disabled, rebuilds the entry; the devices placed and
+# what is stale removed; the scripts before the automations that start them; Alert2
+# and the alert lights once their alerts and lights are created; the dashboard last,
+# as it shows them all
 STEPS: tuple[tuple[str, Step], ...] = (
     ("events", events.async_step),
+    ("goals", goals.async_step),
     ("devices", device_steps.async_step),
     ("generate", generate.async_step),
     ("alert2", alert2_alerts.async_step),
@@ -136,12 +140,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: PururuConfigEntry) -> bo
     texts = await async_texts(hass)
     owned = generate.owned(hass, entry, devices)
     index = catalogue.index(devices)
+    # Every device built before any is created: an entity may follow another
+    # device's
+    built_all: list[tuple[PururuEntity, set[str]]] = []
+    watched: dict[str, str] = {}
     for key, config in devices.items():
-        for entity in build.creatable(
-            hass, registry, *build.build(hass, key, config, index, texts, owned)
-        ):
-            entities[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
-            created_by[key].append(entity)
+        device_built, device_watched = build.build(
+            hass, key, config, index, texts, owned
+        )
+        built_all.extend(device_built)
+        watched.update(device_watched)
+    for entity in build.creatable(hass, registry, built_all, watched):
+        entities[Platform(split_entity_id(entity.entity_id)[0])].append(entity)
+        created_by[entity.device_key].append(entity)
     entry.runtime_data = entities
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

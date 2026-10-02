@@ -33,8 +33,8 @@ def async_listen(
         A rename is followed: of a pururu entity, or of a script or automation
         it generates (a reaction's action and the statistics would watch an ID
         that no longer is). A program acting on an entity just disabled is dropped (`_acted_on`),
-        and a light or alert the alert lights follow is left out, once
-        for a burst of them: HA reloads the entry itself once an entity is
+        a light or alert the alert lights follow is left out, and a goal
+        tracking it is dropped, once for a burst of them: HA reloads the entry itself once an entity is
         enabled again, but not when one is disabled (config_entries.py leaves
         that to the entity, which merely clears its own state). No other
         disable or enable concerns what is built here (`rebuild_for`).
@@ -73,8 +73,8 @@ def rebuild_for(
 
     Renamed: one of the entry's entities, or a script or automation it
     generates (a reaction starts one, the statistics watch them).
-    Disabled: an entity a generated script acts on, or a light or an alert the
-    alert lights follow, just now (the old value
+    Disabled: an entity a generated script acts on, a light or an alert the
+    alert lights follow, or what a goal tracks, just now (the old value
     of `disabled_by` is None).
     """
     ours = registered.config_entry_id == entry_id

@@ -96,6 +96,8 @@ A reaction that follows a program and starts the same one, `when: programs.execu
 
 A reaction can't watch a reaction: `reactions.<key>` is refused, pointing to what counts it (`reactions: blinked: reactions.teto_on is a reaction: watch reactions.teto_on.triggered_total`).
 
+Nor a [goal](/concepts/goals) itself: `goals.<key>` is refused, pointing to its two sensors (`reactions: met: goals.filtering is a goal: watch goals.filtering.target or goals.filtering.done`). A reaction on `goals.filtering.done` with `above` fires when the period's done crosses that number.
+
 ### What an entity must do
 
 For `when`, give **either** `to` **or** `above`/`below`:

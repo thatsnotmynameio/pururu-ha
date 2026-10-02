@@ -167,6 +167,8 @@
       "program_runtime_total": {"name": "Tempo de {program}"},
       "reaction_triggered_total": {"name": "Disparos de {reaction}", "unit_of_measurement": "disparos"},
       "button_triggered_total": {"name": "Disparos de {button}", "unit_of_measurement": "disparos"},
+      "goal_target": {"name": "Meta de {goal}"},
+      "goal_done": {"name": "Realizado de {goal}"},
       "runtime_today": {"name": "Tempo ligado hoje"},
       "runtime_week": {"name": "Tempo ligado na semana"},
       "runtime_month": {"name": "Tempo ligado no mês"},

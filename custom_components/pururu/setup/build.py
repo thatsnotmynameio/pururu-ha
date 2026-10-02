@@ -12,7 +12,7 @@ from homeassistant.helpers.entity import Entity
 from ..const import DOMAIN
 from ..core.entity import PururuEntity, other_holder
 from ..core.feature import Device
-from ..core.resolve import Index, find
+from ..core.resolve import Index, Ref, find
 from ..core.roles import Generates, Refers
 from ..core.texts import Texts
 from . import catalogue
@@ -28,20 +28,21 @@ def build(
     texts: Texts,
     owned: Mapping[str, str],
 ) -> tuple[list[tuple[PururuEntity, set[str]]], dict[str, str]]:
-    """Every entity of the device's features, with the unique IDs of the device's entities it follows.
+    """Every entity of the device's features, with the unique IDs of the entities it follows.
 
     A builder's own entities, then those of the aspects it offers (its
     ready-made alerts, the meters of its totals), all in its namespace, each
     stamped with its path from the index, where its key is born.
     Each feature sees the device in its own namespace; what it refers to is
-    in the owning feature's. Also the entity ID of each entity some entity
+    in the owning feature's. What an entity follows is of this device or of
+    another, so whether it is created is the house's to say (`creatable`,
+    once over every device). Also the entity ID of each entity some entity
     watches (`follows`), by unique ID: the settings may never build it, and
     then only this names it. `index` is what each device can create; `owned`
     are the entity IDs of the scripts and automations the entry generates, by
     ID.
     """
-    found = index[key]
-    paths = {target.key: path for path, target in found.items()}
+    paths = {target.key: path for path, target in index[key].items()}
     built: list[tuple[PururuEntity, set[str]]] = []
     watched: dict[str, str] = {}
     for name, feature in catalogue.builders().items():
@@ -57,8 +58,9 @@ def build(
         for entity in (*feature.build(hass, device, config[name], inputs), *aspects):
             entity.path = paths[entity.key]
             follows = set()
-            for path in entity.follows:
-                target = found[path]
+            for text in entity.follows:
+                target = find(index, key, Ref.parse(text))
+                assert target is not None  # the schema checked it (checks.references)
                 follows.add(target.unique_id)
                 watched[target.unique_id] = target.current_entity_id(hass)
             built.append((entity, {*map(device.object_id, entity.sources), *follows}))
@@ -103,8 +105,11 @@ def creatable(
 ) -> list[PururuEntity]:
     """The entities whose ID is free and whose sources are created too; the rest logged.
 
-    A source the settings don't build (an entity key a feature can create, but
+    `built` is every device's: an entity may follow another device's. A
+    source the settings don't build (an entity key a feature can create, but
     not with this device's settings) can only be watched: `watched` names it.
+    A source the entity says is disabled (`disabled`) isn't created for it
+    alone: the source is, and so is everything else that follows it.
     """
     built_ids = {str(entity.unique_id) for entity, _ in built}
     missing: dict[str, str] = {}  # unique ID -> entity ID, of what isn't created
@@ -114,7 +119,7 @@ def creatable(
             watched.get(source, source) for source in sources if source not in built_ids
         ):
             _LOGGER.error(
-                "%s watches %s, which this device's settings don't create "
+                "%s watches %s, which its own device's settings don't create "
                 "(turn it on, or watch another entity); not creating it",
                 entity.entity_id,
                 ", ".join(unbuilt),
@@ -132,9 +137,8 @@ def creatable(
     while lost:  # until nothing left follows what isn't created
         lost = False
         for entity, sources in list(kept):
-            if gone := sorted(
-                missing[source] for source in sources if source in missing
-            ):
+            absent = {**missing, **entity.disabled}
+            if gone := sorted(absent[source] for source in sources if source in absent):
                 _LOGGER.error(
                     "%s follows %s, which is not created; not creating it",
                     entity.entity_id,

@@ -167,6 +167,8 @@
       "program_runtime_total": {"name": "{program} runtime"},
       "reaction_triggered_total": {"name": "{reaction} triggers", "unit_of_measurement": "triggers"},
       "button_triggered_total": {"name": "{button} triggers", "unit_of_measurement": "triggers"},
+      "goal_target": {"name": "{goal} target"},
+      "goal_done": {"name": "{goal} done"},
       "runtime_today": {"name": "Runtime today"},
       "runtime_week": {"name": "Runtime this week"},
       "runtime_month": {"name": "Runtime this month"},
