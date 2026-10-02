@@ -24,7 +24,7 @@ from ..const import (
 from ..core import messages
 from ..core.feature import TEXT, Feature
 from ..core.resolve import Index, key_alone
-from ..device_keys import reactions
+from ..device_keys import goals, reactions
 from ..features import FEATURES, buttons
 from ..outputs import alert_lights, events, places
 from . import catalogue, checks
@@ -62,6 +62,7 @@ type Check = Callable[
 CHECKS: tuple[Check, ...] = (
     checks.references,
     alerts.check,
+    goals.check,
     checks.real_entities_distinct,
     reactions.check,
     checks.pururus_own_as_home_assistants,

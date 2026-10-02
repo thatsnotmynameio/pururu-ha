@@ -27,7 +27,7 @@ from ..const import (
 )
 from ..core import generated
 from ..core.feature import Device, Feature
-from ..core.resolve import HOME_ASSISTANT, Index, Owner, Ref
+from ..core.resolve import HOME_ASSISTANT, Index, Owner, Ref, Target, resolve
 from ..core.roles import Configured, Generates, Refers
 from ..device_keys import reactions
 from . import catalogue
@@ -39,7 +39,8 @@ def references(
     """Refuse a reference that isn't another block's entity, within its reach, at its field (an alert watching an alert: alerts.check).
 
     An executable program is followed by a reaction's when only: it is no
-    entity pururu creates, so an alert can't follow it.
+    entity pururu creates, so an alert can't follow it. Another device's
+    entities are another block's.
     """
     devices = house[CONF_DEVICES]
     for key, device in devices.items():
@@ -54,13 +55,28 @@ def _refused_refs(
     """Builder `name`'s references on device `key` that it can't have: one refusal each, at its field."""
     for where, ref in refers.of(devices[key][name]):
         path: list[Hashable] = [CONF_DEVICES, key, name, *where]
-        found = programs.reach(index, devices, key, ref)
+        found = _reached(index, devices, key, ref, refers)
         if isinstance(found, str):
             yield vol.Invalid(f"{name}: {found}", path=path)
-        elif found.builder == name:
+        elif found.builder == name and found.device.key == key:
             yield vol.Invalid(
                 f"{name}: {ref.text} is not another block's entity", path=path
             )
+
+
+def _reached(
+    index: Index, devices: Mapping[str, Any], key: str, ref: Ref, refers: Refers
+) -> Target | str:
+    """What `ref`, written in device `key`, names within the builder's reach; else why it can't, after the field's place.
+
+    Another device's path is within it with Refers.other_devices only; an
+    executable program never is.
+    """
+    if not refers.other_devices or ref.owner is not Owner.DEVICE:
+        return programs.reach(index, devices, key, ref)
+    if programs.running(devices, key, ref):
+        return f"{ref.text} {programs.RUNNING}"
+    return resolve(index, key, ref)
 
 
 def real_entities_distinct(

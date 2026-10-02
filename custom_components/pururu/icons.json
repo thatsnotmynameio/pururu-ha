@@ -99,6 +99,8 @@
       "program_runtime_total": {"default": "mdi:timer-sand"},
       "reaction_triggered_total": {"default": "mdi:gesture-tap"},
       "button_triggered_total": {"default": "mdi:gesture-tap"},
+      "goal_target": {"default": "mdi:bullseye-arrow"},
+      "goal_done": {"default": "mdi:progress-check"},
       "runtime_today": {"default": "mdi:timer-sand"},
       "runtime_week": {"default": "mdi:timer-sand"},
       "runtime_month": {"default": "mdi:timer-sand"},
