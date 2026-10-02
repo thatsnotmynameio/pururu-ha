@@ -15,16 +15,30 @@ import voluptuous as vol
 
 from homeassistant.components.sensor import (
     ATTR_STATE_CLASS,
-    SensorEntity,
+    RestoreSensor,
+    SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import CONF_NAME, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import (
+    ATTR_DEVICE_CLASS,
+    ATTR_UNIT_OF_MEASUREMENT,
+    CONF_NAME,
+    Platform,
+)
+from homeassistant.core import (
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    State,
+    callback,
+)
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util.enum import try_parse_enum
 
 from ..aspects.statistics import PERIODS, Meter
 from ..const import CONF_DEVICES, CONF_GOALS, CONF_TRACKED_BY, DATA_CONFIG
-from ..core.entity import PururuEntity
+from ..core.entity import PururuEntity, reading
 from ..core.feature import TEXT, Device, Feature, Item, finite_float
 from ..core.resolve import Index, Owner, Ref, path, resolve
 from ..core.roles import Items, Refers
@@ -62,27 +76,63 @@ GOAL = vol.Schema(
 SCHEMA = vol.All(vol.Schema({cv.slug: GOAL}), vol.Length(min=1))
 
 
-class GoalTarget(PururuEntity, SensorEntity):
-    """A goal's target, as written."""
+class GoalTarget(PururuEntity, RestoreSensor):
+    """A goal's target, as written, in the unit and device class of what tracks it.
+
+    Taken from its state's attributes, where utility_meter takes done's: both
+    always share a unit. Before it reports, from its registry entry, else as
+    last saved. Never unavailable for its sake: the number is always known.
+    """
 
     def __init__(
         self,
         device: Device,
         target: float,
+        source: str,
         *,
         item: Item,
         follows: tuple[str, ...],
     ) -> None:
-        """Show `target`, the goal of `item`'s, tracked by what it follows."""
+        """Show `target`, the goal of `item`'s, in `source`'s unit, tracked by what it follows."""
         self._identify(device, Platform.SENSOR, "target", item=item)
-        self._target = target
+        self._attr_native_value = target
+        self._source = source
         self.follows = follows
 
-    @property
     @override
-    def native_value(self) -> float:
-        """The target."""
-        return self._target
+    async def async_added_to_hass(self) -> None:
+        """Take the unit as saved, then its registry entry's, then its reading's, and follow it."""
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_sensor_data()) is not None:
+            self._attr_native_unit_of_measurement = last.native_unit_of_measurement
+        if (state := await self.async_get_last_state()) is not None:
+            self._take_class(state.attributes.get(ATTR_DEVICE_CLASS))
+        if (entry := er.async_get(self.hass).async_get(self._source)) is not None:
+            self._attr_native_unit_of_measurement = entry.unit_of_measurement
+            self._take_class(entry.original_device_class)
+        self._take(self.hass.states.get(self._source))
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, self._source, self._changed)
+        )
+
+    @callback
+    def _changed(self, event: Event[EventStateChangedData]) -> None:
+        if self._take(event.data["new_state"]):
+            self.async_write_ha_state()
+
+    def _take(self, state: State | None) -> bool:
+        """Take `state`'s unit and device class, as utility_meter does: only from a reading."""
+        if reading(state) is None:
+            return False
+        assert state is not None  # a reading has a state
+        self._attr_native_unit_of_measurement = state.attributes.get(
+            ATTR_UNIT_OF_MEASUREMENT
+        )
+        self._take_class(state.attributes.get(ATTR_DEVICE_CLASS))
+        return True
+
+    def _take_class(self, device_class: Any) -> None:
+        self._attr_device_class = try_parse_enum(SensorDeviceClass, device_class)
 
 
 class GoalDone(Meter):
@@ -195,7 +245,9 @@ def build(
             # A pururu entity, of this device or another: by its current ID
             follows = (ref.text,)
             source = inputs[ref.text]
-        entities.append(GoalTarget(device, goal["target"], item=item, follows=follows))
+        entities.append(
+            GoalTarget(device, goal["target"], source, item=item, follows=follows)
+        )
         entities.append(GoalDone(device, source, goal, item=item, follows=follows))
     return entities
 

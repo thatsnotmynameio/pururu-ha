@@ -457,3 +457,89 @@ async def test_an_energy_mirror_whose_plug_doesnt_accumulate_creates_no_goal(
     assert ha.states.get(RUNNING) is not None
     assert (f"{device}: goals: {goal}: {tracked_by} doesn't accumulate "
             "(state class measurement); not creating it") in caplog.text
+
+
+# --- the target ----------------------------------------------------------------------
+
+ENERGY_TOTAL = {"state_class": "total_increasing", "unit_of_measurement": "kWh", "device_class": "energy"}
+
+
+def saved_target(target: float, unit: str, device_class: str) -> tuple[State, dict[str, Any]]:
+    """The filtering goal's target, as .storage keeps it."""
+    return State(TARGET, str(target), {"unit_of_measurement": unit, "device_class": device_class}), {
+        "native_value": target, "native_unit_of_measurement": unit}
+
+
+async def test_a_target_of_cycles_is_in_cycles(ha: HomeAssistant) -> None:
+    """Covers AE2: the cycles total's unit, translated in English alone, as done's; a count has no device class."""
+    assert await setup(ha, {POOL: pool(
+        target=2, period="week", tracked_by="appliance.running_program.cycles_total")})
+    target = ha.states.get(TARGET)
+    assert float(target.state) == 2
+    assert target.attributes["unit_of_measurement"] == "cycles"
+    assert target.attributes["unit_of_measurement"] == ha.states.get(DONE).attributes["unit_of_measurement"]
+    assert "device_class" not in target.attributes
+
+
+async def test_a_target_of_runtime_is_in_hours(ha: HomeAssistant) -> None:
+    """Covers R6: the runtime total's unit and device class; never graphed as a measurement."""
+    assert await setup(ha, {POOL: pool()})
+    target = ha.states.get(TARGET)
+    assert float(target.state) == 6
+    assert target.attributes["unit_of_measurement"] == "h"
+    assert target.attributes["device_class"] == "duration"
+    assert "state_class" not in target.attributes
+
+
+@pytest.mark.parametrize("known_by", ["registry", "state"])
+async def test_a_target_of_home_assistants_energy_is_in_kwh(ha: HomeAssistant, known_by: str) -> None:
+    """Covers R6: its unit and device class from its registry entry before it reports, else from its state."""
+    if known_by == "registry":
+        er.async_get(ha).async_get_or_create(
+            "sensor", "plug", "pool_pump_energy", suggested_object_id="pool_pump_energy",
+            capabilities={"state_class": "total_increasing"},
+            unit_of_measurement="kWh", original_device_class="energy")
+    else:
+        await fake(ha, ENERGY, "5", ENERGY_TOTAL)
+    assert await setup(ha, {POOL: pool(tracked_by=f"homeassistant.{ENERGY}")})
+    target = ha.states.get(TARGET)
+    assert float(target.state) == 6
+    assert target.attributes["unit_of_measurement"] == "kWh"
+    assert target.attributes["device_class"] == "energy"
+
+
+async def test_a_target_takes_its_unit_once_its_entity_reports(ha: HomeAssistant) -> None:
+    """Covers R6: a number without a unit while its entity isn't there; never unavailable for its sake."""
+    assert await setup(ha, {POOL: pool(tracked_by=f"homeassistant.{ENERGY}")})
+    target = ha.states.get(TARGET)
+    assert float(target.state) == 6
+    assert "unit_of_measurement" not in target.attributes
+    assert "device_class" not in target.attributes
+    await fake(ha, ENERGY, "5", ENERGY_TOTAL)
+    target = ha.states.get(TARGET)
+    assert target.attributes["unit_of_measurement"] == "kWh"
+    assert target.attributes["device_class"] == "energy"
+    await fake(ha, ENERGY, "unavailable")
+    target = ha.states.get(TARGET)
+    assert float(target.state) == 6
+    assert target.attributes["unit_of_measurement"] == "kWh"
+    assert target.attributes["device_class"] == "energy"
+
+
+async def test_a_target_keeps_its_unit_across_a_restart(ha: HomeAssistant) -> None:
+    """Covers R6: kWh before its entity reports again."""
+    await restart(ha, {POOL: pool(tracked_by=f"homeassistant.{ENERGY}")}, saved_target(6, "kWh", "energy"))
+    target = ha.states.get(TARGET)
+    assert float(target.state) == 6
+    assert target.attributes["unit_of_measurement"] == "kWh"
+    assert target.attributes["device_class"] == "energy"
+
+
+async def test_a_restart_shows_the_written_target_in_its_saved_unit(ha: HomeAssistant) -> None:
+    """Covers R3: the number is the one written, not the one saved; the unit is the saved one."""
+    await restart(ha, {POOL: pool(tracked_by=f"homeassistant.{PUMP_RUNTIME}")},
+                  saved_target(4, "h", "duration"))
+    target = ha.states.get(TARGET)
+    assert float(target.state) == 6
+    assert target.attributes["unit_of_measurement"] == "h"
+    assert target.attributes["device_class"] == "duration"
