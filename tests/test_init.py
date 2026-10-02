@@ -345,7 +345,7 @@ async def test_what_refers_to_an_entity_its_settings_dont_build_is_not_created(
     assert ha.states.get(SEEN) is None
     assert held(ha, "dummy_gizmo") == {LEVEL, ACTIVE}
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-    assert (f"{SEEN} watches sensor.pururu_dummy_gizmo_gauge_spare, which this device's "
+    assert (f"{SEEN} watches sensor.pururu_dummy_gizmo_gauge_spare, which its own device's "
             "settings don't create (turn it on, or watch another entity); not creating it"
             in errors), errors
 

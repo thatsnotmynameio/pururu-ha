@@ -513,7 +513,7 @@ async def test_an_alert_on_an_entity_its_settings_dont_build_is_not_created(
     assert ha.states.get(alert("month")) is None
     errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
     assert (f"{alert('month')} watches sensor.pururu_dummy_washer_appliance_runtime_month, which "
-            "this device's settings don't create (turn it on, or watch another entity); "
+            "its own device's settings don't create (turn it on, or watch another entity); "
             "not creating it" in errors), errors
 
 

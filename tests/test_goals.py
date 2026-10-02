@@ -229,6 +229,19 @@ async def test_a_goal_whose_other_devices_total_isnt_created_isnt_either(
                 "not creating it") in caplog.text
 
 
+async def test_a_goal_on_another_devices_unbuilt_total_names_that_device(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Covers R11: the pool has no energy, so its energy total isn't built; the log points at the pool's settings."""
+    energy = "sensor.pururu_pool_appliance_energy_total"
+    airing = {**AIRING, "tracked_by": f"device.{POOL}.appliance.energy"}
+    assert await setup(ha, {POOL: {"name": "Piscina", "appliance": APPLIANCE},
+                            LIVING_ROOM: {"name": "Sala", "window": WINDOW, "goals": {"airing": airing}}})
+    assert ha.states.get(AIRING_DONE) is None
+    for entity_id in (AIRING_TARGET, AIRING_DONE):
+        assert (f"{entity_id} watches {energy}, which its own device's settings don't create "
+                "(turn it on, or watch another entity); not creating it") in caplog.text
+
+
 async def test_a_goal_whose_own_devices_total_isnt_created_isnt_either(
         ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
     """Covers R11: following its own device as any entity does."""

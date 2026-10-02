@@ -119,7 +119,7 @@ def creatable(
             watched.get(source, source) for source in sources if source not in built_ids
         ):
             _LOGGER.error(
-                "%s watches %s, which this device's settings don't create "
+                "%s watches %s, which its own device's settings don't create "
                 "(turn it on, or watch another entity); not creating it",
                 entity.entity_id,
                 ", ".join(unbuilt),

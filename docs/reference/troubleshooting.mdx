@@ -156,13 +156,13 @@ A [reaction](/concepts/reactions#starting-a-program)'s `then` (`runs`), or its `
 
 **Fix:** fix the program, and the reaction comes back with it.
 
-### `… watches …, which this device's settings don't create …`
+### `… watches …, which its own device's settings don't create …`
 
 ```
-binary_sensor.pururu_clothes_washer_alert_month watches sensor.pururu_clothes_washer_appliance_runtime_month, which this device's settings don't create (turn it on, or watch another entity); not creating it
+binary_sensor.pururu_clothes_washer_alert_month watches sensor.pururu_clothes_washer_appliance_runtime_month, which its own device's settings don't create (turn it on, or watch another entity); not creating it
 ```
 
-An [alert](/concepts/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance.running_program.statistics.runtime.month` without `month` in `running_program`'s `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is. A [goal](/concepts/goals)'s `tracked_by` is logged the same way, such as `appliance.energy` without the appliance's `energy`.
+An [alert](/concepts/alerts)'s `when` names an entity its feature can create, but not with this device's settings, such as `appliance.running_program.statistics.runtime.month` without `month` in `running_program`'s `statistics.runtime`. The configuration is valid, so that turning the setting on later never breaks the alert, but the alert isn't created until it is. A [goal](/concepts/goals)'s `tracked_by` is logged the same way, such as `appliance.energy` without the appliance's `energy`; for another device's entity, the setting to turn on is that device's.
 
 **Fix:** turn on the setting that creates the entity, or point `when` at another entity, then reload pururu.
 
