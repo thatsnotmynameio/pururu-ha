@@ -173,6 +173,20 @@ def test_a_home_assistant_entity_passes_the_check(ha: HomeAssistant) -> None:
     module("setup.schema").CONFIG_SCHEMA({DOMAIN: house(tracked_by="homeassistant.sensor.pool_pump_runtime")})
 
 
+@pytest.mark.parametrize(("tracked_by", "write"), [
+    pytest.param("homeassistant.sensor.pururu_pool_appliance_runtime_total",
+                 "appliance.running_program.runtime_total", id="its own device's"),
+    pytest.param("homeassistant.sensor.pururu_living_room_window_open_time_total",
+                 f"device.{LIVING_ROOM}.window.open_time_total", id="another device's"),
+])
+def test_pururus_total_written_as_home_assistants_is_refused(
+        ha: HomeAssistant, tracked_by: str, write: str) -> None:
+    """Covers R5, R11: as Home Assistant's, it would never be followed; its path is what to write."""
+    error = refused(house((LIVING_ROOM, {"name": "Sala", "window": WINDOW}), tracked_by=tracked_by))
+    assert error.msg == f"goals: filtering: {tracked_by} is pururu's: write {write}"
+    assert error.path == [DOMAIN, *GOAL, "tracked_by"]
+
+
 def test_a_reaction_on_a_goal_names_its_sensors(ha: HomeAssistant) -> None:
     """Covers R9: a goal is no entity; its target and done are."""
     block = house()
