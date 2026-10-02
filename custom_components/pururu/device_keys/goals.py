@@ -4,34 +4,42 @@ A goal is a target, a period and what tracks it (tracked_by): a total of
 this device, of another (device.<device>.<path>), or Home Assistant's
 entity (homeassistant.<entity ID>). The target is in the tracked entity's
 unit. Each goal is two sensors of its device (GOALS): its target, and what
-was done in the period.
+was done in the period, a meter of the tracked entity (aspects/statistics.py).
 """
 
 from collections.abc import Hashable, Iterator, Mapping
+import logging
 from typing import Any, override
 
 import voluptuous as vol
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    ATTR_STATE_CLASS,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 
-from ..const import CONF_DEVICES, CONF_GOALS, CONF_TRACKED_BY
+from ..aspects.statistics import PERIODS, Meter
+from ..const import CONF_DEVICES, CONF_GOALS, CONF_TRACKED_BY, DATA_CONFIG
 from ..core.entity import PururuEntity
 from ..core.feature import TEXT, Device, Feature, Item, finite_float
 from ..core.resolve import Index, Owner, Ref, path, resolve
 from ..core.roles import Items, Refers
+
+_LOGGER = logging.getLogger(__name__)
 
 NAMESPACE = "goal"
 PER_GOAL: dict[str, Platform] = {
     "target": Platform.SENSOR,
     "done": Platform.SENSOR,
 }
-# The statistics aspect's periods, turning over as its meters do
-PERIODS = ("today", "week", "month", "year")
 # What a tracked pururu entity's key ends with: it accumulates
 TOTAL = "_total"
+# The state classes of what accumulates
+ACCUMULATING = (SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING)
 
 GOAL = vol.Schema(
     {
@@ -41,6 +49,7 @@ GOAL = vol.Schema(
         vol.Required("target"): vol.All(
             finite_float, vol.Range(min=0, min_included=False)
         ),
+        # The statistics aspect's periods, turning over as its meters do
         vol.Required("period"): vol.In(
             PERIODS, msg=f"a goal's period is one of {', '.join(PERIODS)}"
         ),
@@ -76,12 +85,32 @@ class GoalTarget(PururuEntity, SensorEntity):
         return self._target
 
 
-class GoalDone(PururuEntity, SensorEntity):
-    """How much the tracked entity grew in the period: not metered yet, so unknown."""
+class GoalDone(Meter):
+    """How much the tracked entity grew in the period: a meter of it, of this definition alone."""
 
-    def __init__(self, device: Device, *, item: Item, follows: tuple[str, ...]) -> None:
-        """What `item`'s goal did, tracked by what it follows."""
-        self._identify(device, Platform.SENSOR, "done", item=item)
+    def __init__(
+        self,
+        device: Device,
+        source: str,
+        goal: Mapping[str, Any],
+        *,
+        item: Item,
+        follows: tuple[str, ...],
+    ) -> None:
+        """Meter `source`, what `goal` is tracked by, over its period, following what it follows.
+
+        Its fingerprint is the goal's tracked_by as written, and its period:
+        a saved value of another is of something else, so it starts at 0; a
+        tracked entity renamed in the UI keeps it.
+        """
+        super().__init__(
+            device,
+            "done",
+            source,
+            goal["period"],
+            item=item,
+            fingerprint=f"{goal[CONF_TRACKED_BY]} {goal['period']}",
+        )
         self.follows = follows
 
 
@@ -102,22 +131,72 @@ def _refers(config: Mapping[str, Any]) -> list[tuple[tuple[str, ...], Ref]]:
     ]
 
 
+def _real(hass: HomeAssistant, here: str, ref: Ref) -> str | None:
+    """The Home Assistant entity whose state class says whether `ref` accumulates; None: a pururu total.
+
+    Home Assistant's entity itself; for a path whose node in its device's
+    validated block is Home Assistant's entity (appliance.energy, the energy
+    mirror: it shows its plug's reading and state class), that entity.
+    """
+    if ref.owner is Owner.HOME_ASSISTANT:
+        return ref.path
+    node: Any = hass.data[DATA_CONFIG][CONF_DEVICES][ref.device or here]
+    for segment in ref.path.split("."):
+        if not isinstance(node, Mapping) or segment not in node:
+            return None
+        node = node[segment]
+    return node if isinstance(node, str) else None
+
+
+def _state_class(hass: HomeAssistant, entity_id: str) -> str | None:
+    """Its state class, from the registry first (known before it is loaded), then its state; None: not known yet."""
+    entry = er.async_get(hass).async_get(entity_id)
+    if entry is not None and entry.capabilities:
+        if (state_class := entry.capabilities.get(ATTR_STATE_CLASS)) is not None:
+            return str(state_class)
+    state = hass.states.get(entity_id)
+    if state is None or (state_class := state.attributes.get(ATTR_STATE_CLASS)) is None:
+        return None
+    return str(state_class)
+
+
 def build(
     hass: HomeAssistant,
     device: Device,
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """Each goal's target and done, both following its pururu tracked_by."""
-    tracked = {goal_key: ref.text for (goal_key, _), ref in _refers(config)}
+    """Each goal's target and done, both following its pururu tracked_by.
+
+    A goal tracked by what doesn't accumulate, its state class known (Home
+    Assistant's entity, or the plug an energy mirror shows), is logged and
+    not created; one not known yet is: done waits for its first reading.
+    """
     entities: list[PururuEntity] = []
     for item in _items(config):
-        # A pururu entity, of this device or another: none for Home Assistant's
-        follows = (tracked[item.slug],) if item.slug in tracked else ()
-        entities.append(
-            GoalTarget(device, config[item.slug]["target"], item=item, follows=follows)
-        )
-        entities.append(GoalDone(device, item=item, follows=follows))
+        goal = config[item.slug]
+        ref = Ref.parse(goal[CONF_TRACKED_BY])
+        real = _real(hass, device.key, ref)
+        state_class = None if real is None else _state_class(hass, real)
+        if state_class is not None and state_class not in ACCUMULATING:
+            _LOGGER.error(
+                "%s: %s: %s: %s doesn't accumulate (state class %s); not creating it",
+                device.key,
+                CONF_GOALS,
+                item.slug,
+                ref.text,
+                state_class,
+            )
+            continue
+        if ref.owner is Owner.HOME_ASSISTANT:
+            follows: tuple[str, ...] = ()
+            source = ref.path
+        else:
+            # A pururu entity, of this device or another: by its current ID
+            follows = (ref.text,)
+            source = inputs[ref.text]
+        entities.append(GoalTarget(device, goal["target"], item=item, follows=follows))
+        entities.append(GoalDone(device, source, goal, item=item, follows=follows))
     return entities
 
 

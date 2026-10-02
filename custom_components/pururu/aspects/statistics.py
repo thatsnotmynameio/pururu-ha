@@ -6,6 +6,7 @@ its places (Counted: its block, each item, a running program, each phase);
 """
 
 from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, fields
 from datetime import timedelta
 from functools import partial
 from typing import Any, override
@@ -20,7 +21,10 @@ from homeassistant.components.utility_meter.const import (
     WEEKLY,
     YEARLY,
 )
-from homeassistant.components.utility_meter.sensor import UtilityMeterSensor
+from homeassistant.components.utility_meter.sensor import (
+    UtilityMeterSensor,
+    UtilitySensorExtraStoredData,
+)
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
@@ -52,6 +56,22 @@ def _distinct(periods: list[str]) -> list[str]:
 PERIOD_LIST = vol.All(cv.ensure_list, [vol.In(PERIODS)], _distinct)
 
 
+# Where a meter's saved state keeps what it is of
+FINGERPRINT = "fingerprint"
+
+
+@dataclass
+class _Fingerprinted(UtilitySensorExtraStoredData):
+    """utility_meter's saved state, and what the meter is of."""
+
+    fingerprint: str
+
+    @override
+    def as_dict(self) -> dict[str, Any]:
+        """utility_meter's saved state, with the fingerprint."""
+        return {**super().as_dict(), FINGERPRINT: self.fingerprint}
+
+
 class Meter(PururuEntity, UtilityMeterSensor):
     """How much a total grew in the current period; utility_meter resets it."""
 
@@ -59,15 +79,25 @@ class Meter(PururuEntity, UtilityMeterSensor):
         self,
         device: Device,
         entity_key: str,
-        total: str,
         source: str,
         period: str,
-        translation: str,
         *,
+        total: str | None = None,
+        translation: str | None = None,
         item: Item | None = None,
+        fingerprint: str | None = None,
     ) -> None:
-        """Meter `source`, the entity of `total`, over `period` as `entity_key` (of `item`), named `translation`."""
-        self.sources = (item_key(total, item),)
+        """Meter `source` over `period` as `entity_key` (of `item`).
+
+        `total` is the entity key of `source` in this device, without which
+        the meter isn't created; None for another's entity (a goal's). Named
+        `translation` (`{item}` the item's name), else as an item's entity
+        key (roles.Items). With `fingerprint` (what it meters, as written),
+        a saved value of another fingerprint isn't restored: it was of
+        something else, so the meter starts as a new one.
+        """
+        self.sources = () if total is None else (item_key(total, item),)
+        self._fingerprint = fingerprint
         # Where utility_meter looks itself up; ':' keeps it apart from YAML meter names
         self._meter = f"{DOMAIN}:{device.object_id(item_key(entity_key, item))}"
         UtilityMeterSensor.__init__(  # type: ignore[no-untyped-call]  # core leaves it unannotated
@@ -99,15 +129,17 @@ class Meter(PururuEntity, UtilityMeterSensor):
         change (`async_track_state_change_event`, not the value already there): a source
         that stays put after the meter is added (our finite counters, most of the time)
         would leave it `unknown` forever. Seed it from the source's current reading when
-        one is already there and nothing was restored.
+        one is already there and nothing was restored; the reading is the last valid
+        one, so a gap (unavailable, then higher) counts what the source grew in it.
         """
         self.hass.data[DATA_UTILITY][self._meter] = {DATA_TARIFF_SENSORS: [self]}
         await super().async_added_to_hass()
         if (
             self.native_value is None
             and (state := self.hass.states.get(self._sensor_source_id)) is not None
-            and self._validate_state(state) is not None
+            and (reading := self._validate_state(state)) is not None
         ):
+            self._last_valid_state = reading
             self.start(state.attributes)
 
     @override
@@ -115,6 +147,32 @@ class Meter(PururuEntity, UtilityMeterSensor):
         """Stop metering and leave utility_meter's list."""
         await super().async_will_remove_from_hass()
         self.hass.data[DATA_UTILITY].pop(self._meter, None)
+
+    @property
+    @override
+    def extra_restore_state_data(self) -> UtilitySensorExtraStoredData:
+        """utility_meter's saved state, and the fingerprint when there is one."""
+        data = super().extra_restore_state_data
+        if self._fingerprint is None:
+            return data
+        return _Fingerprinted(
+            **{field.name: getattr(data, field.name) for field in fields(data)},
+            fingerprint=self._fingerprint,
+        )
+
+    @override
+    async def async_get_last_sensor_data(self) -> UtilitySensorExtraStoredData | None:
+        """utility_meter's saved state; none when it was of another fingerprint.
+
+        Core restores the value, the last valid reading and `last_reset` from
+        it alone: vetoed here, the meter starts as a new one.
+        """
+        if self._fingerprint is not None and (
+            (saved := await self.async_get_last_extra_data()) is None
+            or saved.as_dict().get(FINGERPRINT) != self._fingerprint
+        ):
+            return None
+        return await super().async_get_last_sensor_data()
 
 
 def _counters(builder: Feature) -> Counters:
@@ -210,7 +268,13 @@ def _meters(
         for period in periods:
             key = f"{counter}_{period}"
             yield Meter(
-                device, key, total, source, period, _named(counted, key), item=item
+                device,
+                key,
+                source,
+                period,
+                total=total,
+                translation=_named(counted, key),
+                item=item,
             )
 
 

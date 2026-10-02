@@ -141,6 +141,8 @@ ALSO: dict[str, tuple[str, ...]] = {
     "device_keys/reactions": ("aspects.programs",),
     # a button's program names an executable program and starts its script (programs.script_id)
     "features/buttons": ("aspects.programs",),
+    # a goal's done is a meter (statistics.Meter) over the statistics aspect's periods
+    "device_keys/goals": ("aspects.statistics",),
     # HA's entry points take the typed entry: hassfest's strict-typing check wants
     # it named *ConfigEntry, and PururuConfigEntry is core/runtime.py's, as for the platforms
     "__init__": ("core.runtime",),

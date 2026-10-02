@@ -1,15 +1,17 @@
 """Goals: a made-up pool pump, what it must run each period, and a living room's window that can track one."""
 
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 import pytest
 import voluptuous as vol
 
-from helpers import DOMAIN, module, setup
+from helpers import DOMAIN, capture, fake, module, reload, restart, setup, tick
 
 POOL = "pool"
 LIVING_ROOM = "living_room"
@@ -229,3 +231,229 @@ async def test_a_goal_tracked_by_home_assistant_follows_nothing(ha: HomeAssistan
     assert await setup(ha, {POOL: pool(tracked_by="homeassistant.sensor.pool_pump_runtime")})
     assert ha.states.get(TARGET) is not None
     assert ha.states.get(DONE) is not None
+
+
+# --- what was done ---------------------------------------------------------------
+
+POWER = "sensor.pool_pump_power"
+ENERGY = "sensor.pool_pump_energy"
+RUNNING = "binary_sensor.pururu_pool_appliance_running"
+# Home Assistant's own runtime total of the pump, which a goal can track instead
+PUMP_RUNTIME = "sensor.pool_pump_runtime"
+HOURS = {"state_class": "total_increasing", "unit_of_measurement": "h", "device_class": "duration"}
+# What the filtering goal's done is of, as its saved state keeps it
+FINGERPRINT = "appliance.running_program.runtime_total today"
+
+
+def value(hass: HomeAssistant, entity_id: str) -> float:
+    return float(hass.states.get(entity_id).state)
+
+
+def saved_total(hours: float) -> tuple[State, dict[str, Any]]:
+    """The pool's runtime total, as .storage keeps it."""
+    return State(RUNTIME_TOTAL, str(hours)), {"native_value": hours, "native_unit_of_measurement": "h"}
+
+
+def saved_done(done: float, *, total: float, last_reset: datetime,
+               fingerprint: str = FINGERPRINT, entity_id: str = DONE) -> tuple[State, dict[str, Any]]:
+    """A goal's done, as .storage keeps it: utility_meter's extra data, and what it is of."""
+    return State(entity_id, str(done)), {
+        "native_value": {"__type": "<class 'decimal.Decimal'>", "decimal_str": str(done)},
+        "native_unit_of_measurement": "h", "last_period": "0",
+        "last_reset": last_reset.isoformat(), "last_valid_state": str(total),
+        "status": "collecting", "input_device_class": "duration", "fingerprint": fingerprint}
+
+
+async def idle(hass: HomeAssistant, freezer: Any) -> None:
+    """The pump idle long enough to count as not running."""
+    await fake(hass, POWER, "1.4")
+    await tick(hass, freezer, 125)
+    assert hass.states.get(RUNNING).state == "off"
+
+
+async def pump(hass: HomeAssistant, freezer: Any, hours: float) -> None:
+    """The pump runs `hours`, from when on_delay passed to when it drops, then its off delay, which isn't runtime."""
+    await fake(hass, POWER, "120")
+    await tick(hass, freezer, 65)
+    await tick(hass, freezer, hours * 3600 - 5)
+    await idle(hass, freezer)
+
+
+async def test_done_is_what_ran_since_midnight(ha: HomeAssistant, freezer: Any) -> None:
+    """Covers AE1: the goal in place since before midnight; at midnight done is 0 again."""
+    await restart(ha, {POOL: pool()}, saved_total(100))
+    await idle(ha, freezer)
+    assert value(ha, DONE) == 0
+    await pump(ha, freezer, 2)
+    assert value(ha, RUNTIME_TOTAL) == pytest.approx(102, abs=0.01)
+    assert value(ha, DONE) == pytest.approx(2, abs=0.01)
+    assert ha.states.get(DONE).attributes["unit_of_measurement"] == "h"
+    await tick(ha, freezer, (dt_util.start_of_local_day() + timedelta(days=1) - dt_util.now()
+                             ).total_seconds() + 60)
+    assert value(ha, DONE) == 0
+    assert value(ha, TARGET) == 6
+
+
+async def test_a_goal_set_up_mid_period_counts_from_then(ha: HomeAssistant, freezer: Any) -> None:
+    """KTD1: the 2 h the pump ran this morning aren't done; the next hour is."""
+    freezer.move_to(dt_util.start_of_local_day() + timedelta(hours=15))
+    await restart(ha, {POOL: pool()}, saved_total(102))
+    await idle(ha, freezer)
+    assert value(ha, DONE) == 0
+    await pump(ha, freezer, 1)
+    assert value(ha, DONE) == pytest.approx(1, abs=0.01)
+
+
+async def test_done_is_kept_across_a_restart(ha: HomeAssistant, freezer: Any) -> None:
+    """Covers AE5: 3 h done at 15:00, and the pump didn't run while Home Assistant was down."""
+    midnight = dt_util.start_of_local_day()
+    freezer.move_to(midnight + timedelta(hours=15))
+    await restart(ha, {POOL: pool()}, saved_total(103), saved_done(3, total=103, last_reset=midnight))
+    done = ha.states.get(DONE)
+    assert float(done.state) == 3
+    assert done.attributes["unit_of_measurement"] == "h"
+    assert dt_util.parse_datetime(done.attributes["last_reset"]) == midnight
+
+
+async def test_what_home_assistants_total_grew_while_down_counts_at_its_next_change(
+        ha: HomeAssistant) -> None:
+    """Core counts from the total's last valid state, once the total changes again."""
+    await fake(ha, PUMP_RUNTIME, "53", HOURS)
+    tracked_by = f"homeassistant.{PUMP_RUNTIME}"
+    await restart(ha, {POOL: pool(tracked_by=tracked_by)},
+                  saved_done(3, total=50, last_reset=dt_util.start_of_local_day(),
+                             fingerprint=f"{tracked_by} today"))
+    assert value(ha, DONE) == 3
+    await fake(ha, PUMP_RUNTIME, "54", HOURS)
+    assert value(ha, DONE) == 7
+
+
+async def test_done_from_yesterday_is_0_at_start(ha: HomeAssistant) -> None:
+    """Covers R8: midnight passed while Home Assistant was down."""
+    yesterday = dt_util.start_of_local_day() - timedelta(days=1)
+    await restart(ha, {POOL: pool()}, saved_total(103), saved_done(3, total=103, last_reset=yesterday))
+    assert value(ha, DONE) == 0
+
+
+async def test_a_reload_keeps_done(ha: HomeAssistant, freezer: Any) -> None:
+    """Covers R10: unavailable while the entry reloads, then back where it was, neither 0 nor doubled."""
+    assert await setup(ha, {POOL: pool()})
+    await idle(ha, freezer)
+    await pump(ha, freezer, 1)
+    before = ha.states.get(DONE).state
+    assert float(before) == pytest.approx(1, abs=0.01)
+    changes = capture(ha, "state_changed")
+    await reload(ha, {POOL: pool()})
+    seen = [event.data["new_state"].state for event in changes
+            if event.data["entity_id"] == DONE and event.data["new_state"] is not None]
+    assert "unavailable" in seen
+    assert "0" not in seen
+    assert ha.states.get(DONE).state == before
+
+
+@pytest.mark.parametrize("goal", [
+    pytest.param({"period": "week"}, id="period"),
+    pytest.param({"tracked_by": f"homeassistant.{PUMP_RUNTIME}"}, id="tracked_by"),
+])
+async def test_done_starts_again_for_another_definition(
+        ha: HomeAssistant, goal: dict[str, Any]) -> None:
+    """KTD2: the saved 3 h were of the runtime total today; the goal now counts something else."""
+    await fake(ha, PUMP_RUNTIME, "50", HOURS)
+    await restart(ha, {POOL: pool(**goal)}, saved_total(103),
+                  saved_done(3, total=103, last_reset=dt_util.start_of_local_day()))
+    assert value(ha, DONE) == 0
+
+
+async def test_done_follows_its_total_renamed_in_the_ui(ha: HomeAssistant, freezer: Any) -> None:
+    """KTD2: the same tracked_by, so done keeps its value, and meters the total by its new ID."""
+    assert await setup(ha, {POOL: pool()})
+    await idle(ha, freezer)
+    await pump(ha, freezer, 1)
+    er.async_get(ha).async_update_entity(RUNTIME_TOTAL, new_entity_id="sensor.pool_filtering_hours")
+    await ha.async_block_till_done()
+    assert value(ha, DONE) == pytest.approx(1, abs=0.01)
+    await pump(ha, freezer, 1)
+    assert value(ha, "sensor.pool_filtering_hours") == pytest.approx(2, abs=0.02)
+    assert value(ha, DONE) == pytest.approx(2, abs=0.02)
+
+
+@pytest.mark.parametrize("known_by", ["registry", "state"])
+async def test_what_doesnt_accumulate_creates_no_goal(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, known_by: str) -> None:
+    """Covers AE3: a power reading, its state class known from the registry or its state; the rest of the pool is created."""
+    if known_by == "registry":
+        er.async_get(ha).async_get_or_create(
+            "sensor", "plug", "pool_pump_power", suggested_object_id="pool_pump_power",
+            capabilities={"state_class": "measurement"})
+    else:
+        await fake(ha, POWER, "120", {"state_class": "measurement", "unit_of_measurement": "W"})
+    assert await setup(ha, {POOL: pool(tracked_by=f"homeassistant.{POWER}")})
+    assert ha.states.get(TARGET) is None
+    assert ha.states.get(DONE) is None
+    assert ha.states.get(RUNNING) is not None
+    assert (f"{POOL}: goals: filtering: homeassistant.{POWER} doesn't accumulate "
+            "(state class measurement); not creating it") in caplog.text
+
+
+async def test_home_assistants_entity_not_loaded_yet_gives_a_goal(ha: HomeAssistant) -> None:
+    """KTD4: unknown until it first reports, then counted from there."""
+    assert await setup(ha, {POOL: pool(tracked_by=f"homeassistant.{PUMP_RUNTIME}")})
+    assert ha.states.get(TARGET) is not None
+    assert ha.states.get(DONE).state == "unknown"
+    await fake(ha, PUMP_RUNTIME, "10", HOURS)
+    assert value(ha, DONE) == 0
+    await fake(ha, PUMP_RUNTIME, "11", HOURS)
+    assert value(ha, DONE) == 1
+
+
+async def test_done_is_unavailable_while_its_total_is(ha: HomeAssistant) -> None:
+    """What the total grew meanwhile counts when it is back."""
+    await fake(ha, PUMP_RUNTIME, "10", HOURS)
+    assert await setup(ha, {POOL: pool(tracked_by=f"homeassistant.{PUMP_RUNTIME}")})
+    await fake(ha, PUMP_RUNTIME, "unavailable")
+    assert ha.states.get(DONE).state == "unavailable"
+    await fake(ha, PUMP_RUNTIME, "12", HOURS)
+    assert value(ha, DONE) == 2
+
+
+async def test_done_is_0_while_its_total_doesnt_change(ha: HomeAssistant, freezer: Any) -> None:
+    """Started from the total's reading at setup, not left unknown."""
+    await fake(ha, PUMP_RUNTIME, "10", HOURS)
+    assert await setup(ha, {POOL: pool(tracked_by=f"homeassistant.{PUMP_RUNTIME}")})
+    await tick(ha, freezer, 3600)
+    assert value(ha, DONE) == 0
+
+
+async def test_a_goal_meters_another_devices_total(ha: HomeAssistant, freezer: Any) -> None:
+    """Covers R7: the living room's airing done is what the pool's total grew."""
+    await restart(ha, {POOL: {"name": "Piscina", "appliance": APPLIANCE}, LIVING_ROOM: living_room()},
+                  saved_total(100))
+    await idle(ha, freezer)
+    assert value(ha, AIRING_DONE) == 0
+    await pump(ha, freezer, 1)
+    assert value(ha, RUNTIME_TOTAL) == pytest.approx(101, abs=0.01)
+    assert value(ha, AIRING_DONE) == pytest.approx(1, abs=0.01)
+
+
+@pytest.mark.parametrize(("device", "tracked_by", "target", "done"), [
+    pytest.param(POOL, "appliance.energy", TARGET, DONE, id="its own"),
+    pytest.param(LIVING_ROOM, f"device.{POOL}.appliance.energy", AIRING_TARGET, AIRING_DONE,
+                 id="another device's"),
+])
+async def test_an_energy_mirror_whose_plug_doesnt_accumulate_creates_no_goal(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture,
+        device: str, tracked_by: str, target: str, done: str) -> None:
+    """Covers R5: the energy mirror is a total by its key, but it shows its plug's reading."""
+    await fake(ha, ENERGY, "5", {"state_class": "measurement", "unit_of_measurement": "kWh"})
+    appliance = {**APPLIANCE, "energy": f"homeassistant.{ENERGY}"}
+    goal = "filtering" if device == POOL else "airing"
+    devices = {POOL: {"name": "Piscina", "appliance": appliance},
+               LIVING_ROOM: living_room()}
+    devices[device]["goals"] = {goal: {**(FILTERING if device == POOL else AIRING),
+                                       "tracked_by": tracked_by}}
+    assert await setup(ha, devices)
+    assert ha.states.get(target) is None
+    assert ha.states.get(done) is None
+    assert ha.states.get(RUNNING) is not None
+    assert (f"{device}: goals: {goal}: {tracked_by} doesn't accumulate "
+            "(state class measurement); not creating it") in caplog.text
