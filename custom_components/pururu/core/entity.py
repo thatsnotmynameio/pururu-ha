@@ -70,8 +70,10 @@ class PururuEntity(Entity):
     _unrecorded_attributes = frozenset({REFERENCE})
     # Entity keys of its own device it takes its value from: without them it isn't created
     sources: tuple[str, ...] = ()
-    # Paths of other features' entities of its device it reads
-    # (appliance.running_program): without them it isn't created either
+    # References, as written (Ref.text), to other features' entities it reads:
+    # a path of its device (appliance.running_program) or another's
+    # (device.pool.appliance.running_program.runtime_total); without them it
+    # isn't created either
     follows: tuple[str, ...] = ()
     # Its entity key in its namespace (appliance_running)
     key: str

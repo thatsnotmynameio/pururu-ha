@@ -56,10 +56,18 @@ SCHEMA = vol.All(vol.Schema({cv.slug: GOAL}), vol.Length(min=1))
 class GoalTarget(PururuEntity, SensorEntity):
     """A goal's target, as written."""
 
-    def __init__(self, device: Device, target: float, *, item: Item) -> None:
-        """Show `target`, the goal of `item`'s."""
+    def __init__(
+        self,
+        device: Device,
+        target: float,
+        *,
+        item: Item,
+        follows: tuple[str, ...],
+    ) -> None:
+        """Show `target`, the goal of `item`'s, tracked by what it follows."""
         self._identify(device, Platform.SENSOR, "target", item=item)
         self._target = target
+        self.follows = follows
 
     @property
     @override
@@ -71,9 +79,10 @@ class GoalTarget(PururuEntity, SensorEntity):
 class GoalDone(PururuEntity, SensorEntity):
     """How much the tracked entity grew in the period: not metered yet, so unknown."""
 
-    def __init__(self, device: Device, *, item: Item) -> None:
-        """What `item`'s goal did."""
+    def __init__(self, device: Device, *, item: Item, follows: tuple[str, ...]) -> None:
+        """What `item`'s goal did, tracked by what it follows."""
         self._identify(device, Platform.SENSOR, "done", item=item)
+        self.follows = follows
 
 
 def _item(key: str, goal: Mapping[str, Any]) -> Item:
@@ -99,11 +108,16 @@ def build(
     config: dict[str, Any],
     inputs: Mapping[str, str],
 ) -> list[PururuEntity]:
-    """Each goal's target and done."""
+    """Each goal's target and done, both following its pururu tracked_by."""
+    tracked = {goal_key: ref.text for (goal_key, _), ref in _refers(config)}
     entities: list[PururuEntity] = []
     for item in _items(config):
-        entities.append(GoalTarget(device, config[item.slug]["target"], item=item))
-        entities.append(GoalDone(device, item=item))
+        # A pururu entity, of this device or another: none for Home Assistant's
+        follows = (tracked[item.slug],) if item.slug in tracked else ()
+        entities.append(
+            GoalTarget(device, config[item.slug]["target"], item=item, follows=follows)
+        )
+        entities.append(GoalDone(device, item=item, follows=follows))
     return entities
 
 

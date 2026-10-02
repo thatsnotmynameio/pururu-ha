@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 import pytest
 import voluptuous as vol
 
@@ -24,6 +25,14 @@ WINDOW = {"contact": "homeassistant.binary_sensor.living_room_window"}
 TARGET = "sensor.pururu_pool_goal_filtering_target"
 DONE = "sensor.pururu_pool_goal_filtering_done"
 GOAL = ["devices", POOL, "goals", "filtering"]
+# The pool's runtime total, which its goal and the living room's track
+RUNTIME_TOTAL = "sensor.pururu_pool_appliance_runtime_total"
+AIRING: dict[str, Any] = {
+    "name": "Arejar", "target": 1, "period": "today",
+    "tracked_by": f"device.{POOL}.appliance.running_program.runtime_total",
+}
+AIRING_TARGET = "sensor.pururu_living_room_goal_airing_target"
+AIRING_DONE = "sensor.pururu_living_room_goal_airing_done"
 TRANSLATIONS = Path(__file__).resolve().parents[1] / "custom_components/pururu/translations"
 
 
@@ -35,6 +44,18 @@ def pool(**goal: Any) -> dict[str, Any]:
 def house(*others: tuple[str, dict[str, Any]], **goal: Any) -> dict[str, Any]:
     """A `pururu:` block with the pool, and other devices."""
     return {"devices": {POOL: pool(**goal), **dict(others)}}
+
+
+def living_room() -> dict[str, Any]:
+    """The living room, its airing goal tracking the pool's runtime total."""
+    return {"name": "Sala", "window": WINDOW, "goals": {"airing": AIRING}}
+
+
+def taken(hass: HomeAssistant, entity_id: str) -> None:
+    """`entity_id` held by another integration."""
+    domain, object_id = entity_id.split(".")
+    er.async_get(hass).async_get_or_create(
+        domain, "template", "someone_else", suggested_object_id=object_id)
 
 
 def refused(block: dict[str, Any]) -> vol.Invalid:
@@ -164,3 +185,47 @@ def test_a_reaction_on_a_goals_done_passes(ha: HomeAssistant) -> None:
     block = house()
     block["devices"][POOL]["reactions"] = {"met": {"name": "Feito", "when": "goals.filtering.done", "above": 5}}
     module("setup.schema").CONFIG_SCHEMA({DOMAIN: block})
+
+
+# --- following what tracks it ------------------------------------------------------
+
+
+async def test_a_goal_tracking_another_devices_total_is_created(ha: HomeAssistant) -> None:
+    """Covers R11: it follows the pool's total, created."""
+    assert await setup(ha, {POOL: {"name": "Piscina", "appliance": APPLIANCE},
+                            LIVING_ROOM: living_room()})
+    assert ha.states.get(AIRING_TARGET) is not None
+    assert ha.states.get(AIRING_DONE) is not None
+
+
+async def test_a_goal_whose_other_devices_total_isnt_created_isnt_either(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Covers R11: the pool's total held by another integration; the rest of the pool is created."""
+    taken(ha, RUNTIME_TOTAL)
+    assert await setup(ha, {POOL: {"name": "Piscina", "appliance": APPLIANCE},
+                            LIVING_ROOM: living_room()})
+    assert ha.states.get(AIRING_TARGET) is None
+    assert ha.states.get(AIRING_DONE) is None
+    assert ha.states.get("binary_sensor.pururu_pool_appliance_running") is not None
+    for entity_id in (AIRING_TARGET, AIRING_DONE):
+        assert (f"{entity_id} follows {RUNTIME_TOTAL}, which is not created; "
+                "not creating it") in caplog.text
+
+
+async def test_a_goal_whose_own_devices_total_isnt_created_isnt_either(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Covers R11: following its own device as any entity does."""
+    taken(ha, RUNTIME_TOTAL)
+    assert await setup(ha, {POOL: pool()})
+    assert ha.states.get(TARGET) is None
+    assert ha.states.get(DONE) is None
+    assert ha.states.get("binary_sensor.pururu_pool_appliance_running") is not None
+    assert (f"{DONE} follows {RUNTIME_TOTAL}, which is not created; "
+            "not creating it") in caplog.text
+
+
+async def test_a_goal_tracked_by_home_assistant_follows_nothing(ha: HomeAssistant) -> None:
+    """Home Assistant's entity is no pururu entity to follow: the goal is created without it."""
+    assert await setup(ha, {POOL: pool(tracked_by="homeassistant.sensor.pool_pump_runtime")})
+    assert ha.states.get(TARGET) is not None
+    assert ha.states.get(DONE) is not None
