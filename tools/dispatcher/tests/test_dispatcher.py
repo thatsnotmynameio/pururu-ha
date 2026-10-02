@@ -15,12 +15,13 @@ from typing import Any
 import pytest
 
 import dispatcher
-from dispatcher import (IN_PROGRESS, IN_REVIEW, NEEDS_ATTENTION, PAUSED, READY, READY_TO_MERGE,
-                        Dispatch, Ended, Hold, Issue, Link, Marker, Move, Progress, PullRequest,
-                        Report, Resume, Review, Snapshot, Status)
+from dispatcher import (IN_PROGRESS, IN_REVIEW, INTERRUPTED, LIMIT, NEEDS_ATTENTION, PAUSED,
+                        READY, READY_TO_MERGE, STOPPED, Dispatch, Ended, Hold, Issue, Link, Marker,
+                        Move, Progress, PullRequest, Report, Resume, Review, Snapshot, Status)
 
 PR = PullRequest(101, "https://github.com/o/r/pull/101")
 SESSION = "3f2a9c1e-8b4d-4e6f-9a0b-1c2d3e4f5a6b"
+REPO = Path("/repo")  # the checkout the pure examples' paths sit in
 
 
 def at(hour: int, minute: int = 0, second: int = 0) -> float:
@@ -83,7 +84,7 @@ def test_free_slots_fill_in_order() -> None:
 
 def test_a_session_that_opened_a_pull_request_goes_in_review() -> None:
     """AE4: in review with the link; the slot frees."""
-    move, report = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})))
+    move, report = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert (move.issue, move.remove, move.add) == (74, (IN_PROGRESS,), (IN_REVIEW,))
@@ -93,19 +94,44 @@ def test_a_session_that_opened_a_pull_request_goes_in_review() -> None:
 
 def test_a_pull_request_not_linked_to_its_issue_gets_the_link() -> None:
     """AE1 relies on merging closing the issue: the dispatcher adds Closes #N."""
-    assert Link(101, 74) in dispatcher.judge(ended(74, prs=(PR,)))
-    linked = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})))
+    assert Link(101, 74) in dispatcher.judge(ended(74, prs=(PR,)), REPO)
+    linked = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})), REPO)
     assert not [action for action in linked if isinstance(action, Link)]
 
 
 def test_a_session_without_a_pull_request_needs_attention() -> None:
     """AE5: the reason and the worktree in the comment."""
-    move, report = dispatcher.judge(ended(74))
+    move, report = dispatcher.judge(ended(74), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert (move.remove, move.add) == ((IN_PROGRESS,), (NEEDS_ATTENTION,))
     assert "lfg stopped: no work source" in (move.comment or "")
-    assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-74`" in (move.comment or "")
+
+
+def test_comments_name_paths_inside_the_checkout() -> None:
+    """AE8, R15: a comment is public, so the machine's folders never show, the reason's either."""
+    root = Path("/Users/me/pururu-ha")
+    session = dataclasses.replace(
+        ended(70, reason=f"Uncommitted changes are left in {root}/.claude/worktrees/issue-70."),
+        worktree=f"{root}/.claude/worktrees/issue-70",
+        log=f"{root}/tools/dispatcher/.state/logs/issue-70.log")
+    attention, _ = dispatcher.judge(session, root)
+    for move in (attention, dispatcher.pause(session, limit(70), root),
+                 dispatcher.pause(session, cause(70, INTERRUPTED), root)):
+        assert isinstance(move, Move)
+        comment = move.comment or ""
+        assert "Worktree: `.claude/worktrees/issue-70`" in comment
+        assert "Log: `tools/dispatcher/.state/logs/issue-70.log`" in comment
+        assert "/Users/" not in comment
+    assert "left in .claude/worktrees/issue-70." in (attention.comment or "")
+
+
+def test_a_path_outside_the_checkout_is_named_by_its_last_part() -> None:
+    root = Path("/Users/me/pururu-ha")
+    assert dispatcher.inside(root / ".claude/worktrees/issue-70", root) == (
+        ".claude/worktrees/issue-70")
+    assert dispatcher.inside("/tmp/issue-70.log", root) == "issue-70.log"
 
 
 # The usage limit
@@ -113,7 +139,7 @@ def test_a_session_without_a_pull_request_needs_attention() -> None:
 def test_a_session_stopped_by_the_limit_is_paused_with_its_marker() -> None:
     """AE1: #70 stops at 15:10 with `resets 8:30pm`: paused, the comment first, naming 20:30."""
     reset = int(at(20, 30))
-    move, report = dispatcher.judge(ended(70, limit=limit(70)))
+    move, report = dispatcher.judge(ended(70, limit=limit(70)), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert (move.issue, move.remove, move.add, move.comment_first) == (
@@ -122,26 +148,28 @@ def test_a_session_stopped_by_the_limit_is_paused_with_its_marker() -> None:
     assert "usage limit" in comment
     assert "20:30" in comment
     assert SESSION in comment
-    assert "/repo/.claude/worktrees/issue-70" in comment
-    assert "/repo/tools/dispatcher/.state/logs/x.log" in comment
+    assert "Worktree: `.claude/worktrees/issue-70`" in comment
+    assert "Log: `tools/dispatcher/.state/logs/x.log`" in comment
     assert comment.splitlines()[-1] == (
         '<!-- dispatcher-pause {"session": "3f2a9c1e-8b4d-4e6f-9a0b-1c2d3e4f5a6b", '
-        f'"branch": "issue-70", "reset": {reset}}} -->')
+        f'"branch": "issue-70", "reset": {reset}, "cause": "limit"}} -->')
 
 
 def test_a_limit_with_no_reset_says_it_is_tried_again_at_the_next_poll() -> None:
     """R5: no reset in the message: the comment says so, the marker's reset is null."""
-    move, report = dispatcher.judge(ended(70, limit=limit(70, reset=None)))
+    move, report = dispatcher.judge(ended(70, limit=limit(70, reset=None)), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert move.add == (PAUSED,)
     comment = move.comment or ""
     assert "next poll" in comment
-    assert comment.splitlines()[-1].endswith('"branch": "issue-70", "reset": null} -->')
+    assert comment.splitlines()[-1].endswith(
+        '"branch": "issue-70", "reset": null, "cause": "limit"} -->')
 
 
 def test_a_limit_after_the_pull_request_is_open_is_in_review() -> None:
-    move, report = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}), limit=limit(70)))
+    move, report = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}),
+                                          limit=limit(70)), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert move.add == (IN_REVIEW,)
@@ -150,7 +178,7 @@ def test_a_limit_after_the_pull_request_is_open_is_in_review() -> None:
 def test_a_resumed_session_that_opens_its_pull_request_is_in_review() -> None:
     """AE3: #70 resumed, then opened its pull request and ended."""
     move, report = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}),
-                                          resumed=limit(70)))
+                                          resumed=limit(70)), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert (move.remove, move.add) == ((IN_PROGRESS,), (IN_REVIEW,))
@@ -159,12 +187,47 @@ def test_a_resumed_session_that_opens_its_pull_request_is_in_review() -> None:
 def test_a_resumed_session_paused_again_comments_only_on_news() -> None:
     """KTD5: a new reset is news; the same session with the same reset is not."""
     unknown = limit(70, reset=None)
-    news, _ = dispatcher.judge(ended(70, limit=limit(70), resumed=unknown))
+    news, _ = dispatcher.judge(ended(70, limit=limit(70), resumed=unknown), REPO)
     assert isinstance(news, Move)
     assert news.add == (PAUSED,)
     assert "20:30" in (news.comment or "")
-    same, _ = dispatcher.judge(ended(70, limit=limit(70, reset=None), resumed=unknown))
+    same, _ = dispatcher.judge(ended(70, limit=limit(70, reset=None), resumed=unknown), REPO)
     assert same == Move(70, (IN_PROGRESS,), (PAUSED,))
+
+
+def cause(issue: int, kind: str, session: str = SESSION) -> Marker:
+    """A marker pausing the issue for `kind`, its reset unknown (only the limit has one)."""
+    return Marker(session, f"issue-{issue}", None, kind)
+
+
+@pytest.mark.parametrize("kind, says", [
+    (INTERRUPTED, "the session was interrupted (found gone when the dispatcher started)."),
+    (STOPPED, "the session was stopped with `dispatcher.py stop`.")])
+def test_a_pause_says_its_cause_and_speaks_of_no_reset(kind: str, says: str) -> None:
+    """KTD4: interrupted and stopped pauses carry their cause in the marker; no limit, no reset."""
+    move = dispatcher.pause(ended(70), cause(70, kind), REPO)
+    assert (move.issue, move.remove, move.add, move.comment_first) == (
+        70, (IN_PROGRESS,), (PAUSED,), True)
+    comment = move.comment or ""
+    assert comment.startswith(f"Dispatcher: {says}\n\n")
+    said = "\n".join(comment.splitlines()[:-1])  # the marker's fields aside
+    assert "usage limit" not in said
+    assert "reset" not in said
+    assert "Worktree: `.claude/worktrees/issue-70`" in comment
+    assert comment.splitlines()[-1] == (
+        f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", "reset": null, '
+        f'"cause": "{kind}"}} -->')
+
+
+def test_a_resumed_session_paused_again_comments_only_on_a_new_cause() -> None:
+    """KTD4: the same cause with nothing new swaps the labels alone; another cause is news."""
+    interrupted = cause(70, INTERRUPTED)
+    resumed = ended(70, resumed=interrupted)
+    assert dispatcher.pause(resumed, interrupted, REPO) == Move(70, (IN_PROGRESS,), (PAUSED,))
+    stopped = dispatcher.pause(resumed, cause(70, STOPPED), REPO)
+    assert "`dispatcher.py stop`" in (stopped.comment or "")
+    limited = dispatcher.pause(resumed, cause(70, LIMIT), REPO)
+    assert "usage limit" in (limited.comment or "")
 
 
 def test_needs_attention_removes_the_label_it_is_given() -> None:
@@ -244,6 +307,13 @@ def test_the_hold_at_start_comes_from_the_paused_markers() -> None:
     assert dispatcher.restore([], at(18)) == Hold()
 
 
+def test_only_the_limits_markers_hold_at_start() -> None:
+    """AE7, KTD4: an interrupted or stopped pause neither holds nor probes; a limit still does."""
+    others = [cause(70, INTERRUPTED), cause(72, STOPPED)]
+    assert dispatcher.restore(others, at(18)) == Hold()
+    assert dispatcher.restore([*others, limit(73, reset=None)], at(18)) == Hold(at(18), probe=True)
+
+
 def test_an_unknown_reset_probes_whatever_order_a_past_reset_comes_in() -> None:
     """KTD4, KTD8: a reset already past never cancels the probe an unknown reset asks for."""
     unknown, past = limit(70, reset=None), limit(72, reset=at(17))
@@ -268,14 +338,14 @@ def test_pending_or_failing_checks_leave_it_in_review() -> None:
 def test_each_verdict_is_followed_by_its_final_report() -> None:
     """KTD5: in review, needs attention or paused, from the ended session's own marks; edit only."""
     progress = Progress(marks("done", "done", "current"), AE2_SENTENCE)
-    opened = dispatcher.judge(ended(74, prs=(PR,), progress=progress))
+    opened = dispatcher.judge(ended(74, prs=(PR,), progress=progress), REPO)
     assert opened[1:] == [Report(74, Status(IN_REVIEW, ("done", "done", "done", "skipped", "done",
                                                          "current"))), Link(101, 74)]
-    failed = dispatcher.judge(ended(74, progress=progress))
+    failed = dispatcher.judge(ended(74, progress=progress), REPO)
     assert failed[1:] == [Report(74, Status(NEEDS_ATTENTION, marks("done", "done", "failed")))]
-    stopped = dispatcher.judge(ended(74, limit=limit(74), progress=progress))
+    stopped = dispatcher.judge(ended(74, limit=limit(74), progress=progress), REPO)
     assert stopped[1:] == [Report(74, Status(PAUSED, marks("done", "done", "paused"),
-                                             reset=at(20, 30)))]
+                                             reset=at(20, 30), cause=LIMIT))]
 
 
 def test_a_promotion_reports_ready_to_merge_and_the_rest_in_review_as_they_stand() -> None:
@@ -293,10 +363,11 @@ def test_a_promotion_reports_ready_to_merge_and_the_rest_in_review_as_they_stand
 def test_an_in_progress_issue_at_start_needs_attention() -> None:
     """AE6: the orphan fails with its worktree; issues in review are not in the input at all."""
     move, report = dispatcher.orphans([Issue(74, frozenset({IN_PROGRESS}))],
-                                      {74: ["/repo/.claude/worktrees/issue-74"]})
+                                      {74: ["/repo/.claude/worktrees/issue-74"]}, REPO)
     assert isinstance(move, Move)
     assert (move.issue, move.remove, move.add) == (74, (IN_PROGRESS,), (NEEDS_ATTENTION,))
-    assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-74`" in (move.comment or "")
+    assert "/repo" not in (move.comment or "")
     assert report == Report(74, Status(NEEDS_ATTENTION), dispatcher.marks_stopped)
 
 
@@ -477,6 +548,29 @@ def test_a_marker_round_trips_through_its_line() -> None:
     assert dispatcher.marker_of("Dispatcher: pull request is open.", 70) is None
 
 
+@pytest.mark.parametrize("kind", [LIMIT, INTERRUPTED, STOPPED])
+def test_a_marker_round_trips_its_cause(kind: str) -> None:
+    """KTD4: the cause is in the line, and a marker of another cause is another marker."""
+    marker = Marker(SESSION, "issue-70", 1759350600, kind)
+    assert dispatcher.marker_of(f"Dispatcher: paused.\n\n{marker.line()}", 70) == marker
+    assert all(marker != dataclasses.replace(marker, cause=other)
+               for other in (LIMIT, INTERRUPTED, STOPPED) if other != kind)
+
+
+def test_a_marker_written_before_its_cause_reads_as_the_limit() -> None:
+    """KTD4: markers already posted keep working."""
+    gh, _ = github(comments_reply(pause_comment("me", SESSION, "issue-70", 1759350600)))
+    assert gh.marker(70) == Marker(SESSION, "issue-70", 1759350600, LIMIT)
+
+
+@pytest.mark.parametrize("value", ["tired", None, 3, "LIMIT"])
+def test_a_marker_with_an_unknown_cause_is_refused(value: object) -> None:
+    record = json.dumps({"session": SESSION, "branch": "issue-70", "reset": None,
+                         "cause": value})
+    assert dispatcher.marker_of(f"Dispatcher: paused.\n\n<!-- dispatcher-pause {record} -->",
+                                70) is None
+
+
 def test_a_pull_request_without_the_closing_line_gets_it_once() -> None:
     """AE1: merging must close the issue."""
     gh, fake = github((("pr", "view"), 0, "Summary of the change\n"))
@@ -515,15 +609,16 @@ def test_a_failing_gh_call_raises_with_its_stderr() -> None:
 class FakeGit:
     """`git` with these branches; records every call."""
 
-    def __init__(self, *branches: str, fail: str = "") -> None:
+    def __init__(self, *branches: str, fail: str = "", stderr: str = "fatal: no space") -> None:
         self.branches = set(branches)
         self.fail = fail
+        self.stderr = stderr
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str]) -> str:
         self.calls.append(args)
         if self.fail and args[:2] == self.fail.split():
-            raise subprocess.CalledProcessError(128, ["git", *args], stderr="fatal: no space")
+            raise subprocess.CalledProcessError(128, ["git", *args], stderr=self.stderr)
         if args[:2] == ["branch", "--list"]:
             return "\n".join(f"  {name}" for name in self.branches if name == args[2])
         return ""
@@ -1010,6 +1105,18 @@ def test_a_paused_status_with_an_unknown_reset_says_so() -> None:
             in body)
 
 
+@pytest.mark.parametrize("kind, says", [
+    (INTERRUPTED, "The session was interrupted (found gone when the dispatcher started)."),
+    (STOPPED, "The session was stopped with `dispatcher.py stop`.")])
+def test_a_paused_status_says_its_cause_and_shows_no_reset(kind: str, says: str) -> None:
+    """KTD9: only the usage limit has a reset to show."""
+    body = dispatcher.Status(PAUSED, marks("done", "done", "paused"), reset=at(20, 30),
+                             cause=kind).body(NOW)
+    assert f"\n\n{says}\n\n" in body
+    assert "reset" not in body
+    assert "usage limit" not in body
+
+
 @pytest.mark.parametrize("state, stages", [
     (IN_REVIEW, ("done", "done", "done", "skipped", "done", "current")),
     (READY_TO_MERGE, ("done", "done", "done", "skipped", "done", "done")),
@@ -1254,6 +1361,24 @@ def test_a_resume_continues_the_conversation_headless(tmp_path: Path) -> None:
     assert "Closes #70" in prompt
 
 
+@pytest.mark.parametrize("kind, says", [(INTERRUPTED, "was interrupted"),
+                                        (STOPPED, "was stopped with `dispatcher.py stop`")])
+def test_a_resume_after_an_interruption_or_a_stop_says_why(tmp_path: Path, kind: str,
+                                                          says: str) -> None:
+    """R8, KTD4: told why it stopped, never that a limit reset; `Closes #N` all the same."""
+    (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
+    runner, spawn = sessions(tmp_path, FakeGit())
+    runner.resume(70, cause(70, kind))
+    (args, _), = spawn.calls
+    assert args[:4] == ["claude", "-p", "--resume", SESSION]
+    prompt = args[4]
+    assert says in prompt
+    assert "usage limit" not in prompt
+    assert "reset" not in prompt
+    assert "Continue `/compound-engineering:lfg #70` where it stopped." in prompt
+    assert "Closes #70" in prompt
+
+
 def test_a_resume_runs_in_the_markers_worktree_and_appends_to_the_log(tmp_path: Path) -> None:
     worktree = tmp_path / ".claude/worktrees/issue-70-2"
     worktree.mkdir(parents=True)
@@ -1335,9 +1460,20 @@ def test_a_resumed_session_records_its_marker_and_the_marks_it_continues_from(
     running = runner.resume(70, marker, resumed)
     assert running.start_marks == resumed
     record = json.loads(record_file(tmp_path, 70).read_text())
-    assert record["resumed"] == {"session": SESSION, "branch": "issue-70-2", "reset": 1759350600}
+    assert record["resumed"] == {"session": SESSION, "branch": "issue-70-2", "reset": 1759350600,
+                                 "cause": "limit"}
     assert record["start_marks"] == list(resumed)
     assert (record["branch"], record["pid"]) == ("issue-70-2", running.process.pid)
+
+
+def test_a_record_keeps_the_cause_its_session_resumed_from(tmp_path: Path) -> None:
+    """KTD4: a later dispatcher judges a resumed session against the marker of the same cause."""
+    (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
+    runner, _ = sessions(tmp_path, FakeGit())
+    runner.resume(70, cause(70, STOPPED))
+    record = runner.records()[70]
+    assert record is not None
+    assert record.resumed == cause(70, STOPPED)
 
 
 def test_a_record_round_trips_into_a_running_session(tmp_path: Path) -> None:
@@ -1623,7 +1759,8 @@ def test_start_marks_the_orphans_before_the_first_poll(tmp_path: Path) -> None:
     move = gh.writes[1]
     assert isinstance(move, Move)
     assert move.add == (NEEDS_ATTENTION,)
-    assert f"{tmp_path}/.claude/worktrees/issue-74" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-74`" in (move.comment or "")
+    assert str(tmp_path) not in (move.comment or "")
 
 
 def test_a_poll_dispatches_then_judges_the_ended_session(tmp_path: Path) -> None:
@@ -1656,6 +1793,19 @@ def test_a_session_that_cannot_start_needs_attention(tmp_path: Path) -> None:
     assert moves(gh) == [(74, (IN_PROGRESS,)), (74, (NEEDS_ATTENTION,))]
     assert "no space" in (last_move(gh).comment or "")
     assert boss.running == {}
+
+
+def test_a_session_that_cannot_start_names_its_worktree_inside_the_checkout(
+        tmp_path: Path) -> None:
+    """KTD8: git's error names the worktree; the comment names it from the checkout."""
+    gh = FakeGitHub({READY: [(ready(70), ())]})
+    git = FakeGit(fail="worktree add",
+                  stderr=f"fatal: '{tmp_path}/.claude/worktrees/issue-70' already exists")
+    runner, _ = sessions(tmp_path, git)
+    dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None).poll()
+    comment = last_move(gh).comment or ""
+    assert "could not start: fatal: '.claude/worktrees/issue-70' already exists" in comment
+    assert str(tmp_path) not in comment
 
 
 def test_stopping_ends_the_sessions_and_marks_their_issues(tmp_path: Path) -> None:
@@ -1764,6 +1914,9 @@ def test_stopping_judges_a_session_that_already_ended(tmp_path: Path) -> None:
     assert Link(101, 74) in gh.writes
     move = last_move(gh)
     assert "stopped while the session ran" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-75`" in (move.comment or "")
+    assert "Log: `tools/dispatcher/.state/logs/issue-75.log`" in (move.comment or "")
+    assert str(tmp_path) not in (move.comment or "")
     assert boss.running == {}
 
 
@@ -1841,7 +1994,7 @@ def test_a_session_at_the_limit_is_paused_and_holds_every_start(tmp_path: Path) 
     assert "20:30" in (pause.comment or "")
     assert (pause.comment or "").splitlines()[-1] == (
         f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", '
-        f'"reset": {int(at(20, 30))}}} -->')
+        f'"reset": {int(at(20, 30))}, "cause": "limit"}} -->')
     assert moves(gh) == [(70, (IN_PROGRESS,)), (72, (IN_PROGRESS,)), (70, (PAUSED,))]
     assert list(boss.running) == [72]
     assert len(spawn.calls) == 2
@@ -1932,7 +2085,7 @@ def test_a_resumed_session_at_the_limit_again_comments_its_new_reset(tmp_path: P
     assert (pause.remove, pause.add) == ((IN_PROGRESS,), (PAUSED,))
     assert (pause.comment or "").splitlines()[-1] == (
         f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", '
-        f'"reset": {int(at(22))}}} -->')
+        f'"reset": {int(at(22))}, "cause": "limit"}} -->')
 
 
 def test_a_resumed_session_at_the_limit_again_with_nothing_new_does_not_comment(
@@ -1942,6 +2095,67 @@ def test_a_resumed_session_at_the_limit_again_with_nothing_new_does_not_comment(
     exits(boss, 70, *UNKNOWN)
     boss.poll()
     assert gh.writes[-1] == Move(70, (IN_PROGRESS,), (PAUSED,))
+
+
+def test_interrupted_and_stopped_issues_resume_at_the_first_poll_without_a_hold(
+        tmp_path: Path) -> None:
+    """AE7, R8, R12: no usage-limit wait at start; each resumes told its own cause."""
+    worktrees(tmp_path, "issue-70", "issue-72")
+    gh = FakeGitHub({PAUSED: [(paused(70), ()), (paused(72), ())], READY: [(ready(74), ())]},
+                    markers={70: cause(70, INTERRUPTED), 72: cause(72, STOPPED, OTHER)})
+    lines: list[str] = []
+    boss, spawn = boss_at(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.start()
+    boss.poll()
+    (interrupted, _), (stopped, _) = resumes(spawn)
+    assert (interrupted[3], stopped[3]) == (SESSION, OTHER)
+    assert "was interrupted" in interrupted[4]
+    assert "`dispatcher.py stop`" in stopped[4]
+    assert not [line for line in lines if "usage limit" in line]
+    assert "dispatcher: #74: waiting for a free session (2 of 2 in use)" in lines
+
+
+def test_a_pause_of_another_cause_holds_no_start(tmp_path: Path,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    """KTD4: only the usage limit holds starts; the slot an interrupted session frees is used."""
+    gh = FakeGitHub({READY: [(ready(70), ())]})
+    lines: list[str] = []
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(15)), lines)
+    boss.poll()
+    gh.answers = {READY: [(ready(74), ())]}
+    exits(boss, 70)
+    monkeypatch.setattr(boss.sessions, "ending", lambda running: (
+        "gone", cause(70, INTERRUPTED), Progress(marks("current"))))
+    boss.poll()
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,)), (74, (IN_PROGRESS,))]
+    pause = [write for write in gh.writes if isinstance(write, Move)][1]
+    assert "the session was interrupted" in (pause.comment or "")
+    assert len(spawn.calls) == 2
+    assert not [line for line in lines if "usage limit" in line]
+    paused_body = [write.body for write in gh.writes
+                   if isinstance(write, Wrote) and write.issue == 70][-1]
+    assert "The session was interrupted" in paused_body
+
+
+def test_comments_name_the_worktree_and_log_inside_the_checkout(tmp_path: Path) -> None:
+    """AE8, R15: needing attention and paused alike; the terminal keeps the full paths."""
+    gh = FakeGitHub({READY: [(ready(70), ()), (ready(72), ())]})
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.poll()
+    gh.answers = {}
+    exits(boss, 70, INIT, result("lfg stopped: no work source", error=False))
+    exits(boss, 72, *AT_LIMIT)
+    boss.poll()
+    comments = {write.issue: write.comment or "" for write in gh.writes
+                if isinstance(write, Move) and write.comment}
+    assert sorted(comments) == [70, 72]
+    for issue, comment in comments.items():
+        assert f"Worktree: `.claude/worktrees/issue-{issue}`" in comment
+        assert f"Log: `tools/dispatcher/.state/logs/issue-{issue}.log`" in comment
+        assert str(tmp_path) not in comment
+    log = tmp_path / dispatcher.STATE / "logs/issue-70.log"
+    assert f"dispatcher: #70 session ended (exit code 0), log {log}" in lines
 
 
 def test_a_paused_issue_past_its_reset_resumes_after_a_restart(tmp_path: Path) -> None:
@@ -2065,8 +2279,8 @@ def test_a_resume_whose_worktree_is_gone_needs_attention(tmp_path: Path) -> None
     assert swap == Move(70, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,))
     assert isinstance(failure, Move)
     assert (failure.remove, failure.add) == ((IN_PROGRESS,), (NEEDS_ATTENTION,))
-    assert f"{tmp_path}/.claude/worktrees/issue-70" in (failure.comment or "")
-    assert "gone" in (failure.comment or "")
+    assert "the worktree .claude/worktrees/issue-70 is gone" in (failure.comment or "")
+    assert str(tmp_path) not in (failure.comment or "")
     assert spawn.calls == []
     assert boss.running == {}
 
@@ -2185,6 +2399,8 @@ def test_a_record_that_cannot_be_written_ends_the_session_and_needs_attention(
     comment = last_move(gh).comment or ""
     assert "could not " + ("resume" if paused_one else "start") in comment
     assert "record" in comment
+    assert "tools/dispatcher/.state/sessions" in comment
+    assert str(tmp_path) not in comment
     assert boss.running == {}
 
 

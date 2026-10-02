@@ -50,6 +50,12 @@ NEEDS_ATTENTION = "needs attention"
 PAUSED = "paused"
 MARGIN = 60  # seconds past a limit's reset before a session starts again
 MARKER = "dispatcher-pause"  # the hidden marker's tag on a pause comment's last line
+LIMIT = "limit"  # what paused a session: the usage limit, the session found gone at start,
+INTERRUPTED = "interrupted"  # or `dispatcher.py stop`
+STOPPED = "stopped"
+CAUSES = {LIMIT: "the Claude usage limit stopped the session",
+          INTERRUPTED: "the session was interrupted (found gone when the dispatcher started)",
+          STOPPED: "the session was stopped with `dispatcher.py stop`"}
 # lfg's stages in order, and the skills that enter each (compound-engineering 3.30.1), named
 # without their plugin's prefix. A stage is marked done, current, pending, skipped, failed or
 # paused.
@@ -87,15 +93,20 @@ class PullRequest:
 
 @dataclass(frozen=True)
 class Marker:
-    """What resumes a paused session: its conversation, its branch, its reset (epoch seconds)."""
+    """What resumes a paused session: its conversation, its branch, its reset (epoch seconds).
+
+    `cause` is what paused it, one of `CAUSES`; only the usage limit has a reset.
+    """
 
     session: str
     branch: str
     reset: int | None
+    cause: str = LIMIT
 
     def fields(self) -> dict[str, Any]:
         """Its fields as JSON holds them, in a pause comment's marker or a session's record."""
-        return {"session": self.session, "branch": self.branch, "reset": self.reset}
+        return {"session": self.session, "branch": self.branch, "reset": self.reset,
+                "cause": self.cause}
 
     def line(self) -> str:
         """The hidden marker a pause comment ends with."""
@@ -123,16 +134,20 @@ def branch_of(branch: object, issue: int) -> bool:
 
 
 def marker_from(fields: object, issue: int) -> Marker | None:
-    """The marker these fields make, if its session is a UUID and its branch this issue's.
+    """The marker these fields make, if its session, its branch and its cause are valid.
 
-    The session becomes a `claude --resume` argument, and the branch a folder's name.
+    The session must be a UUID, the branch this issue's and the cause one of `CAUSES`: the
+    session becomes a `claude --resume` argument, and the branch a folder's name. A marker
+    posted before causes existed has none: the usage limit was the only one.
     """
     if not isinstance(fields, dict):
         return None
     session, branch, reset = fields.get("session"), fields.get("branch"), fields.get("reset")
+    cause = fields.get("cause", LIMIT)
     if (isinstance(session, str) and SESSION_ID.fullmatch(session) and branch_of(branch, issue)
-            and (reset is None or (isinstance(reset, int) and not isinstance(reset, bool)))):
-        return Marker(session, str(branch), reset)
+            and (reset is None or (isinstance(reset, int) and not isinstance(reset, bool)))
+            and isinstance(cause, str) and cause in CAUSES):
+        return Marker(session, str(branch), reset, cause)
     return None
 
 
@@ -250,6 +265,23 @@ def local_time(epoch: float) -> str:
     return time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(epoch))
 
 
+def inside(path: str | Path, root: Path) -> str:
+    """A worktree or a log as a comment names it: its path under the checkout `root`.
+
+    A comment is public and the machine's folders mean nothing to its reader; a path outside
+    `root` is named by its last part.
+    """
+    try:
+        return Path(path).relative_to(root).as_posix()
+    except ValueError:
+        return Path(path).name
+
+
+def unrooted(text: str, root: Path) -> str:
+    """Text a comment quotes (an error, a reason), with the checkout `root`'s prefix taken out."""
+    return text.replace(f"{root}{os.sep}", "")
+
+
 def needs_attention(issue: int, *paragraphs: str, remove: str = IN_PROGRESS) -> Move:
     """`remove` to needs attention, the comment saying why and how to queue it again."""
     return Move(issue, (remove,), (NEEDS_ATTENTION,),
@@ -257,33 +289,46 @@ def needs_attention(issue: int, *paragraphs: str, remove: str = IN_PROGRESS) -> 
                               "Add `ready` to queue it again.")))
 
 
-def pause(session: Ended, limit: Marker) -> Move:
-    """In progress to paused, the comment first carrying the marker, unless it is the resumed one."""
-    if limit == session.resumed:
+def pause(session: Ended, marker: Marker, root: Path) -> Move:
+    """In progress to paused, the comment first carrying the marker, unless it is the resumed one.
+
+    The comment says the marker's cause; only the usage limit's speaks of a reset. Paths are
+    named under the checkout `root`.
+    """
+    if marker == session.resumed:
         return Move(session.issue, (IN_PROGRESS,), (PAUSED,))
-    reset = (f"It resets at {local_time(limit.reset)}; the session resumes then."
-             if limit.reset is not None else
-             "The reset time is unknown; the dispatcher tries again at the next poll.")
-    comment = "\n\n".join(("Dispatcher: the Claude usage limit stopped the session.", reset,
-                            f"Session: `{limit.session}`", f"Worktree: `{session.worktree}`",
-                            f"Log: `{session.log}`", limit.line()))
+    if marker.cause != LIMIT:
+        then = ("The session resumes at the first free slot."
+                if marker.cause == INTERRUPTED else
+                "The session resumes at the first free slot once the dispatcher runs again.")
+    elif marker.reset is not None:
+        then = f"It resets at {local_time(marker.reset)}; the session resumes then."
+    else:
+        then = "The reset time is unknown; the dispatcher tries again at the next poll."
+    comment = "\n\n".join((f"Dispatcher: {CAUSES[marker.cause]}.", then,
+                            f"Session: `{marker.session}`",
+                            f"Worktree: `{inside(session.worktree, root)}`",
+                            f"Log: `{inside(session.log, root)}`", marker.line()))
     return Move(session.issue, (IN_PROGRESS,), (PAUSED,), comment, comment_first=True)
 
 
-def judge(session: Ended) -> list[Action]:
+def judge(session: Ended, root: Path) -> list[Action]:
     """A session ended: in review with an open pull request, paused at the limit, else attention.
 
-    Each move is followed by its final report, from the marks the session's log left.
+    Each move is followed by its final report, from the marks the session's log left. Paths are
+    named under the checkout `root`.
     """
     marks = session.progress.marks
     if not session.prs and session.limit:
-        return [pause(session, session.limit),
+        return [pause(session, session.limit, root),
                 Report(session.issue, Status(PAUSED, marks_paused(marks),
-                                             reset=session.limit.reset))]
+                                             reset=session.limit.reset,
+                                             cause=session.limit.cause))]
     if not session.prs:
         return [needs_attention(session.issue, "the session ended without a pull request.",
-                                f"Reason: {session.reason}", f"Worktree: `{session.worktree}`",
-                                f"Log: `{session.log}`"),
+                                f"Reason: {unrooted(session.reason, root)}",
+                                f"Worktree: `{inside(session.worktree, root)}`",
+                                f"Log: `{inside(session.log, root)}`"),
                 Report(session.issue, Status(NEEDS_ATTENTION, marks_stopped(marks)))]
     pr = session.prs[0]
     actions: list[Action] = [Move(session.issue, (IN_PROGRESS,), (IN_REVIEW,),
@@ -332,10 +377,14 @@ def tick(snapshot: Snapshot, running: set[int], sessions: int, now: float = 0.0,
 
 
 def restore(markers: Iterable[Marker], now: float) -> Hold:
-    """At start, the hold the paused issues' markers make: none once every known reset is past."""
+    """At start, the hold the paused issues' markers make: none once every known reset is past.
+
+    Only the usage limit's markers hold: an interrupted or stopped session resumes at once.
+    """
     hold = Hold()
     for marker in markers:
-        hold = hold.extend(marker.reset, now)
+        if marker.cause == LIMIT:
+            hold = hold.extend(marker.reset, now)
     return hold if hold.probe or hold.holds(now) else Hold()
 
 
@@ -361,17 +410,17 @@ def queue_lines(ready: Iterable[Issue], running: set[int], picked: list[int],
     return lines
 
 
-def orphans(in_progress: Iterable[Issue],
-            worktrees: Mapping[int, list[str]]) -> list[Move | Report]:
+def orphans(in_progress: Iterable[Issue], worktrees: Mapping[int, list[str]],
+            root: Path) -> list[Move | Report]:
     """At start no session runs, so every issue in progress lost its session: it needs attention.
 
-    Its comment's stage fails where the comment left it.
+    Its comment's stage fails where the comment left it; its worktrees are named under `root`.
     """
     actions: list[Move | Report] = []
     for issue in in_progress:
         actions += [needs_attention(issue.number, "this issue was in progress with no session "
                                     "running (the dispatcher was stopped or crashed).",
-                                    *(f"Worktree: `{path}`"
+                                    *(f"Worktree: `{inside(path, root)}`"
                                       for path in worktrees.get(issue.number, []))),
                     Report(issue.number, Status(NEEDS_ATTENTION), marks_stopped)]
     return actions
@@ -387,8 +436,9 @@ class Status:
     """What an issue's status comment says: its state, the checklist, and what the state shows.
 
     Queued shows its `reason` only; running, the checklist, the minutes since `started` and the
-    `latest` sentence; paused, the checklist and the limit's `reset` (None: unknown); in review,
-    ready to merge and needs attention, the checklist. Every one ends with the marks' marker.
+    `latest` sentence; paused, the checklist and its `cause`, with the limit's `reset` (None:
+    unknown) for the usage limit alone; in review, ready to merge and needs attention, the
+    checklist. Every one ends with the marks' marker.
     """
 
     state: str
@@ -397,6 +447,7 @@ class Status:
     latest: str | None = None
     started: float = 0.0
     reset: float | None = None
+    cause: str = LIMIT
 
     def body(self, now: float) -> str:
         """The comment, in English, updated at `now`, its last line the marker holding the marks."""
@@ -417,9 +468,12 @@ class Status:
             fence = "`" * max(3, longest + 1)
             parts.append(f"Latest:\n{fence}text\n{self.latest}\n{fence}")
         if self.state == PAUSED:
-            parts.append("The Claude usage limit stopped the session. "
-                         + (f"It resets at {local_time(self.reset)}." if self.reset is not None
-                            else "Its reset time is unknown."))
+            said = CAUSES[self.cause]
+            text = said[:1].upper() + said[1:] + "."
+            if self.cause == LIMIT:
+                text += (f" It resets at {local_time(self.reset)}." if self.reset is not None
+                         else " Its reset time is unknown.")
+            parts.append(text)
         stamp = f"<!-- {STATUS} {json.dumps({'stages': list(self.marks)})} -->"
         parts.append(f"Updated {local_time(now)}\n{stamp}")
         return "\n\n".join(parts)
@@ -757,13 +811,14 @@ STATE = "tools/dispatcher/.state"  # logs, session records and the lock, from th
 RECORD = re.compile(r"issue-(\d+)\.json")  # a session record's file name, under STATE/sessions
 GONE = -1  # what a followed process's poll() says once it is gone: its exit code is unknown
 GRACE = 10.0  # seconds a session gets to exit after terminate, before kill
-PROMPT = ("/compound-engineering:lfg #{issue}\n\n"
-          "The pull request body must contain the line `Closes #{issue}`, "
+CLOSES = ("The pull request body must contain the line `Closes #{issue}`, "
           "so merging it closes the issue.")
-RESUME_PROMPT = ("The Claude usage limit that stopped this session has reset. Continue "
-                 "`/compound-engineering:lfg #{issue}` where it stopped.\n\n"
-                 "The pull request body must contain the line `Closes #{issue}`, "
-                 "so merging it closes the issue.")
+PROMPT = "/compound-engineering:lfg #{issue}\n\n" + CLOSES
+CONTINUE = " Continue `/compound-engineering:lfg #{issue}` where it stopped.\n\n" + CLOSES
+RESUME_PROMPTS = {  # by what paused the session
+    LIMIT: "The Claude usage limit that stopped this session has reset." + CONTINUE,
+    INTERRUPTED: "This session was interrupted: its process ended before it finished." + CONTINUE,
+    STOPPED: "This session was stopped with `dispatcher.py stop`." + CONTINUE}
 LIMIT_TEXT = re.compile(r"hit your .*limit|usage limit reached", re.IGNORECASE)
 FLAGS = ["--permission-mode", "auto", "--output-format", "stream-json", "--verbose"]
 ISSUE_FOLDER = re.compile(r"issue-(\d+)(-\d+)?")
@@ -1034,7 +1089,7 @@ class Sessions:
 
     def resume(self, issue: int, marker: Marker,
                start_marks: tuple[str, ...] = UNSTARTED) -> Running:
-        """The paused conversation resumed headless in its kept worktree, told the limit is back.
+        """The paused conversation resumed headless in its kept worktree, told why it stopped.
 
         Its checklist continues from `start_marks`. A missing worktree raises before anything
         starts.
@@ -1043,8 +1098,8 @@ class Sessions:
         if not worktree.is_dir():
             raise FileNotFoundError(f"the worktree {worktree} is gone")
         return self._run(issue, marker.branch, worktree,
-                         ["--resume", marker.session, RESUME_PROMPT.format(issue=issue)], marker,
-                         start_marks)
+                         ["--resume", marker.session,
+                          RESUME_PROMPTS[marker.cause].format(issue=issue)], marker, start_marks)
 
     def _run(self, issue: int, branch: str, worktree: Path, args: list[str],
              resumed: Marker | None = None,
@@ -1218,7 +1273,8 @@ class Dispatcher:
         for issue in stranded:
             self.say(f"dispatcher: #{issue.number} was left in progress with no session running:"
                      " it needs attention")
-        for action in orphans(stranded, self.sessions.worktrees() if stranded else {}):
+        for action in orphans(stranded, self.sessions.worktrees() if stranded else {},
+                              self.sessions.root):
             if isinstance(action, Report):
                 self.final(action)  # no later poll reads an issue that needs attention
             else:
@@ -1280,7 +1336,7 @@ class Dispatcher:
                      f"(exit code {running.process.returncode}), log {running.log}")
         hold = self.hold
         for session in snapshot.ended:
-            if session.limit:
+            if session.limit and session.limit.cause == LIMIT:  # only the usage limit holds
                 hold = hold.extend(session.limit.reset, now)
         if hold != self.hold:
             self.held(hold)
@@ -1336,7 +1392,7 @@ class Dispatcher:
         Each one's record goes once its verdict is applied in full.
         """
         for session in ended:
-            for action in judge(session):
+            for action in judge(session, self.sessions.root):
                 self.final(action)
             self.judged.add(session.issue)
         self.tidy()
@@ -1396,6 +1452,12 @@ class Dispatcher:
                                             started=running.started),
                       create=running.resumed is None)
 
+    def places(self, running: Running) -> tuple[str, str]:
+        """A comment's lines naming the session's worktree and log, under the checkout."""
+        root = self.sessions.root
+        return (f"Worktree: `{inside(running.worktree, root)}`",
+                f"Log: `{inside(running.log, root)}`")
+
     def stopped_report(self, running: Running) -> Report:
         """A session the dispatcher stopped: the stage its log reached fails."""
         marks = self.sessions.progress(running, running.start_marks).marks
@@ -1415,8 +1477,8 @@ class Dispatcher:
         except (OSError, subprocess.CalledProcessError) as error:
             detail = (error.stderr if isinstance(error, subprocess.CalledProcessError)
                       and error.stderr else error)
-            self.apply(needs_attention(issue,
-                                       f"the session could not start: {str(detail).strip()}"))
+            detail = unrooted(str(detail).strip(), self.sessions.root)
+            self.apply(needs_attention(issue, f"the session could not start: {detail}"))
             self.final(Report(issue, Status(NEEDS_ATTENTION, marks_stopped(UNSTARTED)),
                               create=True))
             return
@@ -1446,7 +1508,8 @@ class Dispatcher:
         try:
             running = self.sessions.resume(issue, marker, marks_resumed(stored))
         except OSError as error:
-            self.apply(needs_attention(issue, f"the paused session could not resume: {error}"))
+            self.apply(needs_attention(issue, "the paused session could not resume: "
+                                       + unrooted(str(error), self.sessions.root)))
             self.final(Report(issue, Status(NEEDS_ATTENTION), marks_stopped))
             return
         self.running[issue] = running
@@ -1472,14 +1535,13 @@ class Dispatcher:
             except (GhError, ValueError, KeyError) as error:
                 self.apply(needs_attention(running.issue, "the session ended, but the dispatcher "
                                            f"was stopped before GitHub could be read: {error}",
-                                           f"Worktree: `{running.worktree}`",
-                                           f"Log: `{running.log}`"))
+                                           *self.places(running)))
                 self.apply(self.stopped_report(running))
         self.sessions.end(live)
         for running in live:
             self.apply(needs_attention(running.issue,
                                        "the dispatcher was stopped while the session ran.",
-                                       f"Worktree: `{running.worktree}`", f"Log: `{running.log}`"))
+                                       *self.places(running)))
             self.apply(self.stopped_report(running))
 
 
