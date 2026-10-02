@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 import pytest
 import yaml
@@ -177,3 +178,84 @@ async def test_the_documented_automation_reads_states_with_brackets(
     await clothes_washer.async_block_till_done()
     [call] = [event.data for event in calls if event.data["domain"] == "persistent_notification"]
     assert call["service_data"]["message"] == "Done: 0.42 kWh"
+
+
+# --- docs/concepts/goals.mdx -------------------------------------------------------------
+
+GOALS_PAGE = PROJECT / "docs/concepts/goals.mdx"
+TROUBLESHOOTING_PAGE = PROJECT / "docs/reference/troubleshooting.mdx"
+POOL_RUNTIME_TOTAL = "sensor.pururu_pool_appliance_runtime_total"
+# A goal's lines pururu logs: a whole line, as the code writes it
+GOAL_LINE = re.compile(r"(?:[a-z_]+\.pururu_\w+_goal_\w+ follows [a-z_]+\.\w+, which is not created"
+                       r"|\w+: goals: \w+: [\w.]+ doesn't accumulate \(state class \w+\)); not creating it")
+
+
+def goals_example() -> dict[str, Any]:
+    """The goals page's pururu: block."""
+    [block] = re.findall(r"```yaml[^\n]*\n(.*?)```", GOALS_PAGE.read_text(encoding="utf-8"), re.DOTALL)
+    return yaml.safe_load(block)["pururu"]
+
+
+def doesnt_accumulate(hass: HomeAssistant, entity_id: str) -> None:
+    """`entity_id` registered as a measurement, which goes up and down."""
+    domain, object_id = entity_id.split(".")
+    er.async_get(hass).async_get_or_create(
+        domain, "plug", object_id, suggested_object_id=object_id,
+        capabilities={"state_class": "measurement"})
+
+
+def disabled(hass: HomeAssistant, entity_id: str) -> None:
+    """pururu's `entity_id` disabled in the registry before pururu sets up."""
+    domain, object_id = entity_id.split(".")
+    er.async_get(hass).async_get_or_create(
+        domain, "pururu", object_id, suggested_object_id=object_id,
+        disabled_by=er.RegistryEntryDisabler.USER)
+
+
+async def test_the_goals_example_creates_what_the_page_says(ha: HomeAssistant) -> None:
+    """Every goal of the example is its two sensors, the first named as the page shows it."""
+    devices = goals_example()["devices"]
+    assert await setup(ha, devices)
+    for key, device in devices.items():
+        for goal in device["goals"]:
+            for sensor in ("target", "done"):
+                assert ha.states.get(f"sensor.pururu_{key}_goal_{goal}_{sensor}") is not None, (key, goal)
+    target = ha.states.get("sensor.pururu_pool_goal_filtering_target")
+    assert f"**{target.attributes['friendly_name']}**" in GOALS_PAGE.read_text(encoding="utf-8")
+    assert float(target.state) == 6
+
+
+async def test_the_goals_pages_log_lines_are_the_codes(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """The page's example, its heater's energy a measurement and the pool's runtime total disabled."""
+    quoted = GOAL_LINE.findall(GOALS_PAGE.read_text(encoding="utf-8"))
+    assert len(quoted) >= 2
+    doesnt_accumulate(ha, "sensor.pool_heater_energy")
+    disabled(ha, POOL_RUNTIME_TOTAL)
+    assert await setup(ha, goals_example()["devices"])
+    for line in quoted:
+        assert line in caplog.text, line
+
+
+def troubleshooting_goal_lines() -> list[str]:
+    """The goals' lines troubleshooting shows in its code blocks."""
+    blocks = re.findall(r"```\n(.*?)```", TROUBLESHOOTING_PAGE.read_text(encoding="utf-8"), re.DOTALL)
+    return [line for block in blocks for line in block.splitlines() if "_goal_" in line or ": goals: " in line]
+
+
+@pytest.mark.parametrize("line", troubleshooting_goal_lines())
+async def test_troubleshootings_goal_lines_are_the_codes(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture, line: str) -> None:
+    """The pool's filtering goal, on a power reading or on its disabled runtime total, logs the line as shown."""
+    assert GOAL_LINE.fullmatch(line), line
+    filtering = {"name": "Filtragem", "target": 6, "period": "today",
+                 "tracked_by": "appliance.running_program.runtime_total"}
+    if "doesn't accumulate" in line:
+        filtering["tracked_by"] = "homeassistant.sensor.pool_pump_power"
+        doesnt_accumulate(ha, "sensor.pool_pump_power")
+    else:
+        disabled(ha, POOL_RUNTIME_TOTAL)
+    appliance = {"power": "homeassistant.sensor.pool_pump_power",
+                 "running_program": {"above": 4, "on_delay": {"minutes": 1}, "off_delay": {"minutes": 2}}}
+    assert await setup(ha, {"pool": {"name": "Piscina", "appliance": appliance, "goals": {"filtering": filtering}}})
+    assert line in caplog.text

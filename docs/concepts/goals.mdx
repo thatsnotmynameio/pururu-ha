@@ -1,0 +1,114 @@
+---
+title: Goals
+description: What a device must achieve in each period, such as the pool filtering 6 hours a day, and how much it did, whoever caused it.
+---
+
+A **goal** says what a device must achieve in each calendar period: the pool filters 6 hours a day, the washer runs twice a week. pururu shows the period's target next to how much was done, measured from something that already counts it, such as the pump's runtime total. It counts what happened, whoever caused it: a run started by hand, by the pump's own timer or by an automation counts the same.
+
+`goals` is a device key, like [`reactions`](/concepts/reactions) and [`programs`](/concepts/programs#executable-programs): it isn't a feature, and it doesn't count towards "[a device needs at least one feature](/concepts/devices-and-features#a-feature)".
+
+```yaml
+pururu:
+  devices:
+    pool:
+      name: Piscina
+      appliance:
+        power: homeassistant.sensor.pool_pump_power
+        running_program: {above: 4, on_delay: {minutes: 1}, off_delay: {minutes: 2}}
+      goals:
+        filtering:
+          name: Filtragem
+          target: 6
+          period: today
+          tracked_by: appliance.running_program.runtime_total
+        cleaning: {name: Limpeza, target: 2, period: week, tracked_by: appliance.running_program.cycles_total}
+        energy: {name: Energia, target: 40, period: month, tracked_by: homeassistant.sensor.pool_heater_energy}
+    living_room:
+      name: Sala
+      window:
+        contact: homeassistant.binary_sensor.living_room_window
+      goals:
+        airing: {name: Arejar, target: 2, period: today, tracked_by: window.open_time_total}
+        pool: {name: Filtragem da piscina, target: 40, period: week, tracked_by: device.pool.appliance.running_program.runtime_total}
+```
+
+This creates `sensor.pururu_pool_goal_filtering_target` and `sensor.pururu_pool_goal_filtering_done`, shown as **Piscina Filtragem target** and **Piscina Filtragem done**: 6 h, and how long the pump ran since midnight. Each other goal creates its two sensors too.
+
+A goal shows two things, the target and what was done. What's left is target − done, and the goal is met once done reaches the target: a template, a card or a reaction can work them out from the two sensors.
+
+## Settings
+
+`goals` is a map of **goal key → goal**, with at least one goal. The key is a slug, and it ends the entity IDs after the namespace `goal`, before `target` or `done`: `filtering` → `sensor.pururu_pool_goal_filtering_done`.
+
+<Property name="name" type="string" required>
+  Shown after the device's name, before `target` or `done`. It can't be empty, and it's the same in every language.
+</Property>
+
+---
+
+<Property name="target" type="number" required>
+  What the device must achieve in each period, a number above 0. It has no unit of its own: it's in the unit of what tracks it. Tracked by a runtime total in hours, `6` is 6 hours; by a cycles total, `2` is 2 cycles; by an energy total in kWh, `40` is 40 kWh.
+</Property>
+
+---
+
+<Property name="period" type="today, week, month or year" required>
+  The calendar period the target is for, as the [statistics](/concepts/statistics#periods) meters': `today` starts at midnight, `week` on Monday, `month` on the 1st and `year` on 1 January, in Home Assistant's time zone. Anything else is refused: `a goal's period is one of today, week, month, year`.
+</Property>
+
+---
+
+<Property name="tracked_by" type="reference" required>
+  What measures the goal, by its [reference](/concepts/entity-ids#references). It must be something that **accumulates**, a value that only grows as the work is done, since done is how much it grew in the period. A power reading in W goes up and down, so it can't track a goal.
+
+  - **This device's total**, by its path: `appliance.running_program.runtime_total`, `appliance.running_program.cycles_total`, `window.open_time_total`, `appliance.energy` (the energy total), `programs.executable.clean.runtime_total`, `reactions.morning.triggered_total`.
+  - **Another device's total**: `device.`, its device key, then the path as that device writes it: `device.pool.appliance.running_program.runtime_total`. Its own device written that way is refused, with the form to write: `goals: device.pool.appliance.running_program.runtime_total is this device's: write appliance.running_program.runtime_total`.
+  - **Home Assistant's entity**: `homeassistant.`, then its entity ID: `homeassistant.sensor.pool_heater_energy`. An entity pururu creates is written by its path, never as Home Assistant's, since only its path is followed: `goals: filtering: homeassistant.sensor.pururu_pool_appliance_runtime_total is pururu's: write appliance.running_program.runtime_total`.
+
+  A pururu entity that isn't a total is refused at this field: `goals: filtering: appliance.running_program is not a total`. So are a meter (`appliance.running_program.statistics.runtime.today`, which goes back to 0 every period) and a goal's own sensors. A path that names nothing is refused as an alert's `when` is: `goals: appliance.nothing is not an entity of this device`.
+
+  Home Assistant's entity may not be loaded yet when the configuration is checked, so it's checked when pururu sets up, by its state class: `total` or `total_increasing` accumulates. Anything else is logged, and the goal isn't created: `pool: goals: energy: homeassistant.sensor.pool_heater_energy doesn't accumulate (state class measurement); not creating it`. `appliance.energy` is checked the same way, by the state class of the appliance's `energy` sensor. An entity with no state class yet, because it hasn't loaded, gives the goal anyway: see [What was done](#what-was-done).
+</Property>
+
+## Entities
+
+| Entity | ID | Path |
+|---|---|---|
+| target | `sensor.pururu_<device key>_goal_<goal key>_target` | `goals.<goal key>.target` |
+| done | `sensor.pururu_<device key>_goal_<goal key>_done` | `goals.<goal key>.done` |
+
+They're named after the device and the goal: **Piscina Filtragem target** and **Piscina Filtragem done**, or **Piscina Meta de Filtragem** and **Piscina Realizado de Filtragem** in Portuguese.
+
+An [alert](/concepts/alerts) or a [reaction](/concepts/reactions) can watch either by its path, `goals.filtering.done`, or another device's by `device.pool.goals.filtering.done`. A goal itself, `goals.filtering`, is no entity: a reaction's `when` naming it is refused, `reactions: met: goals.filtering is a goal: watch goals.filtering.target or goals.filtering.done`.
+
+### The target
+
+The number you wrote, in the unit and device class of what tracks the goal, so it always shows the same unit as `done`: 6 h for a runtime total, 2 cycles for a cycles total, 40 kWh for an energy total. It's kept across restarts with its unit, so it shows its unit before the tracked entity reports again. A Home Assistant entity neither registered nor reporting yet gives a target without a unit until it reports. It's never `unavailable` because of the tracked entity: the number is always known.
+
+### What was done
+
+How much the tracked entity grew since the period began, in its unit. When the period turns over, it's 0 again. Nothing carries over: what was missing isn't owed in the next period, and what was over isn't credit.
+
+- **It's kept** across restarts and reloads within the period. A reload passes it through `unavailable` and back to its value, so an automation on it should leave `unavailable` and `unknown` out.
+- **A new goal counts from when it's set up.** Added at 15:00, a daily goal doesn't count what the pump ran that morning: the first period is partial. Every later one is whole.
+- **Changing `tracked_by` or `period` starts it again at 0**: what was done was of something else. Changing `name` or `target` doesn't.
+- **Renaming the tracked pururu entity** in the UI keeps it, since `tracked_by` hasn't changed: it goes on counting under the entity's new ID.
+- **A total that goes down** takes nothing off `done`.
+- **While the tracked entity is `unavailable`**, so is `done`. When it's back, what it grew meanwhile counts.
+- **A Home Assistant entity that grew while Home Assistant was down** counts at its next change, in the period running then: after midnight, it counts for the new day. A pururu total doesn't grow while Home Assistant is down.
+- **A Home Assistant entity not loaded yet** leaves `done` `unknown` until it first changes. It counts from that change on.
+- **A unit changed in the tracked entity's display settings** changes the unit `target` and `done` show, without converting what they hold. Write the goal's `target` in the new unit, and expect the period's `done` to be off until it turns over.
+
+## Following what tracks it
+
+A goal follows its tracked pururu entity, of this device or another:
+
+- **Not created**, because its ID is taken: the goal isn't created either, and the log says so, as for anything that follows a missing entity: `sensor.pururu_pool_goal_filtering_done follows sensor.pururu_pool_appliance_runtime_total, which is not created; not creating it`.
+- **Not built by its settings**, such as `appliance.energy` without the appliance's `energy`: the configuration is valid, so that turning the setting on later never breaks the goal, but the goal isn't created until it is (`… watches sensor.pururu_pool_appliance_energy_total, which this device's settings don't create …`).
+- **Disabled** in the UI: the goal isn't created either, with the same line. pururu reloads when you disable it. The total stays disabled as you left it, and its meters and alerts are still created. Enable it again and the goal comes back, `done` with what it had when it went, or 0 if the period turned over meanwhile. A rename or a setting you changed on the goal's own sensors is lost: they were removed.
+
+A Home Assistant entity isn't followed that way: pururu doesn't reload when you rename or disable it, and the goal stays, reading the ID you wrote. Renamed or disabled, that ID has no state, so `done` goes `unavailable`. For a rename, write the new ID in `tracked_by` and run `pururu.reload` (**Developer tools → Actions**): `done` starts again at 0, as for any change of `tracked_by`. For a disabled entity, enable it again, or point `tracked_by` at another and reload.
+
+## Removing it
+
+Dropping a goal, or `goals:` itself, from the YAML removes its two sensors, as any entity a setting stops creating. What tracked it keeps counting.

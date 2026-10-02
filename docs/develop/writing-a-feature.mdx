@@ -156,7 +156,7 @@ If an entity key's platform isn't in `PLATFORMS` (`const.py`), add it there, and
 
 A feature reads another feature's entity only through `Refers`, never by hard-coding its name or taking a capability from it.
 
-**On one entity of another feature, named in the configuration:** validate the field with `core/resolve.py`'s `path` (a path of this device, `device.<device>.…` or `homeassistant.…`), and add `Refers(of)`, `of` a function that yields, from the validated block, `(the field's path in the block, Ref)` for each reference it names: `(("stuck", "when"), Ref.parse("appliance.power"))`. `checks.references` refuses, at that field, one that isn't another feature's entity of this device: another device's and a Home Assistant entity are never one. `build()` receives its current ID in `inputs` under the reference as written (`Ref.text`, `appliance.power`). Set `follows` on each entity to the paths it reads. [`alerts`](/concepts/alerts) (`aspects/alerts.py`, the device key `ALERTS`) is the example.
+**On one entity of another feature, named in the configuration:** validate the field with `core/resolve.py`'s `path` (a path of this device, `device.<device>.…` or `homeassistant.…`), and add `Refers(of)`, `of` a function that yields, from the validated block, `(the field's path in the block, Ref)` for each reference it names: `(("stuck", "when"), Ref.parse("appliance.power"))`. `checks.references` refuses, at that field, one that isn't another feature's entity of this device: a Home Assistant entity is never one, and another device's is one only with `Refers(of, other_devices=True)`, as [`goals`](/concepts/goals)' `tracked_by` (`device_keys/goals.py`). `build()` receives its current ID in `inputs` under the reference as written (`Ref.text`, `appliance.power`). Set `follows` on each entity to the references it reads, as written: the prelude builds every device before one `creatable` pass over the house, so another device's entity it follows is known. [`alerts`](/concepts/alerts) (`aspects/alerts.py`, the device key `ALERTS`) is the example.
 
 **Entity keys the block adds.** A feature whose validated block decides more entity keys than `entity_keys` lists (the appliance's phases, from its `running_program`'s `phases`) adds `Derived(of)` (`core/roles.py`): `of` takes the validated block and returns the entity keys it adds, each a `Born` (`core/feature.py`: its platform and its path from the block, `running_program, phases, warming` for `phase_warming`). `setup/catalogue.keys` lists them too, so an alert, a reaction or a `when:` can name one; they're never in `entity_keys` itself, since they depend on the block. `program.keys_of` is the example: every entity key a program block's phases create, `other`'s too, none without phases.
 
@@ -200,7 +200,7 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 
 ## 6. What the contract test checks
 
-`tests/test_features.py` runs over every entry in `FEATURES`, and in `DEVICE_KEYS` (`device_keys/__init__.py`: `programs` (`aspects/programs.py`'s `PROGRAMS`, the executable programs) and `reactions`, whose statistics a `Feature` each builds, and `alerts` (`aspects/alerts.py`'s `ALERTS`, the hand-written alerts), none of them a feature of a device), so your feature is covered without changing the test:
+`tests/test_features.py` runs over every entry in `FEATURES`, and in `DEVICE_KEYS` (`device_keys/__init__.py`: `programs` (`aspects/programs.py`'s `PROGRAMS`, the executable programs) and `reactions`, whose statistics a `Feature` each builds, `alerts` (`aspects/alerts.py`'s `ALERTS`, the hand-written alerts) and `goals` (`device_keys/goals.py`'s `GOALS`), none of them a feature of a device), so your feature is covered without changing the test:
 
 | Test | Checks |
 |---|---|
@@ -216,7 +216,7 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 | `test_what_a_last_cycle_follows_is_a_cycle_source` | Each `LastCycleValue`'s source is a `CycleSource`, built by the builder and its aspects from the full example: the appliance's `running` and each phase, a detected program's carrier and its phases, a door's or a window's `open`, an executable program's `executable_<key>_cycles_total` (`Runs`) |
 | `test_a_derived_key_is_in_the_index` | What a validated block adds (`Derived`) is listed by `catalogue.keys`, and the example builds only listed keys |
 | `test_refers_names_paths_as_written` | What `Refers` returns for the example is a path that reads back as written (`path`, `Ref.parse`), each at a field |
-| `test_every_listed_key_has_one_path` | Each key `catalogue.keys` lists for the full example has one path of dotted slugs, distinct within the device, never at a setting's value |
+| `test_every_listed_key_has_one_path` | Each key `catalogue.keys` lists for the full example has one path of dotted slugs, distinct within the device, never at a setting's value, but for a written entity ID's mirror (`power`) and a written number's sensor (a goal's `target`) |
 | `test_every_built_entity_carries_its_path` | Set up as a device, every entity carries the path `build.build` stamped from the index, which resolves back to its key, and shows it in its `reference` attribute, from inside and from another device |
 | `test_every_action_is_a_service_of_its_platform` | A feature with `Actions` is configured, and its platform has a service for each action |
 | `test_it_takes_turn_on_turn_off_and_toggle` | `switches` and `lights` have exactly `("turn_on", "turn_off", "toggle")` |
@@ -229,7 +229,7 @@ The `Presets` role is enough: **don't** put the alert keys in `entity_keys`. The
 | `test_ready_made_notifications_line_up` | Every ready-made notification watches its own feature's entity key, has its name and message in both languages, and validates through the notifications aspect, which adds no entity key |
 | `test_each_role_at_most_once` | No role twice in `roles` |
 | `test_a_configured_builders_items_are_its_keys` | A `Configured` block's keys are its entity keys: its items, if any, are one per key, slug the key |
-| `test_a_device_key_neither_acts_nor_derives` | No device key (`programs`, `reactions`, `alerts`) has `Actions` or `Derived` |
+| `test_a_device_key_neither_acts_nor_derives` | No device key (`programs`, `reactions`, `alerts`, `goals`) has `Actions` or `Derived` |
 | `test_ready_made_watch_the_builders_keys` | What a ready-made alert or notification watches, or counts from, is one of its builder's entity keys |
 | `test_a_generating_builder_generates_from_its_example` | What `Generates` writes carries its device's pururu pattern |
 | `test_the_aspects_each_builder_offers` | Which aspects (`statistics`, `alerts`, `notifications`, `programs`) each builder offers, pinned: `appliance` offers all four, the rest at most `statistics` |

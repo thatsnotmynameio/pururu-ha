@@ -27,6 +27,7 @@ Every entity pururu creates has the ID
 | [`alerts`](/concepts/alerts) | `alert` | `binary_sensor.pururu_clothes_washer_alert_long_cycle` |
 | [`programs`](/concepts/programs) | `program` | `script.pururu_greenhouse_program_executable_clean` (a Home Assistant script), `sensor.pururu_greenhouse_program_executable_clean_cycles_total` |
 | [`reactions`](/concepts/reactions) | `reaction` | `automation.pururu_greenhouse_reaction_morning` (a Home Assistant automation), `sensor.pururu_greenhouse_reaction_morning_triggered_total` |
+| [`goals`](/concepts/goals) | `goal` | `sensor.pururu_pool_goal_filtering_target`, `sensor.pururu_pool_goal_filtering_done` |
 
 There's no exception, even when an entity key is the same word as its namespace: a switch keyed `switch` is `switch.pururu_greenhouse_switch_switch`.
 
@@ -54,7 +55,7 @@ An entity's **path** is the way down through its device's YAML to it, from the b
 
 - **Every level you wrote is in it**, the words that only give the YAML its shape too: the cotton program's `other` phase is `appliance.programs.detected.cotton.other`.
 - **What you declared is its own entity**: a switch `switches.sprinkler`, a light `lights.teto`, a button `buttons.ler`, an alert `alerts.long_cycle`, a ready-made one `appliance.alerts.offline`, a phase `appliance.running_program.phases.warming`. `appliance.running_program` is the appliance running, and `appliance.programs.detected.cotton` the cotton program running. `power` and `energy` name the entity made from them: `appliance.power`, `appliance.energy`.
-- **What pururu creates on its own sits under what it belongs to**, by the name its feature's page gives it: the running program's last cycle is `appliance.running_program.last_cycle_end`, a door's `open` is `door.open`, a program's runs `programs.executable.clean.cycles_total`, a reaction's triggers `reactions.washer_done.triggered_total`.
+- **What pururu creates on its own sits under what it belongs to**, by the name its feature's page gives it: the running program's last cycle is `appliance.running_program.last_cycle_end`, a door's `open` is `door.open`, a program's runs `programs.executable.clean.cycles_total`, a reaction's triggers `reactions.washer_done.triggered_total`, a goal's sensors `goals.filtering.target` and `goals.filtering.done`.
 - **A period of `statistics:` is the last word**: `cycles: [month]` in the cotton program is `appliance.programs.detected.cotton.statistics.cycles.month`.
 
 The path is written in full, always: no level is skipped, and a dot separates levels, never the words of one key (`last_cycle_end` is one key).
@@ -79,6 +80,7 @@ Each feature's page gives every entity's path next to its ID. Renaming an entity
 |---|---|---|
 | An [alert](/concepts/alerts)'s `when`, a [program](/concepts/programs#steps)'s steps | a path of this device | `when: appliance.running_program` |
 | A [reaction](/concepts/reactions)'s `when` | any reference, or an [executable program](/concepts/reactions#an-executable-program) running | `when: device.clothes_washer.appliance.running_program`, `when: programs.executable.clean` |
+| A [goal](/concepts/goals)'s `tracked_by` | any reference to what accumulates | `tracked_by: appliance.running_program.runtime_total`, `tracked_by: device.pool.appliance.running_program.runtime_total`, `tracked_by: homeassistant.sensor.pool_heater_energy` |
 | A group of [alert lights](/concepts/alert-lights) | a light, as from another device | `default: [device.biblioteca.lights.teto]` |
 | `power`, `energy`, `contact`, the `entity` of a switch, a light, a button or an event entity, `notify` | Home Assistant's, only | `power: homeassistant.sensor.washer_plug_power`, `notify: homeassistant.notify.mobile_app_phone` |
 | A device's `area`, an area's `floor`, a reaction's `then`, a button's `program`, an alert's `lights` | one kind of thing, so its key alone | `area: despensa`, `then: clean`, `lights: default` |
@@ -101,7 +103,7 @@ So an entity seen in Home Assistant, in its details or in **Developer tools → 
 
 An entity's name comes from its entity key, in Home Assistant's language: English and Portuguese are translated. It's shown after the device's name, so `running` on **Tanquinho** is **Tanquinho Running**, or **Tanquinho Em funcionamento** in Portuguese. You can rename any entity in the UI as usual.
 
-A [switch](/features/switches)'s, a [light](/features/lights)'s, a [button](/features/buttons)'s, or an [alert](/concepts/alerts)'s entity key is the key you gave it, so its name is the `name:` you wrote, the same in every language. An [executable program](/concepts/programs#executable-programs)'s script is named `<device name> <name:>` too.
+A [switch](/features/switches)'s, a [light](/features/lights)'s, a [button](/features/buttons)'s, or an [alert](/concepts/alerts)'s entity key is the key you gave it, so its name is the `name:` you wrote, the same in every language. A [goal](/concepts/goals)'s sensors carry its `name:` inside their translated name: **Piscina Filtragem target**, **Piscina Meta de Filtragem**. An [executable program](/concepts/programs#executable-programs)'s script is named `<device name> <name:>` too.
 
 ## Renaming an entity ID
 

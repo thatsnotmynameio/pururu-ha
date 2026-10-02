@@ -31,7 +31,8 @@ pururu:
 - **`reactions`** makes the device react to events: each one becomes a Home Assistant automation. It's optional, it isn't a feature, and it's covered in [Reactions](/concepts/reactions).
 - **`programs`** gives the device [executable programs](/concepts/programs#executable-programs), under `programs: executable:`: each one becomes a Home Assistant script. It's optional, and it isn't a feature. A feature's block takes its own detected programs instead (`programs: detected:` in the [appliance](/features/appliance)'s).
 - **`alerts`** watches for problems on the device's own entities: each one becomes a binary sensor. It's optional, it isn't a feature either, and it's covered in [Alerts](/concepts/alerts).
-- **Features** are the other keys. A device needs at least one; `reactions`, `programs` and `alerts` don't count towards it.
+- **`goals`** says what the device must achieve in each period, such as hours of filtering a day: each one becomes two sensors, its target and what was done. It's optional, it isn't a feature either, and it's covered in [Goals](/concepts/goals).
+- **Features** are the other keys. A device needs at least one; `reactions`, `programs`, `alerts` and `goals` don't count towards it.
 
 ## A feature
 
@@ -46,7 +47,7 @@ A feature is a ready-made piece of behaviour. It reads real entities, such as a 
 | [`switches`](/features/switches) | Real switches inside the device, each named in the YAML, that show their switch's state and turn it on and off |
 | [`buttons`](/features/buttons) | A value of a real sensor, such as a remote's key, as a button of the device: a press records its time and can start one of the device's programs |
 
-A device can also have [`reactions`](/concepts/reactions), [`programs`](/concepts/programs#executable-programs) (its executable programs) and [`alerts`](/concepts/alerts). None of them are features, and a device still needs a feature besides them: `reactions` and `programs` write Home Assistant automations and scripts, each executable program's runs and each reaction's triggers a sensor of the device; `alerts` watches other features' entities (and the executable programs' and reactions' statistics) for problems, each one a binary sensor of the device too.
+A device can also have [`reactions`](/concepts/reactions), [`programs`](/concepts/programs#executable-programs) (its executable programs), [`alerts`](/concepts/alerts) and [`goals`](/concepts/goals). None of them are features, and a device still needs a feature besides them: `reactions` and `programs` write Home Assistant automations and scripts, each executable program's runs and each reaction's triggers a sensor of the device; `alerts` watches other features' entities (and the executable programs' and reactions' statistics) for problems, each one a binary sensor of the device too; `goals` measures a total of the device, of another device or of Home Assistant's against a target per period, each goal two sensors of the device.
 
 Each feature appears at most once per device, and everything under its key is that feature's configuration. An unknown key inside a feature, such as a typo, is a configuration error, so a mistake never passes silently.
 
