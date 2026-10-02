@@ -14,13 +14,13 @@ one gets a new worktree from origin/main under .claude/worktrees/ and a headless
 `claude -p` session running lfg; at most N run at once (default 2), and the poll
 runs every SECONDS (default 300). Labels show where an issue stands: `in progress`,
 then `in review` (a pull request is open) and `ready to merge` (its required checks
-pass), or `needs attention` (the session ended without one), or `paused` (the Claude
-usage limit stopped it). Each issue also gets one status comment, edited in place: why
-it waits in the queue, then a checklist of lfg's stages read from the session's log, its
-last sentence and running time, then how it ended. A pause holds every start until a
-minute past the limit's reset, or, with no reset known, until the next poll tries one
-session. Past the hold, paused issues resume first, oldest first: the same conversation,
-in the same worktree.
+pass), or `needs attention` (the session ended without one), or `paused` (the usage
+limit, an interruption or `stop` paused it). Each issue also gets one status comment,
+edited in place: why it waits in the queue, then a checklist of lfg's stages read from the
+session's log, its last sentence and running time, then how it ended. A usage-limit pause
+holds every start until a minute past the limit's reset, or, with no reset known, until the
+next poll tries one session. Past the hold, paused issues resume first, oldest first: the
+same conversation, in the same worktree.
 Every line it prints carries the time; each poll reports what it found. Logs, a record
 of each session and the lock are in tools/dispatcher/.state/. Ctrl-C, SIGTERM or an error
 judges the sessions that ended, as a poll would, and leaves the others running: their
@@ -591,7 +591,8 @@ LABELS = {
     IN_REVIEW: ("1d76db", "A pull request is open; its required checks don't all pass yet"),
     READY_TO_MERGE: ("5319e7", "A pull request is open and its required checks pass"),
     NEEDS_ATTENTION: ("d93f0b", "The session ended without a pull request; see the comment"),
-    PAUSED: ("c5def5", "The session hit the usage limit; it resumes when the limit is back"),
+    PAUSED: ("c5def5", "The usage limit, an interruption or dispatcher.py stop paused the "
+                       "session; it resumes later"),
 }
 ISSUES = """query($owner: String!, $name: String!, $login: String!, $label: String!) {
   repository(owner: $owner, name: $name) {

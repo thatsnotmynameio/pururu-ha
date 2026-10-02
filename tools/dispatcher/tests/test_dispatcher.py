@@ -546,7 +546,8 @@ def test_the_paused_label_is_created_when_missing() -> None:
     gh.ensure_labels()
     assert [call for call in fake.calls if call[:2] == ["label", "create"]] == [
         ["label", "create", "paused", "--color", "c5def5", "--description",
-         "The session hit the usage limit; it resumes when the limit is back"]]
+         "The usage limit, an interruption or dispatcher.py stop paused the session; "
+         "it resumes later"]]
 
 
 def test_a_dispatch_swaps_labels_in_one_edit() -> None:
