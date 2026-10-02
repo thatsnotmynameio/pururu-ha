@@ -1,8 +1,11 @@
 """tools/dispatcher/dispatcher.py: the author's ready issues become pull requests."""
 
 from collections.abc import Callable, Iterator
+import contextlib
 import dataclasses
 from datetime import datetime
+import fcntl
+import itertools
 import json
 import os
 from pathlib import Path
@@ -14,12 +17,13 @@ from typing import Any
 import pytest
 
 import dispatcher
-from dispatcher import (IN_PROGRESS, IN_REVIEW, NEEDS_ATTENTION, PAUSED, READY, READY_TO_MERGE,
-                        Dispatch, Ended, Hold, Issue, Link, Marker, Move, Progress, PullRequest,
-                        Report, Resume, Review, Snapshot, Status)
+from dispatcher import (IN_PROGRESS, IN_REVIEW, INTERRUPTED, LIMIT, NEEDS_ATTENTION, PAUSED,
+                        READY, READY_TO_MERGE, STOPPED, Dispatch, Ended, Hold, Issue, Link, Marker,
+                        Move, Progress, PullRequest, Report, Resume, Review, Snapshot, Status)
 
 PR = PullRequest(101, "https://github.com/o/r/pull/101")
 SESSION = "3f2a9c1e-8b4d-4e6f-9a0b-1c2d3e4f5a6b"
+REPO = Path("/repo")  # the checkout the pure examples' paths sit in
 
 
 def at(hour: int, minute: int = 0, second: int = 0) -> float:
@@ -41,9 +45,12 @@ def ready(number: int, *, blocked: int = 0, also: tuple[str, ...] = ()) -> Issue
 
 def ended(issue: int, *, prs: tuple[PullRequest, ...] = (), linked: frozenset[int] = frozenset(),
           reason: str = "lfg stopped: no work source", limit: Marker | None = None,
-          resumed: Marker | None = None, progress: Progress = Progress()) -> Ended:
-    return Ended(issue, f"/repo/.claude/worktrees/issue-{issue}", "/repo/tools/dispatcher/.state/logs/x.log",
-                 reason, prs, linked, limit, resumed, progress)
+          resumed: Marker | None = None, progress: Progress = Progress(), **more: Any) -> Ended:
+    """#issue's ended session; `more` sets the rest of its fields (`stopped`, `at_start`…)."""
+    return dataclasses.replace(
+        Ended(issue, f"/repo/.claude/worktrees/issue-{issue}",
+              "/repo/tools/dispatcher/.state/logs/x.log", reason, prs, linked, limit, resumed,
+              progress, branch=f"issue-{issue}"), **more)
 
 
 # The queue
@@ -82,7 +89,7 @@ def test_free_slots_fill_in_order() -> None:
 
 def test_a_session_that_opened_a_pull_request_goes_in_review() -> None:
     """AE4: in review with the link; the slot frees."""
-    move, report = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})))
+    move, report = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert (move.issue, move.remove, move.add) == (74, (IN_PROGRESS,), (IN_REVIEW,))
@@ -92,19 +99,44 @@ def test_a_session_that_opened_a_pull_request_goes_in_review() -> None:
 
 def test_a_pull_request_not_linked_to_its_issue_gets_the_link() -> None:
     """AE1 relies on merging closing the issue: the dispatcher adds Closes #N."""
-    assert Link(101, 74) in dispatcher.judge(ended(74, prs=(PR,)))
-    linked = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})))
+    assert Link(101, 74) in dispatcher.judge(ended(74, prs=(PR,)), REPO)
+    linked = dispatcher.judge(ended(74, prs=(PR,), linked=frozenset({101})), REPO)
     assert not [action for action in linked if isinstance(action, Link)]
 
 
 def test_a_session_without_a_pull_request_needs_attention() -> None:
     """AE5: the reason and the worktree in the comment."""
-    move, report = dispatcher.judge(ended(74))
+    move, report = dispatcher.judge(ended(74), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert (move.remove, move.add) == ((IN_PROGRESS,), (NEEDS_ATTENTION,))
     assert "lfg stopped: no work source" in (move.comment or "")
-    assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-74`" in (move.comment or "")
+
+
+def test_comments_name_paths_inside_the_checkout() -> None:
+    """AE8, R15: a comment is public, so the machine's folders never show, the reason's either."""
+    root = Path("/Users/me/pururu-ha")
+    session = dataclasses.replace(
+        ended(70, reason=f"Uncommitted changes are left in {root}/.claude/worktrees/issue-70."),
+        worktree=f"{root}/.claude/worktrees/issue-70",
+        log=f"{root}/tools/dispatcher/.state/logs/issue-70.log")
+    attention, _ = dispatcher.judge(session, root)
+    for move in (attention, dispatcher.pause(session, limit(70), root),
+                 dispatcher.pause(session, cause(70, INTERRUPTED), root)):
+        assert isinstance(move, Move)
+        comment = move.comment or ""
+        assert "Worktree: `.claude/worktrees/issue-70`" in comment
+        assert "Log: `tools/dispatcher/.state/logs/issue-70.log`" in comment
+        assert "/Users/" not in comment
+    assert "left in .claude/worktrees/issue-70." in (attention.comment or "")
+
+
+def test_a_path_outside_the_checkout_is_named_by_its_last_part() -> None:
+    root = Path("/Users/me/pururu-ha")
+    assert dispatcher.inside(root / ".claude/worktrees/issue-70", root) == (
+        ".claude/worktrees/issue-70")
+    assert dispatcher.inside("/tmp/issue-70.log", root) == "issue-70.log"
 
 
 # The usage limit
@@ -112,7 +144,7 @@ def test_a_session_without_a_pull_request_needs_attention() -> None:
 def test_a_session_stopped_by_the_limit_is_paused_with_its_marker() -> None:
     """AE1: #70 stops at 15:10 with `resets 8:30pm`: paused, the comment first, naming 20:30."""
     reset = int(at(20, 30))
-    move, report = dispatcher.judge(ended(70, limit=limit(70)))
+    move, report = dispatcher.judge(ended(70, limit=limit(70)), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert (move.issue, move.remove, move.add, move.comment_first) == (
@@ -121,26 +153,28 @@ def test_a_session_stopped_by_the_limit_is_paused_with_its_marker() -> None:
     assert "usage limit" in comment
     assert "20:30" in comment
     assert SESSION in comment
-    assert "/repo/.claude/worktrees/issue-70" in comment
-    assert "/repo/tools/dispatcher/.state/logs/x.log" in comment
+    assert "Worktree: `.claude/worktrees/issue-70`" in comment
+    assert "Log: `tools/dispatcher/.state/logs/x.log`" in comment
     assert comment.splitlines()[-1] == (
         '<!-- dispatcher-pause {"session": "3f2a9c1e-8b4d-4e6f-9a0b-1c2d3e4f5a6b", '
-        f'"branch": "issue-70", "reset": {reset}}} -->')
+        f'"branch": "issue-70", "reset": {reset}, "cause": "limit"}} -->')
 
 
 def test_a_limit_with_no_reset_says_it_is_tried_again_at_the_next_poll() -> None:
     """R5: no reset in the message: the comment says so, the marker's reset is null."""
-    move, report = dispatcher.judge(ended(70, limit=limit(70, reset=None)))
+    move, report = dispatcher.judge(ended(70, limit=limit(70, reset=None)), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert move.add == (PAUSED,)
     comment = move.comment or ""
     assert "next poll" in comment
-    assert comment.splitlines()[-1].endswith('"branch": "issue-70", "reset": null} -->')
+    assert comment.splitlines()[-1].endswith(
+        '"branch": "issue-70", "reset": null, "cause": "limit"} -->')
 
 
 def test_a_limit_after_the_pull_request_is_open_is_in_review() -> None:
-    move, report = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}), limit=limit(70)))
+    move, report = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}),
+                                          limit=limit(70)), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert move.add == (IN_REVIEW,)
@@ -149,7 +183,7 @@ def test_a_limit_after_the_pull_request_is_open_is_in_review() -> None:
 def test_a_resumed_session_that_opens_its_pull_request_is_in_review() -> None:
     """AE3: #70 resumed, then opened its pull request and ended."""
     move, report = dispatcher.judge(ended(70, prs=(PR,), linked=frozenset({101}),
-                                          resumed=limit(70)))
+                                          resumed=limit(70)), REPO)
     assert isinstance(move, Move)
     assert isinstance(report, Report)
     assert (move.remove, move.add) == ((IN_PROGRESS,), (IN_REVIEW,))
@@ -158,12 +192,117 @@ def test_a_resumed_session_that_opens_its_pull_request_is_in_review() -> None:
 def test_a_resumed_session_paused_again_comments_only_on_news() -> None:
     """KTD5: a new reset is news; the same session with the same reset is not."""
     unknown = limit(70, reset=None)
-    news, _ = dispatcher.judge(ended(70, limit=limit(70), resumed=unknown))
+    news, _ = dispatcher.judge(ended(70, limit=limit(70), resumed=unknown), REPO)
     assert isinstance(news, Move)
     assert news.add == (PAUSED,)
     assert "20:30" in (news.comment or "")
-    same, _ = dispatcher.judge(ended(70, limit=limit(70, reset=None), resumed=unknown))
+    same, _ = dispatcher.judge(ended(70, limit=limit(70, reset=None), resumed=unknown), REPO)
     assert same == Move(70, (IN_PROGRESS,), (PAUSED,))
+
+
+def cause(issue: int, kind: str, session: str = SESSION) -> Marker:
+    """A marker pausing the issue for `kind`, its reset unknown (only the limit has one)."""
+    return Marker(session, f"issue-{issue}", None, kind)
+
+
+@pytest.mark.parametrize("kind, says", [
+    (INTERRUPTED, "the session was interrupted (found gone when the dispatcher started)."),
+    (STOPPED, "the session was stopped with `dispatcher.py stop`.")])
+def test_a_pause_says_its_cause_and_speaks_of_no_reset(kind: str, says: str) -> None:
+    """KTD4: interrupted and stopped pauses carry their cause in the marker; no limit, no reset."""
+    move = dispatcher.pause(ended(70), cause(70, kind), REPO)
+    assert (move.issue, move.remove, move.add, move.comment_first) == (
+        70, (IN_PROGRESS,), (PAUSED,), True)
+    comment = move.comment or ""
+    assert comment.startswith(f"Dispatcher: {says}\n\n")
+    said = "\n".join(comment.splitlines()[:-1])  # the marker's fields aside
+    assert "usage limit" not in said
+    assert "reset" not in said
+    assert "Worktree: `.claude/worktrees/issue-70`" in comment
+    assert comment.splitlines()[-1] == (
+        f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", "reset": null, '
+        f'"cause": "{kind}"}} -->')
+
+
+def test_a_resumed_session_paused_again_comments_only_on_a_new_cause() -> None:
+    """KTD4: the same cause with nothing new swaps the labels alone; another cause is news."""
+    interrupted = cause(70, INTERRUPTED)
+    resumed = ended(70, resumed=interrupted)
+    assert dispatcher.pause(resumed, interrupted, REPO) == Move(70, (IN_PROGRESS,), (PAUSED,))
+    stopped = dispatcher.pause(resumed, cause(70, STOPPED), REPO)
+    assert "`dispatcher.py stop`" in (stopped.comment or "")
+    limited = dispatcher.pause(resumed, cause(70, LIMIT), REPO)
+    assert "usage limit" in (limited.comment or "")
+
+
+def gone(issue: int, **more: Any) -> Ended:
+    """#issue's session found gone at start: no final result, its conversation known."""
+    fields: dict[str, Any] = {"reason": "the session ended with no final result",
+                              "final": False, "conversation": SESSION, "at_start": True}
+    return ended(issue, **{**fields, **more})
+
+
+def test_a_session_found_gone_at_start_without_a_final_result_is_paused_as_interrupted() -> None:
+    """R7, KTD3, KTD9: its conversation's marker, and the reached stage paused."""
+    reached = marks("done", "done", "current")
+    move, report = dispatcher.judge(gone(70, progress=Progress(reached)), REPO)
+    assert isinstance(move, Move)
+    assert (move.remove, move.add, move.comment_first) == ((IN_PROGRESS,), (PAUSED,), True)
+    assert dispatcher.marker_of(move.comment or "", 70) == cause(70, INTERRUPTED)
+    assert "the session was interrupted" in (move.comment or "")
+    assert report == Report(70, Status(PAUSED, marks("done", "done", "paused"),
+                                       cause=INTERRUPTED))
+
+
+def test_a_session_resumed_and_found_gone_with_its_own_marker_pauses_without_a_comment() -> None:
+    """KTD4: interrupted again before anything new, the marker it came from still resumes it."""
+    move, _ = dispatcher.judge(gone(70, resumed=cause(70, INTERRUPTED)), REPO)
+    assert move == Move(70, (IN_PROGRESS,), (PAUSED,))
+
+
+@pytest.mark.parametrize("more", [{"at_start": False}, {"conversation": None}],
+                         ids=["at a poll", "no conversation"])
+def test_no_final_result_needs_attention_at_a_poll_or_with_no_conversation(
+        more: dict[str, Any]) -> None:
+    """KTD3: a session that keeps dying never loops through resumes; R9: nothing to resume."""
+    move, report = dispatcher.judge(gone(70, **more), REPO)
+    assert isinstance(move, Move)
+    assert move.add == (NEEDS_ATTENTION,)
+    assert "no final result" in (move.comment or "")
+    assert isinstance(report, Report)
+    assert report.status.state == NEEDS_ATTENTION
+
+
+@pytest.mark.parametrize(("more", "verdict", "kind"), [
+    ({"prs": (PR,), "limit": limit(70), "stopped": True}, IN_REVIEW, None),
+    ({"limit": limit(70), "stopped": True}, PAUSED, LIMIT),
+    ({"stopped": True, "final": True}, PAUSED, STOPPED),
+    ({"stopped": True, "at_start": False}, PAUSED, STOPPED),
+    ({"final": True}, NEEDS_ATTENTION, None),
+    ({}, PAUSED, INTERRUPTED),
+], ids=["pull request first", "then the limit", "then stopped", "stopped at a poll too",
+        "then a final result", "then interrupted"])
+def test_one_verdict_order_for_every_ended_session(more: dict[str, Any], verdict: str,
+                                                   kind: str | None) -> None:
+    """KTD3: pull request, limit, stopped, final result, then no final result."""
+    actions = dispatcher.judge(gone(70, **more), REPO)
+    move = actions[0]
+    assert isinstance(move, Move)
+    assert move.add == (verdict,)
+    if kind is not None:
+        marker = dispatcher.marker_of(move.comment or "", 70)
+        assert marker is not None
+        assert marker.cause == kind
+        report = actions[1]
+        assert isinstance(report, Report)
+        assert report.status.cause == kind
+
+
+def test_a_stopped_session_with_no_conversation_needs_attention() -> None:
+    """Nothing to resume, whatever paused it."""
+    move, _ = dispatcher.judge(gone(70, stopped=True, conversation=None), REPO)
+    assert isinstance(move, Move)
+    assert move.add == (NEEDS_ATTENTION,)
 
 
 def test_needs_attention_removes_the_label_it_is_given() -> None:
@@ -243,6 +382,13 @@ def test_the_hold_at_start_comes_from_the_paused_markers() -> None:
     assert dispatcher.restore([], at(18)) == Hold()
 
 
+def test_only_the_limits_markers_hold_at_start() -> None:
+    """AE7, KTD4: an interrupted or stopped pause neither holds nor probes; a limit still does."""
+    others = [cause(70, INTERRUPTED), cause(72, STOPPED)]
+    assert dispatcher.restore(others, at(18)) == Hold()
+    assert dispatcher.restore([*others, limit(73, reset=None)], at(18)) == Hold(at(18), probe=True)
+
+
 def test_an_unknown_reset_probes_whatever_order_a_past_reset_comes_in() -> None:
     """KTD4, KTD8: a reset already past never cancels the probe an unknown reset asks for."""
     unknown, past = limit(70, reset=None), limit(72, reset=at(17))
@@ -267,14 +413,14 @@ def test_pending_or_failing_checks_leave_it_in_review() -> None:
 def test_each_verdict_is_followed_by_its_final_report() -> None:
     """KTD5: in review, needs attention or paused, from the ended session's own marks; edit only."""
     progress = Progress(marks("done", "done", "current"), AE2_SENTENCE)
-    opened = dispatcher.judge(ended(74, prs=(PR,), progress=progress))
+    opened = dispatcher.judge(ended(74, prs=(PR,), progress=progress), REPO)
     assert opened[1:] == [Report(74, Status(IN_REVIEW, ("done", "done", "done", "skipped", "done",
                                                          "current"))), Link(101, 74)]
-    failed = dispatcher.judge(ended(74, progress=progress))
+    failed = dispatcher.judge(ended(74, progress=progress), REPO)
     assert failed[1:] == [Report(74, Status(NEEDS_ATTENTION, marks("done", "done", "failed")))]
-    stopped = dispatcher.judge(ended(74, limit=limit(74), progress=progress))
+    stopped = dispatcher.judge(ended(74, limit=limit(74), progress=progress), REPO)
     assert stopped[1:] == [Report(74, Status(PAUSED, marks("done", "done", "paused"),
-                                             reset=at(20, 30)))]
+                                             reset=at(20, 30), cause=LIMIT))]
 
 
 def test_a_promotion_reports_ready_to_merge_and_the_rest_in_review_as_they_stand() -> None:
@@ -292,10 +438,11 @@ def test_a_promotion_reports_ready_to_merge_and_the_rest_in_review_as_they_stand
 def test_an_in_progress_issue_at_start_needs_attention() -> None:
     """AE6: the orphan fails with its worktree; issues in review are not in the input at all."""
     move, report = dispatcher.orphans([Issue(74, frozenset({IN_PROGRESS}))],
-                                      {74: ["/repo/.claude/worktrees/issue-74"]})
+                                      {74: ["/repo/.claude/worktrees/issue-74"]}, REPO)
     assert isinstance(move, Move)
     assert (move.issue, move.remove, move.add) == (74, (IN_PROGRESS,), (NEEDS_ATTENTION,))
-    assert "/repo/.claude/worktrees/issue-74" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-74`" in (move.comment or "")
+    assert "/repo" not in (move.comment or "")
     assert report == Report(74, Status(NEEDS_ATTENTION), dispatcher.marks_stopped)
 
 
@@ -399,7 +546,8 @@ def test_the_paused_label_is_created_when_missing() -> None:
     gh.ensure_labels()
     assert [call for call in fake.calls if call[:2] == ["label", "create"]] == [
         ["label", "create", "paused", "--color", "c5def5", "--description",
-         "The session hit the usage limit; it resumes when the limit is back"]]
+         "The usage limit, an interruption or dispatcher.py stop paused the session; "
+         "it resumes later"]]
 
 
 def test_a_dispatch_swaps_labels_in_one_edit() -> None:
@@ -476,6 +624,29 @@ def test_a_marker_round_trips_through_its_line() -> None:
     assert dispatcher.marker_of("Dispatcher: pull request is open.", 70) is None
 
 
+@pytest.mark.parametrize("kind", [LIMIT, INTERRUPTED, STOPPED])
+def test_a_marker_round_trips_its_cause(kind: str) -> None:
+    """KTD4: the cause is in the line, and a marker of another cause is another marker."""
+    marker = Marker(SESSION, "issue-70", 1759350600, kind)
+    assert dispatcher.marker_of(f"Dispatcher: paused.\n\n{marker.line()}", 70) == marker
+    assert all(marker != dataclasses.replace(marker, cause=other)
+               for other in (LIMIT, INTERRUPTED, STOPPED) if other != kind)
+
+
+def test_a_marker_written_before_its_cause_reads_as_the_limit() -> None:
+    """KTD4: markers already posted keep working."""
+    gh, _ = github(comments_reply(pause_comment("me", SESSION, "issue-70", 1759350600)))
+    assert gh.marker(70) == Marker(SESSION, "issue-70", 1759350600, LIMIT)
+
+
+@pytest.mark.parametrize("value", ["tired", None, 3, "LIMIT"])
+def test_a_marker_with_an_unknown_cause_is_refused(value: object) -> None:
+    record = json.dumps({"session": SESSION, "branch": "issue-70", "reset": None,
+                         "cause": value})
+    assert dispatcher.marker_of(f"Dispatcher: paused.\n\n<!-- dispatcher-pause {record} -->",
+                                70) is None
+
+
 def test_a_pull_request_without_the_closing_line_gets_it_once() -> None:
     """AE1: merging must close the issue."""
     gh, fake = github((("pr", "view"), 0, "Summary of the change\n"))
@@ -514,22 +685,26 @@ def test_a_failing_gh_call_raises_with_its_stderr() -> None:
 class FakeGit:
     """`git` with these branches; records every call."""
 
-    def __init__(self, *branches: str, fail: str = "") -> None:
+    def __init__(self, *branches: str, fail: str = "", stderr: str = "fatal: no space") -> None:
         self.branches = set(branches)
         self.fail = fail
+        self.stderr = stderr
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str]) -> str:
         self.calls.append(args)
         if self.fail and args[:2] == self.fail.split():
-            raise subprocess.CalledProcessError(128, ["git", *args], stderr="fatal: no space")
+            raise subprocess.CalledProcessError(128, ["git", *args], stderr=self.stderr)
         if args[:2] == ["branch", "--list"]:
             return "\n".join(f"  {name}" for name in self.branches if name == args[2])
         return ""
 
 
 class FakeProcess:
+    pids = itertools.count(4000)  # each one's PID, never one a real process is known to have
+
     def __init__(self, *, stubborn: bool = False) -> None:
+        self.pid = next(self.pids)
         self.stubborn = stubborn
         self.signals: list[str] = []
         self.returncode: int | None = None
@@ -554,15 +729,57 @@ class FakeProcess:
 class FakeSpawn:
     def __init__(self) -> None:
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
+        self.processes: list[FakeProcess] = []
 
     def __call__(self, args: list[str], **options: Any) -> FakeProcess:
         self.calls.append((args, options))
-        return FakeProcess()
+        self.processes.append(FakeProcess())
+        return self.processes[-1]
+
+
+START = "Thu Oct  1 18:10:00 2026"  # what `ps -o lstart=` prints under TZ=UTC and LC_ALL=C
+
+
+class FakePs:
+    """`ps -o lstart=` for one PID: its start time in `starts` (None: gone), else `default`."""
+
+    def __init__(self) -> None:
+        self.starts: dict[int, str | None] = {}
+        self.default: str | None = START
+        self.calls: list[int] = []
+
+    def __call__(self, pid: int) -> str | None:
+        self.calls.append(pid)
+        return self.starts.get(pid, self.default)
+
+
+class FakeKillpg:
+    """`os.killpg`: records each signal; a group sent SIGTERM or SIGKILL is gone from `ps`,
+    unless `stubborn` and only terminated."""
+
+    def __init__(self, ps: FakePs, *, stubborn: bool = False) -> None:
+        self.ps = ps
+        self.stubborn = stubborn
+        self.calls: list[tuple[int, int]] = []
+
+    def __call__(self, pid: int, signum: int) -> None:
+        self.calls.append((pid, signum))
+        if signum == signal.SIGKILL or not self.stubborn:
+            self.ps.starts[pid] = None
 
 
 def sessions(tmp_path: Path, git: FakeGit) -> tuple[dispatcher.Sessions, FakeSpawn]:
+    """Sessions over fakes: `git`, a spawn, `ps` and `killpg` (`fakes` gives the last two)."""
     spawn = FakeSpawn()
-    return dispatcher.Sessions(tmp_path, git, spawn), spawn
+    ps = FakePs()
+    return dispatcher.Sessions(tmp_path, git, spawn, ps, FakeKillpg(ps)), spawn
+
+
+def fakes(runner: dispatcher.Sessions) -> tuple[FakePs, FakeKillpg]:
+    """The fake `ps` and `killpg` a runner from `sessions` reads and signals through."""
+    assert isinstance(runner.ps, FakePs)
+    assert isinstance(runner.killpg, FakeKillpg)
+    return runner.ps, runner.killpg
 
 
 def test_a_session_starts_in_a_new_worktree_from_origin_main(tmp_path: Path) -> None:
@@ -618,6 +835,17 @@ def test_the_reason_is_the_final_result_or_the_exit_code(tmp_path: Path) -> None
     assert runner.ending(running)[0] == "the session exited with code 1 and no final result"
 
 
+def test_a_followed_sessions_reason_says_its_exit_code_is_unknown(tmp_path: Path) -> None:
+    """KTD2: no one knows a followed session's exit code; never `None` or `-1`."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    fakes(runner)[0].starts[pid] = None
+    reason = runner.ending(runner.follow(record)).reason
+    assert reason == "the session ended with no final result; its exit code is unknown"
+
+
 def test_a_new_attempt_never_reports_an_earlier_attempts_result(tmp_path: Path) -> None:
     """The log is per issue and appended: a retry that dies silently has its own reason."""
     runner, _ = sessions(tmp_path, FakeGit())
@@ -646,6 +874,8 @@ def result(text: str, *, error: bool = True, session: str = SESSION) -> str:
 
 
 INIT = event("system", subtype="init")
+AT_LIMIT = (INIT, rejected(int(at(20, 30))), result("API Error"))
+UNKNOWN = (INIT, result("You've hit your session limit · resets 8:30pm (America/Sao_Paulo)"))
 QUOTED = event("user", message={"role": "user", "content": [{
     "type": "tool_result",
     "content": "You've hit your session limit · resets 8:30pm (America/Sao_Paulo)"}]})
@@ -820,9 +1050,25 @@ def test_the_ending_reads_the_progress_with_the_reason_and_the_limit(tmp_path: P
         slice_of(tmp_path, INIT, json.dumps(skill("ce-code-review")),
                  json.dumps(says("Reviewing.")), rejected(), result("API Error")),
         start_marks=marks("done", "done", "paused"))
-    assert runner.ending(running) == ("API Error", Marker(SESSION, "issue-70", 1759350600),
-                                      dispatcher.Progress(marks("done", "done", "done", "current"),
-                                                          "Reviewing."))
+    assert runner.ending(running) == dispatcher.Ending(
+        "API Error", Marker(SESSION, "issue-70", 1759350600),
+        dispatcher.Progress(marks("done", "done", "done", "current"), "Reviewing."),
+        final=True, conversation=SESSION)
+
+
+def test_the_conversation_is_this_attempts_else_the_marker_it_resumed_from(
+        tmp_path: Path) -> None:
+    """KTD5: never an earlier attempt's, which may be another worktree's conversation."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = slice_of(tmp_path, INIT, event("assistant", OTHER, message={}),
+                       before=(event("system", "0" * 8 + SESSION[8:]),))
+    assert runner.ending(running).conversation == OTHER
+    assert not runner.ending(running).final
+    earlier = slice_of(tmp_path, before=(INIT, result("Stopped: blocked")))
+    assert runner.ending(earlier).conversation is None
+    assert not runner.ending(earlier).final
+    resumed = dataclasses.replace(earlier, resumed=cause(70, LIMIT, OTHER))
+    assert runner.ending(resumed).conversation == OTHER
 
 
 # The status comment
@@ -962,6 +1208,18 @@ def test_a_paused_status_with_an_unknown_reset_says_so() -> None:
     body = dispatcher.Status(PAUSED, marks("done", "done", "paused")).body(NOW)
     assert ("The Claude usage limit stopped the session. Its reset time is unknown.\n"
             in body)
+
+
+@pytest.mark.parametrize("kind, says", [
+    (INTERRUPTED, "The session was interrupted (found gone when the dispatcher started)."),
+    (STOPPED, "The session was stopped with `dispatcher.py stop`.")])
+def test_a_paused_status_says_its_cause_and_shows_no_reset(kind: str, says: str) -> None:
+    """KTD9: only the usage limit has a reset to show."""
+    body = dispatcher.Status(PAUSED, marks("done", "done", "paused"), reset=at(20, 30),
+                             cause=kind).body(NOW)
+    assert f"\n\n{says}\n\n" in body
+    assert "reset" not in body
+    assert "usage limit" not in body
 
 
 @pytest.mark.parametrize("state, stages", [
@@ -1208,6 +1466,24 @@ def test_a_resume_continues_the_conversation_headless(tmp_path: Path) -> None:
     assert "Closes #70" in prompt
 
 
+@pytest.mark.parametrize("kind, says", [(INTERRUPTED, "was interrupted"),
+                                        (STOPPED, "was stopped with `dispatcher.py stop`")])
+def test_a_resume_after_an_interruption_or_a_stop_says_why(tmp_path: Path, kind: str,
+                                                          says: str) -> None:
+    """R8, KTD4: told why it stopped, never that a limit reset; `Closes #N` all the same."""
+    (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
+    runner, spawn = sessions(tmp_path, FakeGit())
+    runner.resume(70, cause(70, kind))
+    (args, _), = spawn.calls
+    assert args[:4] == ["claude", "-p", "--resume", SESSION]
+    prompt = args[4]
+    assert says in prompt
+    assert "usage limit" not in prompt
+    assert "reset" not in prompt
+    assert "Continue `/compound-engineering:lfg #70` where it stopped." in prompt
+    assert "Closes #70" in prompt
+
+
 def test_a_resume_runs_in_the_markers_worktree_and_appends_to_the_log(tmp_path: Path) -> None:
     worktree = tmp_path / ".claude/worktrees/issue-70-2"
     worktree.mkdir(parents=True)
@@ -1260,6 +1536,175 @@ def test_worktrees_by_issue(tmp_path: Path) -> None:
                                        f"{tmp_path}/.claude/worktrees/issue-74-2"]}
 
 
+# Session records
+
+def record_file(tmp_path: Path, issue: int) -> Path:
+    return tmp_path / dispatcher.STATE / f"sessions/issue-{issue}.json"
+
+
+def test_a_started_session_writes_its_record(tmp_path: Path) -> None:
+    """KTD1: what a later dispatcher needs to follow it, renamed into place whole."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = runner.start(74)
+    assert json.loads(record_file(tmp_path, 74).read_text()) == {
+        "issue": 74, "pid": running.process.pid, "start": START, "branch": "issue-74",
+        "worktree": str(tmp_path / ".claude/worktrees/issue-74"),
+        "log": str(tmp_path / dispatcher.STATE / "logs/issue-74.log"), "since": 0,
+        "started": running.started, "resumed": None, "start_marks": list(dispatcher.UNSTARTED),
+        "stopped": False}
+    assert [path.name for path in record_file(tmp_path, 74).parent.iterdir()] == [
+        "issue-74.json"]
+
+
+def test_a_resumed_session_records_its_marker_and_the_marks_it_continues_from(
+        tmp_path: Path) -> None:
+    (tmp_path / ".claude/worktrees/issue-70-2").mkdir(parents=True)
+    runner, _ = sessions(tmp_path, FakeGit())
+    marker = Marker(SESSION, "issue-70-2", 1759350600)
+    resumed = marks("done", "done", "current")
+    running = runner.resume(70, marker, resumed)
+    assert running.start_marks == resumed
+    record = json.loads(record_file(tmp_path, 70).read_text())
+    assert record["resumed"] == {"session": SESSION, "branch": "issue-70-2", "reset": 1759350600,
+                                 "cause": "limit"}
+    assert record["start_marks"] == list(resumed)
+    assert (record["branch"], record["pid"]) == ("issue-70-2", running.process.pid)
+
+
+def test_a_record_keeps_the_cause_its_session_resumed_from(tmp_path: Path) -> None:
+    """KTD4: a later dispatcher judges a resumed session against the marker of the same cause."""
+    (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
+    runner, _ = sessions(tmp_path, FakeGit())
+    runner.resume(70, cause(70, STOPPED))
+    record = runner.records()[70]
+    assert record is not None
+    assert record.resumed == cause(70, STOPPED)
+
+
+def test_a_record_round_trips_into_a_running_session(tmp_path: Path) -> None:
+    """R3: an earlier dispatcher's session, followed by PID while `ps` gives its start time."""
+    (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
+    runner, _ = sessions(tmp_path, FakeGit())
+    started = runner.resume(70, limit(70), marks("done", "current"))
+    record = runner.records()[70]
+    assert record is not None
+    followed = runner.follow(record)
+    assert dataclasses.replace(followed, process=started.process) == started
+    assert followed.process.pid == started.process.pid
+    assert followed.process.poll() is None
+    assert followed.process.returncode is None
+
+
+def test_the_same_pid_with_another_start_time_is_not_the_session(tmp_path: Path) -> None:
+    """R6: a process that merely reuses the PID."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    ps, _ = fakes(runner)
+    ps.starts[pid] = "Thu Oct  1 19:42:07 2026"
+    process = runner.follow(record).process
+    assert process.poll() is not None
+    assert process.returncode is None
+
+
+def test_a_dead_pid_is_not_running_and_its_exit_code_stays_unknown(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    ps, _ = fakes(runner)
+    ps.starts[pid] = None
+    process = runner.follow(record).process
+    assert process.poll() is not None
+    assert process.returncode is None
+
+
+def test_a_followed_session_is_signalled_through_its_process_group(tmp_path: Path) -> None:
+    """KTD2: the tools the session spawned end with it; `end` works on it unchanged."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    ps, killpg = fakes(runner)
+    followed = runner.follow(record)
+    runner.end([followed])
+    assert killpg.calls == [(pid, signal.SIGTERM)]
+    assert followed.process.poll() is not None
+    followed.process.terminate()
+    followed.process.kill()
+    assert killpg.calls == [(pid, signal.SIGTERM)]  # a group gone is never signalled again
+    ps.starts[pid] = START
+    killpg.stubborn = True
+    followed.process.terminate()
+    with pytest.raises(subprocess.TimeoutExpired):
+        followed.process.wait(0)
+    followed.process.kill()
+    assert killpg.calls == [(pid, signal.SIGTERM), (pid, signal.SIGTERM), (pid, signal.SIGKILL)]
+    assert followed.process.wait(0) is not None
+
+
+def test_a_record_is_marked_stopped_and_removed(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    runner.start(74)
+    runner.start(75)
+    record = runner.records()[74]
+    assert record is not None
+    assert runner.mark_stopped(record) == dataclasses.replace(record, stopped=True)
+    assert runner.records() == {74: dataclasses.replace(record, stopped=True),
+                                75: runner.records()[75]}
+    assert json.loads(record_file(tmp_path, 74).read_text())["stopped"] is True
+    runner.forget(74)
+    runner.forget(74)
+    assert list(runner.records()) == [75]
+
+
+@pytest.mark.parametrize("text", ["{", "[]", '{"issue": 74}',
+                                  '{"issue": 74, "pid": 0, "start": null, "branch": "issue-74", '
+                                  '"worktree": "/w", "log": "/l", "since": 0, "started": 0, '
+                                  '"resumed": null, "start_marks": [], "stopped": false}'])
+def test_an_unreadable_record_reads_as_none(tmp_path: Path, text: str) -> None:
+    """A record damaged from outside is no record, never a PID to signal (0 is our own group)."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    record_file(tmp_path, 74).parent.mkdir(parents=True)
+    record_file(tmp_path, 74).write_text(text)
+    assert runner.records() == {74: None}
+
+
+def test_the_start_time_is_read_in_utc_and_the_c_locale(tmp_path: Path,
+                                                        monkeypatch: pytest.MonkeyPatch) -> None:
+    """KTD2: `lstart` follows the reader's zone and locale; both readings pin them."""
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(args: list[str], **options: Any) -> subprocess.CompletedProcess[str]:
+        calls.append((args, options["env"]))
+        return subprocess.CompletedProcess(args, 0, START + "\n", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    spawn = FakeSpawn()
+    runner = dispatcher.Sessions(tmp_path, FakeGit(), spawn, killpg=FakeKillpg(FakePs()))
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    assert record.start == START
+    assert runner.follow(record).process.poll() is None
+    assert [args for args, _ in calls] == [["ps", "-o", "lstart=", "-p", str(pid)]] * 2
+    assert all((env["TZ"], env["LC_ALL"]) == ("UTC", "C") for _, env in calls)
+
+
+def test_a_session_whose_start_time_cannot_be_read_still_has_its_record(tmp_path: Path) -> None:
+    """It exited at once: its record never matches a process, so a later dispatcher judges it."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    ps, _ = fakes(runner)
+    ps.default = None
+    runner.start(74)
+    ps.default = START
+    record = runner.records()[74]
+    assert record is not None
+    assert record.start is None
+    assert runner.follow(record).process.poll() is not None
+
+
 # The command
 
 @dataclasses.dataclass(frozen=True)
@@ -1307,6 +1752,8 @@ class FakeGitHub:
         return "me"
 
     def issues(self, label: str) -> list[tuple[Issue, tuple[PullRequest, ...]]]:
+        """The issues with this label; `issues <label>` in `flaky` fails it once."""
+        self._flake(f"issues {label}")
         return self.answers.get(label, [])
 
     def head(self, branch: str) -> tuple[PullRequest, ...]:
@@ -1383,30 +1830,68 @@ def shown(gh: FakeGitHub, issue: int) -> list[tuple[str, tuple[str, ...] | None]
             if isinstance(write, Wrote) and write.issue == issue]
 
 
-def test_misuse_prints_the_usage(capsys: pytest.CaptureFixture[str]) -> None:
-    assert dispatcher.main(["dispatcher.py"]) == 2
-    assert "python3 tools/dispatcher/dispatcher.py run" in capsys.readouterr().out
+@pytest.mark.parametrize("argv", [["dispatcher.py"], ["dispatcher.py", "start"]])
+def test_misuse_prints_the_usage(capsys: pytest.CaptureFixture[str], argv: list[str]) -> None:
+    assert dispatcher.main(argv) == 2
+    out = capsys.readouterr().out
+    assert "python3 tools/dispatcher/dispatcher.py run" in out
+    assert "python3 tools/dispatcher/dispatcher.py stop" in out
+
+
+@pytest.fixture
+def locks() -> Iterator[list[int]]:
+    """The lock descriptors a test holds, closed after it: closing releases the flock."""
+    held: list[int] = []
+    yield held
+    for descriptor in held:
+        with contextlib.suppress(OSError):
+            os.close(descriptor)
+
+
+def hold(lock: Path, locks: list[int], pid: int | None = None) -> int:
+    """Hold the lock as another process would (an open file description of its own), its PID
+    `pid` written inside, if given."""
+    descriptor = dispatcher.take(lock)
+    assert descriptor is not None
+    locks.append(descriptor)
+    if pid is not None:
+        os.ftruncate(descriptor, 0)
+        os.pwrite(descriptor, str(pid).encode(), 0)
+    return descriptor
 
 
 def test_a_second_dispatcher_refuses_to_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-                                              capsys: pytest.CaptureFixture[str]) -> None:
+                                              capsys: pytest.CaptureFixture[str],
+                                              locks: list[int]) -> None:
+    """KTD6: it says the holder's PID, which its refusal leaves as it was."""
     lock = tmp_path / dispatcher.STATE / "lock"
-    lock.parent.mkdir(parents=True)
-    lock.write_text(str(os.getpid()))
+    hold(lock, locks, 4242)
     monkeypatch.setattr(dispatcher, "ROOT", tmp_path)
     monkeypatch.setattr(dispatcher, "GitHub", lambda: pytest.fail("no gh call when refusing"))
     assert dispatcher.main(["dispatcher.py", "run"]) == 1
-    assert str(os.getpid()) in capsys.readouterr().out
+    assert "(PID 4242)" in capsys.readouterr().out
+    assert lock.read_text() == "4242"
 
 
-def test_a_dead_dispatchers_lock_is_taken_over(tmp_path: Path) -> None:
-    gone = subprocess.Popen(["true"])
-    gone.wait()
+def test_a_lock_file_left_by_a_dead_process_does_not_block(tmp_path: Path,
+                                                           locks: list[int]) -> None:
+    """KTD6: the kernel dropped its flock; only a live holder refuses the next."""
     lock = tmp_path / "lock"
-    lock.write_text(str(gone.pid))
-    assert dispatcher.take(lock)
+    lock.write_text("999999")
+    descriptor = dispatcher.take(lock)
+    assert descriptor is not None
+    locks.append(descriptor)
     assert lock.read_text() == str(os.getpid())
-    assert not dispatcher.take(lock)
+    assert dispatcher.take(lock) is None
+    assert lock.read_text() == str(os.getpid())
+
+
+def test_the_lock_is_not_inherited_by_the_sessions(tmp_path: Path, locks: list[int]) -> None:
+    """A session outliving its dispatcher must not keep the lock: `stop` waits for it."""
+    descriptor = dispatcher.take(tmp_path / "lock")
+    assert descriptor is not None
+    locks.append(descriptor)
+    assert not os.get_inheritable(descriptor)
 
 
 def test_start_marks_the_orphans_before_the_first_poll(tmp_path: Path) -> None:
@@ -1419,7 +1904,8 @@ def test_start_marks_the_orphans_before_the_first_poll(tmp_path: Path) -> None:
     move = gh.writes[1]
     assert isinstance(move, Move)
     assert move.add == (NEEDS_ATTENTION,)
-    assert f"{tmp_path}/.claude/worktrees/issue-74" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-74`" in (move.comment or "")
+    assert str(tmp_path) not in (move.comment or "")
 
 
 def test_a_poll_dispatches_then_judges_the_ended_session(tmp_path: Path) -> None:
@@ -1454,18 +1940,43 @@ def test_a_session_that_cannot_start_needs_attention(tmp_path: Path) -> None:
     assert boss.running == {}
 
 
-def test_stopping_ends_the_sessions_and_marks_their_issues(tmp_path: Path) -> None:
+def test_a_session_that_cannot_start_names_its_worktree_inside_the_checkout(
+        tmp_path: Path) -> None:
+    """KTD8: git's error names the worktree; the comment names it from the checkout."""
+    gh = FakeGitHub({READY: [(ready(70), ())]})
+    git = FakeGit(fail="worktree add",
+                  stderr=f"fatal: '{tmp_path}/.claude/worktrees/issue-70' already exists")
+    runner, _ = sessions(tmp_path, git)
+    dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None).poll()
+    comment = last_move(gh).comment or ""
+    assert "could not start: fatal: '.claude/worktrees/issue-70' already exists" in comment
+    assert str(tmp_path) not in comment
+
+
+def test_stopping_leaves_a_live_session_running(tmp_path: Path) -> None:
+    """AE1, R1, R2, KTD9: Ctrl-C mid-implementation ends the dispatcher only.
+
+    The session is not signalled, #74 stays in progress with no comment, its status comment
+    is not edited though its log moved on, and its record stays for the next start.
+    """
     gh = FakeGitHub({READY: [(ready(74), ())]})
-    runner, _ = sessions(tmp_path, FakeGit())
-    boss = dispatcher.Dispatcher(gh, runner, 1, say=lambda line: None)
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), lines)
     boss.poll()
+    gh.answers = {}
     process = boss.running[74].process
     assert isinstance(process, FakeProcess)
+    logs(boss, 74, *AE2_EVENTS)
+    written = list(gh.writes)
+    record = record_file(tmp_path, 74).read_text()
     boss.stop()
-    assert process.signals == ["terminate"]
-    move = last_move(gh)
-    assert move.add == (NEEDS_ATTENTION,)
-    assert "stopped" in (move.comment or "")
+    assert process.signals == []
+    assert process.returncode is None
+    assert gh.writes == written
+    assert moves(gh) == [(74, (IN_PROGRESS,))]
+    assert lines[-1] == (f"dispatcher: #74 left running (PID {process.pid}), "
+                         "the next start follows it")
+    assert record_file(tmp_path, 74).read_text() == record
     assert boss.running == {}
 
 
@@ -1534,9 +2045,12 @@ def test_an_ended_session_github_cannot_read_waits_for_the_next_poll(tmp_path: P
     assert (74, (IN_REVIEW,)) in moves(gh)
 
 
-def two_sessions(tmp_path: Path, gh: FakeGitHub) -> tuple[dispatcher.Dispatcher, FakeProcess,
-                                                          FakeProcess]:
-    """A dispatcher whose session for #74 exited with code 0 while #75's still runs."""
+def two_sessions(tmp_path: Path, gh: FakeGitHub, *events: str
+                 ) -> tuple[dispatcher.Dispatcher, FakeProcess, FakeProcess]:
+    """A dispatcher whose session for #74 exited while #75's still runs.
+
+    #74 wrote these events, then exited with code 0; stopping leaves #75 running.
+    """
     runner, _ = sessions(tmp_path, FakeGit())
     boss = dispatcher.Dispatcher(gh, runner, 2, say=lambda line: None)
     gh.answers = {READY: [(ready(74), ()), (ready(75), ())]}
@@ -1545,34 +2059,55 @@ def two_sessions(tmp_path: Path, gh: FakeGitHub) -> tuple[dispatcher.Dispatcher,
     done, live = boss.running[74].process, boss.running[75].process
     assert isinstance(done, FakeProcess)
     assert isinstance(live, FakeProcess)
-    done.returncode = 0
+    exits(boss, 74, *events)
     return boss, done, live
 
 
-def test_stopping_judges_a_session_that_already_ended(tmp_path: Path) -> None:
-    """KTD3 at stop: #74 opened its PR and exited before Ctrl-C, so it is in review."""
-    gh = FakeGitHub(head={"issue-74": (PR,)})
-    boss, done, live = two_sessions(tmp_path, gh)
+@pytest.mark.parametrize(("head", "events", "verdict"), [
+    ((PR,), (), IN_REVIEW),
+    ((), (INIT, result("Stopped: the plan returned blocked.")), NEEDS_ATTENTION),
+    ((), AT_LIMIT, PAUSED)], ids=["in review", "needs attention", "paused"])
+def test_stopping_judges_a_session_that_already_ended(
+        tmp_path: Path, head: tuple[PullRequest, ...], events: tuple[str, ...],
+        verdict: str) -> None:
+    """KTD3 at stop: #74 exited before Ctrl-C and is judged as a poll would; #75 is left."""
+    gh = FakeGitHub(head={"issue-74": head})
+    boss, done, live = two_sessions(tmp_path, gh, *events)
     boss.stop()
     assert done.signals == []
-    assert live.signals == ["terminate"]
-    assert moves(gh)[2:] == [(74, (IN_REVIEW,)), (75, (NEEDS_ATTENTION,))]
-    assert Link(101, 74) in gh.writes
-    move = last_move(gh)
-    assert "stopped while the session ran" in (move.comment or "")
+    assert live.signals == []
+    assert moves(gh)[2:] == [(74, (verdict,))]
+    assert [issue for issue, _ in trail(gh)[4:]] == [74, 74]  # its move, then its status
+    assert (Link(101, 74) in gh.writes) == bool(head)
+    assert not record_file(tmp_path, 74).exists()
+    assert record_file(tmp_path, 75).exists()
     assert boss.running == {}
 
 
 def test_stopping_when_github_cannot_read_an_ended_session(tmp_path: Path) -> None:
     gh = FakeGitHub(head={"issue-74": (PR,)})
-    boss, _, _ = two_sessions(tmp_path, gh)
+    boss, _, live = two_sessions(tmp_path, gh)
     gh.flaky = {"head"}
     boss.stop()
-    assert moves(gh)[2:] == [(74, (NEEDS_ATTENTION,)), (75, (NEEDS_ATTENTION,))]
-    assert trail(gh)[4:] == [(74, (NEEDS_ATTENTION,)), (74, NEEDS_ATTENTION),
-                             (75, (NEEDS_ATTENTION,)), (75, NEEDS_ATTENTION)]
-    move = [write for write in gh.writes if isinstance(write, Move)][2]
+    assert live.signals == []
+    assert moves(gh)[2:] == [(74, (NEEDS_ATTENTION,))]
+    assert trail(gh)[4:] == [(74, (NEEDS_ATTENTION,)), (74, NEEDS_ATTENTION)]
+    move = last_move(gh)
     assert "HTTP 502" in (move.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-74`" in (move.comment or "")
+    assert str(tmp_path) not in (move.comment or "")
+
+
+def test_a_verdict_that_fails_its_last_try_at_stop_keeps_the_record(tmp_path: Path) -> None:
+    """KTD1: #74's move failed at a poll and again at stop: the next start judges it again."""
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"move"}
+    boss.poll()
+    gh.flaky = {"move"}
+    boss.stop()
+    assert (74, (IN_REVIEW,)) not in moves(gh)
+    assert record_file(tmp_path, 74).exists()
 
 
 # The command at the usage limit
@@ -1616,10 +2151,6 @@ def worktrees(tmp_path: Path, *names: str) -> None:
         (tmp_path / ".claude/worktrees" / name).mkdir(parents=True)
 
 
-AT_LIMIT = (INIT, rejected(int(at(20, 30))), result("API Error"))
-UNKNOWN = (INIT, result("You've hit your session limit · resets 8:30pm (America/Sao_Paulo)"))
-
-
 def test_a_session_at_the_limit_is_paused_and_holds_every_start(tmp_path: Path) -> None:
     """AE1: #70 stops at 15:10, resets 20:30; #74 waits although a slot is free, #72 runs on."""
     gh = FakeGitHub({READY: [(ready(70), ()), (ready(72), ())]})
@@ -1637,7 +2168,7 @@ def test_a_session_at_the_limit_is_paused_and_holds_every_start(tmp_path: Path) 
     assert "20:30" in (pause.comment or "")
     assert (pause.comment or "").splitlines()[-1] == (
         f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", '
-        f'"reset": {int(at(20, 30))}}} -->')
+        f'"reset": {int(at(20, 30))}, "cause": "limit"}} -->')
     assert moves(gh) == [(70, (IN_PROGRESS,)), (72, (IN_PROGRESS,)), (70, (PAUSED,))]
     assert list(boss.running) == [72]
     assert len(spawn.calls) == 2
@@ -1728,7 +2259,7 @@ def test_a_resumed_session_at_the_limit_again_comments_its_new_reset(tmp_path: P
     assert (pause.remove, pause.add) == ((IN_PROGRESS,), (PAUSED,))
     assert (pause.comment or "").splitlines()[-1] == (
         f'<!-- dispatcher-pause {{"session": "{SESSION}", "branch": "issue-70", '
-        f'"reset": {int(at(22))}}} -->')
+        f'"reset": {int(at(22))}, "cause": "limit"}} -->')
 
 
 def test_a_resumed_session_at_the_limit_again_with_nothing_new_does_not_comment(
@@ -1738,6 +2269,67 @@ def test_a_resumed_session_at_the_limit_again_with_nothing_new_does_not_comment(
     exits(boss, 70, *UNKNOWN)
     boss.poll()
     assert gh.writes[-1] == Move(70, (IN_PROGRESS,), (PAUSED,))
+
+
+def test_interrupted_and_stopped_issues_resume_at_the_first_poll_without_a_hold(
+        tmp_path: Path) -> None:
+    """AE7, R8, R12: no usage-limit wait at start; each resumes told its own cause."""
+    worktrees(tmp_path, "issue-70", "issue-72")
+    gh = FakeGitHub({PAUSED: [(paused(70), ()), (paused(72), ())], READY: [(ready(74), ())]},
+                    markers={70: cause(70, INTERRUPTED), 72: cause(72, STOPPED, OTHER)})
+    lines: list[str] = []
+    boss, spawn = boss_at(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.start()
+    boss.poll()
+    (interrupted, _), (stopped, _) = resumes(spawn)
+    assert (interrupted[3], stopped[3]) == (SESSION, OTHER)
+    assert "was interrupted" in interrupted[4]
+    assert "`dispatcher.py stop`" in stopped[4]
+    assert not [line for line in lines if "usage limit" in line]
+    assert "dispatcher: #74: waiting for a free session (2 of 2 in use)" in lines
+
+
+def test_a_pause_of_another_cause_holds_no_start(tmp_path: Path,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    """KTD4: only the usage limit holds starts; the slot an interrupted session frees is used."""
+    gh = FakeGitHub({READY: [(ready(70), ())]})
+    lines: list[str] = []
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(15)), lines)
+    boss.poll()
+    gh.answers = {READY: [(ready(74), ())]}
+    exits(boss, 70)
+    monkeypatch.setattr(boss.sessions, "ending", lambda running: dispatcher.Ending(
+        "gone", cause(70, INTERRUPTED), Progress(marks("current"))))
+    boss.poll()
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,)), (74, (IN_PROGRESS,))]
+    pause = [write for write in gh.writes if isinstance(write, Move)][1]
+    assert "the session was interrupted" in (pause.comment or "")
+    assert len(spawn.calls) == 2
+    assert not [line for line in lines if "usage limit" in line]
+    paused_body = [write.body for write in gh.writes
+                   if isinstance(write, Wrote) and write.issue == 70][-1]
+    assert "The session was interrupted" in paused_body
+
+
+def test_comments_name_the_worktree_and_log_inside_the_checkout(tmp_path: Path) -> None:
+    """AE8, R15: needing attention and paused alike; the terminal keeps the full paths."""
+    gh = FakeGitHub({READY: [(ready(70), ()), (ready(72), ())]})
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.poll()
+    gh.answers = {}
+    exits(boss, 70, INIT, result("lfg stopped: no work source", error=False))
+    exits(boss, 72, *AT_LIMIT)
+    boss.poll()
+    comments = {write.issue: write.comment or "" for write in gh.writes
+                if isinstance(write, Move) and write.comment}
+    assert sorted(comments) == [70, 72]
+    for issue, comment in comments.items():
+        assert f"Worktree: `.claude/worktrees/issue-{issue}`" in comment
+        assert f"Log: `tools/dispatcher/.state/logs/issue-{issue}.log`" in comment
+        assert str(tmp_path) not in comment
+    log = tmp_path / dispatcher.STATE / "logs/issue-70.log"
+    assert f"dispatcher: #70 session ended (exit code 0), log {log}" in lines
 
 
 def test_a_paused_issue_past_its_reset_resumes_after_a_restart(tmp_path: Path) -> None:
@@ -1861,14 +2453,16 @@ def test_a_resume_whose_worktree_is_gone_needs_attention(tmp_path: Path) -> None
     assert swap == Move(70, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,))
     assert isinstance(failure, Move)
     assert (failure.remove, failure.add) == ((IN_PROGRESS,), (NEEDS_ATTENTION,))
-    assert f"{tmp_path}/.claude/worktrees/issue-70" in (failure.comment or "")
-    assert "gone" in (failure.comment or "")
+    assert "the worktree .claude/worktrees/issue-70 is gone" in (failure.comment or "")
+    assert "Worktree: `.claude/worktrees/issue-70`" in (failure.comment or "")
+    assert "Log: `tools/dispatcher/.state/logs/issue-70.log`" in (failure.comment or "")
+    assert str(tmp_path) not in (failure.comment or "")
     assert spawn.calls == []
     assert boss.running == {}
 
 
 def test_stopping_leaves_a_paused_issue_alone(tmp_path: Path) -> None:
-    """R10: #70 is paused on GitHub, #75 runs: only #75 is ended and marked."""
+    """#70 is paused on GitHub, #75 runs: stopping moves neither, and #75 is left running."""
     gh = FakeGitHub({READY: [(ready(75), ())]},
                     markers={70: Marker(SESSION, "issue-70", int(at(20, 30)))})
     boss, _ = boss_at(tmp_path, gh, 1, Clock(at(18)), [])
@@ -1877,19 +2471,8 @@ def test_stopping_leaves_a_paused_issue_alone(tmp_path: Path) -> None:
     process = boss.running[75].process
     assert isinstance(process, FakeProcess)
     boss.stop()
-    assert process.signals == ["terminate"]
-    assert moves(gh) == [(75, (IN_PROGRESS,)), (75, (NEEDS_ATTENTION,))]
-
-
-def test_stopping_pauses_a_session_that_ended_at_the_limit(tmp_path: Path) -> None:
-    """KTD9: #74 hit the limit before Ctrl-C: paused, not needs attention; #75 is ended."""
-    gh = FakeGitHub()
-    boss, _, live = two_sessions(tmp_path, gh)
-    with boss.running[74].log.open("a") as log:
-        log.write("".join(line + "\n" for line in AT_LIMIT))
-    boss.stop()
-    assert live.signals == ["terminate"]
-    assert moves(gh)[2:] == [(74, (PAUSED,)), (75, (NEEDS_ATTENTION,))]
+    assert process.signals == []
+    assert moves(gh) == [(75, (IN_PROGRESS,))]
 
 
 def test_a_pause_that_fails_to_write_still_holds_and_is_retried_once(tmp_path: Path) -> None:
@@ -1912,6 +2495,90 @@ def test_a_pause_that_fails_to_write_still_holds_and_is_retried_once(tmp_path: P
     boss.poll()
     assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,))]
     assert len(spawn.calls) == 1
+
+
+# Session records across the command
+
+def test_a_verdict_applied_in_full_removes_the_record(tmp_path: Path) -> None:
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    assert record_file(tmp_path, 74).exists()
+    boss.poll()
+    assert (74, (IN_REVIEW,)) in moves(gh)
+    assert not record_file(tmp_path, 74).exists()
+
+
+def test_a_verdict_whose_move_fails_keeps_the_record_until_its_retry(tmp_path: Path) -> None:
+    """KTD1: a verdict that fails survives a restart, judged again from its record."""
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"move"}
+    boss.poll()
+    assert record_file(tmp_path, 74).exists()
+    boss.poll()
+    assert (74, (IN_REVIEW,)) in moves(gh)
+    assert not record_file(tmp_path, 74).exists()
+
+
+def test_a_status_report_that_fails_keeps_the_record_until_its_retry(tmp_path: Path) -> None:
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"status #74"}
+    boss.poll()
+    assert (74, (IN_REVIEW,)) in moves(gh)
+    assert record_file(tmp_path, 74).exists()
+    boss.poll()
+    assert not record_file(tmp_path, 74).exists()
+
+
+def test_a_new_session_keeps_its_record_when_the_last_ones_verdict_clears(tmp_path: Path) -> None:
+    """#70 paused, its report failed; resumed in the same poll: the retry leaves the new record."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({READY: [(ready(70), ())]}, markers={70: limit(70)})
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    exits(boss, 70, *AT_LIMIT)
+    gh.answers = {PAUSED: [(paused(70), ())]}
+    gh.flaky = {"status #70"}
+    boss.poll()
+    assert [args[2] for args, _ in spawn.calls][1:] == ["--resume"]
+    gh.answers = {}
+    boss.poll()
+    assert json.loads(record_file(tmp_path, 70).read_text())["pid"] == spawn.processes[-1].pid
+
+
+@pytest.mark.parametrize("paused_one", [False, True], ids=["dispatched", "resumed"])
+def test_a_record_that_cannot_be_written_ends_the_session_and_needs_attention(
+        tmp_path: Path, paused_one: bool) -> None:
+    """A session no later dispatcher could follow or stop must not run on."""
+    record_file(tmp_path, 74).parent.parent.mkdir(parents=True)
+    record_file(tmp_path, 74).parent.write_text("a file where the records go")
+    worktrees(tmp_path, "issue-74")
+    gh = (FakeGitHub({PAUSED: [(paused(74), ())]}, markers={74: limit(74)}) if paused_one
+          else FakeGitHub({READY: [(ready(74), ())]}))
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    process, = spawn.processes
+    assert process.signals == ["terminate"]
+    assert moves(gh) == [(74, (IN_PROGRESS,)), (74, (NEEDS_ATTENTION,))]
+    comment = last_move(gh).comment or ""
+    assert "could not " + ("resume" if paused_one else "start") in comment
+    assert "record" in comment
+    assert "tools/dispatcher/.state/sessions" in comment
+    assert str(tmp_path) not in comment
+    assert boss.running == {}
+
+
+def test_a_resumed_sessions_record_holds_the_marks_it_continues_from(tmp_path: Path) -> None:
+    """The record carries the checklist a later dispatcher reports from."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]}, markers={70: limit(70)},
+                    comments={70: body_of(PAUSED, marks("done", "done", "paused"))})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    assert boss.running[70].start_marks == marks("done", "done", "current")
+    assert json.loads(record_file(tmp_path, 70).read_text())["start_marks"] == list(
+        marks("done", "done", "current"))
 
 
 # The status comment at each step
@@ -1974,18 +2641,6 @@ def test_a_running_session_shows_its_stage_and_last_sentence(tmp_path: Path) -> 
     assert last.body.startswith("**Dispatcher status: implementation** (running 42 min)\n")
     assert f"Latest:\n```text\n{AE2_SENTENCE}\n```" in last.body
     assert dispatcher.status_marks(last.body) == marks("done", "done", "current")
-
-
-def test_stopping_fails_the_stage_a_live_session_was_in(tmp_path: Path) -> None:
-    """AE4: Ctrl-C in implementation: the needs-attention comment as today, then the checklist."""
-    gh = FakeGitHub({READY: [(ready(74), ())]})
-    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
-    boss.poll()
-    logs(boss, 74, *AE2_EVENTS)
-    boss.stop()
-    assert trail(gh)[-2:] == [(74, (NEEDS_ATTENTION,)), (74, NEEDS_ATTENTION)]
-    assert "stopped while the session ran" in (last_move(gh).comment or "")
-    assert shown(gh, 74)[-1] == (NEEDS_ATTENTION, marks("done", "done", "failed"))
 
 
 def test_an_open_pull_request_shows_ci_current_then_done_once_its_checks_pass(
@@ -2240,8 +2895,8 @@ def handlers() -> Iterator[None]:
 
 
 @pytest.mark.usefixtures("handlers")
-def test_a_signal_ends_the_loop_and_stops_the_sessions() -> None:
-    """KTD9: Ctrl-C during a poll ends the loop, then the sessions."""
+def test_a_signal_ends_the_loop_then_leaves() -> None:
+    """Ctrl-C during a poll ends the loop, then `stop` leaves: it judges what ended."""
     boss = Boss(lambda: signal.raise_signal(signal.SIGINT))
     dispatcher.serve(boss, 0)  # type: ignore[arg-type]
     assert boss.calls == ["start", "dispatcher: a poll every 0s; Ctrl-C stops", "poll",
@@ -2249,8 +2904,8 @@ def test_a_signal_ends_the_loop_and_stops_the_sessions() -> None:
 
 
 @pytest.mark.usefixtures("handlers")
-def test_an_unexpected_error_still_stops_the_sessions() -> None:
-    """No session is left running detached when the dispatcher dies of a bug."""
+def test_an_unexpected_error_still_leaves_through_stop() -> None:
+    """A bug ends the dispatcher through `stop` too, once, before it propagates."""
     def broken() -> None:
         raise RuntimeError("a bug")
 
@@ -2259,6 +2914,32 @@ def test_an_unexpected_error_still_stops_the_sessions() -> None:
         dispatcher.serve(boss, 0)  # type: ignore[arg-type]
     assert boss.calls[-1] == "stop"
     assert boss.calls.count("stop") == 1
+
+
+@pytest.mark.usefixtures("handlers")
+def test_an_error_from_a_poll_leaves_the_live_sessions_running(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """R1: the dispatcher dies of a bug while #74 runs: #74 runs on, in progress, recorded."""
+    gh = FakeGitHub({READY: [(ready(74), ())]})
+    lines: list[str] = []
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), lines)
+    boss.poll()
+    gh.answers = {}
+    process = boss.running[74].process
+    assert isinstance(process, FakeProcess)
+    written = len(gh.writes)
+
+    def broken() -> None:
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr(boss, "poll", broken)
+    with pytest.raises(RuntimeError, match="a bug"):
+        dispatcher.serve(boss, 0)
+    assert process.signals == []
+    assert [write for write in gh.writes[written:] if isinstance(write, Move | Wrote)] == []
+    assert lines[-1] == (f"dispatcher: #74 left running (PID {process.pid}), "
+                         "the next start follows it")
+    assert record_file(tmp_path, 74).exists()
 
 
 def command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -2271,24 +2952,36 @@ def command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     return tmp_path / dispatcher.STATE / "lock"
 
 
-def test_the_lock_is_held_while_serving_and_released_after(tmp_path: Path,
-                                                           monkeypatch: pytest.MonkeyPatch) -> None:
-    held: list[bool] = []
-    lock = command(tmp_path, monkeypatch, lambda boss, every: held.append(lock.exists()))
+def test_the_lock_is_held_while_serving_and_its_file_stays_after(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, locks: list[int]) -> None:
+    """KTD6: a process waiting on the lock file while the dispatcher runs gets the lock on
+    the same file once it exits: the file is never removed."""
+    waiting: list[int] = []
+
+    def serve(boss: object, every: float) -> None:
+        assert lock.read_text() == str(os.getpid())
+        waiting.append(os.open(lock, os.O_RDWR))
+        locks.append(waiting[0])
+        with pytest.raises(BlockingIOError):
+            fcntl.flock(waiting[0], fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    lock = command(tmp_path, monkeypatch, serve)
     assert dispatcher.main(["dispatcher.py", "run", "--every", "0"]) == 0
-    assert held == [True]
-    assert not lock.exists()
+    assert lock.exists()
+    fcntl.flock(waiting[0], fcntl.LOCK_EX | fcntl.LOCK_NB)
+    assert os.fstat(waiting[0]).st_ino == lock.stat().st_ino
 
 
-def test_the_lock_is_released_when_serving_fails(tmp_path: Path,
-                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_lock_is_released_when_serving_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                 locks: list[int]) -> None:
     def serve(boss: object, every: float) -> None:
         raise RuntimeError("a bug")
 
     lock = command(tmp_path, monkeypatch, serve)
     with pytest.raises(RuntimeError, match="a bug"):
         dispatcher.main(["dispatcher.py", "run", "--every", "0"])
-    assert not lock.exists()
+    assert lock.exists()
+    hold(lock, locks)
 
 
 # What it says (the command's output)
@@ -2403,7 +3096,7 @@ def test_start_says_what_it_found_and_fixed(tmp_path: Path) -> None:
     dispatcher.Dispatcher(gh, runner, 2, say=lines.append).start()
     text = "\n".join(lines)
     assert "created the label `ready to merge`" in text
-    assert "#74 was left in progress" in text
+    assert "#74 was in progress with no session record: it needs attention" in text
 
 
 def test_start_with_nothing_to_fix_says_so(tmp_path: Path) -> None:
@@ -2437,3 +3130,711 @@ def test_issues_carry_their_title() -> None:
 def test_ensure_labels_returns_what_it_created() -> None:
     gh, _ = github((("label", "list"), 0, json.dumps([{"name": READY}])))
     assert gh.ensure_labels() == [IN_PROGRESS, IN_REVIEW, READY_TO_MERGE, NEEDS_ATTENTION, PAUSED]
+
+
+# A restart: what the last run left
+
+def in_progress(*numbers: int) -> list[tuple[Issue, tuple[PullRequest, ...]]]:
+    return [(Issue(number, frozenset({IN_PROGRESS})), ()) for number in numbers]
+
+
+def earlier(tmp_path: Path, gh: FakeGitHub, *numbers: int) -> dict[int, int]:
+    """An earlier dispatcher dispatched these ready issues and was stopped: each session left
+    running with its record. GitHub then answers them in progress; their PIDs, by issue."""
+    gh.answers = {READY: [(ready(number), ()) for number in numbers]}
+    runner, _ = sessions(tmp_path, FakeGit())
+    boss = dispatcher.Dispatcher(gh, runner, len(numbers), say=lambda line: None)
+    boss.poll()
+    pids = {number: boss.running[number].process.pid for number in numbers}
+    boss.stop()
+    gh.answers = {IN_PROGRESS: in_progress(*numbers)}
+    return pids
+
+
+def writes_log(tmp_path: Path, issue: int, *events: str) -> None:
+    """The issue's session, left running, writes these events to its log."""
+    path = tmp_path / dispatcher.STATE / f"logs/issue-{issue}.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as log:
+        log.write("".join(line + "\n" for line in events))
+
+
+def restamp(tmp_path: Path, issue: int, started: float) -> None:
+    """The issue's record says its session started at `started`."""
+    record = json.loads(record_file(tmp_path, issue).read_text())
+    record["started"] = started
+    record_file(tmp_path, issue).write_text(json.dumps(record))
+
+
+def restarted(tmp_path: Path, gh: FakeGitHub, slots: int, clock: Clock, lines: list[str],
+              *gone: int) -> tuple[dispatcher.Dispatcher, FakeSpawn, FakePs, FakeKillpg]:
+    """A new dispatcher on the same state folder; the `gone` PIDs' processes no longer exist."""
+    boss, spawn = boss_at(tmp_path, gh, slots, clock, lines)
+    ps, killpg = fakes(boss.sessions)
+    for pid in gone:
+        ps.starts[pid] = None
+    return boss, spawn, ps, killpg
+
+
+def started_lines(lines: list[str]) -> list[str]:
+    """What start said of each issue it found, the labels' and the paused issues' lines aside."""
+    return [line for line in lines
+            if line.startswith("dispatcher: #") and " -> " not in line]
+
+
+def test_a_session_left_running_is_followed_again_after_a_restart(tmp_path: Path) -> None:
+    """AE1, R3: same PID, no move, no comment at start; minutes from the record's start."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    restamp(tmp_path, 70, at(14, 30))
+    writes_log(tmp_path, 70, INIT, *(json.dumps(event) for event in AE2_EVENTS))
+    written = list(gh.writes)
+    lines: list[str] = []
+    clock = Clock(at(15))
+    boss, spawn, _, killpg = restarted(tmp_path, gh, 2, clock, lines)
+    boss.start()
+    assert gh.writes == [*written, "labels"]
+    assert started_lines(lines) == [
+        f"dispatcher: #70 still running (PID {pids[70]}): followed again"]
+    assert boss.running[70].process.pid == pids[70]
+    boss.poll()
+    assert any(line.startswith("dispatcher: #70 still running (30 min), log ") for line in lines)
+    assert [(write.posted, state_of(write.body)) for write in wrote(gh)] == [
+        (True, dispatcher.RUNNING), (False, dispatcher.RUNNING)]
+    assert wrote(gh)[-1].body.startswith("**Dispatcher status: implementation** (running 30 min)")
+    assert spawn.calls == []
+    assert killpg.calls == []
+    assert record_file(tmp_path, 70).exists()
+
+
+def test_a_followed_session_continues_its_resumes_checklist(tmp_path: Path) -> None:
+    """KTD9: a resumed session left running reports from its record's start marks."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]}, markers={70: limit(70)},
+                    comments={70: body_of(PAUSED, marks("done", "done", "paused"))})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    pid = boss.running[70].process.pid
+    boss.stop()
+    gh.answers = {IN_PROGRESS: in_progress(70)}
+    restamp(tmp_path, 70, at(20, 35))
+    again, _, _, _ = restarted(tmp_path, gh, 1, Clock(at(21, 5)), [])
+    again.start()
+    assert again.running[70].process.pid == pid
+    writes_log(tmp_path, 70, json.dumps(skill("ce-code-review")))
+    again.poll()
+    assert [write.posted for write in wrote(gh)] == [False, False]
+    assert shown(gh, 70)[-1] == (dispatcher.RUNNING, marks("done", "done", "done", "current"))
+    assert "(running 30 min)" in wrote(gh)[-1].body
+
+
+def test_a_session_that_opened_its_pull_request_while_no_dispatcher_ran_is_in_review(
+        tmp_path: Path) -> None:
+    """AE2, R5: judged at start from its log; the record goes once the verdict is in."""
+    gh = FakeGitHub(head={"issue-70": (PR,)})
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT, *(json.dumps(event) for event in AE2_EVENTS),
+               json.dumps(skill("ce-commit-push-pr")),
+               result("Opened #101.", error=False))
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 2, Clock(at(15)), lines, pids[70])
+    boss.start()
+    assert moves(gh)[1:] == [(70, (IN_REVIEW,))]
+    assert Link(101, 70) in gh.writes
+    assert shown(gh, 70)[-1] == (IN_REVIEW, OPENED_MARKS)
+    assert not record_file(tmp_path, 70).exists()
+    assert boss.running == {}
+    assert killpg.calls == []
+    assert started_lines(lines) == [
+        "dispatcher: #70 session ended while no dispatcher ran: in review"]
+
+
+def test_a_session_that_ended_with_an_error_while_no_dispatcher_ran_needs_attention(
+        tmp_path: Path) -> None:
+    """R5, KTD3: a final result and no pull request, as a poll would have judged it."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT, result("API Error: overloaded"))
+    boss, _, _, _ = restarted(tmp_path, gh, 2, Clock(at(15)), [], pids[70])
+    boss.start()
+    assert moves(gh)[1:] == [(70, (NEEDS_ATTENTION,))]
+    assert "Reason: API Error: overloaded" in (last_move(gh).comment or "")
+    assert shown(gh, 70)[-1] == (NEEDS_ATTENTION, marks("failed"))
+    assert not record_file(tmp_path, 70).exists()
+
+
+def test_an_interrupted_session_is_paused_then_resumes_in_its_own_worktree(
+        tmp_path: Path) -> None:
+    """AE3, R7, R8, KTD9: paused as interrupted at start, resumed at the first poll, no new
+    worktree, its checklist continued."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    worktrees(tmp_path, "issue-70")
+    writes_log(tmp_path, 70, INIT, *(json.dumps(event) for event in AE2_EVENTS))
+    lines: list[str] = []
+    boss, spawn, _, _ = restarted(tmp_path, gh, 2, Clock(at(15)), lines, pids[70])
+    boss.start()
+    pause = last_move(gh)
+    assert (pause.add, pause.comment_first) == ((PAUSED,), True)
+    marker = dispatcher.marker_of(pause.comment or "", 70)
+    assert marker == cause(70, INTERRUPTED)
+    assert "Worktree: `.claude/worktrees/issue-70`" in (pause.comment or "")
+    assert shown(gh, 70)[-1] == (PAUSED, marks("done", "done", "paused"))
+    assert "The session was interrupted" in wrote(gh)[-1].body
+    assert started_lines(lines) == [
+        "dispatcher: #70 session ended while no dispatcher ran: paused as interrupted"]
+    assert not record_file(tmp_path, 70).exists()
+    gh.answers = {PAUSED: [(paused(70), ())]}
+    gh.records[70] = marker
+    boss.poll()
+    (args, options), = resumes(spawn)
+    assert args[3] == SESSION
+    assert "was interrupted" in args[4]
+    assert options["cwd"] == tmp_path / ".claude/worktrees/issue-70"
+    git = boss.sessions.git
+    assert isinstance(git, FakeGit)
+    assert not [call for call in git.calls if call[:2] == ["worktree", "add"]]
+    assert moves(gh)[-1] == (70, (IN_PROGRESS,))
+    assert shown(gh, 70)[-1] == (dispatcher.RUNNING, marks("done", "done", "current"))
+    assert not [line for line in lines if "usage limit" in line]
+
+
+def test_a_fresh_session_killed_before_its_first_event_needs_attention(tmp_path: Path) -> None:
+    """R9, KTD5: no conversation in its slice, so nothing to resume."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 2, Clock(at(15)), lines, pids[70])
+    boss.start()
+    assert moves(gh)[1:] == [(70, (NEEDS_ATTENTION,))]
+    comment = last_move(gh).comment or ""
+    assert "no final result; its exit code is unknown" in comment
+    assert "Log: `tools/dispatcher/.state/logs/issue-70.log`" in comment
+    assert started_lines(lines) == [
+        "dispatcher: #70 session ended while no dispatcher ran: needs attention"]
+    assert not record_file(tmp_path, 70).exists()
+
+
+def test_a_resumed_session_interrupted_before_its_first_event_resumes_its_marker(
+        tmp_path: Path) -> None:
+    """KTD5: the marker it came from, never an earlier attempt's conversation in the log."""
+    worktrees(tmp_path, "issue-70")
+    writes_log(tmp_path, 70, event("system", OTHER, subtype="init"))  # an earlier attempt
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]}, markers={70: limit(70)})
+    first, _ = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    first.poll()
+    pid = first.running[70].process.pid
+    first.stop()
+    gh.answers = {IN_PROGRESS: in_progress(70)}
+    boss, spawn, _, _ = restarted(tmp_path, gh, 1, Clock(at(21)), [], pid)
+    boss.start()
+    marker = dispatcher.marker_of(last_move(gh).comment or "", 70)
+    assert marker == cause(70, INTERRUPTED)
+    gh.answers = {PAUSED: [(paused(70), ())]}
+    gh.records[70] = marker
+    boss.poll()
+    assert [args[3] for args, _ in resumes(spawn)] == [SESSION]
+
+
+def test_an_interrupted_issue_whose_worktree_is_gone_needs_attention_at_its_resume(
+        tmp_path: Path) -> None:
+    """AE4, R9: the missing worktree and the log, named inside the checkout."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    boss, spawn, _, _ = restarted(tmp_path, gh, 2, Clock(at(15)), [], pids[70])
+    boss.start()
+    gh.answers = {PAUSED: [(paused(70), ())]}
+    gh.records[70] = cause(70, INTERRUPTED)
+    boss.poll()
+    assert moves(gh)[1:] == [(70, (PAUSED,)), (70, (IN_PROGRESS,)), (70, (NEEDS_ATTENTION,))]
+    comment = last_move(gh).comment or ""
+    assert "Worktree: `.claude/worktrees/issue-70`" in comment
+    assert "Log: `tools/dispatcher/.state/logs/issue-70.log`" in comment
+    assert str(tmp_path) not in comment
+    assert spawn.calls == []
+
+
+def test_sessions_followed_again_take_the_slots_first(tmp_path: Path) -> None:
+    """AE5, R4: with one slot, #74 waits until both left-running sessions have ended."""
+    gh = FakeGitHub(head={"issue-70": (PR,), "issue-72": (PR,)})
+    pids = earlier(tmp_path, gh, 70, 72)
+    gh.answers[READY] = [(ready(74), ())]
+    lines: list[str] = []
+    boss, spawn, ps, killpg = restarted(tmp_path, gh, 1, Clock(at(15)), lines)
+    boss.start()
+    boss.poll()
+    assert spawn.calls == []
+    assert "dispatcher: #74: waiting for a free session (2 of 1 in use)" in lines
+    gh.answers = {READY: [(ready(74), ())]}
+    ps.starts[pids[70]] = None
+    boss.poll()
+    assert spawn.calls == []
+    assert set(boss.running) == {72}
+    ps.starts[pids[72]] = None
+    boss.poll()
+    assert len(spawn.calls) == 1
+    assert set(boss.running) == {74}
+    assert killpg.calls == []
+
+
+def test_a_process_reusing_the_pid_is_not_the_session(tmp_path: Path) -> None:
+    """R6: another start time: the session is gone, judged, and nothing is signalled."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    worktrees(tmp_path, "issue-70")
+    boss, _, ps, killpg = restarted(tmp_path, gh, 2, Clock(at(15)), [])
+    ps.starts[pids[70]] = "Thu Oct  1 19:42:07 2026"
+    boss.start()
+    assert boss.running == {}
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    boss.stop()
+    assert killpg.calls == []
+
+
+def test_a_session_whose_issue_left_progress_is_left_alone(tmp_path: Path) -> None:
+    """KTD7: not followed, never signalled; its record goes only once its process is gone."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 74)
+    gh.answers = {}  # the author took #74 out of the dispatcher's hands
+    written = list(gh.writes)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.start()
+    boss.poll()
+    boss.stop()
+    assert boss.running == {}
+    assert killpg.calls == []
+    assert gh.writes == [*written, "labels"]
+    assert record_file(tmp_path, 74).exists()
+    assert started_lines(lines) == [
+        f"dispatcher: #74 is not in progress: its session (PID {pids[74]}) is left alone"]
+    lines.clear()
+    again, _, _, _ = restarted(tmp_path, gh, 2, Clock(at(16)), lines, pids[74])
+    again.start()
+    assert not record_file(tmp_path, 74).exists()
+    assert gh.writes == [*written, "labels", "labels"]
+    assert started_lines(lines) == [
+        "dispatcher: #74 is not in progress: its session is gone, its record removed"]
+
+
+def test_an_unreadable_record_is_said_and_its_issue_needs_attention(tmp_path: Path) -> None:
+    """Risks: outside damage never crashes the start; the issue is one with no record."""
+    gh = FakeGitHub({IN_PROGRESS: in_progress(74)})
+    record_file(tmp_path, 74).parent.mkdir(parents=True)
+    record_file(tmp_path, 74).write_text("{")
+    record_file(tmp_path, 75).write_text("{")
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.sessions.git = lambda args: ""
+    boss.start()
+    assert moves(gh) == [(74, (NEEDS_ATTENTION,))]
+    assert "no session running" in (last_move(gh).comment or "")
+    assert started_lines(lines) == [
+        "dispatcher: #74 was in progress with an unreadable session record: it needs attention",
+        f"dispatcher: #75: its session record {record_file(tmp_path, 75)} cannot be read"]
+
+
+def test_start_says_what_happened_to_each_issue_in_progress(tmp_path: Path) -> None:
+    """R13: followed again, judged, paused as interrupted, needing attention; one line each."""
+    gh = FakeGitHub(head={"issue-72": (PR,)})
+    pids = earlier(tmp_path, gh, 70, 72, 73, 74)
+    writes_log(tmp_path, 73, INIT)
+    writes_log(tmp_path, 74, INIT, result("Stopped: the plan returned blocked."))
+    gh.answers = {IN_PROGRESS: in_progress(70, 72, 73, 74, 75)}
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 4, Clock(at(15)), lines,
+                              pids[72], pids[73], pids[74])
+    boss.sessions.git = lambda args: ""
+    boss.start()
+    assert started_lines(lines) == [
+        f"dispatcher: #70 still running (PID {pids[70]}): followed again",
+        "dispatcher: #72 session ended while no dispatcher ran: in review",
+        "dispatcher: #73 session ended while no dispatcher ran: paused as interrupted",
+        "dispatcher: #74 session ended while no dispatcher ran: needs attention",
+        "dispatcher: #75 was in progress with no session record: it needs attention"]
+    assert not [line for line in lines if "no issue left in progress" in line]
+
+
+def test_a_followed_session_that_exits_at_a_poll_is_judged_like_any_other(
+        tmp_path: Path) -> None:
+    """KTD2, KTD3: at a poll, no final result needs attention; the exit code is unknown."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    lines: list[str] = []
+    boss, _, ps, _ = restarted(tmp_path, gh, 2, Clock(at(15)), lines)
+    boss.start()
+    writes_log(tmp_path, 70, INIT)
+    ps.starts[pids[70]] = None
+    gh.answers = {}
+    boss.poll()
+    log = tmp_path / dispatcher.STATE / "logs/issue-70.log"
+    assert f"dispatcher: #70 session ended (exit code unknown), log {log}" in lines
+    assert moves(gh)[1:] == [(70, (NEEDS_ATTENTION,))]
+    assert "its exit code is unknown" in (last_move(gh).comment or "")
+    assert not record_file(tmp_path, 70).exists()
+
+
+def test_a_session_this_run_started_with_no_final_result_needs_attention(tmp_path: Path) -> None:
+    """KTD3: at a poll it never pauses as interrupted, its conversation known or not."""
+    gh = FakeGitHub({READY: [(ready(70), ())]})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), [])
+    boss.poll()
+    gh.answers = {}
+    exits(boss, 70, INIT)
+    boss.poll()
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (NEEDS_ATTENTION,))]
+    assert "exited with code 0 and no final result" in (last_move(gh).comment or "")
+
+
+def test_the_dispatcher_is_updated_while_a_session_runs(tmp_path: Path) -> None:
+    """F1: start, dispatch, leave; a new dispatcher follows the session, which then opens its
+    pull request and exits: in review, as if no one had left."""
+    gh = FakeGitHub({READY: [(ready(70), ())]}, head={"issue-70": (PR,)})
+    lines: list[str] = []
+    first, _ = boss_at(tmp_path, gh, 1, Clock(at(15)), lines)
+    first.start()
+    first.poll()
+    process = first.running[70].process
+    assert isinstance(process, FakeProcess)
+    first.stop()
+    assert process.signals == []
+    gh.answers = {IN_PROGRESS: in_progress(70)}
+    boss, spawn, ps, killpg = restarted(tmp_path, gh, 1, Clock(at(15, 5)), lines)
+    boss.start()
+    assert boss.running[70].process.pid == process.pid
+    gh.answers = {}
+    boss.poll()
+    assert spawn.calls == []
+    writes_log(tmp_path, 70, INIT, *(json.dumps(event) for event in AE2_EVENTS),
+               json.dumps(skill("ce-commit-push-pr")),
+               result("Opened #101.", error=False))
+    ps.starts[process.pid] = None
+    boss.poll()
+    assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (IN_REVIEW,))]
+    assert Link(101, 70) in gh.writes
+    assert [write.posted for write in wrote(gh)].count(True) == 1
+    assert shown(gh, 70)[-1] == (IN_REVIEW, OPENED_MARKS)
+    assert not record_file(tmp_path, 70).exists()
+    assert killpg.calls == []
+    assert boss.running == {}
+
+
+# The stop command
+
+class Waits:
+    """`stop`'s wait for the lock: a clock its sleeps move; `then` runs at the `at`th sleep."""
+
+    def __init__(self, at: int | None = None, then: Callable[[], None] = lambda: None) -> None:
+        self.now = 0.0
+        self.slept = 0
+        self.at = at
+        self.then = then
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept += 1
+        self.now += seconds
+        if self.slept == self.at:
+            self.then()
+
+
+def halts(tmp_path: Path, boss: dispatcher.Dispatcher, *,
+          kill: Callable[[int, int], None] | None = None, waits: Waits | None = None) -> int:
+    """`dispatcher.py stop` over this state folder; no real process is ever signalled."""
+    def refuse(pid: int, signum: int) -> None:
+        pytest.fail(f"no dispatcher to signal, yet PID {pid} was")
+
+    waits = waits or Waits()
+    return dispatcher.halt(tmp_path / dispatcher.STATE / "lock", boss, kill=kill or refuse,
+                           clock=waits.clock, sleep=waits.sleep)
+
+
+def pause_moves(gh: FakeGitHub) -> dict[int, Move]:
+    """Each issue's last move to paused."""
+    return {write.issue: write for write in gh.writes
+            if isinstance(write, Move) and write.add == (PAUSED,)}
+
+
+def test_stop_ends_every_session_pauses_each_issue_and_the_next_run_resumes_them(
+        tmp_path: Path) -> None:
+    """AE6, R10, R12, KTD9: both process groups end, both issues go paused as stopped, their
+    status comments say so, and the next start resumes both with the stopped prompt."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70, 73)
+    worktrees(tmp_path, "issue-70", "issue-73")
+    writes_log(tmp_path, 70, INIT, *(json.dumps(event) for event in AE2_EVENTS))
+    writes_log(tmp_path, 73, INIT)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert killpg.calls == [(pids[70], signal.SIGTERM), (pids[73], signal.SIGTERM)]
+    assert moves(gh)[2:] == [(70, (PAUSED,)), (73, (PAUSED,))]
+    paused_by = pause_moves(gh)
+    for issue in (70, 73):
+        assert dispatcher.marker_of(paused_by[issue].comment or "", issue) == cause(issue, STOPPED)
+        assert shown(gh, issue)[-1][0] == PAUSED
+        body = [write.body for write in wrote(gh) if write.issue == issue][-1]
+        assert "stopped with `dispatcher.py stop`" in body
+        assert not record_file(tmp_path, issue).exists()
+    assert shown(gh, 70)[-1] == (PAUSED, marks("done", "done", "paused"))
+    assert lines == [
+        "dispatcher: no dispatcher runs",
+        f"dispatcher: ending the sessions of #70 (PID {pids[70]}), #73 (PID {pids[73]})...",
+        "dispatcher: #70 session stopped: paused as stopped",
+        "dispatcher: #70 -> paused",
+        "dispatcher: #73 session stopped: paused as stopped",
+        "dispatcher: #73 -> paused"]
+    gh.answers = {PAUSED: [(paused(70), ()), (paused(73), ())]}
+    gh.records = {issue: cause(issue, STOPPED) for issue in (70, 73)}
+    again, spawn, _, _ = restarted(tmp_path, gh, 2, Clock(at(15, 5)), [])
+    again.start()
+    again.poll()
+    assert [(args[3], options["cwd"].name) for args, options in resumes(spawn)] == [
+        (SESSION, "issue-70"), (SESSION, "issue-73")]
+    assert all("was stopped with `dispatcher.py stop`" in args[4]
+               for args, _ in resumes(spawn))
+    assert NEEDS_ATTENTION not in [label for _, added in moves(gh) for label in added]
+
+
+def test_stop_stops_a_running_dispatcher_before_the_sessions(tmp_path: Path,
+                                                             locks: list[int]) -> None:
+    """R11, KTD6: SIGTERM to the PID in the held lock, a wait for the lock, then the sessions."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    lock = tmp_path / dispatcher.STATE / "lock"
+    running = hold(lock, locks, 4242)
+    order: list[object] = []
+
+    def exits() -> None:
+        locks.remove(running)
+        os.close(running)
+        order.append("exited")
+
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    end = boss.sessions.end
+
+    def ending(sessions: Any) -> None:
+        order.append("end")
+        end(sessions)
+
+    boss.sessions.end = ending  # type: ignore[method-assign]
+    assert halts(tmp_path, boss, kill=lambda pid, signum: order.append((pid, signum)),
+                 waits=Waits(3, exits)) == 0
+    assert order == [(4242, signal.SIGTERM), "exited", "end"]
+    assert killpg.calls == [(pids[70], signal.SIGTERM)]
+    assert lines[:2] == ["dispatcher: stopping the dispatcher (PID 4242)...",
+                         "dispatcher: the dispatcher (PID 4242) stopped"]
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    assert lock.read_text() == str(os.getpid())
+    hold(lock, locks)  # stop released it
+
+
+def test_a_dispatcher_that_never_releases_the_lock_makes_stop_change_nothing(
+        tmp_path: Path, locks: list[int]) -> None:
+    """KTD6: a bounded wait, then a report; no session is ended, no record or label touched."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    lock = tmp_path / dispatcher.STATE / "lock"
+    hold(lock, locks, 4242)
+    record = record_file(tmp_path, 70).read_text()
+    written = list(gh.writes)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    signals: list[tuple[int, int]] = []
+    waits = Waits()
+    assert halts(tmp_path, boss, kill=lambda pid, signum: signals.append((pid, signum)),
+                 waits=waits) == 1
+    assert signals == [(4242, signal.SIGTERM)]
+    assert waits.now >= dispatcher.WAIT
+    assert killpg.calls == []
+    assert gh.writes == written
+    assert record_file(tmp_path, 70).read_text() == record
+    assert lock.read_text() == "4242"
+    assert lines[-1] == (f"dispatcher: the dispatcher (PID 4242) did not stop within "
+                         f"{dispatcher.WAIT:g}s; nothing was changed")
+
+
+def test_a_run_started_while_stop_holds_the_lock_refuses(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """KTD6: stop holds the lock for its whole run, so no dispatcher starts in the middle."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), [])
+    monkeypatch.setattr(dispatcher, "ROOT", tmp_path)
+    monkeypatch.setattr(dispatcher, "GitHub", lambda: pytest.fail("no gh call when refusing"))
+    refused: list[int] = []
+    end = boss.sessions.end
+
+    def ending(sessions: Any) -> None:
+        refused.append(dispatcher.main(["dispatcher.py", "run"]))
+        end(sessions)
+
+    monkeypatch.setattr(boss.sessions, "end", ending)
+    assert halts(tmp_path, boss) == 0
+    assert refused == [1]
+    assert f"(PID {os.getpid()})" in capsys.readouterr().out
+
+
+def test_stop_after_a_machine_restart_pauses_a_dead_session_as_interrupted(
+        tmp_path: Path) -> None:
+    """KTD3: gone with no final result and a known conversation, judged as at start."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines, pids[70])
+    assert halts(tmp_path, boss) == 0
+    assert killpg.calls == []
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    assert dispatcher.marker_of(last_move(gh).comment or "", 70) == cause(70, INTERRUPTED)
+    assert lines == ["dispatcher: no dispatcher runs",
+                     "dispatcher: #70 session ended while no dispatcher ran: paused as interrupted",
+                     "dispatcher: #70 -> paused"]
+    assert not record_file(tmp_path, 70).exists()
+
+
+def test_a_stopped_session_that_wrote_a_clean_final_result_still_pauses_as_stopped(
+        tmp_path: Path) -> None:
+    """KTD3: the stopped flag comes before the final result."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT, result("Done.", error=False))
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), [])
+    assert halts(tmp_path, boss) == 0
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    assert dispatcher.marker_of(last_move(gh).comment or "", 70) == cause(70, STOPPED)
+
+
+def test_a_stopped_session_with_an_open_pull_request_goes_in_review(tmp_path: Path) -> None:
+    """KTD3: an open pull request comes first."""
+    gh = FakeGitHub(head={"issue-70": (PR,)})
+    earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert moves(gh)[1:] == [(70, (IN_REVIEW,))]
+    assert Link(101, 70) in gh.writes
+    assert "dispatcher: #70 session stopped: in review" in lines
+
+
+def test_a_stopped_session_with_no_conversation_needs_attention_at_stop(tmp_path: Path) -> None:
+    """R9, KTD5: killed before its first event, there is nothing to resume."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), [])
+    assert halts(tmp_path, boss) == 0
+    assert moves(gh)[1:] == [(70, (NEEDS_ATTENTION,))]
+    assert shown(gh, 70)[-1][0] == NEEDS_ATTENTION
+    assert not record_file(tmp_path, 70).exists()
+
+
+def test_stop_ends_a_session_whose_issue_left_progress_and_moves_no_label(
+        tmp_path: Path) -> None:
+    """KTD7: a run left it alone; stop still ends it, as nothing may run, and drops its record."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 74)
+    gh.answers = {}
+    first, _, _, _ = restarted(tmp_path, gh, 2, Clock(at(15)), [])
+    first.start()
+    first.stop()
+    written = list(gh.writes)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15, 5)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert killpg.calls == [(pids[74], signal.SIGTERM)]
+    assert gh.writes == written
+    assert not record_file(tmp_path, 74).exists()
+    assert lines[-1] == "dispatcher: #74 is not in progress: its session ended, no label moved"
+
+
+def test_stop_with_nothing_running_says_so(tmp_path: Path) -> None:
+    gh = FakeGitHub()
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert lines == ["dispatcher: no dispatcher runs", "dispatcher: no session runs"]
+    assert gh.writes == []
+    assert killpg.calls == []
+
+
+def test_stop_says_an_unreadable_record_and_leaves_it(tmp_path: Path) -> None:
+    """Outside damage never crashes `stop`; the next start makes its issue need attention."""
+    record_file(tmp_path, 75).parent.mkdir(parents=True)
+    record_file(tmp_path, 75).write_text("{")
+    gh = FakeGitHub()
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert lines[-1] == (f"dispatcher: #75: its session record {record_file(tmp_path, 75)} "
+                         "cannot be read")
+    assert record_file(tmp_path, 75).exists()
+
+
+def test_stop_that_cannot_read_github_still_ends_the_sessions_for_the_next_start(
+        tmp_path: Path) -> None:
+    """The records stay marked stopped: the next start pauses the issue as stopped."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    gh.flaky = {"issues in progress"}
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 1
+    assert killpg.calls == [(pids[70], signal.SIGTERM)]
+    assert moves(gh)[1:] == []
+    assert json.loads(record_file(tmp_path, 70).read_text())["stopped"] is True
+    assert lines[-1] == ("dispatcher: GitHub could not be read (gh issues in progress: "
+                         "HTTP 502); the sessions ended, the next start judges them")
+    again, _, _, _ = restarted(tmp_path, gh, 2, Clock(at(15, 5)), [], pids[70])
+    again.start()
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    assert dispatcher.marker_of(last_move(gh).comment or "", 70) == cause(70, STOPPED)
+
+
+def test_a_session_github_cannot_be_read_for_at_stop_is_left_to_the_next_start(
+        tmp_path: Path) -> None:
+    """Its record stays, marked stopped; the other issues are judged."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70, 73)
+    writes_log(tmp_path, 73, INIT)
+    gh.flaky = {"head"}
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 1
+    assert ("dispatcher: #70: GitHub could not be read (gh head: HTTP 502); "
+            "the next start judges it") in lines
+    assert json.loads(record_file(tmp_path, 70).read_text())["stopped"] is True
+    assert moves(gh)[2:] == [(73, (PAUSED,))]
+
+
+def test_a_write_that_fails_at_stop_is_said_and_left_to_the_next_start(tmp_path: Path) -> None:
+    """No poll follows `stop`: what still fails after one last try keeps its record."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    gh.broken = 70
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 1
+    assert lines[-1] == "dispatcher: #70: a write failed; the next start judges it again"
+    assert json.loads(record_file(tmp_path, 70).read_text())["stopped"] is True
+
+
+def test_the_stop_command_runs_over_this_checkout(tmp_path: Path,
+                                                  monkeypatch: pytest.MonkeyPatch,
+                                                  capsys: pytest.CaptureFixture[str]) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    monkeypatch.setattr(dispatcher, "ROOT", tmp_path)
+    monkeypatch.setattr(dispatcher, "GitHub", FakeGitHub)
+    monkeypatch.setattr(dispatcher, "Sessions", lambda root: runner)
+    assert dispatcher.main(["dispatcher.py", "stop"]) == 0
+    assert capsys.readouterr().out.endswith(" dispatcher: no session runs\n")
+    assert (tmp_path / dispatcher.STATE / "lock").exists()

@@ -12,9 +12,10 @@ From the main checkout, logged in to `gh` as the issues' author, with `claude` a
 ```sh
 python3 tools/dispatcher/dispatcher.py run       # 2 sessions at most, a poll every 5 minutes
 python3 tools/dispatcher/dispatcher.py run --sessions 3 --every 120
+python3 tools/dispatcher/dispatcher.py stop      # ends a running dispatcher and every session
 ```
 
-It runs until you stop it with Ctrl-C. Only one dispatcher runs at a time: a second one refuses to start while the first is alive.
+It runs until you stop it with Ctrl-C, which leaves its sessions running (see [Stopping and restarting](#stopping-and-restarting)). Only one dispatcher runs at a time: a second one refuses to start while the first runs, or while `stop` runs, and prints the holder's PID.
 
 Every line it prints starts with the time. It says what it checked at start, then narrates each poll, even one with nothing to do: what it read, what each `ready` issue gets, which sessions still run or ended, how the reviews stand, and when the next poll comes.
 
@@ -54,16 +55,17 @@ The labels show where each issue stands. The dispatcher creates the missing ones
 | `in review` | The session ended with an open pull request; its required checks don't all pass yet. |
 | `ready to merge` | That pull request's required checks all pass. |
 | `needs attention` | The session ended without a pull request. A comment says why, with the worktree and the log. |
-| `paused` | The Claude usage limit stopped the session. It resumes once the limit is back (see [Usage limit](#usage-limit)). |
+| `paused` | No session runs; its conversation resumes later. The Claude usage limit stopped it (see [Usage limit](#usage-limit)), it was found gone at start (see [Stopping and restarting](#stopping-and-restarting)), or you ran `stop` (see [Stopping everything](#stopping-everything)). |
 
 ```mermaid
 stateDiagram-v2
   [*] --> ready: you add the label
   ready --> in_progress: a slot is free
+  in_progress --> in_progress: dispatcher restarted, session still running
   in_progress --> in_review: pull request open
-  in_progress --> needs_attention: no pull request, could not start, or dispatcher stopped
-  in_progress --> paused: usage limit reached, no pull request
-  paused --> in_progress: limit back, conversation resumed
+  in_progress --> needs_attention: no pull request, could not start, or no session record at start
+  in_progress --> paused: usage limit, session found gone at start, or dispatcher.py stop
+  paused --> in_progress: a free slot (for the limit, once it is back), conversation resumed
   paused --> needs_attention: the session cannot resume
   in_review --> ready_to_merge: required checks pass
   needs_attention --> ready: you add the label again
@@ -84,7 +86,7 @@ The comment follows the issue:
 - **Running:** a checklist of `lfg`'s stages, the last sentence the session wrote, how long the session has run, and when the comment was updated. It is edited at every poll.
 - **In review** and **ready to merge:** the checklist, with the pull request done and CI current, then CI done.
 - **Needs attention:** the checklist frozen, with the stage it stopped at marked failed. This covers every reason the dispatcher moves an issue there.
-- **Paused:** the checklist frozen, with the stage it stopped at marked paused, and when the limit resets. When the session resumes, the checklist continues from there.
+- **Paused:** the checklist frozen, with the stage it stopped at marked paused, and why: the usage limit, with when it resets; the session interrupted, found gone when the dispatcher started; or stopped with `dispatcher.py stop`. When the session resumes, the checklist continues from there.
 
 ````text
 **Dispatcher status: implementation** (running 42 min)
@@ -125,6 +127,7 @@ The comment's last line is a hidden marker holding the checklist. The dispatcher
 - Only queuing or starting an issue creates its comment. An issue that was already `in review` or `needs attention` before the dispatcher had status comments never gets one.
 - Removing `ready` from a queued issue leaves its comment as it was.
 - A failed write that would leave the comment stale is retried at the next poll: in review, ready to merge, needs attention, paused. Running and queued comments are rewritten at every poll anyway.
+- Stopping the dispatcher writes nothing. A session left running keeps its running comment as the last poll left it, until the first poll of the next start edits it again.
 
 ## The pull request closes the issue
 
@@ -138,13 +141,82 @@ When a session ends, a label move or `Closes #N` that GitHub refuses is tried ag
 
 - **Worktrees:** `.claude/worktrees/issue-N` on a branch `issue-N` from the latest `origin/main`, with `-2`, `-3`… when the name is taken. The dispatcher never removes them.
 - **Logs:** `tools/dispatcher/.state/logs/issue-N.log`, the session's JSON lines. The last `result` event holds its final message and its cost.
-- **Lock:** `tools/dispatcher/.state/lock`, the running dispatcher's PID. `.state/` is git-ignored.
+- **Session records:** `tools/dispatcher/.state/sessions/issue-N.json`, one per session started or resumed: its PID, its process's start time, its branch, worktree and log. A later dispatcher, or `stop`, finds the session by it. It goes once the session's verdict is applied in full.
+- **Lock:** `tools/dispatcher/.state/lock`, an flock held by the running dispatcher or by `stop`, with the holder's PID inside. The file stays on disk after it exits. The kernel drops the flock when its holder ends, a crash or a restart included, so a file left behind never blocks a start. `.state/` is git-ignored.
+
+Comments on GitHub name a worktree or a log by its path inside the checkout, such as `.claude/worktrees/issue-70` or `tools/dispatcher/.state/logs/issue-70.log`, never by the machine's absolute path. The terminal prints full paths.
 
 ## Stopping and restarting
 
-Ctrl-C first judges the sessions that already ended, as a poll would: one with an open pull request goes `in review`, and one the usage limit stopped goes `paused`. It then ends the sessions still running and moves their issues to `needs attention`. An unexpected error stops the sessions the same way before the dispatcher exits. If the dispatcher dies without that, for example when the Mac sleeps, the next start finds the issues left `in progress` and moves them to `needs attention`, naming their worktrees.
+Ctrl-C, SIGTERM or an unexpected error stops the dispatcher, not its sessions. Before it exits, it judges the sessions that already ended, as a poll would, and prints each one it leaves running:
 
-`paused` issues survive both: they have no session running, so stopping loses nothing. The next start reads their pause comments and resumes them once the limit allows.
+```text
+18:02:10 dispatcher: stopping
+18:02:11 dispatcher: #70 left running (PID 4242), the next start follows it
+```
+
+A session left running keeps its issue `in progress`, with no comment. To update the dispatcher, press Ctrl-C, run `git pull`, then `run` again: the sessions don't notice.
+
+The next start prints one line for each issue `in progress`, after reading its session record (see [Where things are](#where-things-are)):
+
+```text
+18:03:02 dispatcher: #70 still running (PID 4242): followed again
+18:03:03 dispatcher: #73 session ended while no dispatcher ran: in review
+18:03:04 dispatcher: #74 session ended while no dispatcher ran: paused as interrupted
+18:03:05 dispatcher: #75 was in progress with no session record: it needs attention
+```
+
+- **Followed again:** its session still runs. The dispatcher checks the PID and the process's start time, so a process that merely reuses the PID doesn't count. The session is listed at every poll and judged when it ends, like any session. Its exit code is unknown then.
+- **Ended while no dispatcher ran:** judged from its log, as a poll would: `in review`, `paused at the usage limit`, or `needs attention` when it left a final result without a pull request.
+- **Paused as interrupted:** the session is gone without a final result, for example after the machine restarted. The issue goes `paused` and resumes its own conversation, in its own worktree, at the first free slot, with no usage-limit wait. The session is told it was interrupted. When its log names no conversation, the issue needs attention instead. When its worktree is gone, it needs attention when it resumes.
+- **Needs attention:** no session record names it, or the record can't be read. The comment names its worktrees.
+
+Some cases to know:
+
+- Labels lag while no dispatcher runs: a session that ends then keeps `in progress` until the next start judges it.
+- Sessions left running take slots first. They count against `--sessions`, and no new session or resume starts while they fill the slots. None is ended to make room.
+- A record whose issue is no longer `in progress`, because you removed the label or closed the issue, isn't followed: its session is left alone and never signalled. The record goes once that process is gone. `stop` still ends it.
+- To end one session, `kill <PID>` with the PID the dispatcher printed. With a dispatcher running, its next poll judges it like any session that ended: with no pull request, `needs attention`. With none running, the next start finds it gone and pauses it as interrupted, so it resumes.
+- `paused` issues have no session running, so stopping loses nothing. The next start reads their pause comments and resumes them, the usage-limit ones once the limit allows.
+
+<Warning>
+  **The update that brings this behavior:** the dispatcher you stop to install it runs the old code, which ends its sessions on Ctrl-C, and they have no records. Do that one update with no session running. Start the new dispatcher only once the old one has exited: its lock holds no flock, so the new `run` or `stop` wouldn't see it.
+</Warning>
+
+## Stopping everything
+
+```sh
+python3 tools/dispatcher/dispatcher.py stop
+```
+
+`stop` ends everything, in order:
+
+1. If a dispatcher runs, it sends SIGTERM to the PID in the lock and waits up to 60 seconds for the lock. That dispatcher leaves as on Ctrl-C, so no issue goes `needs attention` because its session was ended.
+2. It holds the lock until it is done, so no `run` starts in the middle.
+3. It ends every live session any run started: SIGTERM to its process group, then SIGKILL after 10 seconds.
+4. It judges each issue `in progress` that has a record, as a start would. A stopped session goes `paused` as stopped, even when it wrote a final result. One with an open pull request goes `in review`. One already gone without a final result goes `paused` as interrupted. One whose log names no conversation needs attention.
+
+A session whose issue isn't `in progress` is ended too, and no label moves.
+
+```text
+18:10:02 dispatcher: stopping the dispatcher (PID 4100)...
+18:10:04 dispatcher: the dispatcher (PID 4100) stopped
+18:10:04 dispatcher: ending the sessions of #70 (PID 4242), #73 (PID 4250)...
+18:10:06 dispatcher: #70 session stopped: paused as stopped
+18:10:07 dispatcher: #70 -> paused
+18:10:07 dispatcher: #73 session stopped: paused as stopped
+18:10:08 dispatcher: #73 -> paused
+```
+
+With no dispatcher running, the first line is `no dispatcher runs`. With no session record at all, `stop` prints `no session runs`.
+
+The next `run` resumes stopped issues like any paused one: at the first free slots, before `ready` issues, oldest first, with no usage-limit wait. Each session is told it was stopped.
+
+`stop` exits with:
+
+- `0` when everything is done, nothing to stop included.
+- `1` when the dispatcher didn't stop within 60 seconds, or the lock names no PID: nothing was changed.
+- `1` when GitHub couldn't be read or a write failed. The sessions are ended and their records stay, so the next start judges them.
 
 ## Sessions
 
@@ -159,8 +231,10 @@ The dispatcher reads this from the session's own log, from its JSON events only:
 The pause comment says when the limit resets, and gives the session's ID, the worktree and the log. Its last line is a hidden marker the dispatcher reads back:
 
 ```text
-<!-- dispatcher-pause {"session": "<session ID>", "branch": "issue-70", "reset": 1759361400} -->
+<!-- dispatcher-pause {"session": "<session ID>", "branch": "issue-70", "reset": 1759361400, "cause": "limit"} -->
 ```
+
+`cause` says what paused the session: `limit`, `interrupted` or `stopped`. A marker without one, posted before causes existed, reads as `limit`. Only `limit` holds starts: an interrupted or stopped issue has no reset (`null`) and resumes at the first free slot.
 
 Only markers in comments by the `gh` user count, so a stranger's comment can't name a session to resume. A `paused` issue with no valid marker moves to `needs attention`.
 

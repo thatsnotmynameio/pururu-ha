@@ -15,7 +15,7 @@ execution: code
 - **Objective:** the author can stop the dispatcher, update it and start it again while sessions are working on issues, and no session loses its work: each one either keeps running and is followed again, or resumes its own conversation in its own worktree.
 - **Means:** a local record per session lets a new dispatcher recognise and follow the sessions an earlier one started (KTD1, KTD2); pauses carry their cause so interruptions and `stop` reuse the usage-limit resume path without its hold (KTD4).
 - **Product authority:** the Product Contract below. It builds on the `paused` label, the pause record and the resume path from `docs/plans/2026-10-01-1758-feat-dispatcher-usage-limit-plan.md` (merged in #88), and extends them beyond the usage limit.
-- **Open blockers:** none. The status-comment work (`docs/plans/2026-10-01-1853-feat-dispatcher-status-report-plan.md`) is not a blocker; see How This Work Fits Together.
+- **Open blockers:** none. The status-comment work (`docs/plans/2026-10-01-1853-feat-dispatcher-status-report-plan.md`) landed first (#97), so this plan carries the interplay (KTD9); see How This Work Fits Together.
 - **Stop conditions:** stop and report if `claude -p --resume` cannot continue a conversation cut by SIGTERM (Risks), or if `fcntl.flock` is unavailable on the machine that runs the dispatcher.
 - **Execution profile:** Standard depth, six units in dependency order, each one commit; `tools/dispatcher/dispatcher.py` stays one stdlib-only script.
 - **Who finishes:** ce-work implements the units and runs the Verification Contract; lfg ships the pull request. Nothing here is a release: `custom_components/pururu/manifest.json` keeps its version.
@@ -132,7 +132,7 @@ stateDiagram-v2
 
 This plan covers keeping sessions alive across a dispatcher restart and the `stop` command. The list below is the current understanding of neighbouring dispatcher work, not a committed roadmap.
 
-- Status comment per issue (`docs/plans/2026-10-01-1853-feat-dispatcher-status-report-plan.md`, not yet built): can proceed independently of this plan; both change `tools/dispatcher/dispatcher.py`, so whichever lands second rebases. Still to decide there: what the status comment shows for an issue followed again after a restart and for a pause caused by an interruption or by `stop`, and that its own text follows R15.
+- Status comment per issue (`docs/plans/2026-10-01-1853-feat-dispatcher-status-report-plan.md`): built and merged in #97, before this plan. This plan therefore decides what the status comment shows for an issue followed again after a restart and for a pause caused by an interruption or by `stop` (KTD9). The status comment names no paths, so R15 already holds for it.
 
 ### Dependencies / Assumptions
 
@@ -152,14 +152,15 @@ This plan covers keeping sessions alive across a dispatcher restart and the `sto
 
 ### Key Technical Decisions
 
-- KTD1. **A record per session under `tools/dispatcher/.state/sessions/`, not the process table alone.** Written when a session starts or resumes, it holds the issue, PID, the process's start time, branch, worktree, log, `since` (the log offset where this attempt begins), `started`, the marker it resumed from, and a `stopped` flag. The process table can't give `since`, `started` or the resumed marker, which the poll lines, `_events` and `pause` need; a record is also the only way to know a PID was this issue's session after the dispatcher that started it is gone. A record is written to a temporary file and renamed into place, so a crash mid-write never leaves half a record. It is removed once its session's verdict is fully applied, so a verdict that fails survives a restart and is judged again. Governs R3, R5, R6.
+- KTD1. **A record per session under `tools/dispatcher/.state/sessions/`, not the process table alone.** Written when a session starts or resumes, it holds the issue, PID, the process's start time, branch, worktree, log, `since` (the log offset where this attempt begins), `started`, the marker it resumed from, `start_marks` (the checklist a resume continues from), and a `stopped` flag. The process table can't give `since`, `started`, the resumed marker or `start_marks`, which the poll lines, `_events`, `pause` and the status comment need; a record is also the only way to know a PID was this issue's session after the dispatcher that started it is gone. A record is written to a temporary file and renamed into place, so a crash mid-write never leaves half a record. It is removed once its session's verdict is fully applied, so a verdict that fails survives a restart and is judged again. Governs R3, R5, R6.
 - KTD2. **A followed-again session is a non-child process object.** It satisfies the existing `Process` protocol: `poll()` says it runs while the PID is alive and `ps` reports the same start time as the record (R6), the start time always read with `ps -o lstart=` under `TZ=UTC` and `LC_ALL=C` (its text follows the reader's time zone and locale, and a laptop's zone can change while a session runs); `returncode` stays `None`, so the poll line says the exit code is unknown and `reason_of` falls back to "no final result" wording; `terminate()` and `kill()` signal the session's process group (`os.killpg`; `start_new_session=True` makes the PID the group), so tools the session spawned end with it. Sessions the running dispatcher started keep their `Popen`.
 - KTD3. **One verdict order for every ended session, at a poll, at start and in `stop`:** an open pull request (`in review`), then a usage limit (`paused`, cause limit), then the record's `stopped` flag (`paused`, cause stopped), then a final result (`needs attention`), then no final result. No final result means interrupted (`paused`, cause interrupted) only when judged at start or by `stop`, both of which judge sessions no dispatcher was watching; at a poll it stays `needs attention`, as R7 and the Scope Boundaries say, so a session that keeps dying cannot loop through resumes.
 - KTD4. **The pause marker gains a `cause` (`limit`, `interrupted`, `stopped`); a marker without one reads as `limit`.** Markers already posted keep working. Only `limit` markers feed `Hold` (in `poll` and `restore`), so interruption and `stop` pauses never hold or probe (R8). `cause` is part of `Marker` equality, so `pause()`'s "resumed marker, no new comment" shortcut still fires only for the same cause. `Sessions.resume` picks its prompt by cause: the limit reset, or the session was interrupted or stopped; both keep the `Closes #N` line.
 - KTD5. **The conversation to resume comes from this attempt's slice of the log, else the marker it resumed from.** Never from earlier attempts in the same log file, which may be another worktree's conversation (`issue-N-2`). A fresh session killed before its first event has no conversation, and its issue needs attention (R9).
 - KTD6. **The lock becomes an `fcntl.flock` on `tools/dispatcher/.state/lock`, with the holder's PID written inside.** The kernel drops the lock when its holder dies or the machine restarts, so a reused PID can no longer block `run` or receive `stop`'s signal. `stop` reads the PID only while the lock is held by someone, signals it with SIGTERM, waits for the lock with a bounded timeout, then holds the lock itself for its whole run so no `run` starts in the middle. The lock file is never unlinked: a flock belongs to the file, not the path, so a dispatcher that removed the file on exit would hand `stop` a lock on an orphaned file while a new `run` locked a fresh one.
-- KTD7. **A record whose issue is no longer `in progress` is dropped at start, its process left alone.** The author took the issue out of the dispatcher's hands, as removing `paused` already does; the dispatcher neither follows nor ends that session. `stop` still ends it, because `stop` means nothing runs, but moves no label.
-- KTD8. **Comments render paths relative to the checkout root.** One helper turns a worktree or log path into its path under `ROOT` (falling back to the bare name when a path lies outside it) and every comment builder uses it: `pause`, `judge`, `orphans`' successor, `stop`, and the resume error. Progress lines in the terminal keep absolute paths. Governs R15.
+- KTD7. **A record whose issue is no longer `in progress` is not followed at start, its process left alone.** The author took the issue out of the dispatcher's hands, as removing `paused` already does; `run` neither follows nor signals that session. Its record stays until its process is gone (checked at each start), so `stop` can still end it, because `stop` means nothing runs, but moves no label (R10).
+- KTD8. **Comments render paths relative to the checkout root.** One helper turns a worktree or log path into its path under `ROOT` (falling back to the bare name when a path lies outside it) and every comment builder uses it: `pause`, `judge`, `orphans`' successor, `stop`, and the resume error. Error text a comment embeds (`dispatch`'s could-not-start detail, such as git's stderr or a failed record write, and the resume error) has the checkout root's absolute prefix rewritten to the relative path the same way. Progress lines in the terminal keep absolute paths. Governs R15.
+- KTD9. **The status comment follows the same verdicts; leaving writes nothing.** `Status` gains `cause`, and its `paused` text depends on it: the usage limit with its reset, as today; "the session was interrupted (found gone when the dispatcher started)"; or "the session was stopped with `dispatcher.py stop`". Only `limit` shows a reset. Every `paused` verdict reports `Status(PAUSED, marks_paused(marks), cause=…)` beside its move, through `pending` like `judge`'s final reports. The marks come from the log slice continuing from the record's `start_marks`. Leaving a session on Ctrl-C writes no status: R1's "no comment" covers edits too, and the first poll of the next start edits the comment back to running. A followed-again session is reported running at every poll from its record's `started` and `start_marks`, as `running_report` does today. An `in progress` issue with no record keeps `orphans`' needs-attention report (`marks_stopped` on the stored marks). The status-comment plan's KTD5 note that an error escaping `poll` makes `serve` stop every session no longer holds: `serve` leaves them (U3). Governs R1, R3, R7, R10.
 
 ### High-Level Technical Design
 
@@ -169,7 +170,7 @@ Start-time reconciliation, the heart of R3–R9 and R13 (directional, not a spec
 flowchart TB
   S[start: each issue in progress, each session record] --> R{record for this issue?}
   R -->|no record| NA1[needs attention, as today]
-  R -->|record, issue not in progress| DROP[drop record, leave process alone - KTD7]
+  R -->|record, issue not in progress| DROP[not followed, process left alone; record removed once the process is gone - KTD7]
   R -->|record| L{PID alive with the recorded start time?}
   L -->|yes| F[follow again: back in running, counts a slot - R3, R4]
   L -->|no| J[judge from this attempt's log - KTD3]
@@ -228,13 +229,14 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 **Approach:**
 1. `Sessions._run` writes the record after the spawn, reading the process's start time from `ps` as KTD2 says. A failed write ends the just-spawned session and raises, so `dispatch` and `resume` move the issue to `needs attention` as for a session that could not start: a session with no record would outlive the next Ctrl-C with nothing able to follow or stop it.
 2. `Sessions` gains reading every record, building a `Running` from one with the non-child process object of KTD2, marking a record stopped, and removing one.
-3. `Dispatcher` removes a session's record once its verdict is applied with nothing left pending for that issue (`settle` and the pending retries in `poll`).
-4. The non-child process object's `wait(timeout)` polls until the process is gone or the timeout passes, so `Sessions.end` works on it unchanged.
+3. `Dispatcher.resume` sets `start_marks` before the record is written (today it replaces them after `Sessions.resume` returns), so the record holds the marks the poll reports from.
+4. `Dispatcher` removes a session's record once its verdict is applied with nothing left pending for that issue (`settle` and the pending retries in `poll`).
+5. The non-child process object's `wait(timeout)` polls until the process is gone or the timeout passes, so `Sessions.end` works on it unchanged.
 
 **Patterns to follow:** the injected `git`/`spawn` callables on `Sessions` and the fakes in the tests (`FakeProcess`, `FakeSpawn`); inject the `ps` reader and the signal sender the same way so no test touches real processes.
 
 **Test scenarios:**
-- A started session writes a record with its PID, start time, branch, worktree, log, `since` and `started`; a resumed one also carries its marker.
+- A started session writes a record with its PID, start time, branch, worktree, log, `since`, `started` and `start_marks`; a resumed one also carries its marker and the resumed marks.
 - A record round-trips into a `Running` whose process reports running while the fake `ps` returns the recorded start time.
 - The same PID with another start time reports not running (R6).
 - A dead PID reports not running and `returncode` stays `None`.
@@ -249,7 +251,7 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 
 **Goal:** a pause says why it happened and resumes with the right words, only usage-limit pauses hold starts, and comments name paths inside the checkout.
 
-**Requirements:** R8, R15; KTD4, KTD8.
+**Requirements:** R8, R15; KTD4, KTD8, KTD9.
 
 **Dependencies:** none.
 
@@ -262,7 +264,8 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 2. `pause` builds the comment by cause: the limit text as today, "the session was interrupted (found gone when the dispatcher started)", or "the session was stopped with `dispatcher.py stop`"; only the limit text speaks of a reset.
 3. `restore` and the hold update in `poll` consider `limit` markers only.
 4. `RESUME_PROMPT` splits by cause; `Sessions.resume` picks it from the marker.
-5. A path helper renders worktree and log paths relative to `ROOT`; `pause`, `judge`, `orphans`, `Dispatcher.stop` and `Dispatcher.resume`'s error use it (the error text from `Sessions.resume` names the relative worktree).
+5. `Status` gains `cause` (default `limit`); its `paused` body says the cause, and only `limit` shows the reset (KTD9). `judge`'s limit pause reports `cause=limit`.
+6. A path helper renders worktree and log paths relative to `ROOT`; `pause`, `judge`, `orphans`, `Dispatcher.stop` and `Dispatcher.resume`'s error use it (the error text from `Sessions.resume` names the relative worktree). `dispatch`'s could-not-start comment rewrites the root's absolute prefix in its error detail (KTD8).
 
 **Patterns to follow:** `Marker`/`marker_of` and their tests (`test_a_marker_round_trips_through_its_line`, `test_the_paused_issues_marker_is_the_users_valid_one`).
 
@@ -274,7 +277,9 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 - A `limit` marker with a null reset still probes, as today.
 - An interrupted resume's prompt says it was interrupted; a limit resume's prompt says the limit reset; both carry `Closes #N`.
 - A resumed session paused again with the same cause and nothing new swaps labels without a comment; one paused with a different cause comments.
+- A paused status body with cause `interrupted` or `stopped` says so and shows no reset; one with cause `limit` reads as today.
 - Covers AE8. A `needs attention` comment and a pause comment for a session in `<ROOT>/.claude/worktrees/issue-70` name `.claude/worktrees/issue-70` and `tools/dispatcher/.state/logs/issue-70.log`, and contain no absolute path.
+- A `git worktree add` failure naming `<ROOT>/.claude/worktrees/issue-70`, and a record write that fails, each post a could-not-start comment free of absolute paths.
 
 **Verification:** existing usage-limit tests still pass unchanged apart from the comment paths.
 
@@ -282,7 +287,7 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 
 **Goal:** Ctrl-C, SIGTERM and an unexpected error end the dispatcher only.
 
-**Requirements:** R1, R2; KTD1.
+**Requirements:** R1, R2; KTD1, KTD9.
 
 **Dependencies:** U1.
 
@@ -291,13 +296,13 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 - `tools/dispatcher/tests/test_dispatcher.py`
 
 **Approach:**
-1. `Dispatcher.stop` becomes leaving: retry the pending verdicts, judge the sessions that already ended (as today), and for each live one print `#N left running (PID P), the next start follows it` instead of ending it; its record stays.
+1. `Dispatcher.stop` becomes leaving: retry the pending verdicts, judge the sessions that already ended (as today), and for each live one print `#N left running (PID P), the next start follows it` instead of ending it; its record stays, and its status comment is not touched (KTD9). `stopped_report` stays only for an ended session whose GitHub read fails.
 2. `serve` keeps calling it from `finally`, so an error leaves sessions running too; its docstring and the module docstring stop saying sessions are ended.
 
 **Patterns to follow:** `test_stopping_ends_the_sessions_and_marks_their_issues`, `test_stopping_judges_a_session_that_already_ended` and the `two_sessions` fixture, which this unit rewrites to the new behavior.
 
 **Test scenarios:**
-- Covers AE1. Stopping with a live session neither terminates it nor moves its label, prints it as left running with its PID, and keeps its record.
+- Covers AE1. Stopping with a live session neither terminates it nor moves its label nor writes its status comment, prints it as left running with its PID, and keeps its record.
 - Stopping still judges a session that already ended (in review, needs attention or paused) and removes its record.
 - An error raised from a poll leaves live sessions running.
 - A pending verdict that fails its last try keeps its record.
@@ -308,7 +313,7 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 
 **Goal:** a new dispatcher follows live sessions, judges ended ones and resumes interrupted ones.
 
-**Requirements:** R3, R4, R5, R6, R7, R9, R13; KTD3, KTD5, KTD7.
+**Requirements:** R3, R4, R5, R6, R7, R9, R13; KTD3, KTD5, KTD7, KTD9.
 
 **Dependencies:** U1, U2, U3.
 
@@ -323,6 +328,7 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 4. `limit_of`'s session lookup is reused for the conversation, with the record's resumed marker as the fallback (KTD5); `Ended` gains what the verdict needs (the stopped flag, the conversation, whether judged at start).
 5. An `in progress` issue with no record keeps today's `needs attention` comment, naming its worktrees relatively.
 6. One line per issue says what happened (R13).
+7. Each verdict carries its status report (KTD9): `judge`'s for the usual ones, `Status(PAUSED, marks_paused(marks), cause=interrupted)` for an interrupted one; a followed-again session gets none at start, as the first poll's running report covers it.
 
 **Patterns to follow:** `test_start_marks_the_orphans_before_the_first_poll`, `test_a_paused_issue_past_its_reset_resumes_after_a_restart`, `boss_at`, `exits` and `FakeGitHub`.
 
@@ -330,13 +336,15 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 - Covers AE1. A record whose PID is alive with the same start time is followed: listed as running at the next poll with minutes counted from the record's `started`, judged when it exits.
 - Covers AE2. A record whose process is gone and whose branch has an open pull request moves the issue to `in review` at start.
 - A record whose process is gone with a final error result and no pull request moves the issue to `needs attention`.
-- Covers AE3. A record whose process is gone with no final result and a known conversation pauses the issue with cause `interrupted`, and the first poll resumes it in the same worktree, with no new worktree created.
+- Covers AE3. A record whose process is gone with no final result and a known conversation pauses the issue with cause `interrupted`, its status comment saying so with the reached stage paused, and the first poll resumes it in the same worktree, with no new worktree created; the resumed running report continues the checklist.
+- A followed-again session's first running report edits the existing status comment from the record's `started` and `start_marks`; no second comment is posted.
 - A fresh session killed before its first event (no conversation in its slice) needs attention (R9).
 - A resumed session interrupted before its first event resumes with the marker it came from.
 - Covers AE4. An interrupted issue whose worktree is gone needs attention at its resume, naming the relative worktree and log.
 - Covers AE5. Two followed-again sessions with one slot: no `ready` issue starts until both have ended.
 - A record whose PID is alive with another start time is treated as gone (R6).
-- A record whose issue is no longer `in progress` is dropped and its process is never signalled (KTD7).
+- A record whose issue is no longer `in progress` is not followed and its process is never signalled; its record stays while the process lives and goes once it is gone (KTD7).
+- After a `run` skipped such a record, `stop` still ends its process and moves no label (R10).
 - An `in progress` issue with no record needs attention, as today.
 - Each case prints its own line at start (R13).
 - At a poll, a session that exits with no final result still needs attention (KTD3).
@@ -347,7 +355,7 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 
 **Goal:** `dispatcher.py stop` ends a running dispatcher and every session, pausing each issue, and neither `run` nor `stop` can be confused by a reused PID.
 
-**Requirements:** R10, R11, R12; KTD6, KTD7.
+**Requirements:** R10, R11, R12; KTD6, KTD7, KTD9.
 
 **Dependencies:** U4.
 
@@ -362,14 +370,14 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
    1. If the lock is held, SIGTERM the PID inside it and wait for the lock (bounded, then report that the dispatcher did not stop and change nothing).
    2. Take the lock.
    3. Mark every live record stopped, then end the sessions through `Sessions.end`.
-   4. Reconcile every record with KTD3, judged as at start: stopped ones go `paused` with cause `stopped`, ones already gone with no final result and a known conversation go `paused` with cause `interrupted`, and the rest get their usual verdict.
+   4. Reconcile every record with KTD3, judged as at start: stopped ones go `paused` with cause `stopped` and a matching status report, ones already gone with no final result and a known conversation go `paused` with cause `interrupted`, and the rest get their usual verdict.
    5. For a record whose issue isn't `in progress`, end the process and move no label (KTD7).
    6. Print one line per issue, then release the lock.
 
 **Patterns to follow:** `test_a_second_dispatcher_refuses_to_start`, `test_a_dead_dispatchers_lock_is_taken_over`, `Sessions.end` and `test_a_session_that_ignores_terminate_is_killed`.
 
 **Test scenarios:**
-- Covers AE6. With records for #70 and #73 alive and no dispatcher running, `stop` ends both process groups and pauses both with cause `stopped`; the next start resumes both with the stopped prompt.
+- Covers AE6. With records for #70 and #73 alive and no dispatcher running, `stop` ends both process groups and pauses both with cause `stopped`, each status comment saying it was stopped; the next start resumes both with the stopped prompt.
 - With a dispatcher holding the lock, `stop` signals that PID, waits for the lock, then ends the sessions.
 - A dispatcher that never releases the lock makes `stop` report and end nothing.
 - A `run` started while `stop` holds the lock refuses to start.
@@ -399,7 +407,7 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 - `CLAUDE.md` (the Commands block gains the `stop` line)
 
 **Approach:**
-1. In `dispatcher.mdx`, rewrite "Stopping and restarting", add a "Stopping everything" section for `stop`, and broaden `paused` in the Labels table and the state diagram (interrupted, stopped).
+1. In `dispatcher.mdx`, rewrite "Stopping and restarting", add a "Stopping everything" section for `stop`, and broaden `paused` in the Labels table, the state diagram and the Status comment section (interrupted, stopped; a session left running keeps its comment until the next start).
 2. Update the Usage limit section's marker example with `cause`.
 3. Change Where things are: `.state/sessions/`, and comments naming paths inside the checkout.
 4. Add a short note that the update shipping this change still ends running sessions, because the old code does the stopping.
@@ -413,7 +421,7 @@ U1 and U2 are independent foundations. U3 (leaving sessions running) depends on 
 ## Risks
 
 - **`--resume` after SIGTERM is unverified.** The plan assumes a conversation cut mid-tool resumes usefully. ce-work checks it once by hand before U5 lands (start a throwaway session, SIGTERM it, resume it); if it fails, stop per the Goal Capsule.
-- **The first update loses in-flight sessions.** The dispatcher that is stopped to install this change runs today's code, which ends its sessions, and they have no records. Do that one update with no session running (U6 documents it).
+- **The first update loses in-flight sessions.** The dispatcher that is stopped to install this change runs today's code, which ends its sessions, and they have no records. Do that one update with no session running, and only once the old dispatcher has exited: its lock holds no flock, so the new `run` or `stop` would not see it (U6 documents it).
 - **An unreadable record.** Records are renamed into place (KTD1), so only outside damage can leave one unreadable; reconciliation reports it and treats its issue as having no record (today's `needs attention`), never crashes the start.
 
 ## Scope Boundaries (planning)
