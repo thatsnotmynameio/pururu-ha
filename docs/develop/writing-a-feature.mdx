@@ -250,9 +250,11 @@ The name, icon, platform and namespace checks above cover `Items`' suffixes and 
 
 The contract test doesn't check **behaviour**. Write that in `tests/test_<feature>.py` with the [helpers](/develop/testing): set it up, `fake` the real entity's states, `tick` the clock, and assert the states. Cover a restart (`restart`), a reload (`reload`), a renamed entity and an ID that's already taken, as `test_appliance.py` and `test_program_entities.py` do.
 
+Then give the [reference house](/develop/acceptance) a place for it, and a story in `acceptance/test_stories.py` linking it to another feature. The acceptance guard fails until the house has it.
+
 ## 7. Document it
 
 - Add `docs/features/<feature>.mdx` with its settings (`<Property>`), its entities and its rules, following [`appliance`](/features/appliance).
 - Add the page to the `Features` group in `docs.json`.
 - If it adds log messages, add them to [Troubleshooting](/reference/troubleshooting).
-- Add it to the table in [Devices and features](/concepts/devices-and-features#a-feature).
+- Add it to the tables in [Devices and features](/concepts/devices-and-features#a-feature): the features table and the [aspects](/concepts/devices-and-features#aspects) table.

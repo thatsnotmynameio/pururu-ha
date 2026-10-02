@@ -19,6 +19,7 @@ Run everything from the repository root:
 ```sh
 uv run pytest                                   # all tests but the docs tests, plus ruff, ruff format, mypy, hassfest and the quality scale
 uv run pytest -m docs                           # the docs tests: the tests that read docs/ (tests/docs/)
+uv run --locked --project acceptance pytest acceptance   # the acceptance suite: stories across a reference house
 uv run pytest tests/test_places.py -n 0 -q      # one file, in a single process
 uv run pytest "tests/test_places.py::test_name[param id]" -n 0
 uv run ruff check --fix custom_components/pururu
@@ -30,7 +31,7 @@ python3 tools/dispatcher/dispatcher.py run      # ready issues become pull reque
 python3 tools/dispatcher/dispatcher.py stop     # end a running dispatcher and every session, pausing each issue
 ```
 
-`uv run pytest` and `uv run pytest -m docs` are the two commands that must pass. The first includes the lint, format, type and hassfest checks (`tests/test_code.py`); the second compares the pages with the code. `python3 .github/scripts/changes.py` prints which of CI's checks your changes run (`build`, `docs`, `hacs`, `tools`, each `true` or `false`), and `pnpm docs:check` checks the site (see [Documentation](/develop/releases#documentation)). Apart from SonarQube Cloud and HACS's validation, CI runs nothing you can't run locally.
+`uv run pytest` and `uv run pytest -m docs` are the two commands that must pass. The first includes the lint, format, type and hassfest checks (`tests/test_code.py`); the second compares the pages with the code. `python3 .github/scripts/changes.py` prints which of CI's checks your changes run (`build`, `docs`, `hacs`, `tools`, `acceptance`, each `true` or `false`), and `pnpm docs:check` checks the site (see [Documentation](/develop/releases#documentation)). Apart from SonarQube Cloud and HACS's validation, CI runs nothing you can't run locally.
 
 <Warning>
   **Single process:** the `addopts` in `pyproject.toml` already pass `-n 4 --dist loadfile` (pytest-xdist). Use `-n 0` to run in one process, for example to debug. `-p no:xdist` breaks the run, because the options it leaves behind are unknown without the plugin.
@@ -96,6 +97,7 @@ custom_components/pururu/     the integration
   icons.json, services.yaml, manifest.json, quality_scale.yaml
 tests/                        pytest, with the HA test plugin
   docs/                       the tests that read docs/ (pytest -m docs)
+acceptance/                   the acceptance suite, its own uv project: a reference house and stories
 docs/, docs.json              this site (docs.page)
 docs/superpowers/             design specs and implementation plans (not published)
 .github/scripts/changes.py    the checks a pull request's changed files need (CI)
