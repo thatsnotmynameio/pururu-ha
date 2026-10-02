@@ -8,10 +8,11 @@ import pytest
 
 import changes
 
-ALL = {"build": True, "docs": True, "hacs": True, "tools": True}
-NONE = {"build": False, "docs": False, "hacs": False, "tools": False}
-DOCS = NONE | {"docs": True}
-CODE = NONE | {"build": True, "docs": True}
+ALL = {"build": True, "docs": True, "hacs": True, "tools": True, "acceptance": True}
+NONE = {"build": False, "docs": False, "hacs": False, "tools": False, "acceptance": False}
+# The acceptance suite reads docs/ (its coverage guard) and runs the integration
+DOCS = NONE | {"docs": True, "acceptance": True}
+CODE = NONE | {"build": True, "docs": True, "acceptance": True}
 
 
 @pytest.mark.parametrize(
@@ -27,6 +28,10 @@ CODE = NONE | {"build": True, "docs": True}
                      NONE | {"tools": True}, id="a tool"),
         pytest.param(["pyproject.toml"], CODE | {"tools": True}, id="pyproject.toml"),
         pytest.param(["uv.lock"], CODE | {"tools": True}, id="uv.lock"),
+        pytest.param(["acceptance/steps.py", "acceptance/uv.lock"], NONE | {"acceptance": True},
+                     id="the acceptance suite"),
+        pytest.param(["custom_components/pururu/translations/en.json"], CODE,
+                     id="the shipped translations"),
         pytest.param([".github/workflows/build.yml"], ALL, id="a workflow"),
         pytest.param(["docs.json", "package.json", "pnpm-lock.yaml"], DOCS,
                      id="the docs site's files"),
@@ -50,14 +55,14 @@ def test_main_runs_everything_off_a_pull_request(monkeypatch: pytest.MonkeyPatch
                                                  capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("README.md\n"))
     assert changes.main(["changes.py", "push"]) == 0
-    assert capsys.readouterr().out == "build=true\ndocs=true\nhacs=true\ntools=true\n"
+    assert capsys.readouterr().out == "build=true\ndocs=true\nhacs=true\ntools=true\nacceptance=true\n"
 
 
 def test_main_prints_one_line_per_check(monkeypatch: pytest.MonkeyPatch,
                                         capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("docs/index.mdx\n"))
     assert changes.main(["changes.py", "pull_request"]) == 0
-    assert capsys.readouterr().out == "build=false\ndocs=true\nhacs=false\ntools=false\n"
+    assert capsys.readouterr().out == "build=false\ndocs=true\nhacs=false\ntools=false\nacceptance=true\n"
 
 
 def test_main_skips_blank_lines(monkeypatch: pytest.MonkeyPatch,
@@ -65,7 +70,7 @@ def test_main_skips_blank_lines(monkeypatch: pytest.MonkeyPatch,
     """A blank line is no path: read as one, it would be in no group and run everything."""
     monkeypatch.setattr("sys.stdin", io.StringIO("\nCLAUDE.md\n\n  \n"))
     assert changes.main(["changes.py", "pull_request"]) == 0
-    assert capsys.readouterr().out == "build=false\ndocs=false\nhacs=false\ntools=false\n"
+    assert capsys.readouterr().out == "build=false\ndocs=false\nhacs=false\ntools=false\nacceptance=false\n"
 
 
 def test_main_needs_an_event(capsys: pytest.CaptureFixture[str]) -> None:

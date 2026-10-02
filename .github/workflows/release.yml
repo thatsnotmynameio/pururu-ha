@@ -1,6 +1,6 @@
-# Every push to main (a merged PR): Build and Validate, then the manifest's
-# version is published as tag vX.Y.Z and a GitHub release, unless that version
-# already has its tag (release.py). A PR bumps `version` to release.
+# Every push to main (a merged PR): Build, Validate and Acceptance, then the
+# manifest's version is published as tag vX.Y.Z and a GitHub release, unless
+# that version already has its tag (release.py). A PR bumps `version` to release.
 name: Release
 
 on:
@@ -24,9 +24,12 @@ jobs:
   validate:
     uses: ./.github/workflows/validate.yml
 
+  acceptance:
+    uses: ./.github/workflows/acceptance.yml
+
   # The only job that can write: it creates the tag and the release
   publish:
-    needs: [build, validate]
+    needs: [build, validate, acceptance]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
