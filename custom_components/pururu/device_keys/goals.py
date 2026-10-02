@@ -124,15 +124,16 @@ class GoalTarget(PururuEntity, RestoreSensor):
             self.async_write_ha_state()
 
     def _take(self, state: State | None) -> bool:
-        """Take `state`'s unit and device class, as utility_meter does: only from a reading."""
+        """Take `state`'s unit and device class, as utility_meter does: only from a reading; whether either changed."""
         if reading(state) is None:
             return False
         assert state is not None  # a reading has a state
+        was = (self.native_unit_of_measurement, self.device_class)
         self._attr_native_unit_of_measurement = state.attributes.get(
             ATTR_UNIT_OF_MEASUREMENT
         )
         self._take_class(state.attributes.get(ATTR_DEVICE_CLASS))
-        return True
+        return was != (self.native_unit_of_measurement, self.device_class)
 
     def _take_class(self, device_class: Any) -> None:
         self._attr_device_class = try_parse_enum(SensorDeviceClass, device_class)
