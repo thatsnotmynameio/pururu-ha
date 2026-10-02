@@ -20,14 +20,15 @@ last sentence and running time, then how it ended. A pause holds every start unt
 minute past the limit's reset, or, with no reset known, until the next poll tries one
 session. Past the hold, paused issues resume first, oldest first: the same conversation,
 in the same worktree.
-Every line it prints carries the time; each poll reports what it found. Logs and the
-lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions that ended, as a poll
-would, then stops the others and marks their issues `needs attention`; paused issues
-stay paused, and the next start resumes them from GitHub alone.
+Every line it prints carries the time; each poll reports what it found. Logs, a record
+of each session and the lock are in tools/dispatcher/.state/. Ctrl-C judges the sessions
+that ended, as a poll would, then stops the others and marks their issues `needs
+attention`; paused issues stay paused, and the next start resumes them from GitHub alone.
 """
 
 import argparse
 from collections.abc import Callable, Iterable, Mapping
+import contextlib
 from dataclasses import dataclass, replace
 import json
 import os
@@ -92,10 +93,13 @@ class Marker:
     branch: str
     reset: int | None
 
+    def fields(self) -> dict[str, Any]:
+        """Its fields as JSON holds them, in a pause comment's marker or a session's record."""
+        return {"session": self.session, "branch": self.branch, "reset": self.reset}
+
     def line(self) -> str:
         """The hidden marker a pause comment ends with."""
-        record = {"session": self.session, "branch": self.branch, "reset": self.reset}
-        return f"<!-- {MARKER} {json.dumps(record)} -->"
+        return f"<!-- {MARKER} {json.dumps(self.fields())} -->"
 
 
 MARKER_LINE = re.compile(rf"<!-- {MARKER} (\{{.*\}}) -->")
@@ -113,20 +117,28 @@ def hidden(body: str, line: re.Pattern[str]) -> dict[str, Any] | None:
     return record if isinstance(record, dict) else None
 
 
-def marker_of(body: str, issue: int) -> Marker | None:
-    """The marker on a comment's last line, if its session is a UUID and its branch this issue's.
+def branch_of(branch: object, issue: int) -> bool:
+    """Whether this is a branch the dispatcher names for the issue (`issue-N`, `issue-N-2`…)."""
+    return isinstance(branch, str) and bool(re.fullmatch(rf"issue-{issue}(-\d+)?", branch))
+
+
+def marker_from(fields: object, issue: int) -> Marker | None:
+    """The marker these fields make, if its session is a UUID and its branch this issue's.
 
     The session becomes a `claude --resume` argument, and the branch a folder's name.
     """
-    record = hidden(body, MARKER_LINE)
-    if record is None:
+    if not isinstance(fields, dict):
         return None
-    session, branch, reset = record.get("session"), record.get("branch"), record.get("reset")
-    if (isinstance(session, str) and SESSION_ID.fullmatch(session)
-            and isinstance(branch, str) and re.fullmatch(rf"issue-{issue}(-\d+)?", branch)
+    session, branch, reset = fields.get("session"), fields.get("branch"), fields.get("reset")
+    if (isinstance(session, str) and SESSION_ID.fullmatch(session) and branch_of(branch, issue)
             and (reset is None or (isinstance(reset, int) and not isinstance(reset, bool)))):
-        return Marker(session, branch, reset)
+        return Marker(session, str(branch), reset)
     return None
+
+
+def marker_of(body: str, issue: int) -> Marker | None:
+    """The valid marker on a comment's last line, if any (`marker_from`)."""
+    return marker_from(hidden(body, MARKER_LINE), issue)
 
 
 @dataclass(frozen=True)
@@ -741,7 +753,9 @@ class Board:
 # Sessions: a worktree, a headless lfg run in it, its log
 
 WORKTREES = ".claude/worktrees"
-STATE = "tools/dispatcher/.state"  # logs and the lock, from the checkout's root
+STATE = "tools/dispatcher/.state"  # logs, session records and the lock, from the checkout's root
+RECORD = re.compile(r"issue-(\d+)\.json")  # a session record's file name, under STATE/sessions
+GONE = -1  # what a followed process's poll() says once it is gone: its exit code is unknown
 GRACE = 10.0  # seconds a session gets to exit after terminate, before kill
 PROMPT = ("/compound-engineering:lfg #{issue}\n\n"
           "The pull request body must contain the line `Closes #{issue}`, "
@@ -756,12 +770,13 @@ ISSUE_FOLDER = re.compile(r"issue-(\d+)(-\d+)?")
 
 
 class Process(Protocol):
-    """What the dispatcher needs of a running `claude` (a `subprocess.Popen`)."""
+    """What the dispatcher needs of a running `claude`: a `subprocess.Popen`, or a `Followed`."""
 
+    pid: int
     returncode: int | None
 
     def poll(self) -> int | None:
-        """The exit code, or None while running."""
+        """None while running; once it exited, its exit code (`GONE` when no one can know it)."""
 
     def terminate(self) -> None:
         """Ask it to exit."""
@@ -775,7 +790,7 @@ class Process(Protocol):
 
 @dataclass(frozen=True)
 class Running:
-    """A session the dispatcher started."""
+    """A session the dispatcher started, or one an earlier dispatcher started, followed again."""
 
     issue: int
     branch: str
@@ -786,6 +801,121 @@ class Running:
     started: float = 0.0  # time.time() when it started
     resumed: Marker | None = None  # the marker it was resumed from
     start_marks: tuple[str, ...] = UNSTARTED  # the checklist a resume continues from
+
+
+@dataclass(frozen=True)
+class Record:
+    """What a session leaves on disk, so a later dispatcher can follow it (one file per issue).
+
+    `start` is its process's start time as `run_ps` read it (None: it had exited already), so a
+    process that merely reuses the PID is never taken for it. `stopped`: `dispatcher.py stop`
+    ended it.
+    """
+
+    issue: int
+    pid: int
+    start: str | None
+    branch: str
+    worktree: Path
+    log: Path
+    since: int
+    started: float
+    resumed: Marker | None = None
+    start_marks: tuple[str, ...] = UNSTARTED
+    stopped: bool = False
+
+    def text(self) -> str:
+        """The record as its file holds it."""
+        return json.dumps({"issue": self.issue, "pid": self.pid, "start": self.start,
+                           "branch": self.branch, "worktree": str(self.worktree),
+                           "log": str(self.log), "since": self.since, "started": self.started,
+                           "resumed": self.resumed.fields() if self.resumed else None,
+                           "start_marks": list(self.start_marks), "stopped": self.stopped})
+
+
+def record_of(text: str, issue: int) -> Record | None:
+    """The record a file holds, if it is this issue's with every field of its kind.
+
+    Records are renamed into place whole, so only outside damage fails this; the PID must be
+    positive, as signalling group 0 would signal the dispatcher's own.
+    """
+    try:
+        data = json.loads(text)
+        resumed = data["resumed"]
+        record = Record(data["issue"], data["pid"], data["start"], data["branch"],
+                        Path(data["worktree"]), Path(data["log"]), data["since"], data["started"],
+                        None if resumed is None else marker_from(resumed, issue),
+                        tuple(data["start_marks"]),
+                        data["stopped"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    number = (int, float)
+    valid = (record.issue == issue and type(record.pid) is int and record.pid > 0
+             and (record.start is None or isinstance(record.start, str))
+             and branch_of(record.branch, issue) and type(record.since) is int
+             and record.since >= 0 and isinstance(record.started, number)
+             and not isinstance(record.started, bool) and (resumed is None) == (record.resumed is None)
+             and len(record.start_marks) == len(STAGES)
+             and all(isinstance(mark, str) and mark in MARK_SIGNS for mark in record.start_marks)
+             and isinstance(record.stopped, bool))
+    return record if valid else None
+
+
+def run_ps(pid: int) -> str | None:
+    """A process's start time as `ps -o lstart=` prints it; None when no process has the PID.
+
+    `lstart` follows the reader's time zone and locale, and a laptop's zone can change while a
+    session runs: read in UTC and the C locale, the text stays the same for the process's life.
+    """
+    result = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True,
+                            text=True, check=False,
+                            env={**os.environ, "TZ": "UTC", "LC_ALL": "C"})
+    return result.stdout.strip() or None
+
+
+class Followed:
+    """A session an earlier dispatcher started: not this process's child, followed by its PID.
+
+    It runs while the PID's process has the recorded start time. Its exit code is never known,
+    so `returncode` stays None. Signals go to its process group (the session started one of
+    its own), so the tools it spawned end with it; a group gone is never signalled.
+    """
+
+    def __init__(self, pid: int, start: str | None, ps: Callable[[int], str | None],
+                 killpg: Callable[[int, int], None]) -> None:
+        """The process `pid`, started at `start`; read through `ps`, signalled through `killpg`."""
+        self.pid = pid
+        self.start = start
+        self.ps = ps
+        self.killpg = killpg
+        self.returncode: int | None = None
+
+    def poll(self) -> int | None:
+        """None while it runs; `GONE` once no process with its PID and start time does."""
+        found = self.ps(self.pid)
+        return None if found is not None and found == self.start else GONE
+
+    def _signal(self, signum: int) -> None:
+        if self.poll() is None:
+            with contextlib.suppress(ProcessLookupError):  # it ended since the check
+                self.killpg(self.pid, signum)
+
+    def terminate(self) -> None:
+        """Ask its process group to exit."""
+        self._signal(signal.SIGTERM)
+
+    def kill(self) -> None:
+        """Make its process group exit."""
+        self._signal(signal.SIGKILL)
+
+    def wait(self, timeout: float | None = None) -> int:
+        """Check until it is gone (`GONE`); raise `subprocess.TimeoutExpired` past `timeout`."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while (code := self.poll()) is None:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(f"PID {self.pid}", timeout or 0.0)
+            time.sleep(0.1 if deadline is None else min(0.1, max(deadline - time.monotonic(), 0)))
+        return code
 
 
 def reason_of(events: list[dict[str, Any]], running: Running) -> str:
@@ -868,14 +998,21 @@ def run_git(args: list[str]) -> str:
 
 
 class Sessions:
-    """Start, read and end the lfg sessions, each in its own worktree."""
+    """Start, read, record and end the lfg sessions, each in its own worktree."""
 
     def __init__(self, root: Path, git: Callable[[list[str]], str] = run_git,
-                 spawn: Callable[..., Process] = subprocess.Popen) -> None:
-        """Worktrees under `root`, through `git`; sessions through `spawn`."""
+                 spawn: Callable[..., Process] = subprocess.Popen,
+                 ps: Callable[[int], str | None] = run_ps,
+                 killpg: Callable[[int, int], None] = os.killpg) -> None:
+        """Worktrees under `root` through `git`, sessions through `spawn`, `ps` and `killpg`.
+
+        `ps` reads a process's start time; `killpg` signals a followed session's process group.
+        """
         self.root = root
         self.git = git
         self.spawn = spawn
+        self.ps = ps
+        self.killpg = killpg
 
     def _name(self, issue: int) -> str:
         """`issue-N`, suffixed `-2`, `-3`… while the folder or the branch exists."""
@@ -895,20 +1032,28 @@ class Sessions:
         self.git(["worktree", "add", "-b", name, str(worktree), "origin/main"])
         return self._run(issue, name, worktree, [PROMPT.format(issue=issue)])
 
-    def resume(self, issue: int, marker: Marker) -> Running:
+    def resume(self, issue: int, marker: Marker,
+               start_marks: tuple[str, ...] = UNSTARTED) -> Running:
         """The paused conversation resumed headless in its kept worktree, told the limit is back.
 
-        A missing worktree raises before anything starts.
+        Its checklist continues from `start_marks`. A missing worktree raises before anything
+        starts.
         """
         worktree = self.root / WORKTREES / marker.branch
         if not worktree.is_dir():
             raise FileNotFoundError(f"the worktree {worktree} is gone")
         return self._run(issue, marker.branch, worktree,
-                         ["--resume", marker.session, RESUME_PROMPT.format(issue=issue)], marker)
+                         ["--resume", marker.session, RESUME_PROMPT.format(issue=issue)], marker,
+                         start_marks)
 
     def _run(self, issue: int, branch: str, worktree: Path, args: list[str],
-             resumed: Marker | None = None) -> Running:
-        """`claude -p` with these arguments in the worktree, appending to the issue's log."""
+             resumed: Marker | None = None,
+             start_marks: tuple[str, ...] = UNSTARTED) -> Running:
+        """`claude -p` with these arguments in the worktree, appending to the issue's log.
+
+        Its record is written once it runs; one that can't be written ends it and raises: a
+        session no later dispatcher could follow or stop must not run on.
+        """
         log = self.root / STATE / "logs" / f"issue-{issue}.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a") as output:
@@ -916,7 +1061,55 @@ class Sessions:
             process = self.spawn(["claude", "-p", *args, *FLAGS],
                                  cwd=worktree, stdin=subprocess.DEVNULL, stdout=output,
                                  stderr=subprocess.STDOUT, start_new_session=True)
-        return Running(issue, branch, worktree, log, process, since, time.time(), resumed)
+        running = Running(issue, branch, worktree, log, process, since, time.time(), resumed,
+                          start_marks)
+        try:
+            self._write(Record(issue, process.pid, self.ps(process.pid), branch, worktree, log,
+                               since, running.started, resumed, start_marks))
+        except OSError as error:
+            self.end([running])
+            raise OSError(f"its session record could not be written: {error}") from error
+        return running
+
+    def _record(self, issue: int) -> Path:
+        return self.root / STATE / "sessions" / f"issue-{issue}.json"
+
+    def _write(self, record: Record) -> None:
+        """Write the record to a temporary file, then rename it into place: never half of one."""
+        path = self._record(record.issue)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(record.text())
+        temporary.replace(path)
+
+    def records(self) -> dict[int, Record | None]:
+        """Every session record, by issue; None for one that can't be read."""
+        found: dict[int, Record | None] = {}
+        folder = self.root / STATE / "sessions"
+        for path in sorted(folder.iterdir()) if folder.is_dir() else []:
+            if match := RECORD.fullmatch(path.name):
+                issue = int(match[1])
+                try:
+                    found[issue] = record_of(path.read_text(), issue)
+                except (OSError, UnicodeDecodeError):
+                    found[issue] = None
+        return found
+
+    def follow(self, record: Record) -> Running:
+        """The session a record names, followed again by its PID and start time (`Followed`)."""
+        return Running(record.issue, record.branch, record.worktree, record.log,
+                       Followed(record.pid, record.start, self.ps, self.killpg), record.since,
+                       record.started, record.resumed, record.start_marks)
+
+    def mark_stopped(self, record: Record) -> Record:
+        """Write the record again, marked stopped; the record as now written."""
+        stopped = replace(record, stopped=True)
+        self._write(stopped)
+        return stopped
+
+    def forget(self, issue: int) -> None:
+        """Remove the issue's session record, if there is one."""
+        self._record(issue).unlink(missing_ok=True)
 
     def _events(self, running: Running) -> list[dict[str, Any]]:
         """This session's part of the log as its top-level `stream-json` events, in order.
@@ -1003,6 +1196,7 @@ class Dispatcher:
         self.running: dict[int, Running] = {}
         self.branches: dict[int, str] = {}  # issues in review: the branch their session pushed
         self.pending: list[Action] = []  # failed actions no later poll would redo: the next's
+        self.judged: set[int] = set()  # ended sessions whose records go once nothing is pending
 
     def start(self) -> None:
         """Say what it watches, create the missing labels, mark the issues left in progress.
@@ -1074,7 +1268,7 @@ class Dispatcher:
         """
         now = self.clock()
         self.say("dispatcher: poll: reading GitHub...")
-        self.pending = [action for action in self.pending if not self.apply(action)]
+        self.retry()
         try:
             snapshot, over = self.snapshot()
         except (GhError, ValueError, KeyError) as error:
@@ -1137,10 +1331,30 @@ class Dispatcher:
                      f"{local_time(hold.until)}")
 
     def settle(self, ended: Iterable[Ended]) -> None:
-        """Apply the ended sessions' verdicts: no later poll judges them, so a failed one waits."""
+        """Apply the ended sessions' verdicts: no later poll judges them, so a failed one waits.
+
+        Each one's record goes once its verdict is applied in full.
+        """
         for session in ended:
             for action in judge(session):
                 self.final(action)
+            self.judged.add(session.issue)
+        self.tidy()
+
+    def retry(self) -> None:
+        """Apply the actions that failed before; the records whose verdicts are now in full go."""
+        self.pending = [action for action in self.pending if not self.apply(action)]
+        self.tidy()
+
+    def tidy(self) -> None:
+        """Remove the records of the judged sessions with nothing pending for their issues.
+
+        A record kept survives a restart, so its session is judged again.
+        """
+        waiting = {action.issue for action in self.pending}
+        for issue in self.judged - waiting:
+            self.sessions.forget(issue)
+        self.judged &= waiting
 
     def final(self, action: Action) -> None:
         """Apply an action no later poll would redo: a failed one waits in `pending`."""
@@ -1207,17 +1421,17 @@ class Dispatcher:
                               create=True))
             return
         self.running[issue] = running
-        pid = getattr(running.process, "pid", "?")
-        self.say(f"dispatcher: #{issue}: claude started (PID {pid}) in {running.worktree}, "
-                 f"log {running.log}")
+        self.judged.discard(issue)  # its record is this session's now, not the last one's
+        self.say(f"dispatcher: #{issue}: claude started (PID {running.process.pid}) in "
+                 f"{running.worktree}, log {running.log}")
         self.apply(self.running_report(running))
 
     def resume(self, issue: int) -> None:
         """In progress, then the paused conversation; one that cannot resume needs attention.
 
         Without a valid marker there is nothing to resume. The checklist continues from the
-        status comment's marks. A failed read or label swap raises before the session:
-        the issue stays `paused` for the next poll.
+        status comment's marks, which the session's record holds. A failed read or label swap
+        raises before the session: the issue stays `paused` for the next poll.
         """
         marker = self.gh.marker(issue)
         if marker is None:
@@ -1230,13 +1444,13 @@ class Dispatcher:
         self.gh.move(Move(issue, (PAUSED, READY, NEEDS_ATTENTION), (IN_PROGRESS,)))
         self.say(f"dispatcher: #{issue} -> {IN_PROGRESS}")
         try:
-            running = self.sessions.resume(issue, marker)
+            running = self.sessions.resume(issue, marker, marks_resumed(stored))
         except OSError as error:
             self.apply(needs_attention(issue, f"the paused session could not resume: {error}"))
             self.final(Report(issue, Status(NEEDS_ATTENTION), marks_stopped))
             return
-        running = replace(running, start_marks=marks_resumed(stored))
         self.running[issue] = running
+        self.judged.discard(issue)  # its record is this session's now, not the last one's
         self.say(f"dispatcher: #{issue} resumed in {running.worktree}, log {running.log}")
         self.apply(self.running_report(running))
 
@@ -1246,7 +1460,7 @@ class Dispatcher:
         The verdicts that failed at earlier polls get one last try: no poll follows. A stopped
         session's status comment fails the stage its log reached.
         """
-        self.pending = [action for action in self.pending if not self.apply(action)]
+        self.retry()
         live: list[Running] = []
         ended: list[Running] = []
         for running in self.running.values():

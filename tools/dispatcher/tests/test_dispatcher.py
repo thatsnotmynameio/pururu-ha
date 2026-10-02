@@ -3,6 +3,7 @@
 from collections.abc import Callable, Iterator
 import dataclasses
 from datetime import datetime
+import itertools
 import json
 import os
 from pathlib import Path
@@ -529,7 +530,10 @@ class FakeGit:
 
 
 class FakeProcess:
+    pids = itertools.count(4000)  # each one's PID, never one a real process is known to have
+
     def __init__(self, *, stubborn: bool = False) -> None:
+        self.pid = next(self.pids)
         self.stubborn = stubborn
         self.signals: list[str] = []
         self.returncode: int | None = None
@@ -554,15 +558,57 @@ class FakeProcess:
 class FakeSpawn:
     def __init__(self) -> None:
         self.calls: list[tuple[list[str], dict[str, Any]]] = []
+        self.processes: list[FakeProcess] = []
 
     def __call__(self, args: list[str], **options: Any) -> FakeProcess:
         self.calls.append((args, options))
-        return FakeProcess()
+        self.processes.append(FakeProcess())
+        return self.processes[-1]
+
+
+START = "Thu Oct  1 18:10:00 2026"  # what `ps -o lstart=` prints under TZ=UTC and LC_ALL=C
+
+
+class FakePs:
+    """`ps -o lstart=` for one PID: its start time in `starts` (None: gone), else `default`."""
+
+    def __init__(self) -> None:
+        self.starts: dict[int, str | None] = {}
+        self.default: str | None = START
+        self.calls: list[int] = []
+
+    def __call__(self, pid: int) -> str | None:
+        self.calls.append(pid)
+        return self.starts.get(pid, self.default)
+
+
+class FakeKillpg:
+    """`os.killpg`: records each signal; a group sent SIGTERM or SIGKILL is gone from `ps`,
+    unless `stubborn` and only terminated."""
+
+    def __init__(self, ps: FakePs, *, stubborn: bool = False) -> None:
+        self.ps = ps
+        self.stubborn = stubborn
+        self.calls: list[tuple[int, int]] = []
+
+    def __call__(self, pid: int, signum: int) -> None:
+        self.calls.append((pid, signum))
+        if signum == signal.SIGKILL or not self.stubborn:
+            self.ps.starts[pid] = None
 
 
 def sessions(tmp_path: Path, git: FakeGit) -> tuple[dispatcher.Sessions, FakeSpawn]:
+    """Sessions over fakes: `git`, a spawn, `ps` and `killpg` (`fakes` gives the last two)."""
     spawn = FakeSpawn()
-    return dispatcher.Sessions(tmp_path, git, spawn), spawn
+    ps = FakePs()
+    return dispatcher.Sessions(tmp_path, git, spawn, ps, FakeKillpg(ps)), spawn
+
+
+def fakes(runner: dispatcher.Sessions) -> tuple[FakePs, FakeKillpg]:
+    """The fake `ps` and `killpg` a runner from `sessions` reads and signals through."""
+    assert isinstance(runner.ps, FakePs)
+    assert isinstance(runner.killpg, FakeKillpg)
+    return runner.ps, runner.killpg
 
 
 def test_a_session_starts_in_a_new_worktree_from_origin_main(tmp_path: Path) -> None:
@@ -1260,6 +1306,164 @@ def test_worktrees_by_issue(tmp_path: Path) -> None:
                                        f"{tmp_path}/.claude/worktrees/issue-74-2"]}
 
 
+# Session records
+
+def record_file(tmp_path: Path, issue: int) -> Path:
+    return tmp_path / dispatcher.STATE / f"sessions/issue-{issue}.json"
+
+
+def test_a_started_session_writes_its_record(tmp_path: Path) -> None:
+    """KTD1: what a later dispatcher needs to follow it, renamed into place whole."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    running = runner.start(74)
+    assert json.loads(record_file(tmp_path, 74).read_text()) == {
+        "issue": 74, "pid": running.process.pid, "start": START, "branch": "issue-74",
+        "worktree": str(tmp_path / ".claude/worktrees/issue-74"),
+        "log": str(tmp_path / dispatcher.STATE / "logs/issue-74.log"), "since": 0,
+        "started": running.started, "resumed": None, "start_marks": list(dispatcher.UNSTARTED),
+        "stopped": False}
+    assert [path.name for path in record_file(tmp_path, 74).parent.iterdir()] == [
+        "issue-74.json"]
+
+
+def test_a_resumed_session_records_its_marker_and_the_marks_it_continues_from(
+        tmp_path: Path) -> None:
+    (tmp_path / ".claude/worktrees/issue-70-2").mkdir(parents=True)
+    runner, _ = sessions(tmp_path, FakeGit())
+    marker = Marker(SESSION, "issue-70-2", 1759350600)
+    resumed = marks("done", "done", "current")
+    running = runner.resume(70, marker, resumed)
+    assert running.start_marks == resumed
+    record = json.loads(record_file(tmp_path, 70).read_text())
+    assert record["resumed"] == {"session": SESSION, "branch": "issue-70-2", "reset": 1759350600}
+    assert record["start_marks"] == list(resumed)
+    assert (record["branch"], record["pid"]) == ("issue-70-2", running.process.pid)
+
+
+def test_a_record_round_trips_into_a_running_session(tmp_path: Path) -> None:
+    """R3: an earlier dispatcher's session, followed by PID while `ps` gives its start time."""
+    (tmp_path / ".claude/worktrees/issue-70").mkdir(parents=True)
+    runner, _ = sessions(tmp_path, FakeGit())
+    started = runner.resume(70, limit(70), marks("done", "current"))
+    record = runner.records()[70]
+    assert record is not None
+    followed = runner.follow(record)
+    assert dataclasses.replace(followed, process=started.process) == started
+    assert followed.process.pid == started.process.pid
+    assert followed.process.poll() is None
+    assert followed.process.returncode is None
+
+
+def test_the_same_pid_with_another_start_time_is_not_the_session(tmp_path: Path) -> None:
+    """R6: a process that merely reuses the PID."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    ps, _ = fakes(runner)
+    ps.starts[pid] = "Thu Oct  1 19:42:07 2026"
+    process = runner.follow(record).process
+    assert process.poll() is not None
+    assert process.returncode is None
+
+
+def test_a_dead_pid_is_not_running_and_its_exit_code_stays_unknown(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    ps, _ = fakes(runner)
+    ps.starts[pid] = None
+    process = runner.follow(record).process
+    assert process.poll() is not None
+    assert process.returncode is None
+
+
+def test_a_followed_session_is_signalled_through_its_process_group(tmp_path: Path) -> None:
+    """KTD2: the tools the session spawned end with it; `end` works on it unchanged."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    ps, killpg = fakes(runner)
+    followed = runner.follow(record)
+    runner.end([followed])
+    assert killpg.calls == [(pid, signal.SIGTERM)]
+    assert followed.process.poll() is not None
+    followed.process.terminate()
+    followed.process.kill()
+    assert killpg.calls == [(pid, signal.SIGTERM)]  # a group gone is never signalled again
+    ps.starts[pid] = START
+    killpg.stubborn = True
+    followed.process.terminate()
+    with pytest.raises(subprocess.TimeoutExpired):
+        followed.process.wait(0)
+    followed.process.kill()
+    assert killpg.calls == [(pid, signal.SIGTERM), (pid, signal.SIGTERM), (pid, signal.SIGKILL)]
+    assert followed.process.wait(0) is not None
+
+
+def test_a_record_is_marked_stopped_and_removed(tmp_path: Path) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    runner.start(74)
+    runner.start(75)
+    record = runner.records()[74]
+    assert record is not None
+    assert runner.mark_stopped(record) == dataclasses.replace(record, stopped=True)
+    assert runner.records() == {74: dataclasses.replace(record, stopped=True),
+                                75: runner.records()[75]}
+    assert json.loads(record_file(tmp_path, 74).read_text())["stopped"] is True
+    runner.forget(74)
+    runner.forget(74)
+    assert list(runner.records()) == [75]
+
+
+@pytest.mark.parametrize("text", ["{", "[]", '{"issue": 74}',
+                                  '{"issue": 74, "pid": 0, "start": null, "branch": "issue-74", '
+                                  '"worktree": "/w", "log": "/l", "since": 0, "started": 0, '
+                                  '"resumed": null, "start_marks": [], "stopped": false}'])
+def test_an_unreadable_record_reads_as_none(tmp_path: Path, text: str) -> None:
+    """A record damaged from outside is no record, never a PID to signal (0 is our own group)."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    record_file(tmp_path, 74).parent.mkdir(parents=True)
+    record_file(tmp_path, 74).write_text(text)
+    assert runner.records() == {74: None}
+
+
+def test_the_start_time_is_read_in_utc_and_the_c_locale(tmp_path: Path,
+                                                        monkeypatch: pytest.MonkeyPatch) -> None:
+    """KTD2: `lstart` follows the reader's zone and locale; both readings pin them."""
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(args: list[str], **options: Any) -> subprocess.CompletedProcess[str]:
+        calls.append((args, options["env"]))
+        return subprocess.CompletedProcess(args, 0, START + "\n", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    spawn = FakeSpawn()
+    runner = dispatcher.Sessions(tmp_path, FakeGit(), spawn, killpg=FakeKillpg(FakePs()))
+    pid = runner.start(74).process.pid
+    record = runner.records()[74]
+    assert record is not None
+    assert record.start == START
+    assert runner.follow(record).process.poll() is None
+    assert [args for args, _ in calls] == [["ps", "-o", "lstart=", "-p", str(pid)]] * 2
+    assert all((env["TZ"], env["LC_ALL"]) == ("UTC", "C") for _, env in calls)
+
+
+def test_a_session_whose_start_time_cannot_be_read_still_has_its_record(tmp_path: Path) -> None:
+    """It exited at once: its record never matches a process, so a later dispatcher judges it."""
+    runner, _ = sessions(tmp_path, FakeGit())
+    ps, _ = fakes(runner)
+    ps.default = None
+    runner.start(74)
+    ps.default = START
+    record = runner.records()[74]
+    assert record is not None
+    assert record.start is None
+    assert runner.follow(record).process.poll() is not None
+
+
 # The command
 
 @dataclasses.dataclass(frozen=True)
@@ -1912,6 +2116,88 @@ def test_a_pause_that_fails_to_write_still_holds_and_is_retried_once(tmp_path: P
     boss.poll()
     assert moves(gh) == [(70, (IN_PROGRESS,)), (70, (PAUSED,))]
     assert len(spawn.calls) == 1
+
+
+# Session records across the command
+
+def test_a_verdict_applied_in_full_removes_the_record(tmp_path: Path) -> None:
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    assert record_file(tmp_path, 74).exists()
+    boss.poll()
+    assert (74, (IN_REVIEW,)) in moves(gh)
+    assert not record_file(tmp_path, 74).exists()
+
+
+def test_a_verdict_whose_move_fails_keeps_the_record_until_its_retry(tmp_path: Path) -> None:
+    """KTD1: a verdict that fails survives a restart, judged again from its record."""
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"move"}
+    boss.poll()
+    assert record_file(tmp_path, 74).exists()
+    boss.poll()
+    assert (74, (IN_REVIEW,)) in moves(gh)
+    assert not record_file(tmp_path, 74).exists()
+
+
+def test_a_status_report_that_fails_keeps_the_record_until_its_retry(tmp_path: Path) -> None:
+    gh = FakeGitHub(head={"issue-74": (PR,)})
+    boss = ended_session(tmp_path, gh)
+    gh.flaky = {"status #74"}
+    boss.poll()
+    assert (74, (IN_REVIEW,)) in moves(gh)
+    assert record_file(tmp_path, 74).exists()
+    boss.poll()
+    assert not record_file(tmp_path, 74).exists()
+
+
+def test_a_new_session_keeps_its_record_when_the_last_ones_verdict_clears(tmp_path: Path) -> None:
+    """#70 paused, its report failed; resumed in the same poll: the retry leaves the new record."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({READY: [(ready(70), ())]}, markers={70: limit(70)})
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    exits(boss, 70, *AT_LIMIT)
+    gh.answers = {PAUSED: [(paused(70), ())]}
+    gh.flaky = {"status #70"}
+    boss.poll()
+    assert [args[2] for args, _ in spawn.calls][1:] == ["--resume"]
+    gh.answers = {}
+    boss.poll()
+    assert json.loads(record_file(tmp_path, 70).read_text())["pid"] == spawn.processes[-1].pid
+
+
+@pytest.mark.parametrize("paused_one", [False, True], ids=["dispatched", "resumed"])
+def test_a_record_that_cannot_be_written_ends_the_session_and_needs_attention(
+        tmp_path: Path, paused_one: bool) -> None:
+    """A session no later dispatcher could follow or stop must not run on."""
+    record_file(tmp_path, 74).parent.parent.mkdir(parents=True)
+    record_file(tmp_path, 74).parent.write_text("a file where the records go")
+    worktrees(tmp_path, "issue-74")
+    gh = (FakeGitHub({PAUSED: [(paused(74), ())]}, markers={74: limit(74)}) if paused_one
+          else FakeGitHub({READY: [(ready(74), ())]}))
+    boss, spawn = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    process, = spawn.processes
+    assert process.signals == ["terminate"]
+    assert moves(gh) == [(74, (IN_PROGRESS,)), (74, (NEEDS_ATTENTION,))]
+    comment = last_move(gh).comment or ""
+    assert "could not " + ("resume" if paused_one else "start") in comment
+    assert "record" in comment
+    assert boss.running == {}
+
+
+def test_a_resumed_sessions_record_holds_the_marks_it_continues_from(tmp_path: Path) -> None:
+    """The record carries the checklist a later dispatcher reports from."""
+    worktrees(tmp_path, "issue-70")
+    gh = FakeGitHub({PAUSED: [(paused(70), ())]}, markers={70: limit(70)},
+                    comments={70: body_of(PAUSED, marks("done", "done", "paused"))})
+    boss, _ = boss_at(tmp_path, gh, 1, Clock(at(20, 35)), [])
+    boss.poll()
+    assert boss.running[70].start_marks == marks("done", "done", "current")
+    assert json.loads(record_file(tmp_path, 70).read_text())["start_marks"] == list(
+        marks("done", "done", "current"))
 
 
 # The status comment at each step
