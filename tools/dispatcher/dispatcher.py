@@ -6,6 +6,7 @@
 
 Usage:
     python3 tools/dispatcher/dispatcher.py run [--sessions N] [--every SECONDS]
+    python3 tools/dispatcher/dispatcher.py stop
 
 Polls this repository's open issues opened by the user `gh` is logged in as and
 labelled `ready`, oldest first, skipping any still blocked by an open issue. Each
@@ -27,12 +28,17 @@ issues stay `in progress`, and the next start follows them. A session that ended
 dispatcher ran is judged at the next start; one gone without a final result is paused as
 interrupted and resumes like any paused one. Paused issues stay paused, and the next start
 resumes them from GitHub alone.
+
+`stop` ends everything: a running dispatcher first (SIGTERM to the PID in the lock), then
+every session any run started, each issue moving to `paused` as stopped, which the next `run`
+resumes. A session whose issue isn't `in progress` is ended too, its labels untouched.
 """
 
 import argparse
 from collections.abc import Callable, Iterable, Mapping
 import contextlib
 from dataclasses import dataclass, replace
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -1493,12 +1499,14 @@ class Dispatcher:
             self.final(action)
         self.judged.add(issue)
 
-    def conclude(self, record: Record) -> None:
+    def conclude(self, record: Record,
+                 said: str = "session ended while no dispatcher ran") -> None:
         """Judge a recorded session that ended while no dispatcher watched it, and say how.
 
         As at start (`judge`): the record's `stopped` flag pauses it as stopped, and no final
         result pauses it as interrupted. Its record goes once the verdict is applied in full.
         A failure to read GitHub raises, the record kept, so the next start judges it again.
+        `said` is what the line says happened to it, before its verdict.
         """
         session = self.read(self.sessions.follow(record), stopped=record.stopped,
                             at_start=True)
@@ -1508,7 +1516,7 @@ class Dispatcher:
         if status.state == PAUSED:
             told = ("paused at the usage limit" if status.cause == LIMIT
                     else f"paused as {status.cause}")
-        self.say(f"dispatcher: #{record.issue} session ended while no dispatcher ran: {told}")
+        self.say(f"dispatcher: #{record.issue} {said}: {told}")
         self.decide(record.issue, verdict)
         self.tidy()
 
@@ -1656,33 +1664,131 @@ class Dispatcher:
         self.running.clear()
 
 
-def alive(pid: int) -> bool:
-    """Whether a process with this PID exists."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+WAIT = 60.0  # seconds `stop` waits for a running dispatcher to leave and release the lock
 
 
-def take(lock: Path) -> bool:
-    """Hold the lock for this process, unless a live dispatcher holds it."""
+def take(lock: Path) -> int | None:
+    """Hold the lock, an flock on its file, with this process's PID written inside.
+
+    None while another holds it, its PID left as written. The descriptor returned holds it until
+    it is closed or the process ends, a crash or a restart included: the kernel drops it then.
+    It is not inherited, so a session outliving its dispatcher never holds it. The file is never
+    removed: an flock belongs to the file, and a new file at the path would be a second lock.
+    """
     lock.parent.mkdir(parents=True, exist_ok=True)
-    for _ in range(2):
-        try:
-            descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            holder = lock.read_text().strip()
-            if holder.isdigit() and alive(int(holder)):
-                return False
-            lock.unlink(missing_ok=True)  # a dead dispatcher's lock
+    descriptor = os.open(lock, os.O_RDWR | os.O_CREAT)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(descriptor)
+        return None
+    os.ftruncate(descriptor, 0)
+    os.pwrite(descriptor, str(os.getpid()).encode(), 0)
+    return descriptor
+
+
+def oust(lock: Path, say: Callable[[str], None], kill: Callable[[int, int], None],
+         clock: Callable[[], float], sleep: Callable[[float], None]) -> int | None:
+    """Take the lock for `stop`: free, at once; held, once its holder left on SIGTERM.
+
+    The PID is read only while someone holds the lock, so it is that live process's. None when
+    the holder didn't let go within `WAIT` seconds, or its PID can't be read.
+    """
+    descriptor = take(lock)
+    if descriptor is not None:
+        say("dispatcher: no dispatcher runs")
+        return descriptor
+    pid = lock.read_text().strip()
+    if not pid.isdigit() or int(pid) <= 0:  # PID 0 would signal this process's own group
+        say(f"dispatcher: {lock} is held, but names no PID; nothing was changed")
+        return None
+    say(f"dispatcher: stopping the dispatcher (PID {pid})...")
+    with contextlib.suppress(ProcessLookupError):  # it ended since
+        kill(int(pid), signal.SIGTERM)
+    deadline = clock() + WAIT
+    while (descriptor := take(lock)) is None:
+        if clock() >= deadline:
+            say(f"dispatcher: the dispatcher (PID {pid}) did not stop within {WAIT:g}s; "
+                "nothing was changed")
+            return None
+        sleep(0.1)
+    say(f"dispatcher: the dispatcher (PID {pid}) stopped")
+    return descriptor
+
+
+def halt(lock: Path, boss: Dispatcher, *, kill: Callable[[int, int], None] = os.kill,
+         clock: Callable[[], float] = time.monotonic,
+         sleep: Callable[[float], None] = time.sleep) -> int:
+    """`dispatcher.py stop`: a running dispatcher first, then every session; 0 when all is done.
+
+    It holds the lock for its whole run, so no dispatcher starts in the middle. A dispatcher
+    that doesn't leave ends nothing (1). Each live session's record is marked stopped, then its
+    process group ends (`Sessions.end`). Each record of an issue in progress is then judged as
+    at start (`Dispatcher.conclude`): stopped ones pause as stopped, ones already gone without
+    a final result as interrupted. One whose issue isn't in progress moves no label: its session
+    ends and its record goes. Whatever GitHub refused waits, marked stopped, for the next start
+    to judge again (1): no poll follows.
+    """
+    descriptor = oust(lock, boss.say, kill, clock, sleep)
+    if descriptor is None:
+        return 1
+    try:
+        return halted(boss)
+    finally:
+        os.close(descriptor)
+
+
+def halted(boss: Dispatcher) -> int:
+    """End every recorded session and judge each issue in progress; `halt`'s, under the lock."""
+    say, sessions = boss.say, boss.sessions
+    found = sessions.records()
+    if not found:
+        say("dispatcher: no session runs")
+        return 0
+    records: dict[int, Record] = {}
+    for issue, record in found.items():
+        if record is None:
+            say(f"dispatcher: #{issue}: its session record {sessions.record(issue)} "
+                "cannot be read")
+        else:
+            records[issue] = record
+    if not records:
+        return 0
+    live = {issue: sessions.mark_stopped(record) for issue, record in records.items()
+            if sessions.follow(record).process.poll() is None}
+    records |= live
+    if live:
+        say("dispatcher: ending the sessions of "
+            + ", ".join(f"#{issue} (PID {record.pid})" for issue, record in live.items())
+            + "...")
+        sessions.end([sessions.follow(record) for record in live.values()])
+    try:
+        progressing = {issue.number for issue, _ in boss.gh.issues(IN_PROGRESS)}
+    except (GhError, ValueError, KeyError) as error:
+        say(f"dispatcher: GitHub could not be read ({error}); the sessions ended, "
+            "the next start judges them")
+        return 1
+    unread = False
+    for issue, record in records.items():
+        if issue not in progressing:
+            sessions.forget(issue)
+            say(f"dispatcher: #{issue} is not in progress: "
+                + ("its session ended, no label moved" if issue in live
+                   else "its session is gone, its record removed"))
             continue
-        with os.fdopen(descriptor, "w") as file:
-            file.write(str(os.getpid()))
-        return True
-    return False
+        try:
+            if record.stopped:
+                boss.conclude(record, "session stopped")
+            else:
+                boss.conclude(record)
+        except (GhError, ValueError, KeyError) as error:
+            say(f"dispatcher: #{issue}: GitHub could not be read ({error}); "
+                "the next start judges it")
+            unread = True
+    boss.retry()
+    for issue in sorted({action.issue for action in boss.pending}):
+        say(f"dispatcher: #{issue}: a write failed; the next start judges it again")
+    return 1 if unread or boss.pending else 0
 
 
 def serve(boss: Dispatcher, every: float) -> None:
@@ -1713,23 +1819,27 @@ def serve(boss: Dispatcher, every: float) -> None:
 
 
 def main(argv: list[str]) -> int:
-    """Run `run`; refuse when another dispatcher runs."""
-    if len(argv) < 2 or argv[1] != "run":
+    """Run `run` or `stop`; `run` refuses while another holds the lock."""
+    if len(argv) < 2 or argv[1] not in ("run", "stop"):
         print(__doc__)
         return 2
+    lock = ROOT / STATE / "lock"
+    if argv[1] == "stop":
+        argparse.ArgumentParser(prog="dispatcher.py stop").parse_args(argv[2:])
+        return halt(lock, Dispatcher(GitHub(), Sessions(ROOT), 0))
     parser = argparse.ArgumentParser(prog="dispatcher.py run")
     parser.add_argument("--sessions", type=int, default=SESSIONS)
     parser.add_argument("--every", type=float, default=EVERY)
     options = parser.parse_args(argv[2:])
-    lock = ROOT / STATE / "lock"
-    if not take(lock):
-        print(f"dispatcher: another dispatcher runs (PID {lock.read_text().strip()}); "
-              f"stop it first, or remove {lock} if it is gone")
+    held = take(lock)
+    if held is None:
+        print(f"dispatcher: another dispatcher, or `dispatcher.py stop`, runs "
+              f"(PID {lock.read_text().strip()}); `dispatcher.py stop` stops a dispatcher")
         return 1
     try:
         serve(Dispatcher(GitHub(), Sessions(ROOT), options.sessions), options.every)
     finally:
-        lock.unlink(missing_ok=True)
+        os.close(held)  # releases the lock, as the process's end would; the file stays (`take`)
     return 0
 
 

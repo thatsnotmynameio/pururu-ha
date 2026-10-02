@@ -1,8 +1,10 @@
 """tools/dispatcher/dispatcher.py: the author's ready issues become pull requests."""
 
 from collections.abc import Callable, Iterator
+import contextlib
 import dataclasses
 from datetime import datetime
+import fcntl
 import itertools
 import json
 import os
@@ -1749,6 +1751,8 @@ class FakeGitHub:
         return "me"
 
     def issues(self, label: str) -> list[tuple[Issue, tuple[PullRequest, ...]]]:
+        """The issues with this label; `issues <label>` in `flaky` fails it once."""
+        self._flake(f"issues {label}")
         return self.answers.get(label, [])
 
     def head(self, branch: str) -> tuple[PullRequest, ...]:
@@ -1825,30 +1829,68 @@ def shown(gh: FakeGitHub, issue: int) -> list[tuple[str, tuple[str, ...] | None]
             if isinstance(write, Wrote) and write.issue == issue]
 
 
-def test_misuse_prints_the_usage(capsys: pytest.CaptureFixture[str]) -> None:
-    assert dispatcher.main(["dispatcher.py"]) == 2
-    assert "python3 tools/dispatcher/dispatcher.py run" in capsys.readouterr().out
+@pytest.mark.parametrize("argv", [["dispatcher.py"], ["dispatcher.py", "start"]])
+def test_misuse_prints_the_usage(capsys: pytest.CaptureFixture[str], argv: list[str]) -> None:
+    assert dispatcher.main(argv) == 2
+    out = capsys.readouterr().out
+    assert "python3 tools/dispatcher/dispatcher.py run" in out
+    assert "python3 tools/dispatcher/dispatcher.py stop" in out
+
+
+@pytest.fixture
+def locks() -> Iterator[list[int]]:
+    """The lock descriptors a test holds, closed after it: closing releases the flock."""
+    held: list[int] = []
+    yield held
+    for descriptor in held:
+        with contextlib.suppress(OSError):
+            os.close(descriptor)
+
+
+def hold(lock: Path, locks: list[int], pid: int | None = None) -> int:
+    """Hold the lock as another process would (an open file description of its own), its PID
+    `pid` written inside, if given."""
+    descriptor = dispatcher.take(lock)
+    assert descriptor is not None
+    locks.append(descriptor)
+    if pid is not None:
+        os.ftruncate(descriptor, 0)
+        os.pwrite(descriptor, str(pid).encode(), 0)
+    return descriptor
 
 
 def test_a_second_dispatcher_refuses_to_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-                                              capsys: pytest.CaptureFixture[str]) -> None:
+                                              capsys: pytest.CaptureFixture[str],
+                                              locks: list[int]) -> None:
+    """KTD6: it says the holder's PID, which its refusal leaves as it was."""
     lock = tmp_path / dispatcher.STATE / "lock"
-    lock.parent.mkdir(parents=True)
-    lock.write_text(str(os.getpid()))
+    hold(lock, locks, 4242)
     monkeypatch.setattr(dispatcher, "ROOT", tmp_path)
     monkeypatch.setattr(dispatcher, "GitHub", lambda: pytest.fail("no gh call when refusing"))
     assert dispatcher.main(["dispatcher.py", "run"]) == 1
-    assert str(os.getpid()) in capsys.readouterr().out
+    assert "(PID 4242)" in capsys.readouterr().out
+    assert lock.read_text() == "4242"
 
 
-def test_a_dead_dispatchers_lock_is_taken_over(tmp_path: Path) -> None:
-    gone = subprocess.Popen(["true"])
-    gone.wait()
+def test_a_lock_file_left_by_a_dead_process_does_not_block(tmp_path: Path,
+                                                           locks: list[int]) -> None:
+    """KTD6: the kernel dropped its flock; only a live holder refuses the next."""
     lock = tmp_path / "lock"
-    lock.write_text(str(gone.pid))
-    assert dispatcher.take(lock)
+    lock.write_text("999999")
+    descriptor = dispatcher.take(lock)
+    assert descriptor is not None
+    locks.append(descriptor)
     assert lock.read_text() == str(os.getpid())
-    assert not dispatcher.take(lock)
+    assert dispatcher.take(lock) is None
+    assert lock.read_text() == str(os.getpid())
+
+
+def test_the_lock_is_not_inherited_by_the_sessions(tmp_path: Path, locks: list[int]) -> None:
+    """A session outliving its dispatcher must not keep the lock: `stop` waits for it."""
+    descriptor = dispatcher.take(tmp_path / "lock")
+    assert descriptor is not None
+    locks.append(descriptor)
+    assert not os.get_inheritable(descriptor)
 
 
 def test_start_marks_the_orphans_before_the_first_poll(tmp_path: Path) -> None:
@@ -2909,24 +2951,36 @@ def command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     return tmp_path / dispatcher.STATE / "lock"
 
 
-def test_the_lock_is_held_while_serving_and_released_after(tmp_path: Path,
-                                                           monkeypatch: pytest.MonkeyPatch) -> None:
-    held: list[bool] = []
-    lock = command(tmp_path, monkeypatch, lambda boss, every: held.append(lock.exists()))
+def test_the_lock_is_held_while_serving_and_its_file_stays_after(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, locks: list[int]) -> None:
+    """KTD6: a process waiting on the lock file while the dispatcher runs gets the lock on
+    the same file once it exits: the file is never removed."""
+    waiting: list[int] = []
+
+    def serve(boss: object, every: float) -> None:
+        assert lock.read_text() == str(os.getpid())
+        waiting.append(os.open(lock, os.O_RDWR))
+        locks.append(waiting[0])
+        with pytest.raises(BlockingIOError):
+            fcntl.flock(waiting[0], fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    lock = command(tmp_path, monkeypatch, serve)
     assert dispatcher.main(["dispatcher.py", "run", "--every", "0"]) == 0
-    assert held == [True]
-    assert not lock.exists()
+    assert lock.exists()
+    fcntl.flock(waiting[0], fcntl.LOCK_EX | fcntl.LOCK_NB)
+    assert os.fstat(waiting[0]).st_ino == lock.stat().st_ino
 
 
-def test_the_lock_is_released_when_serving_fails(tmp_path: Path,
-                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_lock_is_released_when_serving_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                 locks: list[int]) -> None:
     def serve(boss: object, every: float) -> None:
         raise RuntimeError("a bug")
 
     lock = command(tmp_path, monkeypatch, serve)
     with pytest.raises(RuntimeError, match="a bug"):
         dispatcher.main(["dispatcher.py", "run", "--every", "0"])
-    assert not lock.exists()
+    assert lock.exists()
+    hold(lock, locks)
 
 
 # What it says (the command's output)
@@ -3464,3 +3518,322 @@ def test_the_dispatcher_is_updated_while_a_session_runs(tmp_path: Path) -> None:
     assert not record_file(tmp_path, 70).exists()
     assert killpg.calls == []
     assert boss.running == {}
+
+
+# The stop command
+
+class Waits:
+    """`stop`'s wait for the lock: a clock its sleeps move; `then` runs at the `at`th sleep."""
+
+    def __init__(self, at: int | None = None, then: Callable[[], None] = lambda: None) -> None:
+        self.now = 0.0
+        self.slept = 0
+        self.at = at
+        self.then = then
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept += 1
+        self.now += seconds
+        if self.slept == self.at:
+            self.then()
+
+
+def halts(tmp_path: Path, boss: dispatcher.Dispatcher, *,
+          kill: Callable[[int, int], None] | None = None, waits: Waits | None = None) -> int:
+    """`dispatcher.py stop` over this state folder; no real process is ever signalled."""
+    def refuse(pid: int, signum: int) -> None:
+        pytest.fail(f"no dispatcher to signal, yet PID {pid} was")
+
+    waits = waits or Waits()
+    return dispatcher.halt(tmp_path / dispatcher.STATE / "lock", boss, kill=kill or refuse,
+                           clock=waits.clock, sleep=waits.sleep)
+
+
+def pause_moves(gh: FakeGitHub) -> dict[int, Move]:
+    """Each issue's last move to paused."""
+    return {write.issue: write for write in gh.writes
+            if isinstance(write, Move) and write.add == (PAUSED,)}
+
+
+def test_stop_ends_every_session_pauses_each_issue_and_the_next_run_resumes_them(
+        tmp_path: Path) -> None:
+    """AE6, R10, R12, KTD9: both process groups end, both issues go paused as stopped, their
+    status comments say so, and the next start resumes both with the stopped prompt."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70, 73)
+    worktrees(tmp_path, "issue-70", "issue-73")
+    writes_log(tmp_path, 70, INIT, *(json.dumps(event) for event in AE2_EVENTS))
+    writes_log(tmp_path, 73, INIT)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert killpg.calls == [(pids[70], signal.SIGTERM), (pids[73], signal.SIGTERM)]
+    assert moves(gh)[2:] == [(70, (PAUSED,)), (73, (PAUSED,))]
+    paused_by = pause_moves(gh)
+    for issue in (70, 73):
+        assert dispatcher.marker_of(paused_by[issue].comment or "", issue) == cause(issue, STOPPED)
+        assert shown(gh, issue)[-1][0] == PAUSED
+        body = [write.body for write in wrote(gh) if write.issue == issue][-1]
+        assert "stopped with `dispatcher.py stop`" in body
+        assert not record_file(tmp_path, issue).exists()
+    assert shown(gh, 70)[-1] == (PAUSED, marks("done", "done", "paused"))
+    assert lines == [
+        "dispatcher: no dispatcher runs",
+        f"dispatcher: ending the sessions of #70 (PID {pids[70]}), #73 (PID {pids[73]})...",
+        "dispatcher: #70 session stopped: paused as stopped",
+        "dispatcher: #70 -> paused",
+        "dispatcher: #73 session stopped: paused as stopped",
+        "dispatcher: #73 -> paused"]
+    gh.answers = {PAUSED: [(paused(70), ()), (paused(73), ())]}
+    gh.records = {issue: cause(issue, STOPPED) for issue in (70, 73)}
+    again, spawn, _, _ = restarted(tmp_path, gh, 2, Clock(at(15, 5)), [])
+    again.start()
+    again.poll()
+    assert [(args[3], options["cwd"].name) for args, options in resumes(spawn)] == [
+        (SESSION, "issue-70"), (SESSION, "issue-73")]
+    assert all("was stopped with `dispatcher.py stop`" in args[4]
+               for args, _ in resumes(spawn))
+    assert NEEDS_ATTENTION not in [label for _, added in moves(gh) for label in added]
+
+
+def test_stop_stops_a_running_dispatcher_before_the_sessions(tmp_path: Path,
+                                                             locks: list[int]) -> None:
+    """R11, KTD6: SIGTERM to the PID in the held lock, a wait for the lock, then the sessions."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    lock = tmp_path / dispatcher.STATE / "lock"
+    running = hold(lock, locks, 4242)
+    order: list[object] = []
+
+    def exits() -> None:
+        locks.remove(running)
+        os.close(running)
+        order.append("exited")
+
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    end = boss.sessions.end
+
+    def ending(sessions: Any) -> None:
+        order.append("end")
+        end(sessions)
+
+    boss.sessions.end = ending  # type: ignore[method-assign]
+    assert halts(tmp_path, boss, kill=lambda pid, signum: order.append((pid, signum)),
+                 waits=Waits(3, exits)) == 0
+    assert order == [(4242, signal.SIGTERM), "exited", "end"]
+    assert killpg.calls == [(pids[70], signal.SIGTERM)]
+    assert lines[:2] == ["dispatcher: stopping the dispatcher (PID 4242)...",
+                         "dispatcher: the dispatcher (PID 4242) stopped"]
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    assert lock.read_text() == str(os.getpid())
+    hold(lock, locks)  # stop released it
+
+
+def test_a_dispatcher_that_never_releases_the_lock_makes_stop_change_nothing(
+        tmp_path: Path, locks: list[int]) -> None:
+    """KTD6: a bounded wait, then a report; no session is ended, no record or label touched."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    lock = tmp_path / dispatcher.STATE / "lock"
+    hold(lock, locks, 4242)
+    record = record_file(tmp_path, 70).read_text()
+    written = list(gh.writes)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    signals: list[tuple[int, int]] = []
+    waits = Waits()
+    assert halts(tmp_path, boss, kill=lambda pid, signum: signals.append((pid, signum)),
+                 waits=waits) == 1
+    assert signals == [(4242, signal.SIGTERM)]
+    assert waits.now >= dispatcher.WAIT
+    assert killpg.calls == []
+    assert gh.writes == written
+    assert record_file(tmp_path, 70).read_text() == record
+    assert lock.read_text() == "4242"
+    assert lines[-1] == (f"dispatcher: the dispatcher (PID 4242) did not stop within "
+                         f"{dispatcher.WAIT:g}s; nothing was changed")
+
+
+def test_a_run_started_while_stop_holds_the_lock_refuses(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """KTD6: stop holds the lock for its whole run, so no dispatcher starts in the middle."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), [])
+    monkeypatch.setattr(dispatcher, "ROOT", tmp_path)
+    monkeypatch.setattr(dispatcher, "GitHub", lambda: pytest.fail("no gh call when refusing"))
+    refused: list[int] = []
+    end = boss.sessions.end
+
+    def ending(sessions: Any) -> None:
+        refused.append(dispatcher.main(["dispatcher.py", "run"]))
+        end(sessions)
+
+    monkeypatch.setattr(boss.sessions, "end", ending)
+    assert halts(tmp_path, boss) == 0
+    assert refused == [1]
+    assert f"(PID {os.getpid()})" in capsys.readouterr().out
+
+
+def test_stop_after_a_machine_restart_pauses_a_dead_session_as_interrupted(
+        tmp_path: Path) -> None:
+    """KTD3: gone with no final result and a known conversation, judged as at start."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines, pids[70])
+    assert halts(tmp_path, boss) == 0
+    assert killpg.calls == []
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    assert dispatcher.marker_of(last_move(gh).comment or "", 70) == cause(70, INTERRUPTED)
+    assert lines == ["dispatcher: no dispatcher runs",
+                     "dispatcher: #70 session ended while no dispatcher ran: paused as interrupted",
+                     "dispatcher: #70 -> paused"]
+    assert not record_file(tmp_path, 70).exists()
+
+
+def test_a_stopped_session_that_wrote_a_clean_final_result_still_pauses_as_stopped(
+        tmp_path: Path) -> None:
+    """KTD3: the stopped flag comes before the final result."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT, result("Done.", error=False))
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), [])
+    assert halts(tmp_path, boss) == 0
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    assert dispatcher.marker_of(last_move(gh).comment or "", 70) == cause(70, STOPPED)
+
+
+def test_a_stopped_session_with_an_open_pull_request_goes_in_review(tmp_path: Path) -> None:
+    """KTD3: an open pull request comes first."""
+    gh = FakeGitHub(head={"issue-70": (PR,)})
+    earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert moves(gh)[1:] == [(70, (IN_REVIEW,))]
+    assert Link(101, 70) in gh.writes
+    assert "dispatcher: #70 session stopped: in review" in lines
+
+
+def test_a_stopped_session_with_no_conversation_needs_attention_at_stop(tmp_path: Path) -> None:
+    """R9, KTD5: killed before its first event, there is nothing to resume."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), [])
+    assert halts(tmp_path, boss) == 0
+    assert moves(gh)[1:] == [(70, (NEEDS_ATTENTION,))]
+    assert shown(gh, 70)[-1][0] == NEEDS_ATTENTION
+    assert not record_file(tmp_path, 70).exists()
+
+
+def test_stop_ends_a_session_whose_issue_left_progress_and_moves_no_label(
+        tmp_path: Path) -> None:
+    """KTD7: a run left it alone; stop still ends it, as nothing may run, and drops its record."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 74)
+    gh.answers = {}
+    first, _, _, _ = restarted(tmp_path, gh, 2, Clock(at(15)), [])
+    first.start()
+    first.stop()
+    written = list(gh.writes)
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15, 5)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert killpg.calls == [(pids[74], signal.SIGTERM)]
+    assert gh.writes == written
+    assert not record_file(tmp_path, 74).exists()
+    assert lines[-1] == "dispatcher: #74 is not in progress: its session ended, no label moved"
+
+
+def test_stop_with_nothing_running_says_so(tmp_path: Path) -> None:
+    gh = FakeGitHub()
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert lines == ["dispatcher: no dispatcher runs", "dispatcher: no session runs"]
+    assert gh.writes == []
+    assert killpg.calls == []
+
+
+def test_stop_says_an_unreadable_record_and_leaves_it(tmp_path: Path) -> None:
+    """Outside damage never crashes `stop`; the next start makes its issue need attention."""
+    record_file(tmp_path, 75).parent.mkdir(parents=True)
+    record_file(tmp_path, 75).write_text("{")
+    gh = FakeGitHub()
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 0
+    assert lines[-1] == (f"dispatcher: #75: its session record {record_file(tmp_path, 75)} "
+                         "cannot be read")
+    assert record_file(tmp_path, 75).exists()
+
+
+def test_stop_that_cannot_read_github_still_ends_the_sessions_for_the_next_start(
+        tmp_path: Path) -> None:
+    """The records stay marked stopped: the next start pauses the issue as stopped."""
+    gh = FakeGitHub()
+    pids = earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    gh.flaky = {"issues in progress"}
+    lines: list[str] = []
+    boss, _, _, killpg = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 1
+    assert killpg.calls == [(pids[70], signal.SIGTERM)]
+    assert moves(gh)[1:] == []
+    assert json.loads(record_file(tmp_path, 70).read_text())["stopped"] is True
+    assert lines[-1] == ("dispatcher: GitHub could not be read (gh issues in progress: "
+                         "HTTP 502); the sessions ended, the next start judges them")
+    again, _, _, _ = restarted(tmp_path, gh, 2, Clock(at(15, 5)), [], pids[70])
+    again.start()
+    assert moves(gh)[1:] == [(70, (PAUSED,))]
+    assert dispatcher.marker_of(last_move(gh).comment or "", 70) == cause(70, STOPPED)
+
+
+def test_a_session_github_cannot_be_read_for_at_stop_is_left_to_the_next_start(
+        tmp_path: Path) -> None:
+    """Its record stays, marked stopped; the other issues are judged."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70, 73)
+    writes_log(tmp_path, 73, INIT)
+    gh.flaky = {"head"}
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 1
+    assert ("dispatcher: #70: GitHub could not be read (gh head: HTTP 502); "
+            "the next start judges it") in lines
+    assert json.loads(record_file(tmp_path, 70).read_text())["stopped"] is True
+    assert moves(gh)[2:] == [(73, (PAUSED,))]
+
+
+def test_a_write_that_fails_at_stop_is_said_and_left_to_the_next_start(tmp_path: Path) -> None:
+    """No poll follows `stop`: what still fails after one last try keeps its record."""
+    gh = FakeGitHub()
+    earlier(tmp_path, gh, 70)
+    writes_log(tmp_path, 70, INIT)
+    gh.broken = 70
+    lines: list[str] = []
+    boss, _, _, _ = restarted(tmp_path, gh, 0, Clock(at(15)), lines)
+    assert halts(tmp_path, boss) == 1
+    assert lines[-1] == "dispatcher: #70: a write failed; the next start judges it again"
+    assert json.loads(record_file(tmp_path, 70).read_text())["stopped"] is True
+
+
+def test_the_stop_command_runs_over_this_checkout(tmp_path: Path,
+                                                  monkeypatch: pytest.MonkeyPatch,
+                                                  capsys: pytest.CaptureFixture[str]) -> None:
+    runner, _ = sessions(tmp_path, FakeGit())
+    monkeypatch.setattr(dispatcher, "ROOT", tmp_path)
+    monkeypatch.setattr(dispatcher, "GitHub", FakeGitHub)
+    monkeypatch.setattr(dispatcher, "Sessions", lambda root: runner)
+    assert dispatcher.main(["dispatcher.py", "stop"]) == 0
+    assert capsys.readouterr().out.endswith(" dispatcher: no session runs\n")
+    assert (tmp_path / dispatcher.STATE / "lock").exists()
