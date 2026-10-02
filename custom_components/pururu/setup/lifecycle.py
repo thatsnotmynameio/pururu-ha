@@ -23,6 +23,7 @@ from ..core import generated
 from ..core.entity import PururuEntity
 from ..core.runtime import Built, PururuConfigEntry, Step
 from ..core.texts import async_texts
+from ..device_keys import goals
 from ..outputs import (
     alert2_alerts,
     alert_lights,
@@ -49,11 +50,12 @@ NOT_UNLOADED = (
 )
 
 # The outputs after the platforms, in order: the events once the entities have their
-# IDs; the devices placed and what is stale removed; the scripts before the
+# IDs; what the goals track, disabled, rebuilds the entry; the devices placed and what is stale removed; the scripts before the
 # automations that start them; Alert2 and the alert lights once their alerts and
 # lights are created; the dashboard last, as it shows them all
 STEPS: tuple[tuple[str, Step], ...] = (
     ("events", events.async_step),
+    ("goals", goals.async_step),
     ("devices", device_steps.async_step),
     ("generate", generate.async_step),
     ("alert2", alert2_alerts.async_step),

@@ -40,8 +40,9 @@ from ..aspects.statistics import PERIODS, Meter
 from ..const import CONF_DEVICES, CONF_GOALS, CONF_TRACKED_BY, DATA_CONFIG
 from ..core.entity import PururuEntity, reading
 from ..core.feature import TEXT, Device, Feature, Item, finite_float
-from ..core.resolve import Index, Owner, Ref, path, resolve
+from ..core.resolve import Index, Owner, Ref, find, path, resolve
 from ..core.roles import Items, Refers
+from ..core.runtime import Built, PururuConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,12 +93,14 @@ class GoalTarget(PururuEntity, RestoreSensor):
         *,
         item: Item,
         follows: tuple[str, ...],
+        disabled: Mapping[str, str],
     ) -> None:
         """Show `target`, the goal of `item`'s, in `source`'s unit, tracked by what it follows."""
         self._identify(device, Platform.SENSOR, "target", item=item)
         self._attr_native_value = target
         self._source = source
         self.follows = follows
+        self.disabled = disabled
 
     @override
     async def async_added_to_hass(self) -> None:
@@ -146,6 +149,7 @@ class GoalDone(Meter):
         *,
         item: Item,
         follows: tuple[str, ...],
+        disabled: Mapping[str, str],
     ) -> None:
         """Meter `source`, what `goal` is tracked by, over its period, following what it follows.
 
@@ -162,6 +166,7 @@ class GoalDone(Meter):
             fingerprint=f"{goal[CONF_TRACKED_BY]} {goal['period']}",
         )
         self.follows = follows
+        self.disabled = disabled
 
 
 def _item(key: str, goal: Mapping[str, Any]) -> Item:
@@ -210,6 +215,18 @@ def _state_class(hass: HomeAssistant, entity_id: str) -> str | None:
     return str(state_class)
 
 
+def _disabled(hass: HomeAssistant, entity_id: str) -> dict[str, str]:
+    """The tracked pururu entity, unique ID -> entity ID, when it is disabled: the goal isn't created then.
+
+    The entry is reloaded when it is disabled (async_step's targets, pururu's
+    registry listener) and when it is enabled again (HA's own).
+    """
+    entry = er.async_get(hass).async_get(entity_id)
+    if entry is None or not entry.disabled:
+        return {}
+    return {entry.unique_id: entity_id}
+
+
 def build(
     hass: HomeAssistant,
     device: Device,
@@ -220,7 +237,8 @@ def build(
 
     A goal tracked by what doesn't accumulate, its state class known (Home
     Assistant's entity, or the plug an energy mirror shows), is logged and
-    not created; one not known yet is: done waits for its first reading.
+    not created; one not known yet is: done waits for its first reading. A
+    goal tracked by a disabled pururu entity isn't created either (creatable).
     """
     entities: list[PururuEntity] = []
     for item in _items(config):
@@ -241,14 +259,27 @@ def build(
         if ref.owner is Owner.HOME_ASSISTANT:
             follows: tuple[str, ...] = ()
             source = ref.path
+            disabled = {}
         else:
             # A pururu entity, of this device or another: by its current ID
             follows = (ref.text,)
             source = inputs[ref.text]
+            disabled = _disabled(hass, source)
         entities.append(
-            GoalTarget(device, goal["target"], source, item=item, follows=follows)
+            GoalTarget(
+                device,
+                goal["target"],
+                source,
+                item=item,
+                follows=follows,
+                disabled=disabled,
+            )
         )
-        entities.append(GoalDone(device, source, goal, item=item, follows=follows))
+        entities.append(
+            GoalDone(
+                device, source, goal, item=item, follows=follows, disabled=disabled
+            )
+        )
     return entities
 
 
@@ -290,3 +321,17 @@ def check(house: Mapping[str, Any], index: Index, *_: Any) -> Iterator[vol.Inval
             yield vol.Invalid(
                 f"{CONF_GOALS}: {goal_key}: {ref.text} is not a total", path=place
             )
+
+
+async def async_step(
+    hass: HomeAssistant, entry: PururuConfigEntry, built: Built, targets: set[str]
+) -> None:
+    """Adds what each goal tracks, a pururu entity, to `targets`, the goal created or not.
+
+    Disabling it rebuilds the entry, which drops the goal; HA reloads the
+    entry itself once it is enabled again.
+    """
+    for key, device in built.house.get(CONF_DEVICES, {}).items():
+        for _, ref in _refers(device.get(CONF_GOALS, {})):
+            if (target := find(built.index, key, ref)) is not None:
+                targets.add(target.current_entity_id(hass))

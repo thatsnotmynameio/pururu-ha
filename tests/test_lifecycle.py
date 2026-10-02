@@ -18,9 +18,9 @@ LIGHT = {"name": "Luzes", "lights": {"teto": {"entity": "homeassistant.light.tet
 
 
 async def test_the_steps_run_in_order(ha: HomeAssistant) -> None:
-    """Events, devices, the generated files, Alert2, the alert lights, the dashboard: as the spec's flow says."""
+    """Events, the goals' tracked totals, devices, the generated files, Alert2, the alert lights, the dashboard: as the spec's flow says."""
     names = [name for name, _ in module("setup.lifecycle").STEPS]
-    assert names == ["events", "devices", "generate", "alert2", "alert lights", "dashboard"]
+    assert names == ["events", "goals", "devices", "generate", "alert2", "alert lights", "dashboard"]
 
 
 async def test_the_steps_read_the_builders_and_one_index(ha: HomeAssistant) -> None:

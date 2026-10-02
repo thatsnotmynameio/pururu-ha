@@ -108,6 +108,8 @@ def creatable(
     `built` is every device's: an entity may follow another device's. A
     source the settings don't build (an entity key a feature can create, but
     not with this device's settings) can only be watched: `watched` names it.
+    A source the entity says is disabled (`disabled`) isn't created for it
+    alone: the source is, and so is everything else that follows it.
     """
     built_ids = {str(entity.unique_id) for entity, _ in built}
     missing: dict[str, str] = {}  # unique ID -> entity ID, of what isn't created
@@ -135,9 +137,8 @@ def creatable(
     while lost:  # until nothing left follows what isn't created
         lost = False
         for entity, sources in list(kept):
-            if gone := sorted(
-                missing[source] for source in sources if source in missing
-            ):
+            absent = {**missing, **entity.disabled}
+            if gone := sorted(absent[source] for source in sources if source in absent):
                 _LOGGER.error(
                     "%s follows %s, which is not created; not creating it",
                     entity.entity_id,

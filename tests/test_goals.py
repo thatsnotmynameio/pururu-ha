@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
@@ -457,6 +458,109 @@ async def test_an_energy_mirror_whose_plug_doesnt_accumulate_creates_no_goal(
     assert ha.states.get(RUNNING) is not None
     assert (f"{device}: goals: {goal}: {tracked_by} doesn't accumulate "
             "(state class measurement); not creating it") in caplog.text
+
+
+# --- a disabled total -------------------------------------------------------------
+
+# The pool's runtime today: a meter of the runtime total, which a disabled total keeps
+RUNTIME_TODAY = "sensor.pururu_pool_appliance_runtime_today"
+# An entity of the pool that no goal tracks
+CYCLES_TOTAL = "sensor.pururu_pool_appliance_cycles_total"
+
+
+def metered(device: dict[str, Any]) -> dict[str, Any]:
+    """`device` with its runtime metered today."""
+    running = {**device["appliance"]["running_program"], "statistics": {"runtime": ["today"]}}
+    return {**device, "appliance": {**device["appliance"], "running_program": running}}
+
+
+async def disable(hass: HomeAssistant, freezer: Any, entity_id: str, disabled: bool = True) -> None:
+    """Disable `entity_id` in the registry, or enable it again, and wait out HA's own reload."""
+    er.async_get(hass).async_update_entity(
+        entity_id, disabled_by=er.RegistryEntryDisabler.USER if disabled else None)
+    await tick(hass, freezer, 31)
+    await hass.async_block_till_done()
+
+
+def counting_reloads(hass: HomeAssistant) -> Any:
+    """Count the entry's reloads, pururu's own and HA's."""
+    return patch.object(hass.config_entries, "async_reload", wraps=hass.config_entries.async_reload)
+
+
+def assert_dropped(hass: HomeAssistant, caplog: pytest.LogCaptureFixture, *entity_ids: str) -> None:
+    """Not created, no registry entry, logged as following the total, which is not created."""
+    registry = er.async_get(hass)
+    for entity_id in entity_ids:
+        assert hass.states.get(entity_id) is None
+        assert registry.async_get(entity_id) is None
+        assert (f"{entity_id} follows {RUNTIME_TOTAL}, which is not created; "
+                "not creating it") in caplog.text
+
+
+async def test_a_disabled_total_creates_no_goal(
+        ha: HomeAssistant, caplog: pytest.LogCaptureFixture) -> None:
+    """Covers AE4: the rest of the pool is created, the total's meter included, and the total stays disabled."""
+    er.async_get(ha).async_get_or_create(
+        "sensor", DOMAIN, "pururu_pool_appliance_runtime_total",
+        suggested_object_id="pururu_pool_appliance_runtime_total",
+        disabled_by=er.RegistryEntryDisabler.USER)
+    assert await setup(ha, {POOL: metered(pool())})
+    assert_dropped(ha, caplog, TARGET, DONE)
+    assert ha.states.get(RUNNING) is not None
+    assert ha.states.get(RUNTIME_TODAY) is not None
+    assert er.async_get(ha).async_get(RUNTIME_TOTAL).disabled_by is er.RegistryEntryDisabler.USER
+
+
+async def test_disabling_the_total_drops_the_goal(
+        ha: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """Covers R11: one reload, after which the goal's sensors and their registry entries are gone."""
+    assert await setup(ha, {POOL: pool()})
+    assert ha.states.get(DONE) is not None
+    with counting_reloads(ha) as reloads:
+        await disable(ha, freezer, RUNTIME_TOTAL)
+    assert reloads.call_count == 1
+    assert_dropped(ha, caplog, TARGET, DONE)
+    assert er.async_get(ha).async_get(RUNTIME_TOTAL).disabled_by is er.RegistryEntryDisabler.USER
+
+
+@pytest.mark.parametrize(("days", "expected"), [
+    pytest.param(0, 1, id="the same day"),
+    pytest.param(1, 0, id="the next day"),
+])
+async def test_enabling_the_total_brings_the_goal_back(
+        ha: HomeAssistant, freezer: Any, days: int, expected: float) -> None:
+    """KTD3: HA's own reload; done as it was when dropped, 0 once the period turned over."""
+    assert await setup(ha, {POOL: pool()})
+    await idle(ha, freezer)
+    await pump(ha, freezer, 1)
+    await disable(ha, freezer, RUNTIME_TOTAL)
+    assert ha.states.get(DONE) is None
+    await tick(ha, freezer, days * 86400)
+    with counting_reloads(ha) as reloads:
+        await disable(ha, freezer, RUNTIME_TOTAL, disabled=False)
+    assert reloads.call_count == 1
+    assert value(ha, TARGET) == 6
+    assert value(ha, DONE) == pytest.approx(expected, abs=0.01)
+
+
+async def test_disabling_another_devices_total_drops_its_goal(
+        ha: HomeAssistant, freezer: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """Covers R11: the living room's airing follows the pool's total."""
+    assert await setup(ha, {POOL: {"name": "Piscina", "appliance": APPLIANCE},
+                            LIVING_ROOM: living_room()})
+    assert ha.states.get(AIRING_DONE) is not None
+    with counting_reloads(ha) as reloads:
+        await disable(ha, freezer, RUNTIME_TOTAL)
+    assert reloads.call_count == 1
+    assert_dropped(ha, caplog, AIRING_TARGET, AIRING_DONE)
+
+
+async def test_disabling_what_no_goal_tracks_reloads_nothing(ha: HomeAssistant, freezer: Any) -> None:
+    assert await setup(ha, {POOL: pool()})
+    with counting_reloads(ha) as reloads:
+        await disable(ha, freezer, CYCLES_TOTAL)
+    assert reloads.call_count == 0
+    assert ha.states.get(DONE) is not None
 
 
 # --- the target ----------------------------------------------------------------------
