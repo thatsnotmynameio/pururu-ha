@@ -65,6 +65,7 @@ async def test_a_borrowed_light_is_borrowed_again(home: Home) -> None:
     await home.play(REAL_DOOR, "off")
     await home.play(REAL_LANTERN, "off")
     assert await home.setup({"devices": garden(), "config": GROUPS})
+    home.calm.expect(GATE_OPEN)
     await home.play(REAL_PUMP, "on")
     assert home.state(GATE_OPEN) == "on"
     assert home.attributes(LANTERN)["alert"] == "medium"
@@ -88,6 +89,7 @@ async def test_the_generated_automations_and_scripts_run(home: Home) -> None:
     await home.play(REAL_DOOR, "off")
     await home.play(REAL_LANTERN, "off")
     assert await home.setup({"devices": garden(), "config": GROUPS})
+    home.calm.expect(GATE_OPEN)
     await home.restart()
     calls = home.capture("call_service")
     triggered = home.capture("automation_triggered")

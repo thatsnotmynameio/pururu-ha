@@ -9,11 +9,15 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from homeassistant.core import CoreState, Event, HomeAssistant, callback
+from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.core import CoreState, Event, HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import entity_registry as er, restore_state
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import (
+    async_fire_time_changed,
+    async_mock_service,
+)
 import yaml
 
 DOMAIN = "pururu"
@@ -23,6 +27,28 @@ SCRIPTS = "pururu/scripts/programs.yaml"
 # Loop turns a wait gives: far more than any chain of callbacks needs. Never
 # async_block_till_done while a script runs: it would wait out the script's delay
 TURNS = 100
+
+# The reference house, and the calm states of the real entities it names
+HOUSE: dict[str, Any] = yaml.safe_load(
+    (Path(__file__).resolve().parent / "house.yaml").read_text(encoding="utf-8"))
+# A colour bulb as Zigbee2MQTT shows it: hs colour, breathe among its effects
+BULB = {"supported_color_modes": ["hs"], "color_mode": "hs", "brightness": 255,
+        "hs_color": [240.0, 100.0], "effect_list": ["blink", "breathe"], "supported_features": 44}
+WATTS = {"unit_of_measurement": "W", "device_class": "power", "state_class": "measurement"}
+KWH = {"unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total_increasing"}
+CALM: dict[str, tuple[str, dict[str, Any]]] = {
+    "sensor.washer_plug_power": ("0", WATTS),              # between cycles
+    "sensor.washer_plug_energy": ("120.0", KWH),
+    "sensor.fridge_plug_power": ("80", WATTS),             # idle, never 0
+    "binary_sensor.front_door_contact": ("off", {}),        # closed
+    "binary_sensor.bedroom_window_contact": ("off", {}),
+    "light.living_room_ceiling": ("off", BULB),
+    "switch.living_room_lamp_relay": ("off", {}),
+    "switch.garden_pump": ("off", {}),
+    "sensor.garden_remote_action": ("idle", {}),            # no button's value
+}
+# The notify action house.yaml's config: notify names
+NOTIFY = ("notify", "phone")
 
 
 async def wait() -> None:
@@ -43,6 +69,7 @@ class Home:
         self.hass = hass
         self.freezer = freezer
         self.block: dict[str, Any] = {}
+        self.calm = Calm(hass)
 
     def configuration(self) -> dict[str, Any]:
         """configuration.yaml as Home Assistant reads it."""
@@ -62,6 +89,12 @@ class Home:
         ok = await async_setup_component(self.hass, DOMAIN, self.configuration())
         await self.hass.async_block_till_done()
         return ok
+
+    async def setup_house(self) -> None:
+        """The reference house, from its calm states."""
+        for entity_id, (state, attributes) in CALM.items():
+            self.hass.states.async_set(entity_id, state, attributes)
+        assert await self.setup(HOUSE)
 
     async def reload(self, block: dict[str, Any]) -> None:
         """Edit configuration.yaml's `pururu:` block, then call pururu.reload."""
@@ -98,7 +131,9 @@ class Home:
 
     async def play(self, entity_id: str, state: str,
                    attributes: dict[str, Any] | None = None) -> None:
-        """A real device changes: set its state and let Home Assistant react."""
+        """A real device changes: set its state (its attributes kept unless given) and let Home Assistant react."""
+        if attributes is None and (current := self.hass.states.get(entity_id)) is not None:
+            attributes = dict(current.attributes)
         self.hass.states.async_set(entity_id, state, attributes)
         await wait()
 
@@ -141,3 +176,41 @@ class Home:
         for event_type in event_types:
             self.hass.bus.async_listen(event_type, record)
         return captured
+
+
+class Calm:
+    """What turned up unasked: every pururu alert turning on, every notification sent.
+
+    A story names the alerts and notifications it causes; the `home` fixture
+    fails the story, naming each one, when anything else turned up.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.alerts: list[str] = []
+        self.told: list[str] = []
+        self.expected: set[str] = set()
+        self.notify = async_mock_service(hass, *NOTIFY)
+        hass.bus.async_listen(EVENT_STATE_CHANGED, self._changed)
+
+    @callback
+    def _changed(self, event: Event) -> None:
+        entity_id: str = event.data["entity_id"]
+        old, new = event.data["old_state"], event.data["new_state"]
+        if (entity_id.startswith("binary_sensor.pururu_") and "_alert_" in entity_id
+                and new is not None and new.state == "on" and (old is None or old.state != "on")):
+            self.alerts.append(entity_id)
+
+    def expect(self, *caused: str) -> None:
+        """The alerts (entity IDs) and notifications (titles) the story causes."""
+        self.expected.update(caused)
+
+    def sent(self) -> list[ServiceCall]:
+        """The notifications sent, in order."""
+        return list(self.notify)
+
+    def unexpected(self) -> list[str]:
+        """What turned up and the story didn't cause."""
+        alerts = [f"alert {entity_id}" for entity_id in self.alerts if entity_id not in self.expected]
+        told = [f"notification {call.data.get('title')}: {call.data.get('message')}"
+                for call in self.notify if call.data.get("title") not in self.expected]
+        return alerts + told

@@ -30,11 +30,12 @@ def hass_config_dir(hass_tmp_config_dir: str) -> str:
 
 @pytest.fixture
 def home(hass: HomeAssistant, enable_custom_integrations: None, hass_storage: dict[str, Any],
-         monkeypatch: pytest.MonkeyPatch, freezer: Any) -> Home:
+         monkeypatch: pytest.MonkeyPatch, freezer: Any) -> Iterator[Home]:
     """Home Assistant at START, pururu installed as a custom component.
 
     configuration.yaml is whatever the Home shows, for the whole test, so every
-    reload Home Assistant makes reads the house and pururu's files.
+    reload Home Assistant makes reads the house and pururu's files. The test
+    fails when an alert turned on or a notification went out that it didn't cause.
     """
     freezer.move_to(datetime(*START, tzinfo=dt_util.get_time_zone(hass.config.time_zone)))
     import custom_components  # noqa: PLC0415 - the repo's folder, through pythonpath
@@ -44,7 +45,15 @@ def home(hass: HomeAssistant, enable_custom_integrations: None, hass_storage: di
     found = Home(hass, freezer)
     monkeypatch.setattr("homeassistant.config.load_yaml_config_file",
                         lambda *_args, **_kwargs: found.configuration())
-    return found
+    yield found
+    assert not found.calm.unexpected(), found.calm.unexpected()
+
+
+@pytest.fixture
+async def house(home: Home) -> Home:
+    """The reference house, set up from its calm states."""
+    await home.setup_house()
+    return home
 
 
 @pytest.fixture(autouse=True)
