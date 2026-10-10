@@ -8,6 +8,6 @@
     "docs:preview": "docs.page preview"
   },
   "devDependencies": {
-    "@docs.page/cli": "2.1.0"
+    "@docs.page/cli": "2.2.0"
   }
 }
