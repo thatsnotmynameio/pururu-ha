@@ -1,0 +1,19 @@
+# zizmor's analysis of main, through the organization's workflow
+# (thatsnotmynameio/github-actions' zizmor.yml), under the category "zizmor":
+# code scanning compares each pull request's zizmor alerts with it. On a pull
+# request the organization's ruleset runs the same workflow, as the check
+# "tnmn.io: zizmor".
+name: security (main)
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  zizmor:
+    permissions:
+      contents: read
+      security-events: write # uploads the results to code scanning
+    uses: thatsnotmynameio/github-actions/.github/workflows/zizmor.yml@772b59a78d5344ba6e6869f9a4fc02f671a87312 # main
